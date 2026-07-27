@@ -39,171 +39,289 @@ use regex::Regex;
 
 // ------------------------------------------------------------------ tables
 
-/// `self.negative_words` (keyed by the raw lang string, default "minus").
+/// `lang_registry.NEGATIVE_WORDS` — the negative-marker word per language.
+/// Keyed by the raw lang string (Python: `self.negative_words.get(self.lang,
+/// "minus")`), default "minus".
+const NEGATIVE_WORDS: &[(&str, &str)] = &[
+    ("en", "minus"), ("fr", "moins"), ("es", "menos"), ("it", "meno"),
+    ("pt", "menos"), ("de", "minus"), ("nl", "min"), ("sv", "minus"),
+    ("da", "minus"), ("no", "minus"), ("is", "mínus"), ("fi", "miinus"),
+    ("et", "miinus"), ("lt", "minus"), ("lv", "mīnus"),
+    ("ru", "минус"), ("uk", "мінус"), ("be", "мінус"), ("bg", "минус"),
+    ("pl", "minus"), ("cs", "mínus"), ("sk", "mínus"), ("sl", "minus"),
+    ("hr", "minus"), ("sr", "минус"), ("mk", "минус"),
+    ("el", "πλην"), ("ro", "minus"), ("hu", "mínusz"), ("tr", "eksi"),
+    ("az", "mənfi"),
+    ("ar", "سالب"), ("he", "מינוס"), ("fa", "منفی"),
+    ("hi", "माइनस"), ("bn", "মাইনাস"), ("ta", "மைனஸ்"), ("te", "మైనస్"),
+    ("ja", "マイナス"), ("zh", "负"), ("zh-cn", "负"), ("ko", "마이너스"),
+    ("vi", "âm"), ("th", "ติดลบ"),
+    ("id", "minus"), ("ms", "minus"),
+    ("eo", "minus"), ("la", "minus"), ("rm", "minus"),
+];
+
 fn negative_word(lang: &str) -> &'static str {
-    match lang {
-        "fr" => "moins",
-        "es" => "menos",
-        "it" => "meno",
-        "pt" => "menos",
-        "de" => "minus",
-        "en" => "minus",
-        "nl" => "min",
-        "ru" => "минус",
-        "pl" => "minus",
-        "sv" => "minus",
-        "da" => "minus",
-        "no" => "minus",
-        "ja" => "マイナス",
-        "ar" => "سالب",
-        "zh" => "负",
-        "zh-cn" => "负",
-        "ko" => "마이너스",
-        "hi" => "माइनस",
-        "tr" => "eksi",
-        "hu" => "mínusz",
-        "cs" => "mínus",
-        "sk" => "mínus",
-        "he" => "מינוס",
-        "th" => "ติดลบ",
-        "vi" => "âm",
-        "uk" => "мінус",
-        "bg" => "минус",
-        "hr" => "minus",
-        "lt" => "minus",
-        "lv" => "mīnus",
-        "et" => "miinus",
-        "fi" => "miinus",
-        "is" => "mínus",
-        _ => "minus",
-    }
+    NEGATIVE_WORDS
+        .iter()
+        .find(|(k, _)| *k == lang)
+        .map(|(_, v)| *v)
+        .unwrap_or("minus")
 }
 
-/// The word halves of `self.temp_patterns[lang]` — (temp_word, celsius_word).
+/// `lang_registry._norm_lang` — lowercase/strip, keep as-is when it is a known
+/// ordinal or negative key, else fall back to the base subtag. Used for the
+/// registry lookups (ordinal/date/month) that Python routes through
+/// `get_ordinal_pattern` / `get_date_patterns` / `get_month_names`.
+fn norm_lang(lang: &str) -> String {
+    let l = lang.trim().to_lowercase();
+    if l.is_empty() {
+        return "en".to_string();
+    }
+    if ORDINAL_PATTERNS.iter().any(|(k, _)| *k == l)
+        || NEGATIVE_WORDS.iter().any(|(k, _)| *k == l)
+    {
+        return l;
+    }
+    l.split(['-', '_']).next().unwrap_or("").to_string()
+}
+
+/// `lang_registry.TEMP_PATTERNS` — (regex, scale_word, scale_unit) per lang.
+/// Keyed by the raw lang string (Python: `if self.lang in self.temp_patterns`).
 /// Yes, English says "Fahrenheit" even for `25°C`; the quirk is deliberate.
+const TEMP_PATTERNS: &[(&str, &str, &str, &str)] = &[
+    ("en", r"(-?\d+(?:[.,]\d+)?)\s+degrees?(?:\s+[Ff]ahrenheit|\s+[Cc]elsius)?", "degrees", "Fahrenheit"),
+    ("fr", r"(-?\d+(?:[.,]\d+)?)\s+degr[ée]s?(?:\s+[Cc]elsius)?", "degrés", "Celsius"),
+    ("es", r"(-?\d+(?:[.,]\d+)?)\s+grados?(?:\s+[Cc]elsius)?", "grados", "Celsius"),
+    ("pt", r"(-?\d+(?:[.,]\d+)?)\s+graus?(?:\s+[Cc]elsius)?", "graus", "Celsius"),
+    ("it", r"(-?\d+(?:[.,]\d+)?)\s+gradi?(?:\s+[Cc]elsius)?", "gradi", "Celsius"),
+    ("de", r"(-?\d+(?:[.,]\d+)?)\s+[Gg]rad(?:\s+[Cc]elsius)?", "Grad", "Celsius"),
+    ("nl", r"(-?\d+(?:[.,]\d+)?)\s+graden?(?:\s+[Cc]elsius)?", "graden", "Celsius"),
+    ("sv", r"(-?\d+(?:[.,]\d+)?)\s+grader?(?:\s+[Cc]elsius)?", "grader", "Celsius"),
+    ("da", r"(-?\d+(?:[.,]\d+)?)\s+grader?(?:\s+[Cc]elsius)?", "grader", "Celsius"),
+    ("no", r"(-?\d+(?:[.,]\d+)?)\s+grader?(?:\s+[Cc]elsius)?", "grader", "Celsius"),
+    ("fi", r"(-?\d+(?:[.,]\d+)?)\s+astetta?(?:\s+[Cc]elsiusta)?", "astetta", "Celsius"),
+    ("ru", r"(-?\d+(?:[.,]\d+)?)\s+градус(?:а|ов)?", "градусов", "Цельсия"),
+    ("uk", r"(-?\d+(?:[.,]\d+)?)\s+градус(?:а|ів)?", "градусів", "Цельсія"),
+    ("pl", r"(-?\d+(?:[.,]\d+)?)\s+stopni(?:e|i)?", "stopni", "Celsjusza"),
+    ("cs", r"(-?\d+(?:[.,]\d+)?)\s+stup(?:ňů|eň|ně)", "stupňů", "Celsia"),
+    ("tr", r"(-?\d+(?:[.,]\d+)?)\s+derece", "derece", "santigrat"),
+    ("ja", r"(-?\d+(?:[.,]\d+)?)\s*度", "度", "摂氏"),
+    ("zh", r"(-?\d+(?:[.,]\d+)?)\s*度", "度", "摄氏"),
+    ("ko", r"(-?\d+(?:[.,]\d+)?)\s*도", "도", "섭씨"),
+    ("el", r"(-?\d+(?:[.,]\d+)?)\s+βαθμο[ίυ]?ς?", "βαθμοί", "Κελσίου"),
+    ("ar", r"(-?\d+(?:[.,]\d+)?)\s+درجة", "درجة", "مئوية"),
+    ("hi", r"(-?\d+(?:[.,]\d+)?)\s+डिग्री", "डिग्री", "सेल्सियस"),
+];
+
 fn temp_words(lang: &str) -> Option<(&'static str, &'static str)> {
-    match lang {
-        "fr" => Some(("degrés", "Celsius")),
-        "es" => Some(("grados", "Celsius")),
-        "it" => Some(("gradi", "Celsius")),
-        "pt" => Some(("graus", "Celsius")),
-        "de" => Some(("Grad", "Celsius")),
-        "en" => Some(("degrees", "Fahrenheit")),
-        "nl" => Some(("graden", "Celsius")),
-        "ru" => Some(("градусов", "Цельсия")),
-        "pl" => Some(("stopni", "Celsjusza")),
-        _ => None,
-    }
+    TEMP_PATTERNS
+        .iter()
+        .find(|(k, _, _, _)| *k == lang)
+        .map(|(_, _, w, u)| (*w, *u))
 }
 
-const MONTHS_EN: &str = "(?:January|February|March|April|May|June|July|August|September|October|November|December)";
+/// `lang_registry.ORDINAL_PATTERNS` — the integer is captured in group 1 (or,
+/// for the CJK bare-form alternations, whichever branch fires). Keyed by the
+/// normalised lang. Compiled WITHOUT the ignore-case flag, matching Python's
+/// `re.finditer(ordinal_pattern, sentence)` (no flags).
+const ORDINAL_PATTERNS: &[(&str, &str)] = &[
+    ("en", r"(\d+)(?:st|nd|rd|th)\b"),
+    ("de", r"(\d+)(?:\.|te|er)\b"),
+    ("nl", r"(\d+)(?:ste|de|e)\b"),
+    ("sv", r"(\d+):(?:a|e)\b"),
+    ("af", r"(\d+)(?:ste|de)\b"),
+    ("fr", r"(\d+)(?:er|ère|e|ème)\b"),
+    ("es", r"(\d+)(?:º|°|ª)\b"),
+    ("pt", r"(\d+)(?:º|°|ª)\b"),
+    ("it", r"(\d+)(?:º|°|ª)\b"),
+    ("ca", r"(\d+)(?:r|n|t|è|a)\b"),
+    ("el", r"(\d+)(?:ος|η|ο|ός)\b"),
+    ("tr", r"(\d+)(?:inci|ıncı|uncu|üncü)\b"),
+    ("az", r"(\d+)[-‐](?:ci|cu|cü|cı)\b"),
+    ("hi", r"(\d+)(?:वां|वीं|वें)\b"),
+    ("bn", r"(\d+)(?:তম|ম|য়|র্থ)\b"),
+    ("ta", r"(\d+)(?:வது|ஆம்)\b"),
+    ("fa", r"(\d+)(?:مین|ام|م)\b"),
+    ("zh", r"第(\d+)"),
+    ("ja", r"第(\d+)|(\d+)番目"),
+    ("ko", r"제(\d+)|(\d+)번째"),
+    ("vi", r"thứ\s*(\d+)"),
+    ("th", r"ที่\s*(\d+)"),
+    ("id", r"ke[-‐](\d+)"),
+    ("ms", r"ke[-‐](\d+)"),
+    ("ia", r"(\d+)me\b"),
+];
+
+/// `lang_registry.MONTH_NAMES` — month-name regex per lang (a non-capturing
+/// group). Keyed by the normalised lang. Substituted into date templates
+/// (word-boundary wrapped) and used to gate year detection (pass 5).
+const MONTH_NAMES: &[(&str, &str)] = &[
+    ("en", r"(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"),
+    ("fr", r"(?:janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre)"),
+    ("es", r"(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"),
+    ("pt", r"(?:janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)"),
+    ("it", r"(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)"),
+    ("de", r"(?:Januar|Februar|M[äa]rz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|J[äa]nner)"),
+    ("nl", r"(?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)"),
+    ("sv", r"(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)"),
+    ("da", r"(?:januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)"),
+    ("no", r"(?:januar|februar|mars|april|mai|juni|juli|august|september|oktober|november|desember)"),
+    ("fi", r"(?:tammikuu(?:ta)?|helmikuu(?:ta)?|maaliskuu(?:ta)?|huhtikuu(?:ta)?|toukokuu(?:ta)?|kes[äa]kuu(?:ta)?|hein[äa]kuu(?:ta)?|elokuu(?:ta)?|syyskuu(?:ta)?|lokakuu(?:ta)?|marraskuu(?:ta)?|joulukuu(?:ta)?)"),
+    ("is", r"(?:jan[úu]ar|febr[úu]ar|mars|apr[íi]l|ma[íi]|j[úu]n[íi]|j[úu]l[íi]|[áa]g[úu]st|september|okt[óo]ber|n[óo]vember|desember)"),
+    ("ru", r"(?:январ[ьея]|феврал[ьея]|март[а]?|апрел[ьея]|ма[йяе]|июн[ьея]|июл[ьея]|август[а]?|сентябр[ьея]|октябр[ьея]|ноябр[ьея]|декабр[ьея])"),
+    ("uk", r"(?:січн[яеі]|лют[ого]|березн[яе]|квітн[яе]|травн[яе]|червн[яе]|липн[яе]|серпн[яе]|вересн[яе]|жовтн[яе]|листопад[а]?|грудн[яе])"),
+    ("pl", r"(?:styczni[ae]|luty|lutego|marzec|marca|kwiecie[nń]|kwietnia|maj[a]?|czerwiec|czerwca|lipiec|lipca|sierpie[nń]|sierpnia|wrzesie[nń]|wrze[śs]nia|pa[źz]dziernik[a]?|listopad[a]?|grudzie[nń]|grudnia)"),
+    ("cs", r"(?:ledn[aue]|[úu]nor[a]?|b[řr]ezn[aue]|duben|dubna|kv[ěe]ten|kv[ěe]tna|[čc]erven[ae]?|[čc]ervna|[čc]ervenec|[čc]ervence|srpen|srpna|z[áa][řr][íi]|[řr][íi]jen|[řr][íi]jna|listopad[au]?|prosinec|prosince)"),
+    ("sk", r"(?:janu[áa]r[a]?|febru[áa]r[a]?|marec|marca|apr[íi]l[a]?|m[áa]j[a]?|j[úu]n[a]?|j[úu]l[a]?|august[a]?|september|septembra|okt[óo]ber|okt[óo]bra|november|novembra|december|decembra)"),
+    ("ro", r"(?:ianuarie|februarie|martie|aprilie|mai|iunie|iulie|august|septembrie|octombrie|noiembrie|decembrie)"),
+    ("el", r"(?:Ιανουαρίου|Φεβρουαρίου|Μαρτίου|Απριλίου|Μαΐου|Ιουνίου|Ιουλίου|Αυγούστου|Σεπτεμβρίου|Οκτωβρίου|Νοεμβρίου|Δεκεμβρίου|Ιανουάριος|Φεβρουάριος|Μάρτιος|Απρίλιος|Μάιος|Ιούνιος|Ιούλιος|Αύγουστος|Σεπτέμβριος|Οκτώβριος|Νοέμβριος|Δεκέμβριος)"),
+    ("tr", r"(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık)"),
+    ("hu", r"(?:janu[áa]r|febru[áa]r|m[áa]rcius|[áa]prilis|m[áa]jus|j[úu]nius|j[úu]lius|augusztus|szeptember|okt[óo]ber|november|december)"),
+    ("ar", r"(?:يناير|فبراير|مارس|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر|كانون|شباط|آذار|نيسان|أيار|حزيران|تموز|آب|أيلول|تشرين|تشرين)"),
+    ("he", r"(?:ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)"),
+    ("ja", r"(?:1月|2月|3月|4月|5月|6月|7月|8月|9月|10月|11月|12月|睦月|如月|弥生|卯月|皐月|水無月|文月|葉月|長月|神無月|霜月|師走)"),
+    ("ko", r"(?:1월|2월|3월|4월|5월|6월|7월|8월|9월|10월|11월|12월)"),
+    ("zh", r"(?:1月|2月|3月|4月|5月|6月|7月|8月|9月|10月|11月|12月|一月|二月|三月|四月|五月|六月|七月|八月|九月|十月|十一月|十二月)"),
+    ("vi", r"(?:th[áa]ng\s*(?:m[ộo]t|hai|ba|b[ốo]n|n[ăa]m|s[áa]u|b[ảa]y|t[áa]m|ch[íi]n|m[ưu][ờo]i|m[ưu][ờo]i\s*m[ộo]t|m[ưu][ờo]i\s*hai|\d+))"),
+    ("th", r"(?:มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)"),
+    ("id", r"(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)"),
+    ("ms", r"(?:Januari|Februari|Mac|April|Mei|Jun|Julai|Ogos|September|Oktober|November|Disember)"),
+    ("hi", r"(?:जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|अक्टूबर|नवंबर|दिसंबर)"),
+    ("bn", r"(?:জানুয়ারি|ফেব্রুয়ারি|মার্চ|এপ্রিল|মে|জুন|জুলাই|আগস্ট|সেপ্টেম্বর|অক্টোবর|নভেম্বর|ডিসেম্বর)"),
+    ("fa", r"(?:ژانویه|فوریه|مارس|آوریل|می|ژوئن|ژوئیه|اوت|سپتامبر|اکتبر|نوامبر|دسامبر|فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)"),
+];
+
+/// `lang_registry.DATE_PATTERNS_TEMPLATE` — (template, is_ordinal) per lang.
+/// `{month}` is replaced with the word-boundary-wrapped `MONTH_NAMES[lang]`
+/// at build time (Python `get_date_patterns`); a language with no month-name
+/// entry yields no date patterns.
+const DATE_TEMPLATES: &[(&str, &[(&str, bool)])] = &[
+    ("en", &[
+        (r"(\d+)(?:st|nd|rd|th)\s+({month})", true),
+        (r"({month})\s+(\d+)", true),
+        (r"(\d+)\s+({month})", true),
+    ]),
+    ("fr", &[
+        (r"(\d+)er\s+({month})", true),
+        (r"(\d+)e\s+({month})", false),
+    ]),
+    ("es", &[(r"(\d+)\s+de\s+({month})", false)]),
+    ("de", &[(r"(\d+)\.\s+([A-ZÄÖÜ][a-zäöüß]+)", true)]),
+    ("pt", &[(r"(\d+)\s+de\s+({month})", false)]),
+    ("it", &[(r"(\d+)\s+({month})", false)]),
+    ("nl", &[(r"(\d+)\s+({month})", true)]),
+    ("sv", &[(r"(\d+)\s+({month})", true)]),
+    ("da", &[(r"(\d+)\.\s+({month})", false)]),
+    ("no", &[(r"(\d+)\.\s+({month})", false)]),
+    ("fi", &[(r"(\d+)\.\s+({month})", false)]),
+    ("is", &[(r"(\d+)\.\s+({month})", false)]),
+    ("ro", &[(r"(\d+)\s+({month})", false)]),
+    ("el", &[(r"(\d+)\s+({month})", false)]),
+    ("tr", &[(r"(\d+)\s+({month})", false)]),
+    ("hu", &[(r"({month})\s+(\d+)\.?", false)]),
+    ("ja", &[
+        (r"({month})\s*(\d+)日", false),
+        (r"(\d+)月\s*(\d+)日", false),
+    ]),
+    ("zh", &[
+        (r"({month})\s*(\d+)日?", false),
+        (r"(\d+)月\s*(\d+)日?", false),
+    ]),
+    ("ko", &[(r"({month})\s*(\d+)일", false)]),
+    ("vi", &[(r"(\d+)\s+({month})", false)]),
+    ("th", &[(r"(\d+)\s+({month})", false)]),
+    ("id", &[(r"(\d+)\s+({month})", false)]),
+    ("ms", &[(r"(\d+)\s+({month})", false)]),
+    ("hi", &[(r"(\d+)\s+({month})", false)]),
+    ("bn", &[(r"(\d+)\s+({month})", false)]),
+    ("fa", &[(r"(\d+)\s+({month})", false)]),
+];
+
+/// Languages whose written ordinal day form is `<n>.` — the trailing period is
+/// consumed into the day token so replacement leaves no orphaned punctuation.
+/// Checked against the raw lang, matching Python's `self.lang in ...`.
+const DAY_TOKEN_TRAILS_PERIOD: &[&str] = &["de", "cs", "sk", "fi", "hu", "is", "no", "da"];
 
 struct DatePat {
     re: Regex,
     is_ordinal: bool,
-    format: Option<&'static str>,
 }
 
 struct Res {
     temp_symbol: Regex,
     temps: Vec<(&'static str, Regex)>,
     ordinals: Vec<(&'static str, Regex)>,
-    month_after: Regex,
     dates: Vec<(&'static str, Vec<DatePat>)>,
     year: Regex,
-    year_before: Regex,
     currency: Regex,
 }
 
 impl Res {
     fn new() -> Res {
         let re = |p: &str| Regex::new(p).expect("static regex");
-        let date = |p: String, is_ordinal: bool, format: Option<&'static str>| DatePat {
-            re: Regex::new(&p).expect("static regex"),
-            is_ordinal,
-            format,
-        };
+
+        let temps = TEMP_PATTERNS
+            .iter()
+            .map(|(lang, pat, _, _)| (*lang, re(pat)))
+            .collect();
+
+        let ordinals = ORDINAL_PATTERNS
+            .iter()
+            .map(|(lang, pat)| (*lang, re(pat)))
+            .collect();
+
+        // Build concrete date patterns: substitute `{month}` with the
+        // boundary-wrapped month regex, compile case-insensitively (Python
+        // passes `re.I` at finditer time). Templates without `{month}` (e.g.
+        // German's "<n>. <Noun>") are used verbatim.
+        let month_of = |lang: &str| MONTH_NAMES.iter().find(|(k, _)| *k == lang).map(|(_, v)| *v);
+        let dates = DATE_TEMPLATES
+            .iter()
+            .filter_map(|(lang, tpls)| {
+                let months = month_of(lang)?;
+                let bounded = format!(r"\b{}\b", months);
+                let pats = tpls
+                    .iter()
+                    .map(|(tpl, is_ordinal)| DatePat {
+                        re: re(&format!("(?i){}", tpl.replace("{month}", &bounded))),
+                        is_ordinal: *is_ordinal,
+                    })
+                    .collect();
+                Some((*lang, pats))
+            })
+            .collect();
+
         Res {
             temp_symbol: re(r"(-?\d+(?:[.,]\d+)?)\s*°[CFcf]"),
-            temps: vec![
-                ("fr", re(r"(-?\d+(?:[.,]\d+)?)\s+degrés?(?:\s+[Cc]elsius)?")),
-                ("es", re(r"(-?\d+(?:[.,]\d+)?)\s+grados?(?:\s+[Cc]elsius)?")),
-                ("it", re(r"(-?\d+(?:[.,]\d+)?)\s+gradi?(?:\s+[Cc]elsius)?")),
-                ("pt", re(r"(-?\d+(?:[.,]\d+)?)\s+graus?(?:\s+[Cc]elsius)?")),
-                ("de", re(r"(-?\d+(?:[.,]\d+)?)\s+[Gg]rad(?:\s+[Cc]elsius)?")),
-                ("en", re(r"(-?\d+(?:[.,]\d+)?)\s+degrees?(?:\s+[Ff]ahrenheit)?")),
-                ("nl", re(r"(-?\d+(?:[.,]\d+)?)\s+graden?(?:\s+[Cc]elsius)?")),
-                ("ru", re(r"(-?\d+(?:[.,]\d+)?)\s+градус(?:а|ов)?")),
-                ("pl", re(r"(-?\d+(?:[.,]\d+)?)\s+stopni(?:e|i)?")),
-            ],
-            ordinals: vec![
-                ("en", re(r"(\d+)(?:st|nd|rd|th)\b")),
-                ("fr", re(r"(\d+)(?:er|ère|e|ème)\b")),
-                ("es", re(r"(\d+)(?:º|°|ª)\b")),
-                ("de", re(r"(\d+)(?:\.|te|er)\b")),
-                ("it", re(r"(\d+)(?:º|°|ª)\b")),
-                ("pt", re(r"(\d+)(?:º|°|ª)\b")),
-            ],
-            month_after: re(&format!(r"(?i)^\s*{}", MONTHS_EN)),
-            dates: vec![
-                (
-                    "fr",
-                    vec![
-                        date(r"(?i)(\d+)er\s+([a-zéû]+)".to_string(), true, None),
-                        date(r"(?i)(\d+)e\s+([a-zéû]+)".to_string(), false, None),
-                    ],
-                ),
-                (
-                    "de",
-                    vec![date(
-                        r"(?i)(\d+)\.\s+([A-ZÄÖÜ][a-zäöüß]+)".to_string(),
-                        true,
-                        None,
-                    )],
-                ),
-                (
-                    "es",
-                    vec![date(r"(?i)(\d+)\s+de\s+([a-z]+)".to_string(), false, None)],
-                ),
-                (
-                    "en",
-                    vec![
-                        date(
-                            format!(r"(?i)(\d+)(?:st|nd|rd|th)\s+({})", MONTHS_EN),
-                            true,
-                            None,
-                        ),
-                        date(
-                            format!(r"(?i)({})\s+(\d+)", MONTHS_EN),
-                            true,
-                            Some("month_first"),
-                        ),
-                        date(
-                            format!(r"(?i)(\d+)\s+({})", MONTHS_EN),
-                            true,
-                            Some("day_first"),
-                        ),
-                    ],
-                ),
-            ],
+            temps,
+            ordinals,
+            dates,
             year: re(r"\b(19\d{2}|20\d{2}|2100)\b"),
-            year_before: re(
-                r"(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d+,\s*$",
-            ),
             currency: re(r"([$€£¥]\s*)(\d+(?:[.,]\d+)?)"),
         }
     }
 
+    /// Temperature regex — keyed by the raw lang (Python: `self.temp_patterns`).
     fn temp_re(&self, lang: &str) -> Option<&Regex> {
         self.temps.iter().find(|(k, _)| *k == lang).map(|(_, r)| r)
     }
 
+    /// Ordinal regex — keyed by the normalised lang (`get_ordinal_pattern`).
     fn ordinal_re(&self, lang: &str) -> Option<&Regex> {
-        self.ordinals.iter().find(|(k, _)| *k == lang).map(|(_, r)| r)
+        let n = norm_lang(lang);
+        self.ordinals.iter().find(|(k, _)| *k == n).map(|(_, r)| r)
     }
 
+    /// Date patterns — keyed by the normalised lang (`get_date_patterns`).
     fn date_pats(&self, lang: &str) -> Option<&Vec<DatePat>> {
-        self.dates.iter().find(|(k, _)| *k == lang).map(|(_, v)| v)
+        let n = norm_lang(lang);
+        self.dates.iter().find(|(k, _)| *k == n).map(|(_, v)| v)
+    }
+
+    /// Month-name regex — keyed by the normalised lang (`get_month_names`).
+    fn months_re(&self, lang: &str) -> Option<&'static str> {
+        let n = norm_lang(lang);
+        MONTH_NAMES.iter().find(|(k, _)| *k == n).map(|(_, v)| *v)
     }
 }
 
@@ -406,109 +524,102 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
-    // 3. Standalone ordinals (1st, 2nd, 3., 1er, ...) — before dates.
+    // 3. Standalone ordinals (registry-driven) — before dates. The ordinal
+    // surface form owns its full span (digit + suffix); the date pass then
+    // only fires where no ordinal was consumed. The integer is the first
+    // non-empty capture group (CJK forms alternate which branch fills it).
     if let Some(ore) = r.ordinal_re(lang) {
         for m in ore.captures_iter(t.s) {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
-            if lang == "en" {
-                // Followed by a month name -> leave it for the date pass.
-                let after = t.slice(e, e + 20);
-                if r.month_after.is_match(&after) {
-                    continue;
-                }
+            if overlap(&used, s, e) {
+                continue;
             }
-            if !overlap(&used, s, e) {
-                let v = pyint(m.get(1).unwrap().as_str())?;
-                exts.push(Ext {
-                    start: s,
-                    end: e,
-                    text: g0.as_str().to_string(),
-                    val: Val::I(v),
-                    typ: Typ::Ordinal,
-                });
-                mark(&mut used, s, e);
-            }
+            let grp = (1..m.len())
+                .filter_map(|i| m.get(i))
+                .map(|mm| mm.as_str())
+                .find(|x| !x.is_empty());
+            let grp = match grp {
+                Some(x) => x,
+                None => continue,
+            };
+            // Python `int(groups[0])`; a parse failure is a `ValueError`
+            // -> `continue`, not an abort.
+            let v = match grp.parse::<BigInt>() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            exts.push(Ext {
+                start: s,
+                end: e,
+                text: g0.as_str().to_string(),
+                val: Val::I(v),
+                typ: Typ::Ordinal,
+            });
+            mark(&mut used, s, e);
         }
     }
 
-    // 4. Dates with ordinals (language-specific).
+    // 4. Dates (registry-driven). The day is the first all-digit capture
+    // group; the month is the alpha one. For langs whose written day form is
+    // "<n>." the trailing period is consumed into the day token.
     if let Some(pats) = r.date_pats(lang) {
+        let trails_period = DAY_TOKEN_TRAILS_PERIOD.contains(&lang);
         for p in pats {
             for m in p.re.captures_iter(t.s) {
-                if lang == "en"
-                    && matches!(p.format, Some("month_first") | Some("day_first"))
-                {
-                    let g = if p.format == Some("month_first") {
-                        m.get(2).unwrap()
-                    } else {
-                        m.get(1).unwrap()
-                    };
-                    let (ns, ne) = t.span(g.start(), g.end());
-                    if !overlap(&used, ns, ne) {
-                        exts.push(Ext {
-                            start: ns,
-                            end: ne,
-                            text: g.as_str().to_string(),
-                            val: Val::I(pyint(g.as_str())?),
-                            typ: Typ::OrdinalDate,
-                        });
-                        mark(&mut used, ns, ne);
-                    }
-                } else {
-                    let g1 = m.get(1).unwrap();
-                    let (ns, ne) = t.span(g1.start(), g1.end());
-                    if !overlap(&used, ns, ne) {
-                        let v = pyint(g1.as_str())?;
-                        if lang == "fr" && m.get(0).unwrap().as_str().contains("er") {
-                            // French "1er" (fires for *any* fr date match
-                            // whose whole text contains "er" — quirk kept).
-                            exts.push(Ext {
-                                start: ns,
-                                end: ne + 2,
-                                text: format!("{}er", g1.as_str()),
-                                val: Val::I(v),
-                                typ: Typ::OrdinalDate,
-                            });
-                            mark(&mut used, ns, ne + 2);
-                        } else if lang == "de" {
-                            // German with period.
-                            exts.push(Ext {
-                                start: ns,
-                                end: ne + 1,
-                                text: format!("{}.", g1.as_str()),
-                                val: Val::I(v),
-                                typ: Typ::OrdinalDate,
-                            });
-                            mark(&mut used, ns, ne + 1);
-                        } else {
-                            exts.push(Ext {
-                                start: ns,
-                                end: ne,
-                                text: g1.as_str().to_string(),
-                                val: Val::I(v),
-                                typ: if p.is_ordinal {
-                                    Typ::OrdinalDate
-                                } else {
-                                    Typ::DateNumber
-                                },
-                            });
-                            mark(&mut used, ns, ne);
-                        }
-                    }
+                // Auto-locate the day (numeric capture).
+                let day = (1..m.len()).find_map(|i| {
+                    m.get(i).filter(|mm| {
+                        let g = mm.as_str();
+                        !g.is_empty() && g.chars().all(|c| c.is_ascii_digit())
+                    })
+                });
+                let g = match day {
+                    Some(g) => g,
+                    None => continue,
+                };
+                let (ns, mut ne) = t.span(g.start(), g.end());
+                let mut day_text = g.as_str().to_string();
+                if trails_period && ne < t.chars.len() && t.chars[ne] == '.' {
+                    ne += 1;
+                    day_text.push('.');
                 }
+                if overlap(&used, ns, ne) {
+                    continue;
+                }
+                let v = match g.as_str().parse::<BigInt>() {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                exts.push(Ext {
+                    start: ns,
+                    end: ne,
+                    text: day_text,
+                    val: Val::I(v),
+                    typ: if p.is_ordinal {
+                        Typ::OrdinalDate
+                    } else {
+                        Typ::DateNumber
+                    },
+                });
+                mark(&mut used, ns, ne);
             }
         }
     }
 
-    // 5. Years (1900-2100), only right after a "month day," prefix.
-    for m in r.year.captures_iter(t.s) {
-        let g0 = m.get(0).unwrap();
-        let (s, e) = t.span(g0.start(), g0.end());
-        if !overlap(&used, s, e) {
+    // 5. Years (1900-2100), only right after a "<month> day," prefix in the
+    // active language (registry month list, so it extends with each new lang).
+    if let Some(months) = r.months_re(lang) {
+        let year_ctx =
+            Regex::new(&format!(r"(?i){}\s+\d+,\s*$", months)).expect("year-ctx regex");
+        for m in r.year.captures_iter(t.s) {
+            let g0 = m.get(0).unwrap();
+            let (s, e) = t.span(g0.start(), g0.end());
+            if overlap(&used, s, e) {
+                continue;
+            }
             let before = t.slice(0, s);
-            let before = before.trim().to_lowercase();
-            if r.year_before.is_match(&before) {
+            if year_ctx.is_match(before.trim()) {
                 exts.push(Ext {
                     start: s,
                     end: e,
