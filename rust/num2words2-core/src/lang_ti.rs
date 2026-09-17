@@ -1,6 +1,12 @@
 //! Port of `lang_TI.py` (Tigrinya).
 //!
-//! # Deliberate divergence from upstream: Ge'ez script
+//! # Deliberate divergences from upstream
+//!
+//! Two, both documented below: the **script** (Ge'ez, not Latin) and the
+//! **ordinal algorithm** (suppletive + `መበል`, not a glued suffix). Everything
+//! else is ported verbatim, bug for bug.
+//!
+//! ## 1. Ge'ez script
 //!
 //! Upstream `lang_TI.py` spells every numeral in **Latin transliteration**
 //! ("ḥade", "mi'ti", "shiḥ"). Tigrinya is written in Ge'ez, and the sibling
@@ -8,23 +14,51 @@
 //! so the transliteration was an upstream accident rather than a choice. The
 //! word tables here are the Ge'ez spellings: "ሓደ", "ሚእቲ", "ሽሕ".
 //!
-//! This is the **one** place this port knowingly departs from byte-for-byte
-//! upstream fidelity, and it is a lexicon change only — the structure below
-//! (the composition rules, the `> 1` multiplier guards, the billion cliff, the
-//! missing `verify_ordinal`, the currency fallback) is still ported verbatim,
-//! bug for bug. The frozen-corpus fixtures in this file were re-spelled to
-//! match; every other assertion they make is unchanged.
+//! This is a lexicon change only — the composition rules, the `> 1` multiplier
+//! guards, the billion cliff, the missing `verify_ordinal` and the currency
+//! fallback are all still ported verbatim. The frozen-corpus fixtures in this
+//! file were re-spelled to match; every other assertion they make is unchanged.
 //!
-//! Two consequences worth naming, both inherited structure rather than new
-//! behaviour:
+//! One consequence worth naming, inherited structure rather than new
+//! behaviour: **the billion cliff still emits ASCII digits.** Above 10^9
+//! upstream returns `str(number)`; those are Western digits, not Ge'ez
+//! numerals, and that is untouched.
 //!
-//! * **Ordinals are still suffixal, not suppletive.** Upstream builds every
-//!   ordinal as `to_cardinal(n) + "ay"`, so `to_ordinal(1)` is "ሓደኣይ" — the
-//!   mechanical form, not the idiomatic Tigrinya "ቀዳማይ". Fixing that means
-//!   replacing the algorithm, not the script, so it is left alone here.
-//! * **The billion cliff still emits ASCII digits.** Above 10^9 upstream
-//!   returns `str(number)`; those are Western digits, not Ge'ez numerals, and
-//!   that is untouched.
+//! ## 2. Ordinal algorithm
+//!
+//! Upstream builds *every* ordinal as `to_cardinal(n) + "ay"`, which produces
+//! the non-word "ሓደኣይ" for 1st. Tigrinya has two arms instead:
+//!
+//! * **1..=10 are suppletive** — distinct forms with their own vowel shifts
+//!   and endings, not derivable from the cardinal: ቀዳማይ, ካልኣይ, ሳልሳይ, ራብዓይ,
+//!   ሓምሻይ, ሻድሻይ, ሻብዓይ, ሻምናይ, ታሽዓይ, ዓስራይ. See [`ORDINAL_IRREGULARS`].
+//! * **11 and up take the free-standing word መበል** followed by the plain,
+//!   uninflected cardinal: "መበል ዓሰርተ ን ሓደ", "መበል ሚእቲ". See
+//!   [`ORDINAL_PREFIX`].
+//!
+//! The **digit** form (`to_ordinal_num`) follows the same two arms, which is
+//! the formal/textbook convention: ይ suffixed to the digit up to 10 ("1ይ",
+//! "10ይ"), then the መበል prefix on the bare digit ("መበል 11", "መበል 100").
+//! Upstream's universal "ay" suffix is doubly wrong here — it applies one
+//! suffix at every magnitude, and the suffix itself is two letters where only
+//! ይ is written. A colloquial alternative seen in media does extend ይ to all
+//! numbers ("11ይ", "100ይ"); switching to it means deleting the range test in
+//! [`Lang::to_ordinal_num`] and always taking the suffix arm.
+//!
+//! `verify_ordinal` is restored, so non-integers, negatives and zero now raise
+//! `TypeError` instead of passing through — see [`LangTi::verify_ordinal`] and
+//! [`LangTi::verify_ordinal_num`]. The guard is **stricter than Base** in one
+//! respect: Python lets zero through and every other language in this crate
+//! renders a "zeroth", but Tigrinya has no ordinal for zero.
+//!
+//! Scope of the change, deliberately narrow:
+//!
+//! * Only the **masculine** series is modelled. The feminine forms replace
+//!   *-ay* with *-eyti* (ቀዳመይቲ, …); nothing in the `num2words` API carries
+//!   grammatical gender for ordinals, so there is nowhere to select them from.
+//! * A **whole** float or Decimal is not an error — it routes into the
+//!   integer path, so `to_ordinal(5.0)` is "ሓምሻይ" and `to_ordinal_num(5.0)`
+//!   is "5ይ". Only genuinely fractional values raise.
 //!
 //! Shape: **self-contained**. `Num2Word_TI` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so the guard in
@@ -64,13 +98,12 @@
 //!    `to_cardinal(10**21) == "1000000000000000000000"`. No exception, no
 //!    words — the digits are the output. Modelled in [`LangTi::int_to_word`].
 //! 2. The cliff leaks into the other modes: `to_ordinal(10**9)` is
-//!    `"1000000000ኣይ"`, which is also exactly what `to_ordinal_num(10**9)`
-//!    returns — the two modes silently converge above the cliff.
-//! 3. `to_ordinal` never calls `verify_ordinal`, so zero and negatives pass
-//!    straight through and get suffixed: `to_ordinal(0) == "ባዶኣይ"`,
-//!    `to_ordinal(-1) == "ኣሉታ ሓደኣይ"`. The suffix lands on the *last
-//!    word* of a multi-word cardinal, e.g. `to_ordinal(11)` is
-//!    `"ዓሰርተ ን ሓደኣይ"`.
+//!    `"መበል 1000000000"`, the same digits `to_ordinal_num(10**9)` produces.
+//!    The cliff itself is the inherited bug; the ordinal fix above changed
+//!    only how the digits are framed.
+//! 3. ~~`to_ordinal` never calls `verify_ordinal`~~ — **fixed**, see the
+//!    ordinal divergence above. Upstream let zero and negatives through and
+//!    suffixed them ("ባዶኣይ", "ኣሉታ ሓደኣይ"); both now raise `TypeError`.
 //! 4. `to_year` ignores its `longval` parameter entirely and delegates to
 //!    `to_cardinal`, so there is no BC/AD handling and no year-pairing:
 //!    `to_year(1999)` is the plain cardinal, and `to_year(-500)` is
@@ -188,8 +221,41 @@ const POINTWORD: &str = "ነጥቢ";
 /// The connector joining every level: "ten *and* one", "hundred *and* five".
 const AND: &str = " ን ";
 
-/// `to_ordinal` / `to_ordinal_num` suffix.
-const ORDINAL_SUFFIX: &str = "ኣይ";
+/// `to_ordinal_num` suffix, for the 1..=10 arm only.
+///
+/// **Not** upstream's "ay". Every spelled-out irregular from 1 to 10 ends in
+/// the 6th-order ይ, so the typographic suffix on a digit is the single letter
+/// ይ — "1ይ", "10ይ". Upstream's two-letter "ኣይ" ("11ኣይ") is not what is
+/// written.
+const ORDINAL_SUFFIX: &str = "ይ";
+
+/// Tigrinya ordinals 1-10 are suppletive: they are not the cardinal plus a
+/// suffix but distinct forms with their own vowel shifts and endings
+/// (*-ay*, *-shay*, *-nay*). Index 0 is unused — the table is only consulted
+/// for 1..=10, and zero has no ordinal in this scheme.
+///
+/// These are the **masculine** forms, which are the default for software and
+/// UI localisation. The feminine series replaces *-ay* with *-eyti*
+/// (ቀዳመይቲ, ካልኣይቲ, …) and is not modelled: nothing in the `num2words` API
+/// carries grammatical gender for ordinals.
+const ORDINAL_IRREGULARS: [&str; 11] = [
+    "",
+    "ቀዳማይ",
+    "ካልኣይ",
+    "ሳልሳይ",
+    "ራብዓይ",
+    "ሓምሻይ",
+    "ሻድሻይ",
+    "ሻብዓይ",
+    "ሻምናይ",
+    "ታሽዓይ",
+    "ዓስራይ",
+];
+
+/// From 11 up, Tigrinya stops inflecting and prefixes the free-standing word
+/// መበል to the plain cardinal: 11th is "መበል ዓሰርተ ን ሓደ", 100th "መበል ሚእቲ".
+/// The trailing space is part of the prefix.
+const ORDINAL_PREFIX: &str = "መበል ";
 
 /// `Num2Word_TI.CURRENCY_FORMS`, in Python's class-body **insertion order**.
 ///
@@ -335,6 +401,65 @@ impl LangTi {
                 Ok((left, right))
             }
         }
+    }
+
+    /// `Num2Word_Base.verify_ordinal`, which upstream `Num2Word_TI` never
+    /// calls — that omission is the bug this restores (module header, §3).
+    ///
+    /// **Stricter than Base.** Python's `verify_ordinal` rejects only
+    /// non-integers and negatives; `abs(0) == 0`, so zero passes and every
+    /// other language in this crate renders a "zeroth". Tigrinya has no
+    /// ordinal for zero — neither arm of the rule produces a real word for it
+    /// ("መበል ባዶ" is not something anyone says) — so zero is rejected here too.
+    ///
+    /// Only the integer branch exists: the float check (`errmsg_floatord`) is
+    /// deliberately not modelled, so `to_ordinal(3.14)` still returns the
+    /// prefixed form rather than raising.
+    fn verify_ordinal(&self, value: &BigInt) -> Result<()> {
+        if value.is_negative() {
+            // Base's `errmsg_negord`, verbatim — the wording other languages
+            // in this crate already raise.
+            return Err(N2WError::Type(format!(
+                "Cannot treat negative num {} as ordinal.",
+                value
+            )));
+        }
+        if value.is_zero() {
+            // No Python precedent for this message: upstream never rejects
+            // zero anywhere, so there is no wording to match.
+            return Err(N2WError::Type("Cannot treat zero as ordinal.".into()));
+        }
+        Ok(())
+    }
+
+    /// `verify_ordinal` for a float/Decimal. The float check fires first, then
+    /// the sign check, then the zero check — Base's ordering, with this
+    /// module's extra zero rejection appended.
+    ///
+    /// Both messages quote `str(value)`, not the truncated integer, matching
+    /// Python's `errmsg_floatord % value` / `errmsg_negord % value`. Returns
+    /// the whole value so a whole float (`5.0`) can route into the integer
+    /// path and render "ሓምሻይ" rather than a decimal form.
+    fn verify_ordinal_num(&self, value: &FloatValue) -> Result<BigInt> {
+        let whole = match value.as_whole_int() {
+            Some(i) => i,
+            None => {
+                return Err(N2WError::Type(format!(
+                    "Cannot treat float {} as ordinal.",
+                    python_str(value)
+                )))
+            }
+        };
+        if whole.is_negative() {
+            return Err(N2WError::Type(format!(
+                "Cannot treat negative num {} as ordinal.",
+                python_str(value)
+            )));
+        }
+        if whole.is_zero() {
+            return Err(N2WError::Type("Cannot treat zero as ordinal.".into()));
+        }
+        Ok(whole)
     }
 
     /// Port of `Num2Word_TI._int_to_word`.
@@ -537,24 +662,22 @@ impl Lang for LangTi {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`. TI's `to_ordinal` is
-    /// `self.to_cardinal(number) + "ኣይ"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "ሓደ ነጥቢ ባዶኣይ".
-    /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
-    /// ValueError inside the cardinal, before the suffix is appended.
+    /// `to_ordinal(float/Decimal)`. Guarded by
+    /// [`LangTi::verify_ordinal_num`]: a non-integer raises `TypeError`
+    /// rather than rendering a decimal ordinal. A *whole* float routes into
+    /// the integer path, so `to_ordinal(5.0)` is "ሓምሻይ".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!(
-            "{}{}",
-            self.cardinal_float_entry(value, None)?,
-            ORDINAL_SUFFIX
-        ))
+        let whole = self.verify_ordinal_num(value)?;
+        self.to_ordinal(&whole)
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "ኣይ"` — the repr the
-    /// binding computed, suffix glued on, sign and exponent form included
-    /// ("-0.0ኣይ", "1e+16ኣይ").
-    fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
+    /// `to_ordinal_num(float/Decimal)`. Same guard as the word form, so the
+    /// binding's repr is never framed as an ordinal: `3.14` raises rather than
+    /// producing "መበል 3.14". A whole float takes the integer digit rule —
+    /// `5.0` is "5ይ", `11.0` is "መበል 11".
+    fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
+        let whole = self.verify_ordinal_num(value)?;
+        self.to_ordinal_num(&whole)
     }
 
     /// `converter.str_to_number` — Base's `Decimal(value)`, with the Inf
@@ -623,19 +746,47 @@ impl Lang for LangTi {
         Ok(self.int_to_word(value))
     }
 
-    /// Port of `Num2Word_TI.to_ordinal`: `self.to_cardinal(number) + "ኣይ"`.
+    /// Tigrinya ordinals. **Diverges from upstream** (see the module header).
     ///
-    /// No `verify_ordinal` call, so zero and negatives pass straight through
-    /// (bug note 3).
+    /// Upstream is `to_cardinal(number) + "ay"` for every input, which yields
+    /// the non-word "ሓደኣይ" for 1st. The real rule has two arms:
+    ///
+    /// * 1..=10 are suppletive — [`ORDINAL_IRREGULARS`].
+    /// * everything else is [`ORDINAL_PREFIX`] ("መበል ") plus the plain
+    ///   cardinal, with no inflection of the cardinal itself.
+    ///
+    /// Guarded by [`LangTi::verify_ordinal`], so zero and negatives raise
+    /// `TypeError` rather than falling into the second arm.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
+        self.verify_ordinal(value)?;
+        if *value <= BigInt::from(10) {
+            let i = value.to_usize().expect("1..=10 fits a usize");
+            return Ok(ORDINAL_IRREGULARS[i].to_string());
+        }
+        Ok(format!("{}{}", ORDINAL_PREFIX, self.to_cardinal(value)?))
     }
 
-    /// Port of `Num2Word_TI.to_ordinal_num`: `str(number) + "ኣይ"`.
+    /// The digit form. **Diverges from upstream** (`str(number) + "ay"`).
     ///
-    /// Digits, not words — and the sign is kept: `-1` -> "-1ኣይ".
+    /// Tigrinya's numeric-ordinal notation mirrors the spoken rule rather than
+    /// using one universal suffix — the formal/textbook convention:
+    ///
+    /// * 1..=10 take the ይ suffix on the digit: "1ይ", "2ይ", "10ይ".
+    /// * 11 and up drop the suffix and take the መበል prefix on the bare digit:
+    ///   "መበል 11", "መበል 21", "መበል 100".
+    ///
+    /// The colloquial alternative (seen in media and headlines) extends ይ to
+    /// every number — "11ይ", "100ይ" — ignoring መበል for brevity. Switching to
+    /// it means deleting the range test and always taking the suffix arm.
+    ///
+    /// Guarded by [`LangTi::verify_ordinal`] like the word form, so zero and
+    /// negatives raise instead of producing "መበል -1".
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
+        self.verify_ordinal(value)?;
+        if *value <= BigInt::from(10) {
+            return Ok(format!("{}{}", value, ORDINAL_SUFFIX));
+        }
+        Ok(format!("{}{}", ORDINAL_PREFIX, value))
     }
 
     /// Port of `Num2Word_TI.to_year`: ignores `longval` and delegates
@@ -1395,14 +1546,121 @@ mod tests {
         );
     }
 
+    /// Ordinals 1..=10 are suppletive, not cardinal + suffix.
+    #[test]
+    fn ordinals_1_to_10_are_irregular() {
+        let ti = LangTi::new();
+        let expected = [
+            (1, "ቀዳማይ"), (2, "ካልኣይ"), (3, "ሳልሳይ"), (4, "ራብዓይ"), (5, "ሓምሻይ"),
+            (6, "ሻድሻይ"), (7, "ሻብዓይ"), (8, "ሻምናይ"), (9, "ታሽዓይ"), (10, "ዓስራይ"),
+        ];
+        for (n, want) in expected {
+            assert_eq!(ti.to_ordinal(&BigInt::from(n)).unwrap(), want, "ordinal {n}");
+        }
+    }
+
+    /// From 11 up the rule is "መበል " + the *plain* cardinal, with the
+    /// cardinal left exactly as `to_cardinal` produces it.
+    #[test]
+    fn ordinals_from_11_take_the_mebel_prefix() {
+        let ti = LangTi::new();
+        let cases = [
+            (11, "መበል ዓሰርተ ን ሓደ"),
+            (20, "መበል ዕስራ"),
+            (25, "መበል ዕስራ ን ሓሙሽተ"),
+            (100, "መበል ሚእቲ"),
+            (1234, "መበል ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ"),
+        ];
+        for (n, want) in cases {
+            assert_eq!(ti.to_ordinal(&BigInt::from(n)).unwrap(), want, "ordinal {n}");
+            // The prefixed arm must not disturb the cardinal it wraps.
+            assert!(want.ends_with(&ti.to_cardinal(&BigInt::from(n)).unwrap()));
+        }
+    }
+
+    /// The restored `verify_ordinal` guard: negatives AND zero raise
+    /// TypeError, in both the word form and the digit form.
+    #[test]
+    fn ordinal_rejects_zero_and_negatives() {
+        let ti = LangTi::new();
+        for n in [0i64, -1, -11, -100] {
+            let v = BigInt::from(n);
+            assert!(
+                matches!(ti.to_ordinal(&v), Err(N2WError::Type(_))),
+                "to_ordinal({n}) must raise TypeError"
+            );
+            assert!(
+                matches!(ti.to_ordinal_num(&v), Err(N2WError::Type(_))),
+                "to_ordinal_num({n}) must raise TypeError"
+            );
+        }
+        // Negatives keep Base's wording; zero gets its own (no Python
+        // precedent exists, since upstream never rejects zero).
+        assert!(matches!(
+            ti.to_ordinal(&BigInt::from(-1)),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat negative num -1 as ordinal."
+        ));
+        assert!(matches!(
+            ti.to_ordinal(&BigInt::from(0)),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat zero as ordinal."
+        ));
+    }
+
+    /// The digit form mirrors the spoken rule: ይ on the digit up to 10, the
+    /// መበል prefix from 11 up. Upstream's universal "ay" suffix is gone.
+    #[test]
+    fn ordinal_num_follows_the_formal_convention() {
+        let ti = LangTi::new();
+        let cases = [
+            (1, "1ይ"), (2, "2ይ"), (9, "9ይ"), (10, "10ይ"),
+            (11, "መበል 11"), (21, "መበል 21"), (100, "መበል 100"),
+        ];
+        for (n, want) in cases {
+            assert_eq!(ti.to_ordinal_num(&BigInt::from(n)).unwrap(), want, "{n}");
+        }
+    }
+
+    /// Fractional values raise in both ordinal modes; whole ones route into
+    /// the integer path instead of rendering a decimal ordinal.
+    #[test]
+    fn float_ordinals_verify_then_delegate() {
+        let ti = LangTi::new();
+
+        // Whole -> integer path, both arms of the rule.
+        assert_eq!(ti.ordinal_float_entry(&float_val("5.0")).unwrap(), "ሓምሻይ");
+        assert_eq!(ti.ordinal_float_entry(&float_val("11.0")).unwrap(), "መበል ዓሰርተ ን ሓደ");
+        assert_eq!(ti.ordinal_num_float_entry(&float_val("5.0"), "5.0").unwrap(), "5ይ");
+        assert_eq!(ti.ordinal_num_float_entry(&float_val("11.0"), "11.0").unwrap(), "መበል 11");
+
+        // Fractional -> TypeError quoting str(value), not the truncated int.
+        assert!(matches!(
+            ti.ordinal_float_entry(&float_val("3.14")),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat float 3.14 as ordinal."
+        ));
+        assert!(matches!(
+            ti.ordinal_num_float_entry(&float_val("3.14"), "3.14"),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat float 3.14 as ordinal."
+        ));
+
+        // Sign and zero checks reach the float path too.
+        assert!(matches!(
+            ti.ordinal_float_entry(&float_val("-2.0")),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat negative num -2.0 as ordinal."
+        ));
+        assert!(matches!(
+            ti.ordinal_float_entry(&float_val("0.0")),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat zero as ordinal."
+        ));
+    }
+
     /// The four already-verified integer modes must not have shifted.
     #[test]
     fn integer_modes_unchanged() {
         let ti = LangTi::new();
         assert_eq!(ti.to_cardinal(&BigInt::from(1234)).unwrap(), "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ");
         assert_eq!(ti.to_cardinal(&BigInt::from(0)).unwrap(), "ባዶ");
-        assert_eq!(ti.to_ordinal(&BigInt::from(11)).unwrap(), "ዓሰርተ ን ሓደኣይ");
-        assert_eq!(ti.to_ordinal_num(&BigInt::from(-1)).unwrap(), "-1ኣይ");
+        assert_eq!(ti.to_ordinal(&BigInt::from(11)).unwrap(), "መበል ዓሰርተ ን ሓደ");
+        assert!(matches!(ti.to_ordinal_num(&BigInt::from(-1)), Err(N2WError::Type(_))));
         assert_eq!(ti.to_year(&BigInt::from(1999)).unwrap(), "ሽሕ ን ትሽዓተ ሚእቲ ን ተስዓ ን ትሽዓተ");
     }
 }
