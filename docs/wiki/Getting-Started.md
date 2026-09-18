@@ -15,7 +15,7 @@ python -m pip install num2words2
 Install from a local checkout for development:
 
 ```bash
-git clone https://github.com/jqueguiner/num2words2.git
+git clone https://github.com/gladiaio/num2words2.git
 cd num2words2
 python -m pip install -e .
 ```

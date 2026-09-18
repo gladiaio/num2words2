@@ -5,13 +5,13 @@
 [![License](https://img.shields.io/pypi/l/num2words2.svg)](https://pypi.org/project/num2words2/)
 [![Monthly downloads](https://img.shields.io/pypi/dm/num2words2.svg)](https://pypi.org/project/num2words2/)
 [![AUR version](https://img.shields.io/aur/version/python-num2words2.svg)](https://aur.archlinux.org/packages/python-num2words2)
-[![CI](https://github.com/jqueguiner/num2words2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jqueguiner/num2words2/actions/workflows/ci.yml)
-[![Lint](https://github.com/jqueguiner/num2words2/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/jqueguiner/num2words2/actions/workflows/lint.yml)
-[![Coverage](https://coveralls.io/repos/github/jqueguiner/num2words2/badge.svg?branch=main)](https://coveralls.io/github/jqueguiner/num2words2?branch=main)
+[![CI](https://github.com/gladiaio/num2words2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gladiaio/num2words2/actions/workflows/ci.yml)
+[![Lint](https://github.com/gladiaio/num2words2/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/gladiaio/num2words2/actions/workflows/lint.yml)
+[![Coverage](https://coveralls.io/repos/github/gladiaio/num2words2/badge.svg?branch=main)](https://coveralls.io/github/gladiaio/num2words2?branch=main)
 
 `num2words2` is a **Rust port of the `num2words` conversion engine with a Python binder**, optimized for LLM/AI/speech applications. It converts numbers like `42` to words like `forty-two` across **120+ languages and 170+ locale codes** (including regional variants like `pt_BR`, `fr_BE`, `sr_Latn`, and aviation/ICAO). Every conversion runs in a compiled Rust core; Python only normalises arguments and shapes the result. Output is byte-for-byte identical to the original pure-Python library (validated against a frozen ~150,000-case corpus) while running typically 4–12× faster (up to 26× on some languages, 150× on string parsing). The original project's issues and PRs are actively monitored, and valid requests are ported here after review.
 
-> **Documentation:** see the [GitHub Wiki](https://github.com/jqueguiner/num2words2/wiki) for installation, API, CLI, supported locales, sentence conversion, currency handling, and migration guidance. For the full in-repo API reference, see [`REFERENCE.md`](REFERENCE.md).
+> **Documentation:** see the [GitHub Wiki](https://github.com/gladiaio/num2words2/wiki) for installation, API, CLI, supported locales, sentence conversion, currency handling, and migration guidance. For the full in-repo API reference, see [`REFERENCE.md`](REFERENCE.md).
 
 ## Install
 
@@ -186,7 +186,7 @@ We provide a migration script to automatically update your codebase:
 
 ```bash
 # Download and run the migration script
-curl -O https://raw.githubusercontent.com/jqueguiner/num2words2/main/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migrate_to_num2words2.py
 python migrate_to_num2words2.py /path/to/your/project
 
 # Or just scan current directory
@@ -274,7 +274,7 @@ pip uninstall num2words
 `num2words2` maintains full backward compatibility. However, if you experience any issues:
 
 1. **Check version compatibility** - Ensure you're using `num2words2>=0.5.15`
-2. **Report issues** - Create an issue at https://github.com/jqueguiner/num2words2/issues
+2. **Report issues** - Create an issue at https://github.com/gladiaio/num2words2/issues
 3. **Rollback if needed** - The migration script creates backups for easy rollback
 
 ### 🔄 Rollback Migration
@@ -331,5 +331,5 @@ Maintained by Jean-Louis Queguiner
 ## Links
 
 - [PyPI Package](https://pypi.org/project/num2words2/)
-- [GitHub Repository](https://github.com/jqueguiner/num2words2)
-- [Issue Tracker](https://github.com/jqueguiner/num2words2/issues)
+- [GitHub Repository](https://github.com/gladiaio/num2words2)
+- [Issue Tracker](https://github.com/gladiaio/num2words2/issues)

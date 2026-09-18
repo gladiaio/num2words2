@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "num2words2"
 # Static base version. The release CI overrides it from the pushed git tag
 # (see .github/workflows/release.yml); bump here for local source builds.
-version = "1.0.18"
+version = "1.0.21"
 license = "LGPL-2.1-only"
 license-files = ["COPYING"]
 description = "Rust port of the num2words conversion engine with a Python binder — number-to-words in 120+ languages, optimized for LLM/AI/speech."
@@ -38,10 +38,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jqueguiner/num2words2"
-Documentation = "https://github.com/jqueguiner/num2words2/wiki"
-Repository = "https://github.com/jqueguiner/num2words2.git"
-"Bug Tracker" = "https://github.com/jqueguiner/num2words2/issues"
+Homepage = "https://github.com/gladiaio/num2words2"
+Documentation = "https://github.com/gladiaio/num2words2/wiki"
+Repository = "https://github.com/gladiaio/num2words2.git"
+"Bug Tracker" = "https://github.com/gladiaio/num2words2/issues"
 
 # ---- maturin: mixed Rust/Python project -------------------------------------
 # The compiled engine lives in ./rust (vendored crate `num2words2-py`, lib

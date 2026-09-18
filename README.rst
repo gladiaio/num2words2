@@ -21,16 +21,16 @@ num2words2 library - Convert numbers to words in multiple languages
    :target: https://aur.archlinux.org/packages/python-num2words2
    :alt: AUR version
 
-.. image:: https://github.com/jqueguiner/num2words2/actions/workflows/ci.yml/badge.svg?branch=main
-   :target: https://github.com/jqueguiner/num2words2/actions/workflows/ci.yml
+.. image:: https://github.com/gladiaio/num2words2/actions/workflows/ci.yml/badge.svg?branch=main
+   :target: https://github.com/gladiaio/num2words2/actions/workflows/ci.yml
    :alt: CI status
 
-.. image:: https://github.com/jqueguiner/num2words2/actions/workflows/lint.yml/badge.svg?branch=main
-   :target: https://github.com/jqueguiner/num2words2/actions/workflows/lint.yml
+.. image:: https://github.com/gladiaio/num2words2/actions/workflows/lint.yml/badge.svg?branch=main
+   :target: https://github.com/gladiaio/num2words2/actions/workflows/lint.yml
    :alt: Lint status
 
-.. image:: https://coveralls.io/repos/github/jqueguiner/num2words2/badge.svg?branch=main
-   :target: https://coveralls.io/github/jqueguiner/num2words2?branch=main
+.. image:: https://coveralls.io/repos/github/gladiaio/num2words2/badge.svg?branch=main
+   :target: https://coveralls.io/github/gladiaio/num2words2?branch=main
    :alt: Coverage
 
 
@@ -49,9 +49,9 @@ on string parsing (see `Performance`_).
 The project is hosted on GitHub_, and the full documentation is available in
 the Wiki_. Contributions are welcome.
 
-.. _GitHub: https://github.com/jqueguiner/num2words2
-.. _Wiki: https://github.com/jqueguiner/num2words2/wiki
-.. _GitHub Releases: https://github.com/jqueguiner/num2words2/releases
+.. _GitHub: https://github.com/gladiaio/num2words2
+.. _Wiki: https://github.com/gladiaio/num2words2/wiki
+.. _GitHub Releases: https://github.com/gladiaio/num2words2/releases
 
 Performance
 -----------
@@ -140,7 +140,7 @@ Slim vs. full wheels
   ``num2words_sentence(lang=None)`` auto-detects the language natively. Full
   wheels are attached to each `GitHub Releases`_ entry; install one directly::
 
-      pip install https://github.com/jqueguiner/num2words2/releases/download/v1.0.18/num2words2-1.0.18-cp38-abi3-<platform>.whl
+      pip install https://github.com/gladiaio/num2words2/releases/download/v1.0.18/num2words2-1.0.18-cp38-abi3-<platform>.whl
 
 The compiled extension is distributed **only** through these wheels (it is not
 committed to the repository).

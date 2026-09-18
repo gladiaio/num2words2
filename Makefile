@@ -4,7 +4,7 @@
 
 # Default Python version for development
 PYTHON ?= python3
-WIKI_REMOTE ?= https://github.com/jqueguiner/num2words2.wiki.git
+WIKI_REMOTE ?= https://github.com/gladiaio/num2words2.wiki.git
 WIKI_BRANCH ?= main
 WIKI_RENDER_BRANCH ?= master
 WIKI_PUBLISH_BRANCH ?= wiki-publish

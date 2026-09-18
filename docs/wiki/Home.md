@@ -42,8 +42,8 @@ num2words_sentence("I bought 6 apples for $12.50.")
 
 ## Project Links
 
-- Repository: https://github.com/jqueguiner/num2words2
+- Repository: https://github.com/gladiaio/num2words2
 - PyPI: https://pypi.org/project/num2words2/
-- Issues: https://github.com/jqueguiner/num2words2/issues
-- Pull requests: https://github.com/jqueguiner/num2words2/pulls
+- Issues: https://github.com/gladiaio/num2words2/issues
+- Pull requests: https://github.com/gladiaio/num2words2/pulls
 
