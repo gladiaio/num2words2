@@ -53,7 +53,7 @@ num2words(42.50, to="currency", currency="USD")
 The repository includes a migration script:
 
 ```bash
-curl -O https://raw.githubusercontent.com/jqueguiner/num2words2/main/migration/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 
 python migrate_to_num2words2.py --dry-run /path/to/project
 python migrate_to_num2words2.py /path/to/project

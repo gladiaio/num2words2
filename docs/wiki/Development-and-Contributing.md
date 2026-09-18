@@ -4,14 +4,14 @@
 
 Development happens at:
 
-https://github.com/jqueguiner/num2words2
+https://github.com/gladiaio/num2words2
 
-Open issues and pull requests against `jqueguiner/num2words2`.
+Open issues and pull requests against `gladiaio/num2words2`.
 
 ## Local Setup
 
 ```bash
-git clone https://github.com/jqueguiner/num2words2.git
+git clone https://github.com/gladiaio/num2words2.git
 cd num2words2
 
 python -m pip install -e .

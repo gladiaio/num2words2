@@ -540,5 +540,5 @@ locales (`en_Aero_*`), new kwargs (`style=`, `precision=`, `cents=`,
 ---
 
 *Last updated for v1.0.17. Open an issue at
-[jqueguiner/num2words2](https://github.com/jqueguiner/num2words2/issues)
+[gladiaio/num2words2](https://github.com/gladiaio/num2words2/issues)
 if anything's missing or wrong.*
