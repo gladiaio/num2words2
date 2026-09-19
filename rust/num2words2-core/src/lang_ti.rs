@@ -15,9 +15,11 @@
 //! word tables here are the Ge'ez spellings: "ሓደ", "ሚእቲ", "ሽሕ".
 //!
 //! This is a lexicon change only — the composition rules, the `> 1` multiplier
-//! guards, the billion cliff, the missing `verify_ordinal` and the currency
-//! fallback are all still ported verbatim. The frozen-corpus fixtures in this
-//! file were re-spelled to match; every other assertion they make is unchanged.
+//! guards, the billion cliff and the currency fallback are all still ported
+//! verbatim. The frozen-corpus fixtures in this file were re-spelled to match;
+//! every other assertion they make is unchanged. (Upstream's *missing*
+//! `verify_ordinal` is the one piece of behaviour this module does not keep —
+//! §2 below restores the guard.)
 //!
 //! One consequence worth naming, inherited structure rather than new
 //! behaviour: **the billion cliff still emits ASCII digits.** Above 10^9
@@ -404,7 +406,7 @@ impl LangTi {
     }
 
     /// `Num2Word_Base.verify_ordinal`, which upstream `Num2Word_TI` never
-    /// calls — that omission is the bug this restores (module header, §3).
+    /// calls — that omission is the bug this restores (module header, §2).
     ///
     /// **Stricter than Base.** Python's `verify_ordinal` rejects only
     /// non-integers and negatives; `abs(0) == 0`, so zero passes and every
@@ -412,9 +414,11 @@ impl LangTi {
     /// ordinal for zero — neither arm of the rule produces a real word for it
     /// ("መበል ባዶ" is not something anyone says) — so zero is rejected here too.
     ///
-    /// Only the integer branch exists: the float check (`errmsg_floatord`) is
-    /// deliberately not modelled, so `to_ordinal(3.14)` still returns the
-    /// prefixed form rather than raising.
+    /// This is the integer branch. The float/Decimal branch lives in
+    /// [`LangTi::verify_ordinal_num`], which adds Base's `errmsg_floatord`
+    /// check ahead of these two, so `to_ordinal(3.14)` raises rather than
+    /// rendering a decimal ordinal. A *whole* float is not an error — it
+    /// routes into the integer path and lands back here.
     fn verify_ordinal(&self, value: &BigInt) -> Result<()> {
         if value.is_negative() {
             // Base's `errmsg_negord`, verbatim — the wording other languages
