@@ -49,6 +49,12 @@ Repository = "https://github.com/gladiaio/num2words2.git"
 # single per-platform wheel. Default build embeds lingua-rs language-detection
 # models (~140MB); pass `--no-default-features` for the slim (~2MB) wheel with
 # `num2words_sentence(lang=None)` auto-detection disabled.
+[project.scripts]
+# maturin reads this; setup.py's `scripts=["bin/num2words2"]` is never seen by
+# the wheel build, which is why the documented CLI did not exist once
+# installed. See num2words2/__main__.py.
+num2words2 = "num2words2.__main__:main"
+
 [tool.maturin]
 manifest-path = "rust/num2words2-py/Cargo.toml"
 python-source = "."
