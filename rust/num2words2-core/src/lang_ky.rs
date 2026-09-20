@@ -1,5 +1,63 @@
 //! Port of `lang_KY.py` (Kyrgyz).
 //!
+//! # Deliberate divergences from upstream
+//!
+//! Two, both documented below: the **script** (Cyrillic, not Latin) and the
+//! **ordinal algorithm** (vowel-harmonic suffix, not a glued `-inchi`).
+//! Everything else is ported verbatim, bug for bug.
+//!
+//! ## 1. Cyrillic script
+//!
+//! `lang_KY.py` spells every numeral in **Latin transliteration** ("bir",
+//! "üch", "jıyırma", "jüz"). Kyrgyz is written in Cyrillic — the Latin
+//! alphabet was dropped in 1940 and has no official standing — so the tables
+//! here are the Cyrillic spellings: "бир", "үч", "жыйырма", "жүз".
+//!
+//! The transliteration was not even self-consistent, which is the clearest
+//! evidence it was an accident rather than a choice: `pointword` was the
+//! **mixed-script** string `"üтүр"`, one Latin `ü` (U+00FC) followed by three
+//! Cyrillic letters (U+0442 U+04AF U+0440). Whoever wrote it was typing
+//! Cyrillic and the first keystroke landed in the wrong layout. It is now
+//! plain "үтүр".
+//!
+//! This is a lexicon change only — the composition rules, the `> 1`
+//! multiplier guards, the 10^9 digit cliff and the currency fallback are all
+//! still ported verbatim.
+//!
+//! ## 2. Ordinal algorithm
+//!
+//! Upstream builds every ordinal as `to_cardinal(n) + "-inchi"`, which gives
+//! the non-word "үч-inchi" for 3rd. Kyrgyz forms ordinals with *-(V)нч(V)*,
+//! and **both** vowels agree with the last vowel of the stem — so the one
+//! written suffix is really four, and the linking vowel is dropped after a
+//! stem that already ends in a vowel:
+//!
+//! ```text
+//! бир   + инчи  -> биринчи        алты  + нчы  -> алтынчы
+//! сегиз + инчи  -> сегизинчи      жети  + нчи  -> жетинчи
+//! кырк  + ынчы  -> кыркынчы       элүү  + нчү  -> элүүнчү
+//! отуз  + унчу  -> отузунчу       жыйырма + нчы -> жыйырманчы
+//! жүз   + үнчү  -> жүзүнчү        үч    + үнчү -> үчүнчү
+//! ```
+//!
+//! Only the **last word** takes the ending: 123rd is "жүз жыйырма үчүнчү",
+//! not "жүзүнчү жыйырманчы үчүнчү". See [`ordinal_suffix`] and
+//! [`vowel_class`].
+//!
+//! The **digit** form follows the same harmony: "1-инчи", "3-үнчү",
+//! "10-унчу", "40-ынчы". The ending is read off the spelled cardinal, since
+//! a digit carries no vowel of its own. Kyrgyz orthography rule 88 also
+//! allows the hyphen to stand for the suffix outright when a noun follows
+//! ("16-ноябрь", "4-класс"); that form needs the noun, so it is not what a
+//! standalone `to_ordinal_num` can return. The spelled-out ending after the
+//! hyphen is what the sibling Turkic modules in this crate already do —
+//! `lang_ba.rs` emits "1-се", `lang_az.rs` "1-ci".
+//!
+//! `verify_ordinal` is **not** restored here: upstream lets zero and
+//! negatives through, and this module keeps that, so `to_ordinal(0)` is
+//! "нөлүнчү" and `to_ordinal(-1)` is "минус биринчи". Only the ending
+//! changed.
+//!
 //! Shape: **self-contained**. `Num2Word_KY` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so the guard in
 //! `Num2Word_Base.__init__`
@@ -17,8 +75,8 @@
 //! All four in-scope methods are overridden by `Num2Word_KY`, so nothing from
 //! `Num2Word_Base` reaches the output path:
 //!   * `to_cardinal`    — own algorithm over `_int_to_word`.
-//!   * `to_ordinal`     — `to_cardinal(n) + "-inchi"`.
-//!   * `to_ordinal_num` — `str(n) + "-inchi"`.
+//!   * `to_ordinal`     — `to_cardinal(n)` + the harmonised ending.
+//!   * `to_ordinal_num` — `str(n)` + "-" + the harmonised ending.
 //!   * `to_year`        — `to_cardinal(val)`, ignoring its own `longval` arg.
 //!
 //! Two consequences of those overrides are load-bearing:
@@ -28,8 +86,8 @@
 //!    left `False` by `setup`, so it would be a no-op regardless.)
 //! 2. `Num2Word_Base.to_ordinal` calls `verify_ordinal`, which raises
 //!    `TypeError` for negative input. KY's override skips it, so
-//!    `to_ordinal(-1)` == "minus bir-inchi" rather than raising. Likewise
-//!    `to_ordinal(0)` == "nöl-inchi" — no crash.
+//!    `to_ordinal(-1)` == "минус биринчи" rather than raising. Likewise
+//!    `to_ordinal(0)` == "нөлүнчү" — no crash.
 //!
 //! # Faithfully reproduced Python quirks
 //!
@@ -40,21 +98,22 @@
 //!    units/tens/hundreds/thousands/millions and then falls off the end with
 //!    a bare `return str(number)`. There is no milliard/billion entry, and no
 //!    `OverflowError` — `to_cardinal(10**9)` == "1000000000" (the digits),
-//!    and `to_ordinal(10**9)` == "1000000000-inchi". This holds for arbitrary
+//!    and `to_ordinal(10**9)` == "1000000000-инчи" — the digits have no vowel
+//!    to harmonise with, so the default class and the digit form's hyphen
+//!    apply. This holds for arbitrary
 //!    magnitudes, hence [`LangKy::int_to_word`] takes `&BigInt` and only
 //!    narrows to `u64` *after* proving `number < 10^9`.
-//! 2. **"bir million" but plain "min"/"jüz".** The thousands and hundreds
-//!    branches suppress the leading "bir" via `if h > 1` / `if t > 1`, so
-//!    100 == "jüz" and 1000 == "min". The millions branch has no such guard,
-//!    so 10^6 == "bir million", not "million".
-//! 3. **`thousand` is spelled "min"** (not "miŋ"/"mıŋ"), and the tens table
-//!    mixes transliteration styles ("jıyırma", "elüü", "altymysh"). Kept
-//!    verbatim.
-//! 4. **`pointword` is "üтүр" — a mixed-script string.** The leading "ü" is
-//!    Latin U+00FC while "тү р" is Cyrillic (U+0442 U+04AF U+0440). It is
-//!    almost certainly meant to be all-Cyrillic "үтүр", but the corpus
-//!    confirms the mixed form byte for byte. The float grammar consumes it;
-//!    it also appears in `exclude_title`.
+//! 2. **"бир миллион" but plain "миң"/"жүз".** The thousands and hundreds
+//!    branches suppress the leading "бир" via `if h > 1` / `if t > 1`, so
+//!    100 == "жүз" and 1000 == "миң". The millions branch has no such guard,
+//!    so 10^6 == "бир миллион", not "миллион".
+//! 3. **10^9 and up have no word.** There is no "миллиард" entry — the table
+//!    stops at "миллион", so a milliard falls off the end into the digit
+//!    fallback above. Pre-existing, and a separate change.
+//! 4. **100000 is "жүз миң", not a lakh-style form.** The thousands branch
+//!    recurses on the multiplier, so the hundreds word composes with the
+//!    thousands word exactly as Kyrgyz does. Nothing to fix; noted because
+//!    the sibling South Asian modules differ here.
 //!
 //! # Float/Decimal entry routing (the `"." in str(number)` rule)
 //!
@@ -64,12 +123,12 @@
 //! entries), with these pinned consequences:
 //!
 //! * **Whole floats keep their ".0" tail.** `str(5.0)` == "5.0" has a point,
-//!   so `to_cardinal(5.0)` == "besh üтүр nöl", *not* "besh". Likewise
-//!   `Decimal("5.00")` == "besh üтүр nöl nöl" — every fractional character is
+//!   so `to_cardinal(5.0)` == "беш үтүр нөл", *not* "беш". Likewise
+//!   `Decimal("5.00")` == "беш үтүр нөл нөл" — every fractional character is
 //!   spelled, trailing zeros included.
 //! * **`-0.0` renders the negword.** The sign is read off the string
 //!   (`str(-0.0)` == "-0.0" starts with "-"), so `to_cardinal(-0.0)` ==
-//!   "minus nöl üтүр nöl". A `< 0` test would miss it.
+//!   "минус нөл үтүр нөл". A `< 0` test would miss it.
 //! * **Scientific notation is a `ValueError`.** `str(1e16)` == "1e+16" has no
 //!   point, so Python runs `int("1e+16")` and dies: `invalid literal for
 //!   int() with base 10: '1e+16'`. Same for `1e+20`, for tiny floats
@@ -78,16 +137,16 @@
 //!   `int()` (Python recurses on `n[1:]`), so the message never shows a minus.
 //! * **Point-less integral Decimals take the integer grammar.**
 //!   `Decimal("100")` stringifies as "100" — no point — and `int("100")`
-//!   succeeds, so it renders "jüz" like the int would.
-//! * `to_ordinal(float)` is `to_cardinal(float) + "-inchi"` ("besh üтүр
-//!   nöl-inchi"); `to_ordinal_num(float)` is `str(number) + "-inchi"`
-//!   ("5.0-inchi", "1e+16-inchi" — no ValueError here, nothing is parsed);
+//!   succeeds, so it renders "жүз" like the int would.
+//! * `to_ordinal(float)` is `to_cardinal(float)` + the harmonised ending
+//!   ("беш үтүр нөлүнчү"); `to_ordinal_num(float)` is `str(number) + "-инчи"`
+//!   ("5.0-инчи", "1e+16-инчи" — no ValueError here, nothing is parsed);
 //!   `to_year(float)` is `to_cardinal(float)` (the trait default already
 //!   routes through the override above).
 //! * **`"Infinity"`/`"NaN"` strings fall back to Python.** `Decimal("Infinity")`
 //!   parses fine and dies later in `int("Infinity")` (ValueError) — but only
 //!   on the modes that parse; `to_ordinal_num("Infinity")` happily returns
-//!   "Infinity-inchi". `ParsedNumber` cannot carry Inf/NaN into that split, so
+//!   "Infinity-инчи". `ParsedNumber` cannot carry Inf/NaN into that split, so
 //!   `str_to_number` returns NotImplemented and the shim reruns the original
 //!   pure-Python path, reproducing every mode exactly.
 //!
@@ -96,9 +155,9 @@
 //! Python's `to_cardinal` works on the *string* form: `n = str(number).strip()`,
 //! then `if n.startswith("-"): return (self.negword + self.to_cardinal(n[1:])).strip()`.
 //! For integral input `str(BigInt)` never contains ".", so this reduces to
-//! "recurse on the absolute value and prefix `negword`" — reproduced directly
+//! "recurse он the absolute value and prefix `negword`" — reproduced directly
 //! on `BigInt` here. The trailing `.strip()` is a no-op in practice (`negword`
-//! is "minus " and `_int_to_word` never returns a blank for a non-negative
+//! is "минус " and `_int_to_word` never returns a blank for a non-negative
 //! input) but is kept for fidelity.
 
 use crate::base::{Lang, N2WError, Result};
@@ -112,41 +171,151 @@ use std::collections::HashMap;
 
 /// `setup`: `self.negword`. Note the trailing space — it is the word/number
 /// separator, and the concatenation is `.strip()`ed afterwards.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "минус ";
 
 /// `setup`: `self.pointword`. Mixed Latin/Cyrillic in the original; see the
 /// module docs. Unused by the four in-scope modes.
-const POINTWORD: &str = "üтүр";
+const POINTWORD: &str = "үтүр";
 
-/// The literal `"nöl"` that `_int_to_word` returns for 0. Python has no
+/// The literal `"нөл"` that `_int_to_word` returns for 0. Python has no
 /// `self.ones[0]` entry for it — index 0 of `ones` is the empty string, and
 /// zero is special-cased ahead of the table lookup.
-const ZERO_WORD: &str = "nöl";
+const ZERO_WORD: &str = "нөл";
 
-/// The suffix `to_ordinal`/`to_ordinal_num` append. Glued on with no
-/// separator, so it lands directly against the final word: "min-inchi".
-const ORDINAL_SUFFIX: &str = "-inchi";
+/// The ordinal suffix used when no Kyrgyz vowel is available to harmonise
+/// against — a bare digit string, `Infinity`, `NaN`. и-class is the default
+/// because it is the class "бир" itself takes.
+const DEFAULT_ORDINAL_SUFFIX: Suffix = Suffix {
+    after_consonant: "инчи",
+    after_vowel: "нчи",
+};
+
+/// The four harmony classes of the Kyrgyz ordinal suffix.
+///
+/// Kyrgyz ordinals are the cardinal plus *-(V)нч(V)*, and both vowels agree
+/// with the last vowel of the stem. The linking vowel is dropped when the
+/// stem already ends in one, which is why "алты" gives *алтынчы* and not
+/// *алтыынчы*.
+struct Suffix {
+    /// Stem ends in a consonant — the suffix brings its own linking vowel:
+    /// кырк + ынчы, сегиз + инчи, отуз + унчу, жүз + үнчү.
+    after_consonant: &'static str,
+    /// Stem ends in a vowel — no linking vowel: алты + нчы, жети + нчи.
+    after_vowel: &'static str,
+}
+
+const SUFFIX_BACK_UNROUNDED: Suffix = Suffix {
+    after_consonant: "ынчы",
+    after_vowel: "нчы",
+};
+const SUFFIX_FRONT_UNROUNDED: Suffix = Suffix {
+    after_consonant: "инчи",
+    after_vowel: "нчи",
+};
+const SUFFIX_BACK_ROUNDED: Suffix = Suffix {
+    after_consonant: "унчу",
+    after_vowel: "нчу",
+};
+const SUFFIX_FRONT_ROUNDED: Suffix = Suffix {
+    after_consonant: "үнчү",
+    after_vowel: "нчү",
+};
+
+/// The harmony class a vowel belongs to, or `None` if the character is not a
+/// Kyrgyz vowel.
+///
+/// The four classes are the standard Kyrgyz cross-classification by backness
+/// and rounding. The Russian-only letters (ё, ю, я, and е in loanwords) are
+/// folded onto the class of the vowel they end in, which is what the borrowed
+/// numerals in this module need — "миллион" harmonises off о, "миллиард" off а.
+fn vowel_class(c: char) -> Option<&'static Suffix> {
+    match c {
+        // back, unrounded
+        'а' | 'ы' | 'я' => Some(&SUFFIX_BACK_UNROUNDED),
+        // front, unrounded
+        'е' | 'и' | 'э' => Some(&SUFFIX_FRONT_UNROUNDED),
+        // back, rounded
+        'о' | 'у' | 'ё' | 'ю' => Some(&SUFFIX_BACK_ROUNDED),
+        // front, rounded
+        'ө' | 'ү' => Some(&SUFFIX_FRONT_ROUNDED),
+        _ => None,
+    }
+}
+
+/// Pick the ordinal ending for a spelled-out cardinal.
+///
+/// Only the **last word** governs: "жүз жыйырма үч" is *жүз жыйырма үчүнчү*,
+/// harmonising off "үч" and leaving the earlier words bare. A stem with no
+/// Kyrgyz vowel at all — the digit fallback above 10^9, `Infinity`, `NaN` —
+/// falls back to [`DEFAULT_ORDINAL_SUFFIX`].
+fn ordinal_suffix(cardinal: &str) -> &'static str {
+    harmonise(cardinal).0
+}
+
+/// [`ordinal_suffix`] plus whether a Kyrgyz vowel was actually found.
+///
+/// `false` means the stem was a digit string (the 10^9 fallback), `Infinity`
+/// or `NaN` — nothing a suffix can attach to as if it were a word, so the
+/// caller writes the hyphenated digit form instead of gluing.
+fn harmonise(cardinal: &str) -> (&'static str, bool) {
+    let stem = match cardinal.split_whitespace().next_back() {
+        Some(w) => w,
+        None => return (DEFAULT_ORDINAL_SUFFIX.after_consonant, false),
+    };
+
+    let mut class: Option<&'static Suffix> = None;
+    let mut last_is_vowel = false;
+    for c in stem.chars() {
+        match vowel_class(c) {
+            Some(k) => {
+                class = Some(k);
+                last_is_vowel = true;
+            }
+            None => last_is_vowel = false,
+        }
+    }
+
+    match class {
+        Some(k) if last_is_vowel => (k.after_vowel, true),
+        Some(k) => (k.after_consonant, true),
+        None => (DEFAULT_ORDINAL_SUFFIX.after_consonant, false),
+    }
+}
+
+/// Attach the ordinal ending to a spelled cardinal.
+///
+/// A real word takes it glued — "бир" -> "биринчи". The digit fallback above
+/// 10^9 is not a word, so it takes the hyphen the digit form uses:
+/// "1000000000-инчи" rather than the unreadable "1000000000инчи".
+fn join_ordinal(cardinal: &str) -> String {
+    let (suffix, is_word) = harmonise(cardinal);
+    if is_word {
+        format!("{}{}", cardinal, suffix)
+    } else {
+        format!("{}-{}", cardinal, suffix)
+    }
+}
 
 /// `setup`: `self.ones`. Index 0 is the empty string (Python relies on this
-/// only via the float path's `self.ones[int(digit)] or "nöl"` fallback).
+/// only via the float path's `self.ones[int(digit)] or "нөл"` fallback).
 const ONES: [&str; 10] = [
-    "", "bir", "eki", "üch", "tört", "besh", "alty", "jeti", "segiz", "toguz",
+    "", "бир", "эки", "үч", "төрт", "беш", "алты", "жети", "сегиз", "тогуз",
 ];
 
 /// `setup`: `self.tens`. Index 0 is the empty string and is unreachable —
 /// the `number < 100` branch only runs for `number >= 10`, so `t >= 1`.
 const TENS: [&str; 10] = [
-    "", "on", "jıyırma", "otuz", "kırk", "elüü", "altymysh", "jetimish", "seksen", "tokson",
+    "", "он", "жыйырма", "отуз", "кырк", "элүү", "алтымыш", "жетимиш", "сексен", "токсон",
 ];
 
 /// `setup`: `self.hundred`.
-const HUNDRED: &str = "jüz";
+const HUNDRED: &str = "жүз";
 
-/// `setup`: `self.thousand`. Spelled "min" in the source — see module docs.
-const THOUSAND: &str = "min";
+/// `setup`: `self.thousand`. Spelled "миң" in the source — see module docs.
+const THOUSAND: &str = "миң";
 
 /// `setup`: `self.million`.
-const MILLION: &str = "million";
+const MILLION: &str = "миллион";
 
 /// 10^9 — the ceiling past which `_int_to_word` gives up and returns digits.
 fn one_e9() -> BigInt {
@@ -160,7 +329,7 @@ fn one_e9() -> BigInt {
 /// first one in the literal. That is "KGS". A `HashMap` has no insertion
 /// order, so the identity of that first entry is pinned here rather than
 /// recovered from iteration. Verified live:
-/// `list(Num2Word_KY.CURRENCY_FORMS.values())[0] == (("som","som"),("tıyın","tıyın"))`.
+/// `list(Num2Word_KY.CURRENCY_FORMS.values())[0] == (("сом","сом"),("тыйын","тыйын"))`.
 const FALLBACK_CURRENCY: &str = "KGS";
 
 /// `Num2Word_KY.CURRENCY_FORMS`, verbatim.
@@ -178,10 +347,10 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     // Listed in the order of the Python dict literal. Only the first entry's
     // identity matters (see FALLBACK_CURRENCY); the rest is a plain lookup.
-    m.insert("KGS", CurrencyForms::new(&["som", "som"], &["tıyın", "tıyın"]));
-    m.insert("USD", CurrencyForms::new(&["dollar", "dollar"], &["sent", "sent"]));
-    m.insert("EUR", CurrencyForms::new(&["evro", "evro"], &["sent", "sent"]));
-    m.insert("RUB", CurrencyForms::new(&["rubl", "rubl"], &["kopek", "kopek"]));
+    m.insert("KGS", CurrencyForms::new(&["сом", "сом"], &["тыйын", "тыйын"]));
+    m.insert("USD", CurrencyForms::new(&["доллар", "доллар"], &["сент", "сент"]));
+    m.insert("EUR", CurrencyForms::new(&["евро", "евро"], &["сент", "сент"]));
+    m.insert("RUB", CurrencyForms::new(&["рубль", "рубль"], &["копейка", "копейка"]));
     m
 }
 
@@ -205,8 +374,8 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
 ///
 /// * **`[:2]` truncates, never rounds.** `12.345` → 34 cents, not 35.
 /// * **`.ljust(2, "0")` pads on the *right*.** `0.5` → parts[1] == "5" → "50"
-///   → **50** cents, not 5. Dropping the pad turns "nöl evro elüü sent" into
-///   "nöl evro besh sent".
+///   → **50** cents, not 5. Dropping the pad turns "нөл евро элүү сент" into
+///   "нөл евро беш сент".
 ///
 /// `abs()` runs before `str()` in Python, and negating changes no digit and no
 /// scale, so taking `abs` of `int_val` here is equivalent.
@@ -415,7 +584,7 @@ impl Default for LangKy {
 impl LangKy {
     pub fn new() -> Self {
         LangKy {
-            // `setup`: self.exclude_title = ["minus", "üтүр"] — note "minus"
+            // `setup`: self.exclude_title = ["минус", "үтүр"] — note "минус"
             // here has no trailing space, unlike `negword`.
             exclude_title: vec![NEGWORD.trim().to_string(), POINTWORD.to_string()],
             // Built once here, never per call. `to_currency` only ever reads
@@ -431,7 +600,7 @@ impl LangKy {
     /// fallback, and the unreachable negative-index quirk) and then hands the
     /// proven-bounded remainder to [`LangKy::int_to_word_small`].
     fn int_to_word(&self, number: &BigInt) -> Result<String> {
-        // `if number == 0: return "nöl"`
+        // `if number == 0: return "нөл"`
         if number.is_zero() {
             return Ok(ZERO_WORD.to_string());
         }
@@ -444,7 +613,7 @@ impl LangKy {
             // negative `number` satisfies `number < 10`, so Python evaluates
             // `self.ones[number]` — a *negative list index*. For -10..=-1 that
             // silently wraps to `ONES[number + 10]` (so `_int_to_word(-5)`
-            // == "besh"); anything <= -11 is out of range and raises
+            // == "беш"); anything <= -11 is out of range and raises
             // IndexError.
             let wrapped = number + BigInt::from(10);
             return match wrapped.to_usize() {
@@ -471,7 +640,7 @@ impl LangKy {
     ///
     /// Each `+ (" " + ... if x else "")` in Python is a conditional suffix,
     /// *not* an unconditional join — hence the explicit `!= 0` guards, which
-    /// are what keep 100 at "jüz" rather than "jüz nöl".
+    /// are what keep 100 at "жүз" rather than "жүз нөл".
     fn int_to_word_small(&self, n: u64) -> String {
         // Mirrors Python's first line. Every call site below guards `r != 0`,
         // so this is defensive rather than reachable.
@@ -501,7 +670,7 @@ impl LangKy {
         //     `h, r = divmod(number, 100)`
         //     `base = (self.ones[h] + " " if h > 1 else "") + self.hundred`
         //     `return base + (" " + self._int_to_word(r) if r else "")`
-        // Quirk 2: `h > 1` suppresses "bir", so 100 == "jüz".
+        // Quirk 2: `h > 1` suppresses "бир", so 100 == "жүз".
         if n < 1_000 {
             let (h, r) = (n / 100, n % 100);
             let mut s = String::new();
@@ -521,7 +690,7 @@ impl LangKy {
         //     `t, r = divmod(number, 1000)`
         //     `base = (self._int_to_word(t) + " " if t > 1 else "") + self.thousand`
         //     `return base + (" " + self._int_to_word(r) if r else "")`
-        // Quirk 2 again: `t > 1` suppresses "bir", so 1000 == "min".
+        // Quirk 2 again: `t > 1` suppresses "бир", so 1000 == "миң".
         if n < 1_000_000 {
             let (t, r) = (n / 1_000, n % 1_000);
             let mut s = String::new();
@@ -541,7 +710,7 @@ impl LangKy {
         //     `m, r = divmod(number, 1000000)`
         //     `base = self._int_to_word(m) + " " + self.million`
         //     `return base + (" " + self._int_to_word(r) if r else "")`
-        // Quirk 2, inverted: no `m > 1` guard here, so 10^6 == "bir million".
+        // Quirk 2, inverted: no `m > 1` guard here, so 10^6 == "бир миллион".
         let (m, r) = (n / 1_000_000, n % 1_000_000);
         let mut s = self.int_to_word_small(m);
         s.push(' ');
@@ -574,7 +743,7 @@ impl Lang for LangKy {
     }
 
     fn pointword(&self) -> &str {
-        "üтүр"
+        "үтүр"
     }
 
     // `is_title` is left at Num2Word_Base's `False`; `setup` never touches it.
@@ -600,30 +769,49 @@ impl Lang for LangKy {
         self.int_to_word(value)
     }
 
-    /// Port of `to_ordinal`: `self.to_cardinal(number) + "-inchi"`.
+    /// The cardinal with the harmonised ordinal ending glued to its **last
+    /// word** — "бир" -> "биринчи", "үч" -> "үчүнчү", "жүз жыйырма үч" ->
+    /// "жүз жыйырма үчүнчү". See [`ordinal_suffix`].
     ///
-    /// No `verify_ordinal`, so negatives and zero pass straight through:
-    /// `to_ordinal(-1)` == "minus bir-inchi", `to_ordinal(0)` == "nöl-inchi".
-    /// Past 10^9 it inherits the digit fallback: `to_ordinal(10**9)` ==
-    /// "1000000000-inchi".
+    /// No `verify_ordinal`, matching upstream: negatives and zero still pass
+    /// straight through rather than raising, so `to_ordinal(-1)` is
+    /// "минус биринчи" and `to_ordinal(0)` is "нөлүнчү". Past 10^9 it
+    /// inherits the digit fallback and the suffix has no vowel to harmonise
+    /// with, so it takes the hyphenated digit form:
+    /// `to_ordinal(10**9)` == "1000000000-инчи".
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
+        let cardinal = self.to_cardinal(value)?;
+        Ok(join_ordinal(&cardinal))
     }
 
-    /// Port of `to_ordinal_num`: `str(number) + "-inchi"`.
+    /// The digits, a hyphen, and the same harmonised ending the spelled form
+    /// would take: "1-инчи", "3-үнчү", "10-унчу", "40-ынчы".
     ///
-    /// Purely textual — the minus sign survives, so `to_ordinal_num(-1)` ==
-    /// "-1-inchi".
+    /// The ending is read off the *spelled* cardinal, because that is the
+    /// word a reader supplies when reading the digits aloud — there is no
+    /// vowel in "3" to harmonise against. Above 10^9 `to_cardinal` returns
+    /// the digits themselves, which have no vowel either, so the default
+    /// class applies.
+    ///
+    /// The minus sign survives, as upstream: `to_ordinal_num(-1)` is
+    /// "-1-инчи".
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
+        let suffix = match self.to_cardinal(value) {
+            Ok(cardinal) => ordinal_suffix(&cardinal),
+            // Unreachable for an integer — `to_cardinal` has no failing
+            // branch on this path — but the digit form must not start
+            // raising where it used to succeed.
+            Err(_) => DEFAULT_ORDINAL_SUFFIX.after_consonant,
+        };
+        Ok(format!("{}-{}", value, suffix))
     }
 
     /// Port of `to_year`: `return self.to_cardinal(val)`.
     ///
     /// KY declares `longval=True` but ignores it, and does no century
     /// pairing or BC/AD handling — years are plain cardinals, so
-    /// `to_year(1984)` == "min toguz jüz seksen tört" and `to_year(-44)` ==
-    /// "minus kırk tört".
+    /// `to_year(1984)` == "миң тогуз жүз сексен төрт" and `to_year(-44)` ==
+    /// "минус кырк төрт".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -642,15 +830,15 @@ impl Lang for LangKy {
     ///     left, right = n.split(".", 1)
     ///     ret = self._int_to_word(int(left)) + " " + self.pointword
     ///     for digit in right:
-    ///         ret += " " + (self.ones[int(digit)] or "nöl")
+    ///         ret += " " + (self.ones[int(digit)] or "нөл")
     ///     return ret.strip()
     /// ```
     ///
     /// Notes on fidelity:
     ///
     /// * **No rounding, truncation, or precision.** Each fractional character is
-    ///   spelled as its own digit; `2.675` → "eki üтүр alty jeti besh" and
-    ///   `Decimal("1.10")` → "bir üтүр bir nöl" (the trailing zero is kept).
+    ///   spelled as its own digit; `2.675` → "эки үтүр алты жети беш" and
+    ///   `Decimal("1.10")` → "бир үтүр бир нөл" (the trailing zero is kept).
     /// * **`precision_override` is ignored.** KY's `to_cardinal` never reads
     ///   `self.precision`, so the `precision=` kwarg has no effect on the
     ///   output — verified live: `num2words(2.675, lang="ky", precision=1)`
@@ -659,7 +847,7 @@ impl Lang for LangKy {
     ///   of `98746251323029.99` renders as its bare digits, since `_int_to_word`
     ///   gives up past a billion.
     /// * **The fractional digit uses `self.ones[d]`, not `_int_to_word`.**
-    ///   `ones[0]` is `""` (falsy) → "nöl"; every other index is its own word.
+    ///   `ones[0]` is `""` (falsy) → "нөл"; every other index is its own word.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -673,11 +861,11 @@ impl Lang for LangKy {
         let mut body = if has_dot {
             // `ret = self._int_to_word(int(left)) + " " + self.pointword`
             let mut s = format!("{} {}", self.int_to_word(&left)?, POINTWORD);
-            // `for digit in right: ret += " " + (self.ones[int(digit)] or "nöl")`
+            // `for digit in right: ret += " " + (self.ones[int(digit)] or "нөл")`
             for ch in right.chars() {
                 let d = ch.to_digit(10).expect("fractional part is digits only") as usize;
                 s.push(' ');
-                // `self.ones[d] or "nöl"` — ONES[0] == "" is falsy → "nöl".
+                // `self.ones[d] or "нөл"` — ONES[0] == "" is falsy → "нөл".
                 s.push_str(if ONES[d].is_empty() { ZERO_WORD } else { ONES[d] });
             }
             s
@@ -687,7 +875,7 @@ impl Lang for LangKy {
             self.int_to_word(&left)?
         };
 
-        // `(self.negword + ...).strip()` — negword ("minus ") carries its own
+        // `(self.negword + ...).strip()` — negword ("минус ") carries its own
         // trailing space, which becomes the separator.
         if is_negative {
             body = format!("{}{}", NEGWORD, body);
@@ -698,9 +886,9 @@ impl Lang for LangKy {
     /// `to_cardinal(float/Decimal)` — the full entry, routing on
     /// `"." in str(number)` rather than on whole-ness (see the module docs).
     ///
-    /// A whole float therefore keeps its ".0" tail (`5.0` -> "besh üтүр nöl",
-    /// `-0.0` -> "minus nöl üтүр nöl"), a point-less integral Decimal takes
-    /// the integer grammar (`Decimal("100")` -> "jüz"), and a point-less
+    /// A whole float therefore keeps its ".0" tail (`5.0` -> "беш үтүр нөл",
+    /// `-0.0` -> "минус нөл үтүр нөл"), a point-less integral Decimal takes
+    /// the integer grammar (`Decimal("100")` -> "жүз"), and a point-less
     /// non-integer form is Python's `int()` ValueError (`1e+16`,
     /// `Decimal("1E+2")`).
     ///
@@ -727,33 +915,36 @@ impl Lang for LangKy {
         }
     }
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-inchi"` —
-    /// same blind suffix as the integer path, so `5.0` == "besh üтүр
-    /// nöl-inchi" and the ValueError of `1e+16` propagates unchanged.
+    /// `to_ordinal(float/Decimal)`: the float cardinal plus the harmonised
+    /// ending, so `5.0` == "беш үтүр нөлүнчү" (the last spoken word is "нөл",
+    /// which harmonises to ү-class). The ValueError of `1e+16` propagates
+    /// unchanged, as upstream.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!(
-            "{}{}",
-            self.cardinal_float_entry(value, None)?,
-            ORDINAL_SUFFIX
-        ))
+        let cardinal = self.cardinal_float_entry(value, None)?;
+        Ok(join_ordinal(&cardinal))
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "-inchi"`. Purely
-    /// textual — nothing is parsed, so even the scientific forms succeed:
-    /// `1e+16` == "1e+16-inchi", `Decimal("1E+2")` == "1E+2-inchi".
+    /// `to_ordinal_num(float/Decimal)`: `str(number)`, a hyphen and the
+    /// default ending. Purely textual — nothing is parsed, so the scientific
+    /// forms still succeed: `1e+16` == "1e+16-инчи",
+    /// `Decimal("1E+2")` == "1E+2-инчи". A decimal repr has no Kyrgyz vowel
+    /// to harmonise against, so the class cannot be recovered here.
     fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
+        Ok(format!(
+            "{}-{}",
+            repr_str, DEFAULT_ORDINAL_SUFFIX.after_consonant
+        ))
     }
 
     // `year_float_entry` is deliberately NOT overridden: KY's `to_year` is
     // `self.to_cardinal(val)`, and the trait default routes through the
-    // overridden `cardinal_float_entry` above — so `to_year(5.0)` == "besh
-    // üтүр nöl" and `to_year(1e+16)` raises ValueError, as the corpus pins.
+    // overridden `cardinal_float_entry` above — so `to_year(5.0)` == "беш
+    // үтүр нөл" and `to_year(1e+16)` raises ValueError, as the corpus pins.
 
     /// `converter.str_to_number` — Base's `Decimal(value)`, which KY does not
     /// override. `ParsedNumber` cannot carry Inf/NaN into KY's per-mode split
     /// (`to_cardinal` dies in `int("Infinity")` with ValueError, but
-    /// `to_ordinal_num` returns "Infinity-inchi" successfully), so both
+    /// `to_ordinal_num` returns "Infinity-инчи" successfully), so both
     /// return NotImplemented: the shim catches it and reruns the original
     /// pure-Python string path, which produces exactly those outcomes for
     /// every mode.
@@ -770,17 +961,17 @@ impl Lang for LangKy {
     /// * `to_cardinal` / `to_ordinal` (== cardinal + suffix) / `to_year`
     ///   (== cardinal) do `int("Infinity")` after stripping the sign, so they
     ///   raise `ValueError` with the sign-stripped token — never OverflowError.
-    /// * `to_ordinal_num` is purely `str(number) + "-inchi"`; nothing is
-    ///   parsed, so it succeeds ("Infinity-inchi" / "-Infinity-inchi").
+    /// * `to_ordinal_num` is purely textual; nothing is parsed, so it
+    ///   succeeds ("Infinity-инчи" / "-Infinity-инчи").
     ///
     /// The currency/fraction fallbacks also `int()` the token, so they land on
     /// the same ValueError.
     fn inf_result(&self, negative: bool, to: &str) -> Result<String> {
         match to {
             "ordinal_num" => Ok(format!(
-                "{}{}",
+                "{}-{}",
                 if negative { "-Infinity" } else { "Infinity" },
-                ORDINAL_SUFFIX
+                DEFAULT_ORDINAL_SUFFIX.after_consonant
             )),
             // Sign is peeled off the string before `int()`, so the message
             // always quotes the bare "Infinity".
@@ -790,10 +981,13 @@ impl Lang for LangKy {
 
     /// `Decimal('NaN')` per mode — same split as `inf_result`: the parsing
     /// modes `int("NaN")` → ValueError, while `to_ordinal_num` returns
-    /// "NaN-inchi" without parsing.
+    /// "NaN-инчи" without parsing.
     fn nan_result(&self, to: &str) -> Result<String> {
         match to {
-            "ordinal_num" => Ok(format!("NaN{}", ORDINAL_SUFFIX)),
+            "ordinal_num" => Ok(format!(
+                "NaN-{}",
+                DEFAULT_ORDINAL_SUFFIX.after_consonant
+            )),
             _ => Err(int_value_error("NaN")),
         }
     }
@@ -823,7 +1017,7 @@ impl Lang for LangKy {
     /// never raises. That asymmetry is real and the corpus pins both halves:
     ///
     /// ```text
-    /// currency:GBP 12.34 → "on eki som otuz tört tıyın"   (falls back to KGS)
+    /// currency:GBP 12.34 → "он эки сом отуз төрт тыйын"   (falls back to KGS)
     /// cheque:GBP   1234.56 → NotImplementedError
     /// ```
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
@@ -882,11 +1076,11 @@ impl Lang for LangKy {
     /// 2. **`CURRENCY_PRECISION` is never consulted.** The divisor is hard-wired
     ///    to 100 by `parts[1][:2]`, so the 3-decimal (KWD/BHD) and 0-decimal
     ///    (JPY) branches of Base simply do not exist — `currency:JPY 12.34` is
-    ///    "on eki som otuz tört tıyın", subunits and all, where Base would round
+    ///    "он эки сом отуз төрт тыйын", subunits and all, where Base would round
     ///    to a whole yen and drop them.
     /// 3. **`has_decimal` is irrelevant.** Base prints a zero-cents segment for
-    ///    any float; KY gates on `right` being non-zero, so `1.0` → "bir evro"
-    ///    and `Decimal("5.00")` → "besh evro" (both verified live).
+    ///    any float; KY gates on `right` being non-zero, so `1.0` → "бир евро"
+    ///    and `Decimal("5.00")` → "беш евро" (both verified live).
     /// 4. **`adjective` is accepted and ignored** — there is no
     ///    `CURRENCY_ADJECTIVES` to consult and no call to `prefix_currency`.
     ///
@@ -936,7 +1130,7 @@ impl Lang for LangKy {
             let sub = index_form(cr2, &right)?;
             // Python concatenates `separator` with no space of its own: the
             // default separator " " *is* the gap. So separator="," yields
-            // "on eki evro,otuz tört sent" — verified live. Do not add a
+            // "он эки евро,отуз төрт сент" — verified live. Do not add a
             // space here to make it look like Base's "%s%s %s%s %s %s".
             result.push_str(separator);
             result.push_str(&self.int_to_word(&right)?);
@@ -990,43 +1184,43 @@ mod currency_tests {
     /// (`grep '"lang": "ky", "to": "currency' bench/corpus.jsonl`).
     #[test]
     fn corpus_currency_known_codes() {
-        assert_eq!(cur("0", true, "EUR"), "nöl evro");
-        assert_eq!(cur("1", true, "EUR"), "bir evro");
-        assert_eq!(cur("2", true, "EUR"), "eki evro");
-        assert_eq!(cur("100", true, "EUR"), "jüz evro");
-        assert_eq!(cur("1000000", true, "EUR"), "bir million evro");
-        assert_eq!(cur("12.34", false, "EUR"), "on eki evro otuz tört sent");
-        assert_eq!(cur("0.01", false, "EUR"), "nöl evro bir sent");
-        assert_eq!(cur("0.5", false, "EUR"), "nöl evro elüü sent");
+        assert_eq!(cur("0", true, "EUR"), "нөл евро");
+        assert_eq!(cur("1", true, "EUR"), "бир евро");
+        assert_eq!(cur("2", true, "EUR"), "эки евро");
+        assert_eq!(cur("100", true, "EUR"), "жүз евро");
+        assert_eq!(cur("1000000", true, "EUR"), "бир миллион евро");
+        assert_eq!(cur("12.34", false, "EUR"), "он эки евро отуз төрт сент");
+        assert_eq!(cur("0.01", false, "EUR"), "нөл евро бир сент");
+        assert_eq!(cur("0.5", false, "EUR"), "нөл евро элүү сент");
         assert_eq!(
             cur("99.99", false, "EUR"),
-            "tokson toguz evro tokson toguz sent"
+            "токсон тогуз евро токсон тогуз сент"
         );
         assert_eq!(
             cur("1234.56", false, "EUR"),
-            "min eki jüz otuz tört evro elüü alty sent"
+            "миң эки жүз отуз төрт евро элүү алты сент"
         );
-        assert_eq!(cur("-12.34", false, "EUR"), "minus on eki evro otuz tört sent");
+        assert_eq!(cur("-12.34", false, "EUR"), "минус он эки евро отуз төрт сент");
 
-        assert_eq!(cur("0", true, "USD"), "nöl dollar");
-        assert_eq!(cur("1", true, "USD"), "bir dollar");
-        assert_eq!(cur("2", true, "USD"), "eki dollar");
-        assert_eq!(cur("100", true, "USD"), "jüz dollar");
-        assert_eq!(cur("1000000", true, "USD"), "bir million dollar");
-        assert_eq!(cur("12.34", false, "USD"), "on eki dollar otuz tört sent");
-        assert_eq!(cur("0.01", false, "USD"), "nöl dollar bir sent");
-        assert_eq!(cur("0.5", false, "USD"), "nöl dollar elüü sent");
+        assert_eq!(cur("0", true, "USD"), "нөл доллар");
+        assert_eq!(cur("1", true, "USD"), "бир доллар");
+        assert_eq!(cur("2", true, "USD"), "эки доллар");
+        assert_eq!(cur("100", true, "USD"), "жүз доллар");
+        assert_eq!(cur("1000000", true, "USD"), "бир миллион доллар");
+        assert_eq!(cur("12.34", false, "USD"), "он эки доллар отуз төрт сент");
+        assert_eq!(cur("0.01", false, "USD"), "нөл доллар бир сент");
+        assert_eq!(cur("0.5", false, "USD"), "нөл доллар элүү сент");
         assert_eq!(
             cur("99.99", false, "USD"),
-            "tokson toguz dollar tokson toguz sent"
+            "токсон тогуз доллар токсон тогуз сент"
         );
         assert_eq!(
             cur("1234.56", false, "USD"),
-            "min eki jüz otuz tört dollar elüü alty sent"
+            "миң эки жүз отуз төрт доллар элүү алты сент"
         );
         assert_eq!(
             cur("-12.34", false, "USD"),
-            "minus on eki dollar otuz tört sent"
+            "минус он эки доллар отуз төрт сент"
         );
     }
 
@@ -1034,10 +1228,10 @@ mod currency_tests {
     /// falsy → no cents segment. Same text as the int `1`, by a different path.
     #[test]
     fn corpus_currency_float_with_zero_cents() {
-        assert_eq!(cur("1.0", false, "EUR"), "bir evro");
-        assert_eq!(cur("1.0", false, "USD"), "bir dollar");
-        assert_eq!(cur("1.0", false, "GBP"), "bir som");
-        assert_eq!(cur("1", true, "EUR"), "bir evro");
+        assert_eq!(cur("1.0", false, "EUR"), "бир евро");
+        assert_eq!(cur("1.0", false, "USD"), "бир доллар");
+        assert_eq!(cur("1.0", false, "GBP"), "бир сом");
+        assert_eq!(cur("1", true, "EUR"), "бир евро");
     }
 
     /// Unknown codes silently render as KGS — `.get(currency, values()[0])`,
@@ -1046,26 +1240,26 @@ mod currency_tests {
     #[test]
     fn corpus_currency_unknown_code_falls_back_to_kgs() {
         for code in ["GBP", "JPY", "KWD", "BHD", "INR", "CNY", "CHF"] {
-            assert_eq!(cur("0", true, code), "nöl som");
-            assert_eq!(cur("1", true, code), "bir som");
-            assert_eq!(cur("2", true, code), "eki som");
-            assert_eq!(cur("100", true, code), "jüz som");
-            assert_eq!(cur("1000000", true, code), "bir million som");
-            assert_eq!(cur("12.34", false, code), "on eki som otuz tört tıyın");
-            assert_eq!(cur("0.01", false, code), "nöl som bir tıyın");
-            assert_eq!(cur("1.0", false, code), "bir som");
-            assert_eq!(cur("0.5", false, code), "nöl som elüü tıyın");
+            assert_eq!(cur("0", true, code), "нөл сом");
+            assert_eq!(cur("1", true, code), "бир сом");
+            assert_eq!(cur("2", true, code), "эки сом");
+            assert_eq!(cur("100", true, code), "жүз сом");
+            assert_eq!(cur("1000000", true, code), "бир миллион сом");
+            assert_eq!(cur("12.34", false, code), "он эки сом отуз төрт тыйын");
+            assert_eq!(cur("0.01", false, code), "нөл сом бир тыйын");
+            assert_eq!(cur("1.0", false, code), "бир сом");
+            assert_eq!(cur("0.5", false, code), "нөл сом элүү тыйын");
             assert_eq!(
                 cur("99.99", false, code),
-                "tokson toguz som tokson toguz tıyın"
+                "токсон тогуз сом токсон тогуз тыйын"
             );
             assert_eq!(
                 cur("1234.56", false, code),
-                "min eki jüz otuz tört som elüü alty tıyın"
+                "миң эки жүз отуз төрт сом элүү алты тыйын"
             );
             assert_eq!(
                 cur("-12.34", false, code),
-                "minus on eki som otuz tört tıyın"
+                "минус он эки сом отуз төрт тыйын"
             );
         }
     }
@@ -1079,49 +1273,49 @@ mod currency_tests {
 
         // cents=False drops the segment entirely; it does NOT fall back to
         // `_cents_terse` the way Num2Word_Base would.
-        assert_eq!(ky.to_currency(&v, "EUR", false, None, false).unwrap(), "on eki evro");
+        assert_eq!(ky.to_currency(&v, "EUR", false, None, false).unwrap(), "он эки евро");
 
         // adjective is accepted and ignored (CURRENCY_ADJECTIVES is empty and
         // KY never calls prefix_currency).
         assert_eq!(
             ky.to_currency(&v, "EUR", true, None, true).unwrap(),
-            "on eki evro otuz tört sent"
+            "он эки евро отуз төрт сент"
         );
 
         // KY concatenates `separator` with no space of its own, so an explicit
         // separator="," closes the gap. Live: 'on eki evro,otuz tört sent'.
         assert_eq!(
             ky.to_currency(&v, "EUR", true, Some(","), false).unwrap(),
-            "on eki evro,otuz tört sent"
+            "он эки евро,отуз төрт сент"
         );
 
         // parts[1][:2] truncates, never rounds: 12.345 → 34 sent, not 35.
         let v = CurrencyValue::parse("12.345", false, true, true).unwrap();
         assert_eq!(
             ky.to_currency(&v, "EUR", true, None, false).unwrap(),
-            "on eki evro otuz tört sent"
+            "он эки евро отуз төрт сент"
         );
 
         // Decimal("5.00") → parts[1] == "00" → right == 0 → no cents.
         let v = CurrencyValue::parse("5.00", false, true, true).unwrap();
-        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "besh evro");
+        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "беш евро");
         // float 100.0 → parts[1] == "0" → right == 0 → no cents.
         let v = CurrencyValue::parse("100.0", false, true, true).unwrap();
-        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "jüz evro");
+        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "жүз евро");
         // 0.0001 → parts[1][:2] == "00" → right == 0.
         let v = CurrencyValue::parse("0.0001", false, true, true).unwrap();
-        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "nöl evro");
+        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "нөл евро");
 
         // RUB is the one code the corpus never exercises.
         let v = CurrencyValue::parse("2.05", false, true, true).unwrap();
         assert_eq!(
             ky.to_currency(&v, "RUB", true, None, false).unwrap(),
-            "eki rubl besh kopek"
+            "эки рубль беш копейка"
         );
 
         // The 10^9 digit fallback reaches the currency path too.
         let v = CurrencyValue::parse("1000000000", true, false, false).unwrap();
-        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "1000000000 evro");
+        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "1000000000 евро");
     }
 
     /// `str(1e+21) == "1e+21"` → `int("1e+21")` → ValueError. The parsed
@@ -1137,11 +1331,11 @@ mod currency_tests {
             }
         }
         // Documented divergence: Python raises ValueError for the float 1e-05
-        // ("1e-05" has no "."), but renders Decimal("0.00001") as "nöl evro".
+        // ("1e-05" has no "."), but renders Decimal("0.00001") as "нөл евро".
         // Both parse to the same BigDecimal (int_val 1, scale 5), so the two
         // are indistinguishable here and we match the Decimal branch. See
         // `concerns` in the port report.
-        assert_eq!(cur("1e-05", false, "EUR"), "nöl evro");
+        assert_eq!(cur("1e-05", false, "EUR"), "нөл евро");
     }
 
     /// Inherited `Num2Word_Base.to_cheque` — KY adds no override. The unit is
@@ -1151,11 +1345,11 @@ mod currency_tests {
     fn corpus_cheque() {
         assert_eq!(
             cheque("1234.56", "EUR").unwrap(),
-            "MIN EKI JÜZ OTUZ TÖRT AND 56/100 EVRO"
+            "МИҢ ЭКИ ЖҮЗ ОТУЗ ТӨРТ AND 56/100 ЕВРО"
         );
         assert_eq!(
             cheque("1234.56", "USD").unwrap(),
-            "MIN EKI JÜZ OTUZ TÖRT AND 56/100 DOLLAR"
+            "МИҢ ЭКИ ЖҮЗ ОТУЗ ТӨРТ AND 56/100 ДОЛЛАР"
         );
         // `self.CURRENCY_FORMS[currency]` → KeyError → NotImplementedError.
         // Unlike to_currency, to_cheque has no KGS fallback. This asymmetry is
@@ -1179,10 +1373,10 @@ mod currency_tests {
     fn cheque_quirks_verified_against_python() {
         assert_eq!(
             cheque("1234.56", "KGS").unwrap(),
-            "MIN EKI JÜZ OTUZ TÖRT AND 56/100 SOM"
+            "МИҢ ЭКИ ЖҮЗ ОТУЗ ТӨРТ AND 56/100 СОМ"
         );
         // Negative → "MINUS " prefix; the whole body is upper-cased.
-        assert_eq!(cheque("-1.0", "USD").unwrap(), "MINUS BIR AND 00/100 DOLLAR");
+        assert_eq!(cheque("-1.0", "USD").unwrap(), "MINUS БИР AND 00/100 ДОЛЛАР");
     }
 
     /// KY's `pluralize` is dead code on every reachable path (`to_currency`
@@ -1191,9 +1385,9 @@ mod currency_tests {
     #[test]
     fn pluralize_matches_python() {
         let ky = LangKy::new();
-        let forms: Vec<String> = vec!["som".into(), "som".into()];
-        assert_eq!(ky.pluralize(&BigInt::from(1), &forms).unwrap(), "som");
-        assert_eq!(ky.pluralize(&BigInt::from(2), &forms).unwrap(), "som");
+        let forms: Vec<String> = vec!["сом".into(), "сом".into()];
+        assert_eq!(ky.pluralize(&BigInt::from(1), &forms).unwrap(), "сом");
+        assert_eq!(ky.pluralize(&BigInt::from(2), &forms).unwrap(), "сом");
         // forms[-1], not forms[1] — a three-form entry would take the last.
         let three: Vec<String> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(ky.pluralize(&BigInt::from(2), &three).unwrap(), "c");
@@ -1231,23 +1425,23 @@ mod float_tests {
     /// (`grep '"lang": "ky", "to": "cardinal", "arg": "[0-9-]*\.' ...`).
     #[test]
     fn corpus_cardinal_float() {
-        assert_eq!(f(0.0, 1), "nöl üтүр nöl");
-        assert_eq!(f(0.5, 1), "nöl üтүр besh");
-        assert_eq!(f(1.0, 1), "bir üтүр nöl");
-        assert_eq!(f(1.5, 1), "bir üтүр besh");
-        assert_eq!(f(2.25, 2), "eki üтүр eki besh");
-        assert_eq!(f(3.14, 2), "üch üтүр bir tört");
-        assert_eq!(f(0.01, 2), "nöl üтүр nöl bir");
-        assert_eq!(f(0.1, 1), "nöl üтүр bir");
-        assert_eq!(f(0.99, 2), "nöl üтүр toguz toguz");
-        assert_eq!(f(1.01, 2), "bir üтүр nöl bir");
-        assert_eq!(f(12.34, 2), "on eki üтүр üch tört");
-        assert_eq!(f(99.99, 2), "tokson toguz üтүр toguz toguz");
-        assert_eq!(f(100.5, 1), "jüz üтүр besh");
-        assert_eq!(f(1234.56, 2), "min eki jüz otuz tört üтүр besh alty");
-        assert_eq!(f(-0.5, 1), "minus nöl üтүр besh");
-        assert_eq!(f(-1.5, 1), "minus bir üтүр besh");
-        assert_eq!(f(-12.34, 2), "minus on eki üтүр üch tört");
+        assert_eq!(f(0.0, 1), "нөл үтүр нөл");
+        assert_eq!(f(0.5, 1), "нөл үтүр беш");
+        assert_eq!(f(1.0, 1), "бир үтүр нөл");
+        assert_eq!(f(1.5, 1), "бир үтүр беш");
+        assert_eq!(f(2.25, 2), "эки үтүр эки беш");
+        assert_eq!(f(3.14, 2), "үч үтүр бир төрт");
+        assert_eq!(f(0.01, 2), "нөл үтүр нөл бир");
+        assert_eq!(f(0.1, 1), "нөл үтүр бир");
+        assert_eq!(f(0.99, 2), "нөл үтүр тогуз тогуз");
+        assert_eq!(f(1.01, 2), "бир үтүр нөл бир");
+        assert_eq!(f(12.34, 2), "он эки үтүр үч төрт");
+        assert_eq!(f(99.99, 2), "токсон тогуз үтүр тогуз тогуз");
+        assert_eq!(f(100.5, 1), "жүз үтүр беш");
+        assert_eq!(f(1234.56, 2), "миң эки жүз отуз төрт үтүр беш алты");
+        assert_eq!(f(-0.5, 1), "минус нөл үтүр беш");
+        assert_eq!(f(-1.5, 1), "минус бир үтүр беш");
+        assert_eq!(f(-12.34, 2), "минус он эки үтүр үч төрт");
     }
 
     /// The two f64-artefact cases. KY sidesteps `float2tuple`'s
@@ -1256,8 +1450,8 @@ mod float_tests {
     /// shortest-repr strings, so no rounding rescue is ever needed.
     #[test]
     fn corpus_cardinal_float_artefacts() {
-        assert_eq!(f(1.005, 3), "bir üтүр nöl nöl besh");
-        assert_eq!(f(2.675, 3), "eki üтүр alty jeti besh");
+        assert_eq!(f(1.005, 3), "бир үтүр нөл нөл беш");
+        assert_eq!(f(2.675, 3), "эки үтүр алты жети беш");
     }
 
     /// `precision_override` is inert for KY (its `to_cardinal` never consults
@@ -1266,22 +1460,22 @@ mod float_tests {
     fn precision_override_is_ignored() {
         let ky = LangKy::new();
         let v = FloatValue::Float { value: 2.675, precision: 3 };
-        assert_eq!(ky.to_cardinal_float(&v, Some(1)).unwrap(), "eki üтүр alty jeti besh");
-        assert_eq!(ky.to_cardinal_float(&v, Some(5)).unwrap(), "eki üтүр alty jeti besh");
+        assert_eq!(ky.to_cardinal_float(&v, Some(1)).unwrap(), "эки үтүр алты жети беш");
+        assert_eq!(ky.to_cardinal_float(&v, Some(5)).unwrap(), "эки үтүр алты жети беш");
     }
 
     /// Every expectation copied verbatim from the frozen corpus
     /// (`grep '"lang": "ky", "to": "cardinal_dec"' ...`). The Decimal arm keeps
-    /// trailing zeros ("1.10" → "bir üтүр bir nöl"), renders the full fractional
+    /// trailing zeros ("1.10" → "бир үтүр бир нөл"), renders the full fractional
     /// part with no `[:2]` truncation ("12.345" → three digits), and inherits
     /// the `>= 10^9` digit fallback on the integer part.
     #[test]
     fn corpus_cardinal_dec() {
-        assert_eq!(d("0.01"), "nöl üтүр nöl bir");
-        assert_eq!(d("1.10"), "bir üтүр bir nöl");
-        assert_eq!(d("12.345"), "on eki üтүр üch tört besh");
-        assert_eq!(d("98746251323029.99"), "98746251323029 üтүр toguz toguz");
-        assert_eq!(d("0.001"), "nöl üтүр nöl nöl bir");
+        assert_eq!(d("0.01"), "нөл үтүр нөл бир");
+        assert_eq!(d("1.10"), "бир үтүр бир нөл");
+        assert_eq!(d("12.345"), "он эки үтүр үч төрт беш");
+        assert_eq!(d("98746251323029.99"), "98746251323029 үтүр тогуз тогуз");
+        assert_eq!(d("0.001"), "нөл үтүр нөл нөл бир");
     }
 
     /// Not corpus rows — verified live against `num2words(Decimal(...), 'ky')`.
@@ -1290,7 +1484,7 @@ mod float_tests {
     /// because KY reads the *string* form, not a numeric magnitude.
     #[test]
     fn cardinal_dec_quirks_verified_against_python() {
-        assert_eq!(d("5.00"), "besh üтүр nöl nöl");
+        assert_eq!(d("5.00"), "беш үтүр нөл нөл");
     }
 }
 
@@ -1314,31 +1508,31 @@ mod entry_routing_tests {
     fn corpus_cardinal_entry() {
         let ky = LangKy::new();
         // Whole floats keep their ".0" tail.
-        assert_eq!(ky.cardinal_float_entry(&fv(5.0, 1), None).unwrap(), "besh üтүр nöl");
-        assert_eq!(ky.cardinal_float_entry(&fv(0.0, 1), None).unwrap(), "nöl üтүр nöl");
+        assert_eq!(ky.cardinal_float_entry(&fv(5.0, 1), None).unwrap(), "беш үтүр нөл");
+        assert_eq!(ky.cardinal_float_entry(&fv(0.0, 1), None).unwrap(), "нөл үтүр нөл");
         assert_eq!(
             ky.cardinal_float_entry(&fv(-1000000.0, 1), None).unwrap(),
-            "minus bir million üтүр nöl"
+            "минус бир миллион үтүр нөл"
         );
         // -0.0: the sign lives in the *string*, so the negword survives.
         assert_eq!(
             ky.cardinal_float_entry(&fv(-0.0, 1), None).unwrap(),
-            "minus nöl üтүр nöl"
+            "минус нөл үтүр нөл"
         );
         // The >= 10^9 digit fallback composes with the ".0" tail.
         assert_eq!(
             ky.cardinal_float_entry(&fv(1e9, 1), None).unwrap(),
-            "1000000000 üтүр nöl"
+            "1000000000 үтүр нөл"
         );
         // Decimals: trailing zeros of the literal are all spelled.
-        assert_eq!(ky.cardinal_float_entry(&dv("5.00"), None).unwrap(), "besh üтүр nöl nöl");
+        assert_eq!(ky.cardinal_float_entry(&dv("5.00"), None).unwrap(), "беш үтүр нөл нөл");
         assert_eq!(
             ky.cardinal_float_entry(&dv("12345.000"), None).unwrap(),
-            "on eki min üch jüz kırk besh üтүр nöl nöl nöl"
+            "он эки миң үч жүз кырк беш үтүр нөл нөл нөл"
         );
         // Point-less integral Decimals take the integer grammar.
-        assert_eq!(ky.cardinal_float_entry(&dv("0"), None).unwrap(), "nöl");
-        assert_eq!(ky.cardinal_float_entry(&dv("100"), None).unwrap(), "jüz");
+        assert_eq!(ky.cardinal_float_entry(&dv("0"), None).unwrap(), "нөл");
+        assert_eq!(ky.cardinal_float_entry(&dv("100"), None).unwrap(), "жүз");
     }
 
     /// Scientific repr has no "." -> `int(n)` ValueError, message verbatim.
@@ -1372,26 +1566,27 @@ mod entry_routing_tests {
         }
     }
 
-    /// `to_ordinal(float)` = cardinal + "-inchi"; errors propagate unchanged.
+    /// `to_ordinal(float)` = cardinal + the harmonised ending; errors
+    /// propagate unchanged.
     #[test]
     fn corpus_ordinal_entry() {
         let ky = LangKy::new();
         assert_eq!(
             ky.ordinal_float_entry(&fv(5.0, 1)).unwrap(),
-            "besh üтүр nöl-inchi"
+            "беш үтүр нөлүнчү"
         );
         assert_eq!(
             ky.ordinal_float_entry(&fv(-0.0, 1)).unwrap(),
-            "minus nöl üтүр nöl-inchi"
+            "минус нөл үтүр нөлүнчү"
         );
         assert_eq!(
             ky.ordinal_float_entry(&fv(3.25, 2)).unwrap(),
-            "üch üтүр eki besh-inchi"
+            "үч үтүр эки бешинчи"
         );
-        assert_eq!(ky.ordinal_float_entry(&dv("0")).unwrap(), "nöl-inchi");
+        assert_eq!(ky.ordinal_float_entry(&dv("0")).unwrap(), "нөлүнчү");
         assert_eq!(
             ky.ordinal_float_entry(&dv("5.00")).unwrap(),
-            "besh üтүр nöl nöl-inchi"
+            "беш үтүр нөл нөлүнчү"
         );
         assert!(matches!(
             ky.ordinal_float_entry(&fv(1e16, 0)),
@@ -1399,30 +1594,30 @@ mod entry_routing_tests {
         ));
     }
 
-    /// `to_ordinal_num(float)` = `str(number) + "-inchi"` — nothing parses,
+    /// `to_ordinal_num(float)` = `str(number)` + "-инчи" — nothing parses,
     /// so the scientific forms succeed here.
     #[test]
     fn corpus_ordinal_num_entry() {
         let ky = LangKy::new();
         assert_eq!(
             ky.ordinal_num_float_entry(&fv(5.0, 1), "5.0").unwrap(),
-            "5.0-inchi"
+            "5.0-инчи"
         );
         assert_eq!(
             ky.ordinal_num_float_entry(&fv(-0.0, 1), "-0.0").unwrap(),
-            "-0.0-inchi"
+            "-0.0-инчи"
         );
         assert_eq!(
             ky.ordinal_num_float_entry(&fv(1e16, 0), "1e+16").unwrap(),
-            "1e+16-inchi"
+            "1e+16-инчи"
         );
         assert_eq!(
             ky.ordinal_num_float_entry(&dv("1E+2"), "1E+2").unwrap(),
-            "1E+2-inchi"
+            "1E+2-инчи"
         );
         assert_eq!(
             ky.ordinal_num_float_entry(&dv("5.00"), "5.00").unwrap(),
-            "5.00-inchi"
+            "5.00-инчи"
         );
     }
 
@@ -1431,10 +1626,10 @@ mod entry_routing_tests {
     #[test]
     fn corpus_year_entry() {
         let ky = LangKy::new();
-        assert_eq!(ky.year_float_entry(&fv(5.0, 1)).unwrap(), "besh üтүр nöl");
+        assert_eq!(ky.year_float_entry(&fv(5.0, 1)).unwrap(), "беш үтүр нөл");
         assert_eq!(
             ky.year_float_entry(&fv(-0.0, 1)).unwrap(),
-            "minus nöl üтүр nöl"
+            "минус нөл үтүр нөл"
         );
         assert!(matches!(
             ky.year_float_entry(&fv(1e20, 0)),
@@ -1444,7 +1639,7 @@ mod entry_routing_tests {
 
     /// "Infinity"/"NaN" strings fall back to Python (NotImplemented), which
     /// reproduces the per-mode split (`cardinal` ValueError vs `ordinal_num`
-    /// "Infinity-inchi") that `ParsedNumber` cannot carry.
+    /// "Infinity-инчи") that `ParsedNumber` cannot carry.
     #[test]
     fn str_to_number_inf_nan_falls_through() {
         let ky = LangKy::new();
