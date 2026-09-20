@@ -26,7 +26,7 @@ EXPECTED_BASICS = {
     "lg": ("nuli", "emu", "kkumi"),
     "lus": ("a awmlo", "pakhat", "sawm"),
     "om": ("zeeroo", "tokko", "kudhan"),
-    "or": ("śūnya", "eka", "daśa"),
+    "or": ("ଶୂନ୍ୟ", "ଏକ", "ଦଶ"),
     "pap": ("sero", "un", "dies"),
     "pli": ("suñña", "eka", "dasa"),
     "rw": ("zeru", "rimwe", "icumi"),

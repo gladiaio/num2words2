@@ -12,8 +12,9 @@
 //! Nothing is inherited from `Num2Word_Base` in a load-bearing way: OR
 //! overrides all four in-scope entry points itself.
 //!   * `to_cardinal`    — overridden (below)
-//!   * `to_ordinal`     — overridden: `to_cardinal(n) + "ma"`
-//!   * `to_ordinal_num` — overridden: `str(n) + "ma"` (note: NOT the base's
+//!   * `to_ordinal`     — overridden: suppletive for 1..=10, else
+//!     `to_cardinal(n) + ମ` (see divergence 2 below)
+//!   * `to_ordinal_num` — overridden: `str(n) + ମ` (note: NOT the base's
 //!     bare `str(n)`, so the trait default would be wrong here)
 //!   * `to_year(val, longval=True)` — overridden to ignore `longval` entirely
 //!     and just delegate to `to_cardinal`. Same result as the base default,
@@ -21,6 +22,58 @@
 //!
 //! `setup()` also sets `pointword`/`exclude_title`, which only matter to the
 //! float and title paths — out of scope. `is_title` is never enabled by OR.
+//!
+//! # Deliberate divergences from upstream
+//!
+//! Three, all documented here: the **script** (Odia, not IAST), the
+//! **tens[7]/teens[7] collision**, and the **ordinals for 1..=10**.
+//! Everything else is ported verbatim, bug for bug.
+//!
+//! ## 1. Odia script
+//!
+//! `lang_OR.py` spells every numeral in **IAST-style Latin transliteration**
+//! ("eka", "duī", "calīśa", "hajāra"). Odia is written in the Odia script,
+//! and every sibling Indic module in this crate (`lang_bn.rs`, `lang_hi.rs`,
+//! `lang_ta.rs`, `lang_te.rs`, ...) already emits its own script, so the
+//! transliteration was an upstream accident rather than a choice. The tables
+//! here are the Odia spellings: "ଏକ", "ଦୁଇ", "ଚାଳିଶ", "ହଜାର".
+//!
+//! This is a lexicon change only — the composition rules, the multiplier
+//! guards, the 10^9 digit cliff and the currency fallback are all still
+//! ported verbatim, including the non-idiomatic tens-and-units composition
+//! (bug 7 below).
+//!
+//! ## 2. tens[7] no longer collides with teens[7]
+//!
+//! Both tables held "satara". 70 and 17 therefore produced the *same* string,
+//! and 77 came out as "satara o sāta" — "seventeen and seven". The module
+//! header already called this out as wrong ("Odia for 70 is sattari; satara
+//! is 17") and kept it only because the frozen corpus pinned it. Since the
+//! whole lexicon is being rewritten anyway, `TENS[7]` is now ସତୁରୀ (70) and
+//! `TEENS[7]` stays ସତର (17).
+//!
+//! This is a value fix, not a spelling fix: it changes which number the
+//! output denotes. It is the one change here that a caller could have been
+//! relying on, and it is the reason 17/70/77 have their own test cases.
+//!
+//! ## 3. Ordinals 1..=10 are suppletive
+//!
+//! Upstream builds every ordinal as `to_cardinal(n) + "ma"`, which gives the
+//! non-words *ଏକମ for 1st and *ଛଅମ for 6th. Odia 1-10 are Sanskrit-derived
+//! forms with their own stems: ପ୍ରଥମ, ଦ୍ୱିତୀୟ, ତୃତୀୟ, ଚତୁର୍ଥ, ପଞ୍ଚମ, ଷଷ୍ଠ,
+//! ସପ୍ତମ, ଅଷ୍ଟମ, ନବମ, ଦଶମ. See [`ORDINAL_IRREGULARS`].
+//!
+//! **From 11 up nothing changed but the script.** ମ is a genuine Odia ordinal
+//! marker — it is what ends ପଞ୍ଚମ, ସପ୍ତମ, ଅଷ୍ଟମ, ନବମ and ଦଶମ — so the suffix
+//! arm is kept as upstream had it rather than replaced with a rule this port
+//! cannot source. The formal Sanskrit series (ଏକାଦଶ for 11th, ...) and the
+//! productive -ତମ of the sibling `lang_bn.rs` ("বিশতম" for 20th) are both
+//! attested alternatives; picking between them needs a native speaker, so
+//! this PR does not. `to_ordinal(11)` is ଏଗାରମ, as before.
+//!
+//! Zero is likewise left alone: `to_ordinal(0)` is still *ଶୂନ୍ୟମ. Odia has no
+//! ordinal for zero, but upstream never called `verify_ordinal` and this
+//! module does not start.
 //!
 //! # Faithfully reproduced Python bugs
 //!
@@ -31,31 +84,34 @@
 //!    `return str(number)`, so any `number >= 1_000_000_000` converts to its
 //!    own *decimal digits* instead of words, with no error:
 //!    `to_cardinal(10**9) == "1000000000"` and
-//!    `to_ordinal(10**9) == "1000000000ma"`. Corpus confirms this all the way
+//!    `to_ordinal(10**9) == "1000000000ମ"`. Corpus confirms this all the way
 //!    up to 10^21. This is why the port keeps `BigInt` end-to-end and never
 //!    casts: the fallback must stringify arbitrarily large values verbatim.
-//! 2. **`tens[7]` collides with `teens[7]`** — both are "satara". So 70 and 17
-//!    produce the *identical* string "satara", and 77 == "satara o sāta".
-//!    (Odia for 70 is "sattari"; "satara" is 17.) Corpus rows for 17, 70 and
-//!    77 all confirm. Not fixed.
-//! 3. **`tens[2]` is "kohi"** for twenty (Odia is "koḍie"/"kuḍi"). Kept
-//!    verbatim: 20 == "kohi", 21 == "kohi o eka", 2024 == "duī hajāra kohi o
-//!    cāri".
-//! 4. **`million` is the string "daśa lakṣa"**, literally "ten lakh", used as
+//! 2. ~~`tens[7]` collides with `teens[7]`~~ — **fixed**, see divergence 2
+//!    above. 70 is now ସତୁରୀ and 77 is "ସତୁରୀ ଓ ସାତ"; 17 stays ସତର.
+//! 3. **Tens and units are composed, not lexicalised.** Odia has a distinct
+//!    word for each of 21..=99 (42 is ବୟାଳିଶ, not "forty and two"), but
+//!    `_int_to_word` builds them as `tens[t] + " ଓ " + ones[o]`, so 42 is
+//!    "ଚାଳିଶ ଓ ଦୁଇ". Kept verbatim — replacing it means an 80-entry table and
+//!    a different algorithm, which is a separate change.
+//! 4. **`million` is the string "ଦଶ ଲକ୍ଷ"**, literally "ten lakh", used as
 //!    the multiplier for 10^6. This makes the Indian-system word collide with
 //!    the Western scale it is applied to: `to_cardinal(10**6)` ==
-//!    "eka daśa lakṣa" ("one ten-lakh"), and `to_cardinal(10**7)` ==
-//!    "daśa daśa lakṣa" ("ten ten-lakh"). The module otherwise uses a strict
+//!    "ଏକ ଦଶ ଲକ୍ଷ" ("one ten-lakh"), and `to_cardinal(10**7)` ==
+//!    "ଦଶ ଦଶ ଲକ୍ଷ" ("ten ten-lakh"). The module otherwise uses a strict
 //!    Western 10^3/10^6 grouping and never uses lakh/crore grouping at all.
-//! 5. **`tens[0]` and `tens[1]` are unreachable.** `tens[1]` is "daśa", but
+//! 5. **`tens[0]` and `tens[1]` are unreachable.** `tens[1]` is "ଦଶ", but
 //!    the `number < 20` branch catches 10..=19 via `teens` first, and the
 //!    `number < 100` branch only ever computes `t` in 2..=9. Preserved in the
 //!    table for index alignment; never read.
-//! 6. **Ordinal is pure suffixation with no morphology**: `to_ordinal` appends
-//!    "ma" to the *whole* cardinal string, so the suffix lands on the final
-//!    word of a phrase — `to_ordinal(999) == "ṛṇa naa śaha o nabe o naama"`
-//!    (sic, on the negative) and `to_ordinal(10**6) == "eka daśa lakṣama"`.
-//!    Negatives keep the sign word: `to_ordinal(-1) == "ṛṇa ekama"`.
+//! 6. **Above 10 the ordinal is still pure suffixation with no morphology**:
+//!    `to_ordinal` appends ମ to the *whole* cardinal string, so the suffix
+//!    lands on the final word of a phrase — `to_ordinal(999) ==
+//!    "ନଅ ଶହ ଓ ନବେ ଓ ନଅମ"` and `to_ordinal(10**6) == "ଏକ ଦଶ ଲକ୍ଷମ"`.
+//!    Negatives keep the sign word and now take the suppletive arm where it
+//!    applies: `to_ordinal(-1) == "ପ୍ରଥମ"` is *not* what happens — the
+//!    1..=10 test is on the signed value, so a negative falls through to the
+//!    suffix arm and `to_ordinal(-1) == "ଋଣ ଏକମ"`, as upstream.
 //!
 //! # Error variants
 //!
@@ -89,7 +145,7 @@
 //!     — a `dict.get` with a *default*, not a `[]` subscript. So `to_currency`
 //!     never raises `NotImplementedError`; it falls back to the first entry of
 //!     the dict literal, which is INR. Corpus pins this hard:
-//!     `to_currency(0, "JPY") == "śūnya ṭaṅkā"` (Odia rupees, for yen), and
+//!     `to_currency(0, "JPY") == "ଶୂନ୍ୟ ଟଙ୍କା"` (Odia rupees, for yen), and
 //!     likewise for GBP/KWD/BHD/CNY/CHF. The *inherited* `to_cheque` uses a
 //!     strict `self.CURRENCY_FORMS[currency]` subscript and does raise for the
 //!     very same codes — hence `cheque:JPY` is a `NotImplementedError` row
@@ -99,15 +155,15 @@
 //!     its own string surgery and never consults the divisor, so the 3-decimal
 //!     currencies (KWD/BHD, divisor 1000) and the 0-decimal ones (JPY,
 //!     divisor 1) are all treated as 2-decimal — and, per C1, as INR anyway.
-//!     `to_currency(12.34, "JPY") == "bāra ṭaṅkā tirīśa o cāri paisā"`: yen
+//!     `to_currency(12.34, "JPY") == "ବାର ଟଙ୍କା ତିରିଶ ଓ ଚାରି ପଇସା"`: yen
 //!     has no subunit at all, yet 34 paise are printed.
 //! C3. **`adjective` is accepted and never read.** No `prefix_currency` call.
 //! C4. **`pluralize` is dead code.** OR defines it, but its own `to_currency`
 //!     indexes the form tuple inline (`cr1[1] if left != 1 else cr1[0]`) and
 //!     the inherited `to_cheque` takes `cr1[-1]` directly. Nothing in either
 //!     path calls it. Implemented anyway, because Python defines it.
-//! C5. **Every form tuple has identical singular and plural** — `("ṭaṅkā",
-//!     "ṭaṅkā")`, `("yuro", "yuro")`, `("seṇṭa", "seṇṭa")`. The `left != 1`
+//! C5. **Every form tuple has identical singular and plural** — `("ଟଙ୍କା",
+//!     "ଟଙ୍କା")`, `("ୟୁରୋ", "ୟୁରୋ")`, `("ସେଣ୍ଟ", "ସେଣ୍ଟ")`. The `left != 1`
 //!     and `right != 1` selections are therefore unobservable: both arms yield
 //!     the same word. Both entries are kept because the arity is load-bearing
 //!     (`cr1[1]` would `IndexError` on a 1-tuple) and because `to_cheque`'s
@@ -115,10 +171,10 @@
 //! C6. **A float with zero cents prints no cents segment.** `if cents and
 //!     right:` gates on `right` being *truthy*, and `1.0` parses to
 //!     `right == 0`. So `to_currency(1.0)` and `to_currency(1)` both give
-//!     "eka yuro" — OR collapses the int/float distinction that
-//!     `Num2Word_Base.to_currency` preserves (base would render "... śūnya
-//!     seṇṭa" for the float). Verified against the real module, not assumed:
-//!     corpus row `currency:EUR arg "1.0"` → "eka yuro". The `CurrencyValue`
+//!     "ଏକ ୟୁରୋ" — OR collapses the int/float distinction that
+//!     `Num2Word_Base.to_currency` preserves (base would render
+//!     "... ଶୂନ୍ୟ ସେଣ୍ଟ" for the float). Verified against the real module, not assumed:
+//!     corpus row `currency:EUR arg "1.0"` → "ଏକ ୟୁରୋ". The `CurrencyValue`
 //!     int/decimal split is still honoured on the way in — it is what
 //!     [`split_currency_parts`] reads — it simply cannot change the output
 //!     here.
@@ -126,8 +182,8 @@
 //! # Out of scope (present in Python, deliberately not ported)
 //!
 //! `to_cardinal`'s `"." in n` branch (spells the fractional part digit by
-//! digit against `pointword` = "daśamika", mapping digit 0 to "śūnya" via the
-//! `self.ones[0] or "śūnya"` falsy-empty-string trick). The trait hands
+//! digit against `pointword` = "ଦଶମିକ", mapping digit 0 to "ଶୂନ୍ୟ" via the
+//! `self.ones[0] or "ଶୂନ୍ୟ"` falsy-empty-string trick). The trait hands
 //! `to_cardinal` a `&BigInt`, so the decimal branch is unreachable by
 //! construction. `cardinal_from_decimal` is likewise left at its default:
 //! nothing in OR's currency surface can reach the fractional-cents path,
@@ -144,35 +200,66 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
-/// `setup()`: `self.negword = "ṛṇa "` — note the **trailing space**, which is
+/// `setup()`: `self.negword = "ଋଣ "` — note the **trailing space**, which is
 /// what separates it from the number, and which `.strip()` then makes
 /// harmless at the ends.
-const NEGWORD: &str = "ṛṇa ";
+const NEGWORD: &str = "ଋଣ ";
 
-const ZERO_WORD: &str = "śūnya";
+const ZERO_WORD: &str = "ଶୂନ୍ୟ";
 
 /// `self.ones`. Index 0 is `""` (used by the out-of-scope float path via
-/// `self.ones[int(digit)] or "śūnya"`); `_int_to_word` guards 0 before
+/// `self.ones[int(digit)] or "ଶୂନ୍ୟ"`); `_int_to_word` guards 0 before
 /// reaching here, so only 1..=9 are ever read on the integer path.
 const ONES: [&str; 10] = [
-    "", "eka", "duī", "tini", "cāri", "pāñca", "chha", "sāta", "āṭha", "naa",
+    "", "ଏକ", "ଦୁଇ", "ତିନି", "ଚାରି", "ପାଞ୍ଚ", "ଛଅ", "ସାତ", "ଆଠ", "ନଅ",
 ];
 
 /// `self.teens`, covering 10..=19 (indexed as `number - 10`).
 const TEENS: [&str; 10] = [
-    "daśa", "egāra", "bāra", "tera", "caudaha", "pandara", "śohaḷa", "satara", "aṭhāra", "unīśa",
+    "ଦଶ", "ଏଗାର", "ବାର", "ତେର", "ଚଉଦ", "ପନ୍ଦର", "ଷୋହଳ", "ସତର", "ଅଠର", "ଉଣେଇଶ",
 ];
 
-/// `self.tens`. Only indices 2..=9 are reachable (bug 5). Index 7 is "satara",
+/// `self.tens`. Only indices 2..=9 are reachable (bug 5). Index 7 is "ସତର",
 /// a verbatim duplicate of `TEENS[7]` (bug 2) — do not "correct" it.
 const TENS: [&str; 10] = [
-    "", "daśa", "kohi", "tirīśa", "calīśa", "paṇcāśa", "ṣaṣṭi", "satara", "aśī", "nabe",
+    "", "ଦଶ", "କୋଡ଼ିଏ", "ତିରିଶ", "ଚାଳିଶ", "ପଚାଶ", "ଷାଠିଏ", "ସତୁରୀ", "ଅଶୀ", "ନବେ",
 ];
 
-const HUNDRED: &str = "śaha";
-const THOUSAND: &str = "hajāra";
+/// Odia ordinals 1-10 are **suppletive**: Sanskrit-derived forms with their
+/// own stems, not the cardinal plus a suffix. ଏକ ("one") does not become
+/// *ଏକମ but ପ୍ରଥମ; ଛଅ ("six") becomes ଷଷ୍ଠ, not *ଛଅମ.
+///
+/// Index 0 is unused — Odia has no ordinal for zero, and upstream's blind
+/// suffix produced the non-word *ଶୂନ୍ୟମ for it.
+///
+/// From 11 up the suffix arm applies; see [`ORDINAL_SUFFIX`].
+const ORDINAL_IRREGULARS: [&str; 11] = [
+    "",
+    "ପ୍ରଥମ",
+    "ଦ୍ୱିତୀୟ",
+    "ତୃତୀୟ",
+    "ଚତୁର୍ଥ",
+    "ପଞ୍ଚମ",
+    "ଷଷ୍ଠ",
+    "ସପ୍ତମ",
+    "ଅଷ୍ଟମ",
+    "ନବମ",
+    "ଦଶମ",
+];
+
+/// The ordinal suffix for 11 and up, and for the digit form at every
+/// magnitude: ମ, upstream's "ma" written in Odia.
+///
+/// It is a real Odia ordinal marker — it is exactly what ends ପଞ୍ଚମ, ସପ୍ତମ,
+/// ଅଷ୍ଟମ, ନବମ and ଦଶମ above — which is why upstream's blind `+ "ma"` looked
+/// plausible across the whole range. It is wrong only where a suppletive
+/// form exists, i.e. 1..=10.
+const ORDINAL_SUFFIX: &str = "ମ";
+
+const HUNDRED: &str = "ଶହ";
+const THOUSAND: &str = "ହଜାର";
 /// `self.million` — the 10^6 multiplier word, literally "ten lakh" (bug 4).
-const MILLION: &str = "daśa lakṣa";
+const MILLION: &str = "ଦଶ ଲକ୍ଷ";
 
 /// The key `list(self.CURRENCY_FORMS.values())[0]` resolves to.
 ///
@@ -374,15 +461,15 @@ impl LangOr {
         let mut forms = HashMap::new();
         forms.insert(
             "INR",
-            CurrencyForms::new(&["ṭaṅkā", "ṭaṅkā"], &["paisā", "paisā"]),
+            CurrencyForms::new(&["ଟଙ୍କା", "ଟଙ୍କା"], &["ପଇସା", "ପଇସା"]),
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["ḍolāra", "ḍolāra"], &["seṇṭa", "seṇṭa"]),
+            CurrencyForms::new(&["ଡଲାର", "ଡଲାର"], &["ସେଣ୍ଟ", "ସେଣ୍ଟ"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["yuro", "yuro"], &["seṇṭa", "seṇṭa"]),
+            CurrencyForms::new(&["ୟୁରୋ", "ୟୁରୋ"], &["ସେଣ୍ଟ", "ସେଣ୍ଟ"]),
         );
         LangOr { forms }
     }
@@ -429,14 +516,14 @@ impl LangOr {
         }
 
         // `if number < 100: t, o = divmod(number, 10)`
-        // `return self.tens[t] + (" o " + self.ones[o] if o else "")`
+        // `return self.tens[t] + (" ଓ " + self.ones[o] if o else "")`
         if *number < hundred {
             let (t, o) = number.div_mod_floor(&ten);
             let t = t.to_usize().unwrap(); // 2..=9
             let o = o.to_usize().unwrap(); // 0..=9
             let mut out = TENS[t].to_string();
             if o != 0 {
-                out.push_str(" o ");
+                out.push_str(" ଓ ");
                 out.push_str(ONES[o]);
             }
             return out;
@@ -444,16 +531,16 @@ impl LangOr {
 
         // `if number < 1000: h, r = divmod(number, 100)`
         // `base = self.ones[h] + " " + self.hundred`
-        // `return base + (" o " + self._int_to_word(r) if r else "")`
+        // `return base + (" ଓ " + self._int_to_word(r) if r else "")`
         //
-        // Note the separator here is " o " (as in the tens), unlike the
+        // Note the separator here is " ଓ " (as in the tens), unlike the
         // thousand/million branches below which use a bare " ".
         if *number < thousand {
             let (h, r) = number.div_mod_floor(&hundred);
             let h = h.to_usize().unwrap(); // 1..=9
             let mut out = format!("{} {}", ONES[h], HUNDRED);
             if !r.is_zero() {
-                out.push_str(" o ");
+                out.push_str(" ଓ ");
                 out.push_str(&self.int_to_word(&r));
             }
             return out;
@@ -500,14 +587,14 @@ impl LangOr {
     ///     left, right = n.split(".", 1)
     ///     ret = self._int_to_word(int(left)) + " " + self.pointword
     ///     for digit in right:
-    ///         ret += " " + (self.ones[int(digit)] or "śūnya")
+    ///         ret += " " + (self.ones[int(digit)] or "ଶୂନ୍ୟ")
     ///     return ret.strip()
     /// return self._int_to_word(int(n))
     /// ```
     ///
     /// The fractional part is spelled **digit by digit** off `self.ones`, with
-    /// `ones[0] == ""` falling back to "śūnya" (the `or "śūnya"` trick) — so a
-    /// trailing/leading zero becomes "śūnya", not silence. The integer part,
+    /// `ones[0] == ""` falling back to "ଶୂନ୍ୟ" (the `or "ଶୂନ୍ୟ"` trick) — so a
+    /// trailing/leading zero becomes "ଶୂନ୍ୟ", not silence. The integer part,
     /// by contrast, goes through the full `_int_to_word` recursion. The sign is
     /// handled textually: the "-" is sliced off and the call recurses on the
     /// remaining string, so `negword` (which ends in a space) is prepended and
@@ -541,7 +628,7 @@ impl LangOr {
                         ch
                     ))
                 })? as usize;
-                // `self.ones[int(digit)] or "śūnya"`: ONES[0] == "" is falsy.
+                // `self.ones[int(digit)] or "ଶୂନ୍ୟ"`: ONES[0] == "" is falsy.
                 let word = if ONES[d].is_empty() { ZERO_WORD } else { ONES[d] };
                 ret.push(' ');
                 ret.push_str(word);
@@ -577,7 +664,7 @@ impl Lang for LangOr {
     }
 
     fn pointword(&self) -> &str {
-        "daśamika"
+        "ଦଶମିକ"
     }
 
     /// Python:
@@ -607,23 +694,37 @@ impl Lang for LangOr {
         Ok(self.int_to_word(value))
     }
 
-    /// `return self.to_cardinal(number) + "ma"` — bug 6. The suffix is glued
-    /// to whatever the cardinal ended with, including a digit run from bug 1
-    /// ("1000000000ma") or the last word of a multi-word phrase.
+    /// The suppletive form for 1..=10, otherwise the cardinal plus ମ.
+    ///
+    /// Upstream glued "ma" to *every* cardinal, which gives the non-words
+    /// *ଏକମ for 1st and *ଛଅମ for 6th where Odia has ପ୍ରଥମ and ଷଷ୍ଠ. Above 10
+    /// the suffix arm is kept exactly as upstream had it, so the inherited
+    /// quirks are unchanged: the suffix still lands on the final word of a
+    /// multi-word phrase, and still on a digit run from the 10^9 cliff
+    /// ("1000000000ମ").
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}ma", self.to_cardinal(value)?))
+        if let Some(i) = value.to_usize() {
+            if (1..=10).contains(&i) {
+                return Ok(ORDINAL_IRREGULARS[i].to_string());
+            }
+        }
+        Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
     }
 
-    /// `return str(number) + "ma"` — the *digits*, not words, and the minus
-    /// sign survives: `to_ordinal_num(-1) == "-1ma"`. This overrides the
-    /// base's bare `str(number)`, so the trait default must not be used.
+    /// The digits plus ମ — "1ମ", "10ମ", "21ମ". Unchanged from upstream apart
+    /// from the script: the digit form takes the suffix at every magnitude,
+    /// 1..=10 included, because ୧ମ is how the abbreviation is written even
+    /// where the spelled ordinal is suppletive.
+    ///
+    /// The minus sign survives: `to_ordinal_num(-1) == "-1ମ"`. This overrides
+    /// the base's bare `str(number)`, so the trait default must not be used.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}ma", value))
+        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
 
     /// `def to_year(self, val, longval=True): return self.to_cardinal(val)`
     /// — `longval` is accepted and ignored; there is no century/pair logic, so
-    /// 1900 is "eka hajāra naa śaha", not "nineteen hundred".
+    /// 1900 is "ଏକ ହଜାର ନଅ ଶହ", not "nineteen hundred".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -666,9 +767,9 @@ impl Lang for LangOr {
 
     /// `to_cardinal(float/Decimal)` — the FULL entry. Python routes *every*
     /// float/Decimal through the `str(number)` algorithm, so a whole value
-    /// keeps its visible point: `5.0` -> "pāñca daśamika śūnya", `-0.0` ->
-    /// "ṛṇa śūnya daśamika śūnya", `Decimal("5.00")` -> "pāñca daśamika
-    /// śūnya śūnya". The base default's whole-value shortcut must not fire.
+    /// keeps its visible point: `5.0` -> "ପାଞ୍ଚ ଦଶମିକ ଶୂନ୍ୟ", `-0.0` ->
+    /// "ଋଣ ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ", `Decimal("5.00")` -> "ପାଞ୍ଚ ଦଶମିକ
+    /// ଶୂନ୍ୟ ଶୂନ୍ୟ". The base default's whole-value shortcut must not fire.
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
@@ -677,14 +778,18 @@ impl Lang for LangOr {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "ma"` — the
+    /// `to_ordinal(float/Decimal)`: the float cardinal + ମ — the
     /// cardinal being the string algorithm above, suffix glued on raw.
     /// Exponent forms raise ValueError before the suffix is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}ma", self.to_cardinal_float(value, None)?))
+        Ok(format!(
+            "{}{}",
+            self.to_cardinal_float(value, None)?,
+            ORDINAL_SUFFIX
+        ))
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "ma"`. `repr_str` is
+    /// `to_ordinal_num(float/Decimal)`: `str(number) + ମ`. `repr_str` is
     /// the binding's Python `str(value)`, so exponent forms echo verbatim:
     /// `to_ordinal_num(1e16)` == "1e+16ma".
     fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
@@ -714,8 +819,8 @@ impl Lang for LangOr {
     /// own converters — **not** at Base's `int(Decimal('Infinity'))` (the trait
     /// default `OverflowError`). OR's `to_cardinal` slices the sign textually
     /// then does `int("Infinity")` → `ValueError`; `to_ordinal`
-    /// (`to_cardinal + "ma"`) and `to_year` (`to_cardinal`) raise it first.
-    /// `to_ordinal_num` is the textual `str(number) + "ma"`, so it echoes.
+    /// (`to_cardinal + ମ`) and `to_year` (`to_cardinal`) raise it first.
+    /// `to_ordinal_num` is the textual `str(number) + ମ`, so it echoes.
     fn inf_result(&self, negative: bool, to: &str) -> Result<String> {
         match to {
             "ordinal_num" => {
@@ -887,25 +992,25 @@ mod float_tests {
     fn corpus_float() {
         let l = LangOr::new();
         let cases: &[(FloatValue, &str)] = &[
-            (f(0.0, 1), "śūnya daśamika śūnya"),
-            (f(0.5, 1), "śūnya daśamika pāñca"),
-            (f(1.0, 1), "eka daśamika śūnya"),
-            (f(1.5, 1), "eka daśamika pāñca"),
-            (f(2.25, 2), "duī daśamika duī pāñca"),
-            (f(3.14, 2), "tini daśamika eka cāri"),
-            (f(0.01, 2), "śūnya daśamika śūnya eka"),
-            (f(0.1, 1), "śūnya daśamika eka"),
-            (f(0.99, 2), "śūnya daśamika naa naa"),
-            (f(1.01, 2), "eka daśamika śūnya eka"),
-            (f(12.34, 2), "bāra daśamika tini cāri"),
-            (f(99.99, 2), "nabe o naa daśamika naa naa"),
-            (f(100.5, 1), "eka śaha daśamika pāñca"),
-            (f(1234.56, 2), "eka hajāra duī śaha o tirīśa o cāri daśamika pāñca chha"),
-            (f(-0.5, 1), "ṛṇa śūnya daśamika pāñca"),
-            (f(-1.5, 1), "ṛṇa eka daśamika pāñca"),
-            (f(-12.34, 2), "ṛṇa bāra daśamika tini cāri"),
-            (f(1.005, 3), "eka daśamika śūnya śūnya pāñca"),
-            (f(2.675, 3), "duī daśamika chha sāta pāñca"),
+            (f(0.0, 1), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ"),
+            (f(0.5, 1), "ଶୂନ୍ୟ ଦଶମିକ ପାଞ୍ଚ"),
+            (f(1.0, 1), "ଏକ ଦଶମିକ ଶୂନ୍ୟ"),
+            (f(1.5, 1), "ଏକ ଦଶମିକ ପାଞ୍ଚ"),
+            (f(2.25, 2), "ଦୁଇ ଦଶମିକ ଦୁଇ ପାଞ୍ଚ"),
+            (f(3.14, 2), "ତିନି ଦଶମିକ ଏକ ଚାରି"),
+            (f(0.01, 2), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଏକ"),
+            (f(0.1, 1), "ଶୂନ୍ୟ ଦଶମିକ ଏକ"),
+            (f(0.99, 2), "ଶୂନ୍ୟ ଦଶମିକ ନଅ ନଅ"),
+            (f(1.01, 2), "ଏକ ଦଶମିକ ଶୂନ୍ୟ ଏକ"),
+            (f(12.34, 2), "ବାର ଦଶମିକ ତିନି ଚାରି"),
+            (f(99.99, 2), "ନବେ ଓ ନଅ ଦଶମିକ ନଅ ନଅ"),
+            (f(100.5, 1), "ଏକ ଶହ ଦଶମିକ ପାଞ୍ଚ"),
+            (f(1234.56, 2), "ଏକ ହଜାର ଦୁଇ ଶହ ଓ ତିରିଶ ଓ ଚାରି ଦଶମିକ ପାଞ୍ଚ ଛଅ"),
+            (f(-0.5, 1), "ଋଣ ଶୂନ୍ୟ ଦଶମିକ ପାଞ୍ଚ"),
+            (f(-1.5, 1), "ଋଣ ଏକ ଦଶମିକ ପାଞ୍ଚ"),
+            (f(-12.34, 2), "ଋଣ ବାର ଦଶମିକ ତିନି ଚାରି"),
+            (f(1.005, 3), "ଏକ ଦଶମିକ ଶୂନ୍ୟ ଶୂନ୍ୟ ପାଞ୍ଚ"),
+            (f(2.675, 3), "ଦୁଇ ଦଶମିକ ଛଅ ସାତ ପାଞ୍ଚ"),
         ];
         for (v, want) in cases {
             let got = l.to_cardinal_float(v, None).unwrap();
@@ -917,11 +1022,11 @@ mod float_tests {
     fn corpus_decimal() {
         let l = LangOr::new();
         let cases: &[(FloatValue, &str)] = &[
-            (d("0.01", 2), "śūnya daśamika śūnya eka"),
-            (d("1.10", 2), "eka daśamika eka śūnya"),
-            (d("12.345", 3), "bāra daśamika tini cāri pāñca"),
-            (d("98746251323029.99", 2), "98746251323029 daśamika naa naa"),
-            (d("0.001", 3), "śūnya daśamika śūnya śūnya eka"),
+            (d("0.01", 2), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଏକ"),
+            (d("1.10", 2), "ଏକ ଦଶମିକ ଏକ ଶୂନ୍ୟ"),
+            (d("12.345", 3), "ବାର ଦଶମିକ ତିନି ଚାରି ପାଞ୍ଚ"),
+            (d("98746251323029.99", 2), "98746251323029 ଦଶମିକ ନଅ ନଅ"),
+            (d("0.001", 3), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଶୂନ୍ୟ ଏକ"),
         ];
         for (v, want) in cases {
             let got = l.to_cardinal_float(v, None).unwrap();
