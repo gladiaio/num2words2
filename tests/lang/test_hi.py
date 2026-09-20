@@ -382,3 +382,29 @@ class Num2WordsHITest(TestCase):
         self.assertEqual(num2words(100, lang="hi"), num2words("100", lang="hi"))
         self.assertEqual(num2words(1000, lang="hi"), num2words("1000", lang="hi"))
 
+
+
+class TestHINegativeOrdinalNum(TestCase):
+    """Ports savoirfairelinux/num2words#672 by @santhreal.
+
+    ``Num2Word_HI.to_ordinal_num`` maps the value character by character
+    through a digit table, so a negative died on the sign with
+    ``KeyError: "'-'"`` and a fractional value on the point with
+    ``KeyError: "'.'"``. ``verify_ordinal`` now runs first.
+    """
+
+    def test_ordinal_num_rejects_negative_and_float(self):
+        with self.assertRaises(TypeError):
+            num2words(-1, lang="hi", to="ordinal_num")
+        with self.assertRaises(TypeError):
+            num2words(-21, lang="hi", to="ordinal_num")
+        with self.assertRaises(TypeError):
+            num2words(1.5, lang="hi", to="ordinal_num")
+
+    def test_word_ordinals_still_accept_negatives(self):
+        # Upstream's own test for #672 asserts this stays as it was.
+        self.assertEqual(num2words(-1, lang="hi", to="ordinal"), "माइनस एकवाँ")
+
+    def test_non_negative_ordinal_num_unchanged(self):
+        self.assertEqual(num2words(1, lang="hi", to="ordinal_num"), "१ला")
+        self.assertEqual(num2words(21, lang="hi", to="ordinal_num"), "२१वाँ")
