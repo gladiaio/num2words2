@@ -1,4 +1,33 @@
-//! Port of `lang_CKB.py` (Central Kurdish / Sorani, Latin transliteration).
+//! Port of `lang_CKB.py` (Central Kurdish / Sorani).
+//!
+//! # Deliberate divergence from upstream: the script
+//!
+//! `lang_CKB.py` spells every numeral in **Latin transliteration** ("yek",
+//! "çwar", "hezar", "sed"). Central Kurdish is written in the Perso-Arabic
+//! Sorani alphabet; the Latin (Hawar) alphabet is Kurmanji's, and Kurmanji
+//! already has its own converter in this crate (`lang_ku.rs`), which is where
+//! Latin-script Kurdish output belongs. The tables here are the Sorani
+//! spellings: "یەک", "چوار", "هەزار", "سەد".
+//!
+//! This is a lexicon change only — the composition rules, the multiplier
+//! guards, the 10^9 digit cliff and the currency fallback are all still
+//! ported verbatim, bug for bug, and `verify_ordinal` is still not called.
+//!
+//! ## What is *not* fixed: the ordinal after a vowel
+//!
+//! ـەم is the genuine Sorani ordinal marker, and gluing it on is already
+//! right after a consonant — which is most of the lexicon (یەکەم, چوارەم,
+//! پێنجەم, شەشەم, حەوتەم, هەشتەم, بیستەم, چلەم, شەستەم, نەوەدەم, سەدەم,
+//! هەزارەم, ملیۆنەم). After a **vowel-final** stem standard Sorani inserts a
+//! linking consonant, and the sources disagree on which one: Omniglot writes
+//! دووهەم / سێهەم / نۆهەم / دەهەم while other references write سێیەم /
+//! نۆیەم / دەیەم. The vowel-final stems in these tables are سێ, نۆ, دە,
+//! پەنجا, حەفتا, هەشتا and every ـە-final teen.
+//!
+//! Both variants are attested and choosing between them needs a native
+//! speaker, so this module keeps upstream's blind suffix there rather than
+//! guessing. `to_ordinal(3)` is therefore سێەم, which is wrong but no more
+//! wrong than it was; it is tracked separately from the script fix.
 //!
 //! Registry check: `CONVERTER_CLASSES["ckb"]` is `lang_CKB.Num2Word_CKB()`
 //! (`__init__.py:381`), which is the class ported here.
@@ -34,17 +63,17 @@
 //!   `"2.675"` and `1.005` spells `"1.005"` — the exact cases where
 //!   `float2tuple` produces `674.9999999999998` and needs rescuing. Here the
 //!   noise never appears, so there is nothing to rescue and no `round()` to get
-//!   banker's-wrong. Corpus confirms both: `2.675` → `"du xał şeş hewt pênc"`.
+//!   banker's-wrong. Corpus confirms both: `2.675` → `"دوو خاڵ شەش حەوت پێنج"`.
 //! * **No rounding, no padding, no `precision`.** The fraction is however many
 //!   digits the repr happened to carry, one word each. `Decimal("1.10")` keeps
-//!   its written trailing zero (`"yek xał yek sifir"`) where the float `1.1`
+//!   its written trailing zero (`"یەک خاڵ یەک سفر"`) where the float `1.1`
 //!   could not — the `Decimal`/`float` split is *visible* in the output, not
 //!   just in the last bits.
 //! * **`precision=` is inert** — see [`LangCkb::to_cardinal_float`].
 //! * **An exponential repr is a `ValueError`, not a number** — see bug 10.
 //!
 //! `Num2Word_CKB.to_cardinal` is byte-for-byte `Num2Word_CEB.to_cardinal` with
-//! `"siro"` swapped for `"sifir"`, so [`LangCkb::cardinal_from_repr`] and
+//! `"siro"` swapped for `"سفر"`, so [`LangCkb::cardinal_from_repr`] and
 //! `lang_ceb.rs`'s `cardinal_from_repr` are the same port. The two crates'
 //! copies of [`py_str_f64`] / [`py_str_decimal`] are deliberate duplicates: a
 //! shared helper would have to live in `base.rs` or `floatpath.rs`, which this
@@ -52,7 +81,7 @@
 //!
 //! `Num2Word_Base.to_cardinal` would have called `self.title(...)`; CKB's
 //! override does **not**, so `is_title`/`exclude_title` are inert for the four
-//! modes in scope. `setup()`'s `exclude_title = ["û", "xał", "negatîv"]` is
+//! modes in scope. `setup()`'s `exclude_title = ["و", "خاڵ", "نێگەتیڤ"]` is
 //! mirrored on the struct for fidelity but is never read: `is_title` stays
 //! `false` (set in `Num2Word_Base.__init__`) and `title` is never reached.
 //!
@@ -63,30 +92,30 @@
 //!
 //! 1. **`_int_to_word` gives up at 10^9 and returns the decimal digits.** The
 //!    final line of the if-chain is a bare `return str(number)` — no billion
-//!    word exists in the table (`setup` stops at `million = "milyon"`). So
+//!    word exists in the table (`setup` stops at `million = "ملیۆن"`). So
 //!    `to_cardinal(10**9)` == `"1000000000"`, and `to_ordinal(10**9)` ==
-//!    `"1000000000em"` — digits with a word suffix glued on. Corpus rows for
+//!    `"1000000000ەم"` — digits with a word suffix glued on. Corpus rows for
 //!    10^9, 1234567890, 10^10, 10^11, 10^12, 10^15, 10^18 and 10^21 all
 //!    confirm this. It is unbounded: no exception is ever raised, however
 //!    large the input. Modelled in [`LangCkb::int_to_word`].
-//!    Negatives compose with it: `to_cardinal(-10**9)` == `"negatîv 1000000000"`.
-//! 2. **`tens[1] == "de"` is dead.** 10..=19 are caught by the `number < 20`
+//!    Negatives compose with it: `to_cardinal(-10**9)` == `"نێگەتیڤ 1000000000"`.
+//! 2. **`tens[1] == "دە"` is dead.** 10..=19 are caught by the `number < 20`
 //!    branch and served from `teens`, so the `< 100` branch never divides down
 //!    to a tens index of 1. The entry is kept verbatim in [`TENS`] anyway.
 //! 3. **`ones[0] == ""` is dead** on the integer path — `_int_to_word` handles
 //!    0 before the `number < 10` branch. Python only reads `ones[0]` from the
-//!    float branch, where `self.ones[int(digit)] or "sifir"` relies on the
+//!    float branch, where `self.ones[int(digit)] or "سفر"` relies on the
 //!    empty string being *falsy* to turn a fraction digit 0 into a word. That
 //!    is a different mechanism from `_int_to_word`'s explicit `if number == 0`;
-//!    both are live and both are needed. Corpus: `1.0` → `"yek xał sifir"`.
-//! 4. **`to_ordinal` is pure concatenation**: `to_cardinal(n) + "em"`, with no
+//!    both are live and both are needed. Corpus: `1.0` → `"یەک خاڵ سفر"`.
+//! 4. **`to_ordinal` is pure concatenation**: `to_cardinal(n) + ەم`, with no
 //!    joint and no stem change. So the suffix lands on the *last* word only:
-//!    `to_ordinal(999)` == `"no sed û nod û noem"`, and `to_ordinal(-1)` ==
-//!    `"negatîv yekem"`. Unlike most languages there is no negative-ordinal
+//!    `to_ordinal(999)` == `"نۆ سەد و نەوەد و نۆەم"`, and `to_ordinal(-1)` ==
+//!    `"نێگەتیڤ یەکەم"`. Unlike most languages there is no negative-ordinal
 //!    guard, so no `ValueError`/`TypeError` for negative ordinals.
 //! 5. **`_int_to_word` would index `ones`/`teens` with a negative index** if it
 //!    were ever handed a negative number (Python's negative indexing wraps, so
-//!    `ones[-5]` would silently yield `"pênc"`). It is unreachable: the only
+//!    `ones[-5]` would silently yield `"پێنج"`). It is unreachable: the only
 //!    two callers, `to_cardinal` and `to_currency`, strip the sign / take
 //!    `abs()` first. [`LangCkb::int_to_word`] is only ever called with a
 //!    non-negative value here, mirroring that. The float path does not change
@@ -99,7 +128,7 @@
 //!     * `1e16` → repr `"1e+16"` → no `"."` → `int("1e+16")` raises
 //!       `ValueError: invalid literal for int() with base 10: '1e+16'`.
 //!     * `1.5e16` → repr `"1.5e+16"` → splits to `left="1"`, `right="5e+16"`;
-//!       `"yek xał pênc"` is built successfully and then thrown away when the
+//!       `"یەک خاڵ پێنج"` is built successfully and then thrown away when the
 //!       loop hits `int('e')` → `ValueError: invalid literal for int() with
 //!       base 10: 'e'`. The offending token is the single *character*, not the
 //!       whole fragment.
@@ -131,44 +160,58 @@ use std::str::FromStr;
 
 /// `setup`: `self.negword`. Note the **trailing space** — CKB's `to_cardinal`
 /// concatenates it directly (`self.negword + ...`) rather than joining with a
-/// separator, so the space is what separates "negatîv" from the number.
-const NEGWORD: &str = "negatîv ";
+/// separator, so the space is what separates "نێگەتیڤ" from the number.
+const NEGWORD: &str = "نێگەتیڤ ";
 
 /// `setup`: `self.pointword`. Float path only; inert for the modes in scope.
-const POINTWORD: &str = "xał";
+const POINTWORD: &str = "خاڵ";
 
 /// `_int_to_word`'s zero word. Not in `ones` — `ones[0]` is `""` (bug 3).
-const ZERO: &str = "sifir";
+const ZERO: &str = "سفر";
 
 /// `setup`: `self.ones`. Index 0 is `""` and dead on the integer path (bug 3).
 const ONES: [&str; 10] = [
-    "", "yek", "du", "sê", "çwar", "pênc", "şeş", "hewt", "heşt", "no",
+    "", "یەک", "دوو", "سێ", "چوار", "پێنج", "شەش", "حەوت", "هەشت", "نۆ",
 ];
 
 /// `setup`: `self.teens`, indexed by `number - 10` for 10..=19.
 const TEENS: [&str; 10] = [
-    "de", "yanze", "dwanze", "siyanze", "çwarde", "panze", "şanzde", "hewde", "hejde", "nozde",
+    "دە", "یانزە", "دوانزە", "سیانزە", "چواردە", "پانزە", "شانزدە", "حەڤدە", "هەژدە", "نۆزدە",
 ];
 
 /// `setup`: `self.tens`, indexed by `number // 10`. Index 0 is `""` (dead: the
-/// `< 100` branch is only reached for `number >= 20`) and index 1 is `"de"`
+/// `< 100` branch is only reached for `number >= 20`) and index 1 is `"دە"`
 /// (also dead — see bug 2).
 const TENS: [&str; 10] = [
-    "", "de", "bîst", "sî", "çil", "penca", "şest", "hefta", "heşta", "nod",
+    "", "دە", "بیست", "سی", "چل", "پەنجا", "شەست", "حەفتا", "هەشتا", "نەوەد",
 ];
 
 /// `setup`: `self.hundred`.
-const HUNDRED: &str = "sed";
+const HUNDRED: &str = "سەد";
 /// `setup`: `self.thousand`.
-const THOUSAND: &str = "hezar";
+const THOUSAND: &str = "هەزار";
 /// `setup`: `self.million`. The largest scale word CKB defines — hence bug 1.
-const MILLION: &str = "milyon";
+const MILLION: &str = "ملیۆن";
 
-/// The joint between every pair of groups: `" û "` ("and").
-const JOINT: &str = " û ";
+/// The joint between every pair of groups: `" و "` ("and").
+const JOINT: &str = " و ";
 
 /// `to_ordinal` / `to_ordinal_num` suffix, glued on with no separator.
-const ORDINAL_SUFFIX: &str = "em";
+///
+/// ـەم is the real Sorani ordinal marker and is correct as-is after a
+/// consonant, which covers most of the lexicon: یەکەم, چوارەم, پێنجەم,
+/// شەشەم, حەوتەم, هەشتەم, بیستەم, چلەم, شەستەم, نەوەدەم, سەدەم, هەزارەم,
+/// ملیۆنەم.
+///
+/// **Known gap, deliberately not fixed here.** After a *vowel-final* stem
+/// standard Sorani inserts a linking consonant, and the sources disagree on
+/// which: Omniglot writes دووهەم / سێهەم / نۆهەم / دەهەم (ـهەم) while other
+/// references write سێیەم / نۆیەم / دەیەم (ـیەم). Both are attested. The
+/// vowel-final stems in these tables are سێ, نۆ, دە, پەنجا, حەفتا, هەشتا and
+/// every ـە-final teen. Picking between the two variants needs a native
+/// speaker, so this module keeps upstream's blind suffix there rather than
+/// guessing; see the module header.
+const ORDINAL_SUFFIX: &str = "ەم";
 
 /// The ceiling of `_int_to_word`'s word-producing branches. At or above this,
 /// Python falls through to `return str(number)` (bug 1).
@@ -228,15 +271,15 @@ impl LangCkb {
     pub fn new() -> Self {
         // Insertion order mirrors the class body. The map itself is unordered,
         // so the "first entry" fallback is pinned by FALLBACK_CURRENCY instead.
-        let iqd = CurrencyForms::new(&["dînar", "dînar"], &["fils", "fils"]);
+        let iqd = CurrencyForms::new(&["دینار", "دینار"], &["فلس", "فلس"]);
         let mut currency_forms = HashMap::new();
         currency_forms.insert(FALLBACK_CURRENCY, iqd.clone());
-        currency_forms.insert("IRR", CurrencyForms::new(&["riyal", "riyal"], &["dînar", "dînar"]));
-        currency_forms.insert("USD", CurrencyForms::new(&["dolar", "dolar"], &["sent", "sent"]));
-        currency_forms.insert("EUR", CurrencyForms::new(&["euro", "euro"], &["sent", "sent"]));
+        currency_forms.insert("IRR", CurrencyForms::new(&["ریاڵ", "ریاڵ"], &["دینار", "دینار"]));
+        currency_forms.insert("USD", CurrencyForms::new(&["دۆلار", "دۆلار"], &["سەنت", "سەنت"]));
+        currency_forms.insert("EUR", CurrencyForms::new(&["یۆرۆ", "یۆرۆ"], &["سەنت", "سەنت"]));
 
         LangCkb {
-            exclude_title: vec!["û".to_string(), "xał".to_string(), "negatîv".to_string()],
+            exclude_title: vec!["و".to_string(), "خاڵ".to_string(), "نێگەتیڤ".to_string()],
             currency_forms,
             fallback_forms: iqd,
         }
@@ -269,7 +312,7 @@ impl LangCkb {
     /// gives `parts[1] == "0"` → `int("00")` → 0, so it lands on zero cents too
     /// and `if cents and right:` skips the segment either way. The two arms
     /// therefore agree here, unlike in `Num2Word_Base.to_currency`. Corpus:
-    /// both `1` and `1.0` render `"yek euro"`.
+    /// both `1` and `1.0` render `"یەک یۆرۆ"`.
     fn currency_parts(&self, val: &CurrencyValue) -> (BigInt, BigInt) {
         match val {
             CurrencyValue::Int(v) => (v.abs(), BigInt::zero()),
@@ -314,7 +357,7 @@ impl LangCkb {
     ///     left, right = n.split(".", 1)
     ///     ret = self._int_to_word(int(left)) + " " + self.pointword
     ///     for digit in right:
-    ///         ret += " " + (self.ones[int(digit)] or "sifir")
+    ///         ret += " " + (self.ones[int(digit)] or "سفر")
     ///     return ret.strip()
     /// return self._int_to_word(int(n))
     /// ```
@@ -335,7 +378,7 @@ impl LangCkb {
     /// * `split(".", 1)` splits on the *first* dot only, so a second dot would
     ///   land in `right` and reach `int()` as a character. Unreachable from a
     ///   repr.
-    /// * `self.ones[0]` is `""`, which is falsy, so `or "sifir"` is what turns
+    /// * `self.ones[0]` is `""`, which is falsy, so `or "سفر"` is what turns
     ///   a fraction digit 0 into a word (bug 3).
     fn cardinal_from_repr(&self, n: &str) -> Result<String> {
         // n = str(number).strip(). Python strips its own whitespace set and
@@ -357,12 +400,12 @@ impl LangCkb {
         // ret = self._int_to_word(int(left)) + " " + self.pointword
         //
         // `int(left)` is the whole integer part, so bug 1 applies at 10^9 and
-        // above: it comes back as bare digits ("98746251323029 xał no no").
+        // above: it comes back as bare digits ("98746251323029 خاڵ نۆ نۆ").
         let mut ret = self.int_to_word(&py_int(left)?);
         ret.push(' ');
         ret.push_str(POINTWORD);
 
-        // for digit in right: ret += " " + (self.ones[int(digit)] or "sifir")
+        // for digit in right: ret += " " + (self.ones[int(digit)] or "سفر")
         //
         // Per *character*, so there is no grouping, no rounding and no padding:
         // the fraction is however many digits the repr had. The partially built
@@ -408,7 +451,7 @@ fn int_to_word_small(number: u64) -> String {
         // h, r = divmod(number, 100)
         let (h, r) = (number / 100, number % 100);
         // base = (self.ones[h] + " " if h > 1 else "") + self.hundred
-        // h == 1 is bare "sed" — no "yek sed". Corpus: 100 -> "sed".
+        // h == 1 is bare "سەد" — no "یەک سەد". Corpus: 100 -> "سەد".
         let mut out = String::new();
         if h > 1 {
             out.push_str(ONES[h as usize]);
@@ -424,7 +467,7 @@ fn int_to_word_small(number: u64) -> String {
     if number < 1_000_000 {
         // t, r = divmod(number, 1000)
         let (t, r) = (number / 1_000, number % 1_000);
-        // No h > 1 style suppression here: 1000 -> "yek hezar", not "hezar".
+        // No h > 1 style suppression here: 1000 -> "یەک هەزار", not "هەزار".
         let mut out = int_to_word_small(t);
         out.push(' ');
         out.push_str(THOUSAND);
@@ -539,8 +582,8 @@ fn shortest_repr_digits(a: f64) -> (String, i32) {
 /// * format that exponent `%+.02d` — signed, at least two digits, so `1e+16`
 ///   and `1e-05` but `5e-324`.
 /// * otherwise print positionally and append `.0` if nothing follows the point
-///   (`Py_DTSF_ADD_DOT_0`), which is the whole reason `1.0` is `"yek xał sifir"`
-///   and not `"yek"`.
+///   (`Py_DTSF_ADD_DOT_0`), which is the whole reason `1.0` is `"یەک خاڵ سفر"`
+///   and not `"یەک"`.
 fn py_str_f64(v: f64) -> String {
     // Unreachable from the shim, which computes `precision` as
     // `abs(Decimal(str(value)).as_tuple().exponent)` and would raise on the
@@ -557,7 +600,7 @@ fn py_str_f64(v: f64) -> String {
 
     // The sign is taken from the sign *bit*, not from `v < 0.0`, so that
     // `str(-0.0)` is "-0.0" and CKB's `startswith("-")` fires: -0.0 renders
-    // "negatîv sifir xał sifir".
+    // "نێگەتیڤ سفر خاڵ سفر".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let (digits, decpt) = shortest_repr_digits(v.abs());
     let ndig = digits.len() as i32;
@@ -613,15 +656,15 @@ fn py_str_f64(v: f64) -> String {
 ///
 /// | value | `Decimal.__str__` | `BigDecimal` `Display` |
 /// |---|---|---|
-/// | `1E+2` | `1E+2` (CKB: `ValueError`) | `100` (CKB: "sed") |
-/// | `0.0` | `0.0` (CKB: "sifir xał sifir") | `0` (CKB: "sifir") |
+/// | `1E+2` | `1E+2` (CKB: `ValueError`) | `100` (CKB: "سەد") |
+/// | `0.0` | `0.0` (CKB: "سفر خاڵ سفر") | `0` (CKB: "سفر") |
 /// | `1E+16` | `1E+16` | `1e+16` — lowercase |
 ///
 /// So the digits and exponent are read off `as_bigint_and_exponent()` and
 /// reassembled by Python's rule instead. That pairing is exact:
 /// `BigDecimal::from_str` keeps the written scale rather than normalising
 /// (`"1.10"` stays coefficient 110 / scale 2, which is what makes the trailing
-/// "sifir" appear), and `(coefficient, -scale)` is precisely Python's
+/// "سفر" appear), and `(coefficient, -scale)` is precisely Python's
 /// `(_int, _exp)` — including for values Python itself cannot tell apart, since
 /// `Decimal("1E-7")` and `Decimal("0.0000001")` *are* the same object and both
 /// stringify "1E-7".
@@ -687,18 +730,22 @@ impl Lang for LangCkb {
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + "em"` with no verify_ordinal guard, so a
     /// float keeps its spelled-out ".0" tail and the suffix lands on the last
-    /// word: `to_ordinal(5.0)` == "pênc xał sifirem", `to_ordinal(-1.5)` ==
-    /// "negatîv yek xał pêncem". Exponent-form reprs raise the cardinal
+    /// word: `to_ordinal(5.0)` == "پێنج خاڵ سفرەم", `to_ordinal(-1.5)` ==
+    /// "نێگەتیڤ یەک خاڵ پێنجەم". Exponent-form reprs raise the cardinal
     /// path's ValueError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}em", self.to_cardinal_float(value, None)?))
+        Ok(format!(
+            "{}{}",
+            self.to_cardinal_float(value, None)?,
+            ORDINAL_SUFFIX
+        ))
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "em"` — the repr
-    /// verbatim, sign and trailing zeros included: `-0.0` → "-0.0em",
-    /// `Decimal("5.00")` → "5.00em", `1e16` → "1e+16em".
+    /// `to_ordinal_num(float/Decimal)`: `str(number) + ەم` — the repr
+    /// verbatim, sign and trailing zeros included: `-0.0` → "-0.0ەم",
+    /// `Decimal("5.00")` → "5.00ەم", `1e16` → "1e+16ەم".
     fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}em", repr_str))
+        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
     }
 
     /// `converter.str_to_number` — base `Decimal(value)` semantics, except
@@ -735,7 +782,7 @@ impl Lang for LangCkb {
     }
 
     fn pointword(&self) -> &str {
-        "xał"
+        "خاڵ"
     }
 
     fn exclude_title(&self) -> &[String] {
@@ -781,14 +828,14 @@ impl Lang for LangCkb {
     ///
     /// `str` of a `Decimal` keeps every written digit and `str` of a `float`
     /// keeps the shortest round-trip ones, so `Decimal("1.10")` ends in
-    /// `"sifir"` where the float `1.1` cannot — issue #603's split is visible in
+    /// `"سفر"` where the float `1.1` cannot — issue #603's split is visible in
     /// the *output* here, not just in the last bits. Hence [`py_str_decimal`]
     /// for one and [`py_str_f64`] for the other.
     ///
     /// # `precision_override` is deliberately ignored
     ///
     /// `num2words(2.675, lang="ckb", precision=1)` returns the full
-    /// `"du xał şeş hewt pênc"`, not a one-digit fraction. `__init__.py` pops
+    /// `"دوو خاڵ شەش حەوت پێنج"`, not a one-digit fraction. `__init__.py` pops
     /// `precision=`, and since `hasattr(converter, "precision")` is True
     /// (`Num2Word_Base.__init__` sets it) it does assign `converter.precision`
     /// and restore it afterwards — but `Num2Word_CKB.to_cardinal` never reads
@@ -800,9 +847,9 @@ impl Lang for LangCkb {
     /// # Known divergence: negative zero on the `Decimal` arm
     ///
     /// `str(Decimal("-0.0"))` is `"-0.0"`, so Python renders
-    /// `"negatîv sifir xał sifir"`. `BigDecimal` has no signed zero — the shim's
+    /// `"نێگەتیڤ سفر خاڵ سفر"`. `BigDecimal` has no signed zero — the shim's
     /// `BigDecimal::from_str("-0.0")` yields coefficient `0`, whose sign is
-    /// gone by the time this sees it — so the Rust output is `"sifir xał sifir"`.
+    /// gone by the time this sees it — so the Rust output is `"سفر خاڵ سفر"`.
     /// Not fixable from this file: it is lost in the crossing, before
     /// `to_cardinal_float` is entered. The `float` arm is unaffected (it reads
     /// the IEEE sign bit, and `-0.0` survives as an f64). Flagged in `concerns`.
@@ -820,7 +867,7 @@ impl Lang for LangCkb {
         self.cardinal_from_repr(&n)
     }
 
-    /// Port of `Num2Word_CKB.to_ordinal`: `self.to_cardinal(number) + "em"`.
+    /// Port of `Num2Word_CKB.to_ordinal`: `self.to_cardinal(number) + ەم`.
     ///
     /// No joint, no stem change, no negative guard — the suffix simply lands on
     /// the last word (bug 4).
@@ -828,10 +875,10 @@ impl Lang for LangCkb {
         Ok(self.to_cardinal(value)? + ORDINAL_SUFFIX)
     }
 
-    /// Port of `Num2Word_CKB.to_ordinal_num`: `str(number) + "em"`.
+    /// Port of `Num2Word_CKB.to_ordinal_num`: `str(number) + ەم`.
     ///
     /// Overrides the base's bare `str(value)`. The sign survives verbatim:
-    /// `to_ordinal_num(-1)` == `"-1em"`.
+    /// `to_ordinal_num(-1)` == `"-1ەم"`.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         Ok(value.to_string() + ORDINAL_SUFFIX)
     }
@@ -840,7 +887,7 @@ impl Lang for LangCkb {
     ///
     /// The `longval` parameter is accepted and ignored by Python — there is no
     /// century-pair reading ("nineteen eighty-four"); years are read as plain
-    /// cardinals. Corpus: 1984 -> "yek hezar û no sed û heşta û çwar".
+    /// cardinals. Corpus: 1984 -> "یەک هەزار و نۆ سەد و هەشتا و چوار".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -860,7 +907,7 @@ impl Lang for LangCkb {
     /// `Num2Word_Base`) does a bare `self.CURRENCY_FORMS[currency]` and lets the
     /// `KeyError` become `NotImplementedError`, so this hook must miss for an
     /// unknown code. Corpus: `cheque:GBP` → NotImplementedError while
-    /// `currency:GBP` → `"... dînar ..."`.
+    /// `currency:GBP` → `"... دینار ..."`.
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
     }
@@ -929,20 +976,20 @@ impl Lang for LangCkb {
     ///
     /// 6. **`negword` is concatenated raw, not `.strip()`-ed then spaced.**
     ///    `Num2Word_Base.to_currency` builds `"%s " % self.negword.strip()`;
-    ///    CKB writes `self.negword + result`. Both land on `"negatîv "` here
+    ///    CKB writes `self.negword + result`. Both land on `"نێگەتیڤ "` here
     ///    only because `setup` gave `negword` a trailing space. So this uses
     ///    [`NEGWORD`] verbatim — *not* `negword().trim()` + `" "` the way
     ///    `currency::default_to_currency` does.
     /// 7. **An unknown currency code silently renders as Iraqi dinars.**
     ///    `.get(currency, list(self.CURRENCY_FORMS.values())[0])` falls back to
     ///    the first entry instead of raising. So `currency="GBP"` — and even
-    ///    `currency="ZZZ"` — yields `"... dînar ... fils"` rather than the
+    ///    `currency="ZZZ"` — yields `"... دینار ... فلس"` rather than the
     ///    `NotImplementedError` every other mode raises. Corpus confirms it for
     ///    GBP, JPY, KWD, BHD, INR, CNY and CHF: all seven render as dînar/fils.
     /// 8. **`CURRENCY_PRECISION` is ignored; every code is 2-decimal.** The
     ///    hardcoded `[:2]` means KWD/BHD get 2 fractional digits rather than 3
     ///    (`12.34` → 34 fils, not 340) and JPY gets cents rather than none
-    ///    (`12.34` → `"dwanze dînar sî û çwar fils"`, where the base class
+    ///    (`12.34` → `"دوانزە دینار سی و چوار فلس"`, where the base class
     ///    would have rounded to a whole 12). Corpus confirms both.
     /// 9. **The unit form is indexed `cr1[1]`, not `cr1[-1]`.** Identical for
     ///    CKB's four 2-tuples, but it would `IndexError` on a 1-tuple form.
