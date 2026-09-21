@@ -30,7 +30,7 @@ EXPECTED_BASICS = {
     "pap": ("sero", "un", "dies"),
     "pli": ("suñña", "eka", "dasa"),
     "rw": ("zeru", "rimwe", "icumi"),
-    "ti": ("bado", "ḥade", "'aserte"),
+    "ti": ("ባዶ", "ሓደ", "ዓሰርተ"),
     "xh": ("iqanda", "nye", "lishumi"),
     "zu": ("iqanda", "kunye", "ishumi"),
 }

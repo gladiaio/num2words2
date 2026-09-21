@@ -1,4 +1,66 @@
-//! Port of `lang_TI.py` (Tigrinya, transliterated).
+//! Port of `lang_TI.py` (Tigrinya).
+//!
+//! # Deliberate divergences from upstream
+//!
+//! Two, both documented below: the **script** (Ge'ez, not Latin) and the
+//! **ordinal algorithm** (suppletive + `መበል`, not a glued suffix). Everything
+//! else is ported verbatim, bug for bug.
+//!
+//! ## 1. Ge'ez script
+//!
+//! Upstream `lang_TI.py` spells every numeral in **Latin transliteration**
+//! ("ḥade", "mi'ti", "shiḥ"). Tigrinya is written in Ge'ez, and the sibling
+//! Ethiopic language in this crate (`lang_am.rs`, Amharic) already emits Ge'ez,
+//! so the transliteration was an upstream accident rather than a choice. The
+//! word tables here are the Ge'ez spellings: "ሓደ", "ሚእቲ", "ሽሕ".
+//!
+//! This is a lexicon change only — the composition rules, the `> 1` multiplier
+//! guards, the billion cliff and the currency fallback are all still ported
+//! verbatim. The frozen-corpus fixtures in this file were re-spelled to match;
+//! every other assertion they make is unchanged. (Upstream's *missing*
+//! `verify_ordinal` is the one piece of behaviour this module does not keep —
+//! §2 below restores the guard.)
+//!
+//! One consequence worth naming, inherited structure rather than new
+//! behaviour: **the billion cliff still emits ASCII digits.** Above 10^9
+//! upstream returns `str(number)`; those are Western digits, not Ge'ez
+//! numerals, and that is untouched.
+//!
+//! ## 2. Ordinal algorithm
+//!
+//! Upstream builds *every* ordinal as `to_cardinal(n) + "ay"`, which produces
+//! the non-word "ሓደኣይ" for 1st. Tigrinya has two arms instead:
+//!
+//! * **1..=10 are suppletive** — distinct forms with their own vowel shifts
+//!   and endings, not derivable from the cardinal: ቀዳማይ, ካልኣይ, ሳልሳይ, ራብዓይ,
+//!   ሓምሻይ, ሻድሻይ, ሻብዓይ, ሻምናይ, ታሽዓይ, ዓስራይ. See [`ORDINAL_IRREGULARS`].
+//! * **11 and up take the free-standing word መበል** followed by the plain,
+//!   uninflected cardinal: "መበል ዓሰርተ ን ሓደ", "መበል ሚእቲ". See
+//!   [`ORDINAL_PREFIX`].
+//!
+//! The **digit** form (`to_ordinal_num`) follows the same two arms, which is
+//! the formal/textbook convention: ይ suffixed to the digit up to 10 ("1ይ",
+//! "10ይ"), then the መበል prefix on the bare digit ("መበል 11", "መበል 100").
+//! Upstream's universal "ay" suffix is doubly wrong here — it applies one
+//! suffix at every magnitude, and the suffix itself is two letters where only
+//! ይ is written. A colloquial alternative seen in media does extend ይ to all
+//! numbers ("11ይ", "100ይ"); switching to it means deleting the range test in
+//! [`Lang::to_ordinal_num`] and always taking the suffix arm.
+//!
+//! `verify_ordinal` is restored, so non-integers, negatives and zero now raise
+//! `TypeError` instead of passing through — see [`LangTi::verify_ordinal`] and
+//! [`LangTi::verify_ordinal_num`]. The guard is **stricter than Base** in one
+//! respect: Python lets zero through and every other language in this crate
+//! renders a "zeroth", but Tigrinya has no ordinal for zero.
+//!
+//! Scope of the change, deliberately narrow:
+//!
+//! * Only the **masculine** series is modelled. The feminine forms replace
+//!   *-ay* with *-eyti* (ቀዳመይቲ, …); nothing in the `num2words` API carries
+//!   grammatical gender for ordinals, so there is nowhere to select them from.
+//! * A **whole** float or Decimal is not an error — it routes into the
+//!   integer path, so `to_ordinal(5.0)` is "ሓምሻይ" and `to_ordinal_num(5.0)`
+//!   is "5ይ". Only genuinely fractional values raise.
 //!
 //! Shape: **self-contained**. `Num2Word_TI` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so the guard in
@@ -17,13 +79,13 @@
 //!
 //! # Structure
 //!
-//! Tigrinya composes with a single connector `" n "` at every level, and
-//! suppresses the multiplier word when it would be one ("ḥade"): 100 is
-//! "mi'ti" (not "ḥade mi'ti"), 1000 is "shiḥ", 10^6 is "miliyon". Note the
+//! Tigrinya composes with a single connector `" ን "` at every level, and
+//! suppresses the multiplier word when it would be one ("ሓደ"): 100 is
+//! "ሚእቲ" (not "ሓደ ሚእቲ"), 1000 is "ሽሕ", 10^6 is "ሚልዮን". Note the
 //! `> 1` guard is present on the millions branch too, unlike some sibling
 //! languages (e.g. `lang_PAP`) that only guard the thousands.
 //!
-//! Teens are not lexicalised: 11 is "'aserte n ḥade" (literally "ten and
+//! Teens are not lexicalised: 11 is "ዓሰርተ ን ሓደ" (literally "ten and
 //! one"), built by the generic `< 100` branch. That is the Python behaviour,
 //! not an omission.
 //!
@@ -38,17 +100,16 @@
 //!    `to_cardinal(10**21) == "1000000000000000000000"`. No exception, no
 //!    words — the digits are the output. Modelled in [`LangTi::int_to_word`].
 //! 2. The cliff leaks into the other modes: `to_ordinal(10**9)` is
-//!    `"1000000000ay"`, which is also exactly what `to_ordinal_num(10**9)`
-//!    returns — the two modes silently converge above the cliff.
-//! 3. `to_ordinal` never calls `verify_ordinal`, so zero and negatives pass
-//!    straight through and get suffixed: `to_ordinal(0) == "badoay"`,
-//!    `to_ordinal(-1) == "tetsabi'i ḥadeay"`. The suffix lands on the *last
-//!    word* of a multi-word cardinal, e.g. `to_ordinal(11)` is
-//!    `"'aserte n ḥadeay"`.
+//!    `"መበል 1000000000"`, the same digits `to_ordinal_num(10**9)` produces.
+//!    The cliff itself is the inherited bug; the ordinal fix above changed
+//!    only how the digits are framed.
+//! 3. ~~`to_ordinal` never calls `verify_ordinal`~~ — **fixed**, see the
+//!    ordinal divergence above. Upstream let zero and negatives through and
+//!    suffixed them ("ባዶኣይ", "ኣሉታ ሓደኣይ"); both now raise `TypeError`.
 //! 4. `to_year` ignores its `longval` parameter entirely and delegates to
 //!    `to_cardinal`, so there is no BC/AD handling and no year-pairing:
 //!    `to_year(1999)` is the plain cardinal, and `to_year(-500)` is
-//!    `"tetsabi'i ḥamushte mi'ti"` ("negative five hundred") rather than
+//!    `"ኣሉታ ሓሙሽተ ሚእቲ"` ("negative five hundred") rather than
 //!    anything resembling "500 BC".
 //!
 //! # Currency
@@ -65,24 +126,24 @@
 //! 1. **`to_currency` never raises `NotImplementedError`.**
 //!    `CURRENCY_FORMS.get(currency, list(CURRENCY_FORMS.values())[0])` falls
 //!    back to the *first inserted* entry — ETB — for every unknown code. So
-//!    `to_currency(0, "GBP")` is "bado birri", and JPY/KWD/BHD/INR/CNY/CHF all
-//!    silently render as Ethiopian birri. `to_cheque` is Base's and *does*
+//!    `to_currency(0, "GBP")` is "ባዶ ብር", and JPY/KWD/BHD/INR/CNY/CHF all
+//!    silently render as Ethiopian ብር. `to_cheque` is Base's and *does*
 //!    raise, which is why the corpus has `cheque:GBP` erroring while
 //!    `currency:GBP` succeeds.
 //! 2. **No precision table.** `CURRENCY_PRECISION` is `{}`, so `.get(code,100)`
 //!    is always 100: KWD/BHD get 2 decimals rather than 3, and JPY still
-//!    renders subunits (`to_currency(12.34,"JPY")` ends "…selasa n arba'te
-//!    santim"). Both the 1000- and 1-divisor branches are dead for TI.
+//!    renders subunits (`to_currency(12.34,"JPY")` ends "…ሰላሳ ን ኣርባዕተ
+//!    ሳንቲም"). Both the 1000- and 1-divisor branches are dead for TI.
 //! 3. **No `pluralize`, no adjective.** `to_currency` indexes the form tuple
 //!    inline (`cr1[1] if left != 1 else cr1[0]`) and accepts `adjective`
 //!    without ever reading it. `CURRENCY_ADJECTIVES` is `{}` anyway.
 //! 4. **Cents truncate, they do not round.** `right` is built from the first
-//!    two *characters* after the "." in `str(val)`, so 2.675 is 67 santim
+//!    two *characters* after the "." in `str(val)`, so 2.675 is 67 ሳንቲም
 //!    (ROUND_HALF_UP would say 68), 12.345 is 34, and 0.005 truncates to 0 —
-//!    which, being falsy, drops the cents segment entirely ("bado euro").
+//!    which, being falsy, drops the cents segment entirely ("ባዶ ዩሮ").
 //! 5. **`left`/`right` go through `_int_to_word`, not `to_cardinal`**, so the
 //!    billion cliff applies to the units too: `to_currency(1e15)` is
-//!    "1000000000000000 euro" (digits, verified against the interpreter).
+//!    "1000000000000000 ዩሮ" (digits, verified against the interpreter).
 //!
 //! Base's `to_cheque`, `_money_verbose`, `_cents_verbose` and `_cents_terse`
 //! are all inherited unchanged, so their trait defaults already match; only the
@@ -90,7 +151,7 @@
 //!
 //! # Float / Decimal cardinal path
 //!
-//! `pointword` ("neṭebi") and the `"." in n` branch of `to_cardinal` are the
+//! `pointword` ("ነጥቢ") and the `"." in n` branch of `to_cardinal` are the
 //! float *cardinal* path. TI overrides `to_cardinal` (not `to_cardinal_float`)
 //! and handles non-integers **inline on the string** `str(number)`, so the port
 //! overrides [`Lang::to_cardinal_float`] to reconstruct that exact string
@@ -120,50 +181,83 @@ use std::str::FromStr;
 /// `setup(): self.ones`. Index 0 is the empty string, exactly as in Python.
 /// The `< 10` branch is guarded by the zero test above it, so index 0 is only
 /// ever reachable via the (out-of-scope) decimal-digit loop, which maps it to
-/// "bado" instead.
+/// "ባዶ" instead.
 const ONES: [&str; 10] = [
     "",
-    "ḥade",
-    "kilte",
-    "seleste",
-    "arba'te",
-    "ḥamushte",
-    "shidushte",
-    "shew'ate",
-    "shemonte",
-    "tish'ate",
+    "ሓደ",
+    "ክልተ",
+    "ሰለስተ",
+    "ኣርባዕተ",
+    "ሓሙሽተ",
+    "ሽዱሽተ",
+    "ሸውዓተ",
+    "ሸሞንተ",
+    "ትሽዓተ",
 ];
 
 /// `setup(): self.tens`. Index 0 is unreachable (`number >= 10` in the only
 /// branch that reads this table).
 const TENS: [&str; 10] = [
     "",
-    "'aserte",
-    "'isra",
-    "selasa",
-    "arba'a",
-    "ḥamsa",
-    "sisa",
-    "seb'a",
-    "semanya",
-    "tis'a",
+    "ዓሰርተ",
+    "ዕስራ",
+    "ሰላሳ",
+    "ኣርብዓ",
+    "ሓምሳ",
+    "ስሳ",
+    "ሰብዓ",
+    "ሰማንያ",
+    "ተስዓ",
 ];
 
-const ZERO_WORD: &str = "bado";
-const HUNDRED: &str = "mi'ti";
-const THOUSAND: &str = "shiḥ";
-const MILLION: &str = "miliyon";
+const ZERO_WORD: &str = "ባዶ";
+const HUNDRED: &str = "ሚእቲ";
+const THOUSAND: &str = "ሽሕ";
+const MILLION: &str = "ሚልዮን";
 
 /// `setup(): self.negword`. The trailing space is part of the Python literal.
-const NEGWORD: &str = "tetsabi'i ";
+const NEGWORD: &str = "ኣሉታ ";
 /// `setup(): self.pointword`. Float path only — unused in scope.
-const POINTWORD: &str = "neṭebi";
+const POINTWORD: &str = "ነጥቢ";
 
 /// The connector joining every level: "ten *and* one", "hundred *and* five".
-const AND: &str = " n ";
+const AND: &str = " ን ";
 
-/// `to_ordinal` / `to_ordinal_num` suffix.
-const ORDINAL_SUFFIX: &str = "ay";
+/// `to_ordinal_num` suffix, for the 1..=10 arm only.
+///
+/// **Not** upstream's "ay". Every spelled-out irregular from 1 to 10 ends in
+/// the 6th-order ይ, so the typographic suffix on a digit is the single letter
+/// ይ — "1ይ", "10ይ". Upstream's two-letter "ኣይ" ("11ኣይ") is not what is
+/// written.
+const ORDINAL_SUFFIX: &str = "ይ";
+
+/// Tigrinya ordinals 1-10 are suppletive: they are not the cardinal plus a
+/// suffix but distinct forms with their own vowel shifts and endings
+/// (*-ay*, *-shay*, *-nay*). Index 0 is unused — the table is only consulted
+/// for 1..=10, and zero has no ordinal in this scheme.
+///
+/// These are the **masculine** forms, which are the default for software and
+/// UI localisation. The feminine series replaces *-ay* with *-eyti*
+/// (ቀዳመይቲ, ካልኣይቲ, …) and is not modelled: nothing in the `num2words` API
+/// carries grammatical gender for ordinals.
+const ORDINAL_IRREGULARS: [&str; 11] = [
+    "",
+    "ቀዳማይ",
+    "ካልኣይ",
+    "ሳልሳይ",
+    "ራብዓይ",
+    "ሓምሻይ",
+    "ሻድሻይ",
+    "ሻብዓይ",
+    "ሻምናይ",
+    "ታሽዓይ",
+    "ዓስራይ",
+];
+
+/// From 11 up, Tigrinya stops inflecting and prefixes the free-standing word
+/// መበል to the plain cardinal: 11th is "መበል ዓሰርተ ን ሓደ", 100th "መበል ሚእቲ".
+/// The trailing space is part of the prefix.
+const ORDINAL_PREFIX: &str = "መበል ";
 
 /// `Num2Word_TI.CURRENCY_FORMS`, in Python's class-body **insertion order**.
 ///
@@ -171,19 +265,19 @@ const ORDINAL_SUFFIX: &str = "ay";
 /// unordered literal: `to_currency` falls back to
 /// `list(self.CURRENCY_FORMS.values())[0]` for unknown codes, which since
 /// Python 3.7 is the first *inserted* entry. Verified against the live
-/// interpreter — `list(c.CURRENCY_FORMS.values())[0]` is ETB's birri/santim
+/// interpreter — `list(c.CURRENCY_FORMS.values())[0]` is ETB's ብር/ሳንቲም
 /// pair — and against the corpus, where every unimplemented code renders as
-/// birri.
+/// ብር.
 ///
 /// Each side carries exactly two forms, matching the Python tuples. TI's
-/// singular and plural are identical throughout ("birri"/"birri"), so the
+/// singular and plural are identical throughout ("ብር"/"ብር"), so the
 /// `left != 1` branch is invisible in the output — but the arity is what the
 /// inline `cr1[1]` index depends on, so it is kept exact.
 const CURRENCY_FORMS: [(&str, [&str; 2], [&str; 2]); 4] = [
-    ("ETB", ["birri", "birri"], ["santim", "santim"]),
-    ("ERN", ["nakfa", "nakfa"], ["santim", "santim"]),
-    ("USD", ["dolar", "dolar"], ["sent", "sent"]),
-    ("EUR", ["euro", "euro"], ["sent", "sent"]),
+    ("ETB", ["ብር", "ብር"], ["ሳንቲም", "ሳንቲም"]),
+    ("ERN", ["ናቕፋ", "ናቕፋ"], ["ሳንቲም", "ሳንቲም"]),
+    ("USD", ["ዶላር", "ዶላር"], ["ሰንት", "ሰንት"]),
+    ("EUR", ["ዩሮ", "ዩሮ"], ["ሰንት", "ሰንት"]),
 ];
 
 /// Python's `str(val).split(".")` keeps at most the first two fractional
@@ -218,9 +312,9 @@ impl LangTi {
         let (_, fallback_unit, fallback_subunit) = CURRENCY_FORMS[0];
         LangTi {
             exclude_title: vec![
-                "nay".to_string(),
-                "neṭebi".to_string(),
-                "tetsabi'i".to_string(),
+                "ናይ".to_string(),
+                "ነጥቢ".to_string(),
+                "ኣሉታ".to_string(),
             ],
             currency_forms: CURRENCY_FORMS
                 .iter()
@@ -257,7 +351,7 @@ impl LangTi {
     ///
     /// Consequently `has_decimal` is *not* consulted: TI branches on the text
     /// of `str(val)`, never on `isinstance`, so int `5`, `Decimal("5")`,
-    /// `Decimal("5.00")` and `5.0` all collapse to the same "ḥamushte euro"
+    /// `Decimal("5.00")` and `5.0` all collapse to the same "ሓሙሽተ ዩሮ"
     /// (verified against the interpreter). This is the one place where reading
     /// `has_decimal` would be actively wrong.
     ///
@@ -268,11 +362,11 @@ impl LangTi {
     /// this function as **byte-identical state** — same digits (1), same scale
     /// (5), same `has_decimal` (true) — yet Python disagrees about them:
     /// `str(1e-05)` is "1e-05" and raises ValueError, while
-    /// `str(Decimal("0.00001"))` is "0.00001" and yields "bado euro". Only the
+    /// `str(Decimal("0.00001"))` is "0.00001" and yields "ባዶ ዩሮ". Only the
     /// discarded string tells them apart, so no rule available here can be both
     /// sound and complete; guessing on scale would misfire on legitimate small
     /// `Decimal`s. The plain-decimal reading is chosen, which means floats with
-    /// `0 < |v| < 1e-4` return "bado <unit>" where Python raises ValueError.
+    /// `0 < |v| < 1e-4` return "ባዶ <unit>" where Python raises ValueError.
     /// Fixing it needs `CurrencyValue` to carry the original `str(val)`.
     fn split_currency_parts(&self, val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         match val {
@@ -311,6 +405,67 @@ impl LangTi {
         }
     }
 
+    /// `Num2Word_Base.verify_ordinal`, which upstream `Num2Word_TI` never
+    /// calls — that omission is the bug this restores (module header, §2).
+    ///
+    /// **Stricter than Base.** Python's `verify_ordinal` rejects only
+    /// non-integers and negatives; `abs(0) == 0`, so zero passes and every
+    /// other language in this crate renders a "zeroth". Tigrinya has no
+    /// ordinal for zero — neither arm of the rule produces a real word for it
+    /// ("መበል ባዶ" is not something anyone says) — so zero is rejected here too.
+    ///
+    /// This is the integer branch. The float/Decimal branch lives in
+    /// [`LangTi::verify_ordinal_num`], which adds Base's `errmsg_floatord`
+    /// check ahead of these two, so `to_ordinal(3.14)` raises rather than
+    /// rendering a decimal ordinal. A *whole* float is not an error — it
+    /// routes into the integer path and lands back here.
+    fn verify_ordinal(&self, value: &BigInt) -> Result<()> {
+        if value.is_negative() {
+            // Base's `errmsg_negord`, verbatim — the wording other languages
+            // in this crate already raise.
+            return Err(N2WError::Type(format!(
+                "Cannot treat negative num {} as ordinal.",
+                value
+            )));
+        }
+        if value.is_zero() {
+            // No Python precedent for this message: upstream never rejects
+            // zero anywhere, so there is no wording to match.
+            return Err(N2WError::Type("Cannot treat zero as ordinal.".into()));
+        }
+        Ok(())
+    }
+
+    /// `verify_ordinal` for a float/Decimal. The float check fires first, then
+    /// the sign check, then the zero check — Base's ordering, with this
+    /// module's extra zero rejection appended.
+    ///
+    /// Both messages quote `str(value)`, not the truncated integer, matching
+    /// Python's `errmsg_floatord % value` / `errmsg_negord % value`. Returns
+    /// the whole value so a whole float (`5.0`) can route into the integer
+    /// path and render "ሓምሻይ" rather than a decimal form.
+    fn verify_ordinal_num(&self, value: &FloatValue) -> Result<BigInt> {
+        let whole = match value.as_whole_int() {
+            Some(i) => i,
+            None => {
+                return Err(N2WError::Type(format!(
+                    "Cannot treat float {} as ordinal.",
+                    python_str(value)
+                )))
+            }
+        };
+        if whole.is_negative() {
+            return Err(N2WError::Type(format!(
+                "Cannot treat negative num {} as ordinal.",
+                python_str(value)
+            )));
+        }
+        if whole.is_zero() {
+            return Err(N2WError::Type("Cannot treat zero as ordinal.".into()));
+        }
+        Ok(whole)
+    }
+
     /// Port of `Num2Word_TI._int_to_word`.
     ///
     /// Only ever called with a **non-negative** value: `to_cardinal` peels the
@@ -319,7 +474,7 @@ impl LangTi {
     /// `/` on negatives). All the small-index conversions are therefore
     /// provably in range.
     fn int_to_word(&self, number: &BigInt) -> String {
-        // Python: if number == 0: return "bado"
+        // Python: if number == 0: return "ባዶ"
         if number.is_zero() {
             return ZERO_WORD.to_string();
         }
@@ -331,7 +486,7 @@ impl LangTi {
         }
 
         // Python: t, o = divmod(number, 10)
-        //         return self.tens[t] + (" n " + self.ones[o] if o else "")
+        //         return self.tens[t] + (" ን " + self.ones[o] if o else "")
         if *number < BigInt::from(100) {
             let (t, o) = number.div_mod_floor(&BigInt::from(10));
             let t = to_index(&t); // 1..=9
@@ -346,12 +501,12 @@ impl LangTi {
 
         // Python: h, r = divmod(number, 100)
         //         base = (self.ones[h] + " " if h > 1 else "") + self.hundred
-        //         return base + (" n " + self._int_to_word(r) if r else "")
+        //         return base + (" ን " + self._int_to_word(r) if r else "")
         if *number < BigInt::from(1000) {
             let (h, r) = number.div_mod_floor(&BigInt::from(100));
             let h = to_index(&h); // 1..=9
             let mut out = String::new();
-            // The `h > 1` guard: 100 -> "mi'ti", never "ḥade mi'ti".
+            // The `h > 1` guard: 100 -> "ሚእቲ", never "ሓደ ሚእቲ".
             if h > 1 {
                 out.push_str(ONES[h]);
                 out.push(' ');
@@ -367,11 +522,11 @@ impl LangTi {
         // Python: t, r = divmod(number, 1000)
         //         base = (self._int_to_word(t) + " " if t > 1 else "")
         //                + self.thousand
-        //         return base + (" n " + self._int_to_word(r) if r else "")
+        //         return base + (" ን " + self._int_to_word(r) if r else "")
         if *number < BigInt::from(1_000_000) {
             let (t, r) = number.div_mod_floor(&BigInt::from(1000));
             let mut out = String::new();
-            // The `t > 1` guard: 1000 -> "shiḥ", never "ḥade shiḥ".
+            // The `t > 1` guard: 1000 -> "ሽሕ", never "ሓደ ሽሕ".
             if t > BigInt::from(1) {
                 out.push_str(&self.int_to_word(&t));
                 out.push(' ');
@@ -387,11 +542,11 @@ impl LangTi {
         // Python: m, r = divmod(number, 1000000)
         //         base = (self._int_to_word(m) + " " if m > 1 else "")
         //                + self.million
-        //         return base + (" n " + self._int_to_word(r) if r else "")
+        //         return base + (" ን " + self._int_to_word(r) if r else "")
         if *number < BigInt::from(1_000_000_000) {
             let (m, r) = number.div_mod_floor(&BigInt::from(1_000_000));
             let mut out = String::new();
-            // The `m > 1` guard is present here too: 10**6 -> "miliyon".
+            // The `m > 1` guard is present here too: 10**6 -> "ሚልዮን".
             if m > BigInt::from(1) {
                 out.push_str(&self.int_to_word(&m));
                 out.push(' ');
@@ -428,7 +583,7 @@ impl LangTi {
     ///     left, right = n.split(".", 1)
     ///     ret = self._int_to_word(int(left)) + " " + self.pointword
     ///     for digit in right:
-    ///         ret += " " + (self.ones[int(digit)] or "bado")
+    ///         ret += " " + (self.ones[int(digit)] or "ባዶ")
     ///     return ret.strip()
     /// return self._int_to_word(int(n))
     /// ```
@@ -438,7 +593,7 @@ impl LangTi {
     /// such rather than folded into an `abs()` — one level deep in practice, since
     /// no repr yields a second leading "-". Because the sign is read off the
     /// *string*, negative zero keeps its "-" (`str(-0.0) == "-0.0"`), so `-0.0`
-    /// renders "tetsabi'i bado neṭebi bado" — a case the base float path, which
+    /// renders "ኣሉታ ባዶ ነጥቢ ባዶ" — a case the base float path, which
     /// tests `value < 0.0`, would strip. That divergence is precisely why TI
     /// cannot inherit the default `to_cardinal_float`.
     fn cardinal_from_str(&self, n: &str) -> Result<String> {
@@ -466,16 +621,16 @@ impl LangTi {
         //
         // `int(left)` is the whole integer part, so the billion cliff (bug note
         // 1) applies: at 1e9 and above it comes back as bare digits
-        // ("98746251323029 neṭebi tish'ate tish'ate").
+        // ("98746251323029 ነጥቢ ትሽዓተ ትሽዓተ").
         let mut ret = self.int_to_word(&py_int(left)?);
         ret.push(' ');
         ret.push_str(POINTWORD);
 
-        // for digit in right: ret += " " + (self.ones[int(digit)] or "bado")
+        // for digit in right: ret += " " + (self.ones[int(digit)] or "ባዶ")
         //
         // Per *character* — no grouping, no rounding, no padding: the fraction
         // is exactly the digits the repr carried. `self.ones[0]` is `""`
-        // (falsy), so the `or "bado"` is what turns a fraction digit 0 into a
+        // (falsy), so the `or "ባዶ"` is what turns a fraction digit 0 into a
         // word — a different mechanism from `_int_to_word`'s `number == 0`
         // guard, but the same output.
         for digit in right.chars() {
@@ -511,24 +666,22 @@ impl Lang for LangTi {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`. TI's `to_ordinal` is
-    /// `self.to_cardinal(number) + "ay"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "ḥade neṭebi badoay".
-    /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
-    /// ValueError inside the cardinal, before the suffix is appended.
+    /// `to_ordinal(float/Decimal)`. Guarded by
+    /// [`LangTi::verify_ordinal_num`]: a non-integer raises `TypeError`
+    /// rather than rendering a decimal ordinal. A *whole* float routes into
+    /// the integer path, so `to_ordinal(5.0)` is "ሓምሻይ".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!(
-            "{}{}",
-            self.cardinal_float_entry(value, None)?,
-            ORDINAL_SUFFIX
-        ))
+        let whole = self.verify_ordinal_num(value)?;
+        self.to_ordinal(&whole)
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "ay"` — the repr the
-    /// binding computed, suffix glued on, sign and exponent form included
-    /// ("-0.0ay", "1e+16ay").
-    fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
+    /// `to_ordinal_num(float/Decimal)`. Same guard as the word form, so the
+    /// binding's repr is never framed as an ordinal: `3.14` raises rather than
+    /// producing "መበል 3.14". A whole float takes the integer digit rule —
+    /// `5.0` is "5ይ", `11.0` is "መበል 11".
+    fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
+        let whole = self.verify_ordinal_num(value)?;
+        self.to_ordinal_num(&whole)
     }
 
     /// `converter.str_to_number` — Base's `Decimal(value)`, with the Inf
@@ -567,7 +720,7 @@ impl Lang for LangTi {
     }
 
     fn pointword(&self) -> &str {
-        "neṭebi"
+        "ነጥቢ"
     }
 
     // `is_title` stays false (the base default), so `title()` is the identity
@@ -597,19 +750,47 @@ impl Lang for LangTi {
         Ok(self.int_to_word(value))
     }
 
-    /// Port of `Num2Word_TI.to_ordinal`: `self.to_cardinal(number) + "ay"`.
+    /// Tigrinya ordinals. **Diverges from upstream** (see the module header).
     ///
-    /// No `verify_ordinal` call, so zero and negatives pass straight through
-    /// (bug note 3).
+    /// Upstream is `to_cardinal(number) + "ay"` for every input, which yields
+    /// the non-word "ሓደኣይ" for 1st. The real rule has two arms:
+    ///
+    /// * 1..=10 are suppletive — [`ORDINAL_IRREGULARS`].
+    /// * everything else is [`ORDINAL_PREFIX`] ("መበል ") plus the plain
+    ///   cardinal, with no inflection of the cardinal itself.
+    ///
+    /// Guarded by [`LangTi::verify_ordinal`], so zero and negatives raise
+    /// `TypeError` rather than falling into the second arm.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
+        self.verify_ordinal(value)?;
+        if *value <= BigInt::from(10) {
+            let i = value.to_usize().expect("1..=10 fits a usize");
+            return Ok(ORDINAL_IRREGULARS[i].to_string());
+        }
+        Ok(format!("{}{}", ORDINAL_PREFIX, self.to_cardinal(value)?))
     }
 
-    /// Port of `Num2Word_TI.to_ordinal_num`: `str(number) + "ay"`.
+    /// The digit form. **Diverges from upstream** (`str(number) + "ay"`).
     ///
-    /// Digits, not words — and the sign is kept: `-1` -> "-1ay".
+    /// Tigrinya's numeric-ordinal notation mirrors the spoken rule rather than
+    /// using one universal suffix — the formal/textbook convention:
+    ///
+    /// * 1..=10 take the ይ suffix on the digit: "1ይ", "2ይ", "10ይ".
+    /// * 11 and up drop the suffix and take the መበል prefix on the bare digit:
+    ///   "መበል 11", "መበል 21", "መበል 100".
+    ///
+    /// The colloquial alternative (seen in media and headlines) extends ይ to
+    /// every number — "11ይ", "100ይ" — ignoring መበል for brevity. Switching to
+    /// it means deleting the range test and always taking the suffix arm.
+    ///
+    /// Guarded by [`LangTi::verify_ordinal`] like the word form, so zero and
+    /// negatives raise instead of producing "መበል -1".
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
+        self.verify_ordinal(value)?;
+        if *value <= BigInt::from(10) {
+            return Ok(format!("{}{}", value, ORDINAL_SUFFIX));
+        }
+        Ok(format!("{}{}", ORDINAL_PREFIX, value))
     }
 
     /// Port of `Num2Word_TI.to_year`: ignores `longval` and delegates
@@ -632,8 +813,8 @@ impl Lang for LangTi {
     ///
     /// `Num2Word_TI.to_cardinal(self, number)` takes **no** `precision=` kwarg,
     /// and the live interpreter confirms the kwarg is dropped before this method
-    /// is reached (`num2words(0.5, lang='ti', precision=3) == "bado neṭebi
-    /// ḥamushte"`, unchanged), so `precision_override` is ignored here.
+    /// is reached (`num2words(0.5, lang='ti', precision=3) == "ባዶ ነጥቢ
+    /// ሓሙሽተ"`, unchanged), so `precision_override` is ignored here.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -908,7 +1089,7 @@ fn py_str_f64(v: f64) -> String {
 /// Python's rule — `BigDecimal`'s own `Display` disagrees on `1E+2` (Python
 /// keeps it exponential, so TI raises), on `0.0` (Python keeps the ".0"), and on
 /// the `e`/`E` case. `BigDecimal::from_str` keeps the written scale (`"1.10"`
-/// stays coefficient 110 / scale 2), which is what makes the trailing "bado"
+/// stays coefficient 110 / scale 2), which is what makes the trailing "ባዶ"
 /// appear, and `(coefficient, -scale)` is exactly Python's `(_int, _exp)`.
 fn py_str_decimal(value: &BigDecimal) -> String {
     let (coefficient, scale) = value.as_bigint_and_exponent();
@@ -961,121 +1142,121 @@ mod tests {
     /// pasted from `bench/corpus.jsonl` rather than retyped.
     #[rustfmt::skip]
     const CURRENCY_CORPUS: &[(&str, &str, bool, &str)] = &[
-        ("EUR", "0", true, "bado euro"),
-        ("EUR", "1", true, "ḥade euro"),
-        ("EUR", "2", true, "kilte euro"),
-        ("EUR", "100", true, "mi'ti euro"),
-        ("EUR", "12.34", false, "'aserte n kilte euro selasa n arba'te sent"),
-        ("EUR", "0.01", false, "bado euro ḥade sent"),
-        ("EUR", "1.0", false, "ḥade euro"),
-        ("EUR", "99.99", false, "tis'a n tish'ate euro tis'a n tish'ate sent"),
-        ("EUR", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te euro ḥamsa n shidushte sent"),
-        ("EUR", "-12.34", false, "tetsabi'i 'aserte n kilte euro selasa n arba'te sent"),
-        ("EUR", "1000000", true, "miliyon euro"),
-        ("EUR", "0.5", false, "bado euro ḥamsa sent"),
-        ("USD", "0", true, "bado dolar"),
-        ("USD", "1", true, "ḥade dolar"),
-        ("USD", "2", true, "kilte dolar"),
-        ("USD", "100", true, "mi'ti dolar"),
-        ("USD", "12.34", false, "'aserte n kilte dolar selasa n arba'te sent"),
-        ("USD", "0.01", false, "bado dolar ḥade sent"),
-        ("USD", "1.0", false, "ḥade dolar"),
-        ("USD", "99.99", false, "tis'a n tish'ate dolar tis'a n tish'ate sent"),
-        ("USD", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te dolar ḥamsa n shidushte sent"),
-        ("USD", "-12.34", false, "tetsabi'i 'aserte n kilte dolar selasa n arba'te sent"),
-        ("USD", "1000000", true, "miliyon dolar"),
-        ("USD", "0.5", false, "bado dolar ḥamsa sent"),
-        ("GBP", "0", true, "bado birri"),
-        ("GBP", "1", true, "ḥade birri"),
-        ("GBP", "2", true, "kilte birri"),
-        ("GBP", "100", true, "mi'ti birri"),
-        ("GBP", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("GBP", "0.01", false, "bado birri ḥade santim"),
-        ("GBP", "1.0", false, "ḥade birri"),
-        ("GBP", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("GBP", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("GBP", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("GBP", "1000000", true, "miliyon birri"),
-        ("GBP", "0.5", false, "bado birri ḥamsa santim"),
-        ("JPY", "0", true, "bado birri"),
-        ("JPY", "1", true, "ḥade birri"),
-        ("JPY", "2", true, "kilte birri"),
-        ("JPY", "100", true, "mi'ti birri"),
-        ("JPY", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("JPY", "0.01", false, "bado birri ḥade santim"),
-        ("JPY", "1.0", false, "ḥade birri"),
-        ("JPY", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("JPY", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("JPY", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("JPY", "1000000", true, "miliyon birri"),
-        ("JPY", "0.5", false, "bado birri ḥamsa santim"),
-        ("KWD", "0", true, "bado birri"),
-        ("KWD", "1", true, "ḥade birri"),
-        ("KWD", "2", true, "kilte birri"),
-        ("KWD", "100", true, "mi'ti birri"),
-        ("KWD", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("KWD", "0.01", false, "bado birri ḥade santim"),
-        ("KWD", "1.0", false, "ḥade birri"),
-        ("KWD", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("KWD", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("KWD", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("KWD", "1000000", true, "miliyon birri"),
-        ("KWD", "0.5", false, "bado birri ḥamsa santim"),
-        ("BHD", "0", true, "bado birri"),
-        ("BHD", "1", true, "ḥade birri"),
-        ("BHD", "2", true, "kilte birri"),
-        ("BHD", "100", true, "mi'ti birri"),
-        ("BHD", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("BHD", "0.01", false, "bado birri ḥade santim"),
-        ("BHD", "1.0", false, "ḥade birri"),
-        ("BHD", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("BHD", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("BHD", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("BHD", "1000000", true, "miliyon birri"),
-        ("BHD", "0.5", false, "bado birri ḥamsa santim"),
-        ("INR", "0", true, "bado birri"),
-        ("INR", "1", true, "ḥade birri"),
-        ("INR", "2", true, "kilte birri"),
-        ("INR", "100", true, "mi'ti birri"),
-        ("INR", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("INR", "0.01", false, "bado birri ḥade santim"),
-        ("INR", "1.0", false, "ḥade birri"),
-        ("INR", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("INR", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("INR", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("INR", "1000000", true, "miliyon birri"),
-        ("INR", "0.5", false, "bado birri ḥamsa santim"),
-        ("CNY", "0", true, "bado birri"),
-        ("CNY", "1", true, "ḥade birri"),
-        ("CNY", "2", true, "kilte birri"),
-        ("CNY", "100", true, "mi'ti birri"),
-        ("CNY", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("CNY", "0.01", false, "bado birri ḥade santim"),
-        ("CNY", "1.0", false, "ḥade birri"),
-        ("CNY", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("CNY", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("CNY", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("CNY", "1000000", true, "miliyon birri"),
-        ("CNY", "0.5", false, "bado birri ḥamsa santim"),
-        ("CHF", "0", true, "bado birri"),
-        ("CHF", "1", true, "ḥade birri"),
-        ("CHF", "2", true, "kilte birri"),
-        ("CHF", "100", true, "mi'ti birri"),
-        ("CHF", "12.34", false, "'aserte n kilte birri selasa n arba'te santim"),
-        ("CHF", "0.01", false, "bado birri ḥade santim"),
-        ("CHF", "1.0", false, "ḥade birri"),
-        ("CHF", "99.99", false, "tis'a n tish'ate birri tis'a n tish'ate santim"),
-        ("CHF", "1234.56", false, "shiḥ n kilte mi'ti n selasa n arba'te birri ḥamsa n shidushte santim"),
-        ("CHF", "-12.34", false, "tetsabi'i 'aserte n kilte birri selasa n arba'te santim"),
-        ("CHF", "1000000", true, "miliyon birri"),
-        ("CHF", "0.5", false, "bado birri ḥamsa santim"),
+        ("EUR", "0", true, "ባዶ ዩሮ"),
+        ("EUR", "1", true, "ሓደ ዩሮ"),
+        ("EUR", "2", true, "ክልተ ዩሮ"),
+        ("EUR", "100", true, "ሚእቲ ዩሮ"),
+        ("EUR", "12.34", false, "ዓሰርተ ን ክልተ ዩሮ ሰላሳ ን ኣርባዕተ ሰንት"),
+        ("EUR", "0.01", false, "ባዶ ዩሮ ሓደ ሰንት"),
+        ("EUR", "1.0", false, "ሓደ ዩሮ"),
+        ("EUR", "99.99", false, "ተስዓ ን ትሽዓተ ዩሮ ተስዓ ን ትሽዓተ ሰንት"),
+        ("EUR", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ዩሮ ሓምሳ ን ሽዱሽተ ሰንት"),
+        ("EUR", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ዩሮ ሰላሳ ን ኣርባዕተ ሰንት"),
+        ("EUR", "1000000", true, "ሚልዮን ዩሮ"),
+        ("EUR", "0.5", false, "ባዶ ዩሮ ሓምሳ ሰንት"),
+        ("USD", "0", true, "ባዶ ዶላር"),
+        ("USD", "1", true, "ሓደ ዶላር"),
+        ("USD", "2", true, "ክልተ ዶላር"),
+        ("USD", "100", true, "ሚእቲ ዶላር"),
+        ("USD", "12.34", false, "ዓሰርተ ን ክልተ ዶላር ሰላሳ ን ኣርባዕተ ሰንት"),
+        ("USD", "0.01", false, "ባዶ ዶላር ሓደ ሰንት"),
+        ("USD", "1.0", false, "ሓደ ዶላር"),
+        ("USD", "99.99", false, "ተስዓ ን ትሽዓተ ዶላር ተስዓ ን ትሽዓተ ሰንት"),
+        ("USD", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ዶላር ሓምሳ ን ሽዱሽተ ሰንት"),
+        ("USD", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ዶላር ሰላሳ ን ኣርባዕተ ሰንት"),
+        ("USD", "1000000", true, "ሚልዮን ዶላር"),
+        ("USD", "0.5", false, "ባዶ ዶላር ሓምሳ ሰንት"),
+        ("GBP", "0", true, "ባዶ ብር"),
+        ("GBP", "1", true, "ሓደ ብር"),
+        ("GBP", "2", true, "ክልተ ብር"),
+        ("GBP", "100", true, "ሚእቲ ብር"),
+        ("GBP", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("GBP", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("GBP", "1.0", false, "ሓደ ብር"),
+        ("GBP", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("GBP", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("GBP", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("GBP", "1000000", true, "ሚልዮን ብር"),
+        ("GBP", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
+        ("JPY", "0", true, "ባዶ ብር"),
+        ("JPY", "1", true, "ሓደ ብር"),
+        ("JPY", "2", true, "ክልተ ብር"),
+        ("JPY", "100", true, "ሚእቲ ብር"),
+        ("JPY", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("JPY", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("JPY", "1.0", false, "ሓደ ብር"),
+        ("JPY", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("JPY", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("JPY", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("JPY", "1000000", true, "ሚልዮን ብር"),
+        ("JPY", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
+        ("KWD", "0", true, "ባዶ ብር"),
+        ("KWD", "1", true, "ሓደ ብር"),
+        ("KWD", "2", true, "ክልተ ብር"),
+        ("KWD", "100", true, "ሚእቲ ብር"),
+        ("KWD", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("KWD", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("KWD", "1.0", false, "ሓደ ብር"),
+        ("KWD", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("KWD", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("KWD", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("KWD", "1000000", true, "ሚልዮን ብር"),
+        ("KWD", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
+        ("BHD", "0", true, "ባዶ ብር"),
+        ("BHD", "1", true, "ሓደ ብር"),
+        ("BHD", "2", true, "ክልተ ብር"),
+        ("BHD", "100", true, "ሚእቲ ብር"),
+        ("BHD", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("BHD", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("BHD", "1.0", false, "ሓደ ብር"),
+        ("BHD", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("BHD", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("BHD", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("BHD", "1000000", true, "ሚልዮን ብር"),
+        ("BHD", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
+        ("INR", "0", true, "ባዶ ብር"),
+        ("INR", "1", true, "ሓደ ብር"),
+        ("INR", "2", true, "ክልተ ብር"),
+        ("INR", "100", true, "ሚእቲ ብር"),
+        ("INR", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("INR", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("INR", "1.0", false, "ሓደ ብር"),
+        ("INR", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("INR", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("INR", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("INR", "1000000", true, "ሚልዮን ብር"),
+        ("INR", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
+        ("CNY", "0", true, "ባዶ ብር"),
+        ("CNY", "1", true, "ሓደ ብር"),
+        ("CNY", "2", true, "ክልተ ብር"),
+        ("CNY", "100", true, "ሚእቲ ብር"),
+        ("CNY", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("CNY", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("CNY", "1.0", false, "ሓደ ብር"),
+        ("CNY", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("CNY", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("CNY", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("CNY", "1000000", true, "ሚልዮን ብር"),
+        ("CNY", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
+        ("CHF", "0", true, "ባዶ ብር"),
+        ("CHF", "1", true, "ሓደ ብር"),
+        ("CHF", "2", true, "ክልተ ብር"),
+        ("CHF", "100", true, "ሚእቲ ብር"),
+        ("CHF", "12.34", false, "ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("CHF", "0.01", false, "ባዶ ብር ሓደ ሳንቲም"),
+        ("CHF", "1.0", false, "ሓደ ብር"),
+        ("CHF", "99.99", false, "ተስዓ ን ትሽዓተ ብር ተስዓ ን ትሽዓተ ሳንቲም"),
+        ("CHF", "1234.56", false, "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ብር ሓምሳ ን ሽዱሽተ ሳንቲም"),
+        ("CHF", "-12.34", false, "ኣሉታ ዓሰርተ ን ክልተ ብር ሰላሳ ን ኣርባዕተ ሳንቲም"),
+        ("CHF", "1000000", true, "ሚልዮን ብር"),
+        ("CHF", "0.5", false, "ባዶ ብር ሓምሳ ሳንቲም"),
     ];
 
     /// Every `"lang": "ti", "to": "cheque:*"` row (9). `None` = NotImplementedError.
     #[rustfmt::skip]
     const CHEQUE_CORPUS: &[(&str, &str, Option<&str>)] = &[
-        ("EUR", "1234.56", Some("SHIḤ N KILTE MI'TI N SELASA N ARBA'TE AND 56/100 EURO")),
-        ("USD", "1234.56", Some("SHIḤ N KILTE MI'TI N SELASA N ARBA'TE AND 56/100 DOLAR")),
+        ("EUR", "1234.56", Some("ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ AND 56/100 ዩሮ")),
+        ("USD", "1234.56", Some("ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ AND 56/100 ዶላር")),
         ("GBP", "1234.56", None),
         ("JPY", "1234.56", None),
         ("KWD", "1234.56", None),
@@ -1128,29 +1309,29 @@ mod tests {
         assert!(ti.currency_forms("GBP").is_none());
         assert_eq!(
             ti.to_currency(&value_of("2", true), "GBP", true, None, false).unwrap(),
-            "kilte birri"
+            "ክልተ ብር"
         );
         // ETB itself is the fallback, so it must render identically.
         assert_eq!(
             ti.to_currency(&value_of("2", true), "ETB", true, None, false).unwrap(),
-            "kilte birri"
+            "ክልተ ብር"
         );
         // ERN is the only code whose unit differs from the fallback's.
         assert_eq!(
             ti.to_currency(&value_of("2", true), "ERN", true, None, false).unwrap(),
-            "kilte nakfa"
+            "ክልተ ናቕፋ"
         );
     }
 
     /// `str(val)`-based cents truncate; they never round. Verified against the
-    /// interpreter: 2.675 -> 67 santim, 12.345 -> 34, 0.005 -> no segment.
+    /// interpreter: 2.675 -> 67 ሳንቲም, 12.345 -> 34, 0.005 -> no segment.
     #[test]
     fn cents_truncate_rather_than_round() {
         let ti = LangTi::new();
         let c = |a: &str| ti.to_currency(&value_of(a, false), "EUR", true, None, false).unwrap();
-        assert_eq!(c("2.675"), "kilte euro sisa n shew'ate sent");
-        assert_eq!(c("12.345"), "'aserte n kilte euro selasa n arba'te sent");
-        assert_eq!(c("0.005"), "bado euro");
+        assert_eq!(c("2.675"), "ክልተ ዩሮ ስሳ ን ሸውዓተ ሰንት");
+        assert_eq!(c("12.345"), "ዓሰርተ ን ክልተ ዩሮ ሰላሳ ን ኣርባዕተ ሰንት");
+        assert_eq!(c("0.005"), "ባዶ ዩሮ");
     }
 
     /// TI reads the *text* of `str(val)`, never `isinstance`, so int 5,
@@ -1160,10 +1341,10 @@ mod tests {
     fn has_decimal_is_not_consulted() {
         let ti = LangTi::new();
         let c = |v: CurrencyValue| ti.to_currency(&v, "EUR", true, None, false).unwrap();
-        assert_eq!(c(CurrencyValue::parse("5", true, false, false).unwrap()), "ḥamushte euro");
-        assert_eq!(c(CurrencyValue::parse("5", false, false, false).unwrap()), "ḥamushte euro");
-        assert_eq!(c(CurrencyValue::parse("5.00", false, false, false).unwrap()), "ḥamushte euro");
-        assert_eq!(c(CurrencyValue::parse("5.0", false, true, true).unwrap()), "ḥamushte euro");
+        assert_eq!(c(CurrencyValue::parse("5", true, false, false).unwrap()), "ሓሙሽተ ዩሮ");
+        assert_eq!(c(CurrencyValue::parse("5", false, false, false).unwrap()), "ሓሙሽተ ዩሮ");
+        assert_eq!(c(CurrencyValue::parse("5.00", false, false, false).unwrap()), "ሓሙሽተ ዩሮ");
+        assert_eq!(c(CurrencyValue::parse("5.0", false, true, true).unwrap()), "ሓሙሽተ ዩሮ");
     }
 
     /// `cents=False` still routes through `_int_to_word` — TI never calls
@@ -1173,7 +1354,7 @@ mod tests {
         let ti = LangTi::new();
         assert_eq!(
             ti.to_currency(&value_of("12.34", false), "EUR", false, None, false).unwrap(),
-            "'aserte n kilte euro"
+            "ዓሰርተ ን ክልተ ዩሮ"
         );
     }
 
@@ -1183,19 +1364,19 @@ mod tests {
         let ti = LangTi::new();
         assert_eq!(
             ti.to_currency(&value_of("12.34", false), "EUR", true, Some(", "), false).unwrap(),
-            "'aserte n kilte euro, selasa n arba'te sent"
+            "ዓሰርተ ን ክልተ ዩሮ, ሰላሳ ን ኣርባዕተ ሰንት"
         );
         assert_eq!(ti.default_separator(), " ");
     }
 
     /// `left` goes through `_int_to_word`, so the billion cliff reaches
-    /// currency too: verified `to_currency(1e15, "EUR")` is digits + " euro".
+    /// currency too: verified `to_currency(1e15, "EUR")` is digits + " ዩሮ".
     #[test]
     fn billion_cliff_reaches_currency() {
         let ti = LangTi::new();
         assert_eq!(
             ti.to_currency(&value_of("1000000000000000.0", false), "EUR", true, None, false).unwrap(),
-            "1000000000000000 euro"
+            "1000000000000000 ዩሮ"
         );
     }
 
@@ -1205,7 +1386,7 @@ mod tests {
         let ti = LangTi::new();
         assert_eq!(
             ti.to_currency(&value_of("2", true), "EUR", true, None, true).unwrap(),
-            "kilte euro"
+            "ክልተ ዩሮ"
         );
         assert!(ti.currency_adjective("EUR").is_none());
     }
@@ -1242,7 +1423,7 @@ mod tests {
     /// can finally be made exact.
     ///
     /// Python raises ValueError for `float 1e-05` (repr "1e-05") but returns
-    /// "bado euro" for `Decimal("0.00001")`. Both arrive here as digits=1,
+    /// "ባዶ ዩሮ" for `Decimal("0.00001")`. Both arrive here as digits=1,
     /// scale=5, has_decimal=true — identical — so this port cannot honour both
     /// and takes the plain-decimal reading. See `split_currency_parts`.
     #[test]
@@ -1252,7 +1433,7 @@ mod tests {
         // Correct for Decimal("0.00001"); Python would raise for float 1e-05.
         assert_eq!(
             ti.to_currency(&small, "EUR", true, None, false).unwrap(),
-            "bado euro"
+            "ባዶ ዩሮ"
         );
         // The two inputs really are indistinguishable at this boundary.
         let as_float_repr = CurrencyValue::parse("0.00001", false, true, true).unwrap();
@@ -1297,35 +1478,35 @@ mod tests {
     /// frozen corpus, pasted verbatim.
     #[rustfmt::skip]
     const FLOAT_CARDINAL_CORPUS: &[(&str, &str)] = &[
-        ("0.0", "bado neṭebi bado"),
-        ("0.5", "bado neṭebi ḥamushte"),
-        ("1.0", "ḥade neṭebi bado"),
-        ("1.5", "ḥade neṭebi ḥamushte"),
-        ("2.25", "kilte neṭebi kilte ḥamushte"),
-        ("3.14", "seleste neṭebi ḥade arba'te"),
-        ("0.01", "bado neṭebi bado ḥade"),
-        ("0.1", "bado neṭebi ḥade"),
-        ("0.99", "bado neṭebi tish'ate tish'ate"),
-        ("1.01", "ḥade neṭebi bado ḥade"),
-        ("12.34", "'aserte n kilte neṭebi seleste arba'te"),
-        ("99.99", "tis'a n tish'ate neṭebi tish'ate tish'ate"),
-        ("100.5", "mi'ti neṭebi ḥamushte"),
-        ("1234.56", "shiḥ n kilte mi'ti n selasa n arba'te neṭebi ḥamushte shidushte"),
-        ("-0.5", "tetsabi'i bado neṭebi ḥamushte"),
-        ("-1.5", "tetsabi'i ḥade neṭebi ḥamushte"),
-        ("-12.34", "tetsabi'i 'aserte n kilte neṭebi seleste arba'te"),
-        ("1.005", "ḥade neṭebi bado bado ḥamushte"),
-        ("2.675", "kilte neṭebi shidushte shew'ate ḥamushte"),
+        ("0.0", "ባዶ ነጥቢ ባዶ"),
+        ("0.5", "ባዶ ነጥቢ ሓሙሽተ"),
+        ("1.0", "ሓደ ነጥቢ ባዶ"),
+        ("1.5", "ሓደ ነጥቢ ሓሙሽተ"),
+        ("2.25", "ክልተ ነጥቢ ክልተ ሓሙሽተ"),
+        ("3.14", "ሰለስተ ነጥቢ ሓደ ኣርባዕተ"),
+        ("0.01", "ባዶ ነጥቢ ባዶ ሓደ"),
+        ("0.1", "ባዶ ነጥቢ ሓደ"),
+        ("0.99", "ባዶ ነጥቢ ትሽዓተ ትሽዓተ"),
+        ("1.01", "ሓደ ነጥቢ ባዶ ሓደ"),
+        ("12.34", "ዓሰርተ ን ክልተ ነጥቢ ሰለስተ ኣርባዕተ"),
+        ("99.99", "ተስዓ ን ትሽዓተ ነጥቢ ትሽዓተ ትሽዓተ"),
+        ("100.5", "ሚእቲ ነጥቢ ሓሙሽተ"),
+        ("1234.56", "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ ነጥቢ ሓሙሽተ ሽዱሽተ"),
+        ("-0.5", "ኣሉታ ባዶ ነጥቢ ሓሙሽተ"),
+        ("-1.5", "ኣሉታ ሓደ ነጥቢ ሓሙሽተ"),
+        ("-12.34", "ኣሉታ ዓሰርተ ን ክልተ ነጥቢ ሰለስተ ኣርባዕተ"),
+        ("1.005", "ሓደ ነጥቢ ባዶ ባዶ ሓሙሽተ"),
+        ("2.675", "ክልተ ነጥቢ ሽዱሽተ ሸውዓተ ሓሙሽተ"),
     ];
 
     /// Every `"lang": "ti", "to": "cardinal_dec"` row.
     #[rustfmt::skip]
     const DECIMAL_CARDINAL_CORPUS: &[(&str, &str)] = &[
-        ("0.01", "bado neṭebi bado ḥade"),
-        ("1.10", "ḥade neṭebi ḥade bado"),
-        ("12.345", "'aserte n kilte neṭebi seleste arba'te ḥamushte"),
-        ("98746251323029.99", "98746251323029 neṭebi tish'ate tish'ate"),
-        ("0.001", "bado neṭebi bado bado ḥade"),
+        ("0.01", "ባዶ ነጥቢ ባዶ ሓደ"),
+        ("1.10", "ሓደ ነጥቢ ሓደ ባዶ"),
+        ("12.345", "ዓሰርተ ን ክልተ ነጥቢ ሰለስተ ኣርባዕተ ሓሙሽተ"),
+        ("98746251323029.99", "98746251323029 ነጥቢ ትሽዓተ ትሽዓተ"),
+        ("0.001", "ባዶ ነጥቢ ባዶ ባዶ ሓደ"),
     ];
 
     #[test]
@@ -1353,7 +1534,7 @@ mod tests {
         let ti = LangTi::new();
         assert_eq!(
             ti.to_cardinal_float(&float_val("0.5"), Some(3)).unwrap(),
-            "bado neṭebi ḥamushte"
+            "ባዶ ነጥቢ ሓሙሽተ"
         );
     }
 
@@ -1365,18 +1546,125 @@ mod tests {
         let neg_zero = FloatValue::Float { value: -0.0, precision: 1 };
         assert_eq!(
             ti.to_cardinal_float(&neg_zero, None).unwrap(),
-            "tetsabi'i bado neṭebi bado"
+            "ኣሉታ ባዶ ነጥቢ ባዶ"
         );
+    }
+
+    /// Ordinals 1..=10 are suppletive, not cardinal + suffix.
+    #[test]
+    fn ordinals_1_to_10_are_irregular() {
+        let ti = LangTi::new();
+        let expected = [
+            (1, "ቀዳማይ"), (2, "ካልኣይ"), (3, "ሳልሳይ"), (4, "ራብዓይ"), (5, "ሓምሻይ"),
+            (6, "ሻድሻይ"), (7, "ሻብዓይ"), (8, "ሻምናይ"), (9, "ታሽዓይ"), (10, "ዓስራይ"),
+        ];
+        for (n, want) in expected {
+            assert_eq!(ti.to_ordinal(&BigInt::from(n)).unwrap(), want, "ordinal {n}");
+        }
+    }
+
+    /// From 11 up the rule is "መበል " + the *plain* cardinal, with the
+    /// cardinal left exactly as `to_cardinal` produces it.
+    #[test]
+    fn ordinals_from_11_take_the_mebel_prefix() {
+        let ti = LangTi::new();
+        let cases = [
+            (11, "መበል ዓሰርተ ን ሓደ"),
+            (20, "መበል ዕስራ"),
+            (25, "መበል ዕስራ ን ሓሙሽተ"),
+            (100, "መበል ሚእቲ"),
+            (1234, "መበል ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ"),
+        ];
+        for (n, want) in cases {
+            assert_eq!(ti.to_ordinal(&BigInt::from(n)).unwrap(), want, "ordinal {n}");
+            // The prefixed arm must not disturb the cardinal it wraps.
+            assert!(want.ends_with(&ti.to_cardinal(&BigInt::from(n)).unwrap()));
+        }
+    }
+
+    /// The restored `verify_ordinal` guard: negatives AND zero raise
+    /// TypeError, in both the word form and the digit form.
+    #[test]
+    fn ordinal_rejects_zero_and_negatives() {
+        let ti = LangTi::new();
+        for n in [0i64, -1, -11, -100] {
+            let v = BigInt::from(n);
+            assert!(
+                matches!(ti.to_ordinal(&v), Err(N2WError::Type(_))),
+                "to_ordinal({n}) must raise TypeError"
+            );
+            assert!(
+                matches!(ti.to_ordinal_num(&v), Err(N2WError::Type(_))),
+                "to_ordinal_num({n}) must raise TypeError"
+            );
+        }
+        // Negatives keep Base's wording; zero gets its own (no Python
+        // precedent exists, since upstream never rejects zero).
+        assert!(matches!(
+            ti.to_ordinal(&BigInt::from(-1)),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat negative num -1 as ordinal."
+        ));
+        assert!(matches!(
+            ti.to_ordinal(&BigInt::from(0)),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat zero as ordinal."
+        ));
+    }
+
+    /// The digit form mirrors the spoken rule: ይ on the digit up to 10, the
+    /// መበል prefix from 11 up. Upstream's universal "ay" suffix is gone.
+    #[test]
+    fn ordinal_num_follows_the_formal_convention() {
+        let ti = LangTi::new();
+        let cases = [
+            (1, "1ይ"), (2, "2ይ"), (9, "9ይ"), (10, "10ይ"),
+            (11, "መበል 11"), (21, "መበል 21"), (100, "መበል 100"),
+        ];
+        for (n, want) in cases {
+            assert_eq!(ti.to_ordinal_num(&BigInt::from(n)).unwrap(), want, "{n}");
+        }
+    }
+
+    /// Fractional values raise in both ordinal modes; whole ones route into
+    /// the integer path instead of rendering a decimal ordinal.
+    #[test]
+    fn float_ordinals_verify_then_delegate() {
+        let ti = LangTi::new();
+
+        // Whole -> integer path, both arms of the rule.
+        assert_eq!(ti.ordinal_float_entry(&float_val("5.0")).unwrap(), "ሓምሻይ");
+        assert_eq!(ti.ordinal_float_entry(&float_val("11.0")).unwrap(), "መበል ዓሰርተ ን ሓደ");
+        assert_eq!(ti.ordinal_num_float_entry(&float_val("5.0"), "5.0").unwrap(), "5ይ");
+        assert_eq!(ti.ordinal_num_float_entry(&float_val("11.0"), "11.0").unwrap(), "መበል 11");
+
+        // Fractional -> TypeError quoting str(value), not the truncated int.
+        assert!(matches!(
+            ti.ordinal_float_entry(&float_val("3.14")),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat float 3.14 as ordinal."
+        ));
+        assert!(matches!(
+            ti.ordinal_num_float_entry(&float_val("3.14"), "3.14"),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat float 3.14 as ordinal."
+        ));
+
+        // Sign and zero checks reach the float path too.
+        assert!(matches!(
+            ti.ordinal_float_entry(&float_val("-2.0")),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat negative num -2.0 as ordinal."
+        ));
+        assert!(matches!(
+            ti.ordinal_float_entry(&float_val("0.0")),
+            Err(N2WError::Type(ref m)) if m == "Cannot treat zero as ordinal."
+        ));
     }
 
     /// The four already-verified integer modes must not have shifted.
     #[test]
     fn integer_modes_unchanged() {
         let ti = LangTi::new();
-        assert_eq!(ti.to_cardinal(&BigInt::from(1234)).unwrap(), "shiḥ n kilte mi'ti n selasa n arba'te");
-        assert_eq!(ti.to_cardinal(&BigInt::from(0)).unwrap(), "bado");
-        assert_eq!(ti.to_ordinal(&BigInt::from(11)).unwrap(), "'aserte n ḥadeay");
-        assert_eq!(ti.to_ordinal_num(&BigInt::from(-1)).unwrap(), "-1ay");
-        assert_eq!(ti.to_year(&BigInt::from(1999)).unwrap(), "shiḥ n tish'ate mi'ti n tis'a n tish'ate");
+        assert_eq!(ti.to_cardinal(&BigInt::from(1234)).unwrap(), "ሽሕ ን ክልተ ሚእቲ ን ሰላሳ ን ኣርባዕተ");
+        assert_eq!(ti.to_cardinal(&BigInt::from(0)).unwrap(), "ባዶ");
+        assert_eq!(ti.to_ordinal(&BigInt::from(11)).unwrap(), "መበል ዓሰርተ ን ሓደ");
+        assert!(matches!(ti.to_ordinal_num(&BigInt::from(-1)), Err(N2WError::Type(_))));
+        assert_eq!(ti.to_year(&BigInt::from(1999)).unwrap(), "ሽሕ ን ትሽዓተ ሚእቲ ን ተስዓ ን ትሽዓተ");
     }
 }
