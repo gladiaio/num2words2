@@ -833,6 +833,68 @@ fn cardinal_int_case(value: &BigInt, is_oblique: bool) -> Result<String> {
 /// `"صفر"`. The 1..=999 table branches never see the prefix at all, and the
 /// 100..=999 recursion passes `gender` but leaves `prefix` at its `""`
 /// default, exactly as `self.to_ordinal(remainder, gender=gender)` does.
+/// `Num2Word_Base.verify_ordinal`, which `Num2Word_AR.to_ordinal` did not
+/// call — ported from savoirfairelinux/num2words#672.
+///
+/// Without it a negative index runs straight into `arabicOrdinal[number]`,
+/// which in Python indexes the list *backwards*: `to_ordinal(-1)` returned
+/// "إحدى" (the feminine "one") and `to_ordinal(-100)` returned "مائة"
+/// ("hundred"). Both are silently wrong rather than an error, which is worse
+/// than the crash upstream saw, so this is a behaviour fix rather than a
+/// crash fix here.
+///
+/// This is the integer arm; [`verify_ordinal_float`] adds Base's
+/// non-integer check ahead of it.
+fn verify_ordinal(number: &BigInt) -> Result<()> {
+    if number.is_negative() {
+        // Base's `errmsg_negord`, verbatim — the wording every other
+        // language in this crate already raises.
+        return Err(N2WError::Type(format!(
+            "Cannot treat negative num {} as ordinal.",
+            number
+        )));
+    }
+    Ok(())
+}
+
+/// `verify_ordinal` for a float/Decimal operand.
+///
+/// Base checks `int(value) == value` first, so a fractional operand raises
+/// before the sign is looked at. This replaces AR's previous silent
+/// truncation: `to_ordinal(2.5)` used to return "الثاني", and now raises,
+/// which is what upstream does once `verify_ordinal` is called.
+fn verify_ordinal_float(value: &FloatValue) -> Result<BigInt> {
+    // Base writes `if not int(value) == value`, and it is the `int()` call
+    // itself that raises for inf/nan — OverflowError and ValueError
+    // respectively — *before* any comparison happens. Running the same
+    // conversion first keeps those two errors as they were; only finite
+    // fractional values reach the TypeError below.
+    float_int_trunc(value)?;
+    match value.as_whole_int() {
+        Some(i) => {
+            verify_ordinal(&i)?;
+            Ok(i)
+        }
+        None => Err(N2WError::Type(format!(
+            "Cannot treat float {} as ordinal.",
+            ar_py_num_str(value)
+        ))),
+    }
+}
+
+/// `"%s" % value` for the `errmsg_floatord` message.
+///
+/// Only *fractional* values reach it — a whole float or Decimal is accepted
+/// by `as_whole_int` above and never formatted here — so Rust's `Display`
+/// and Python's `str()` agree on every input that can get this far
+/// (`2.5` -> "2.5", `Decimal("2.50")` -> "2.50").
+fn ar_py_num_str(value: &FloatValue) -> String {
+    match value {
+        FloatValue::Float { value, .. } => format!("{}", value),
+        FloatValue::Decimal { value, .. } => value.to_string(),
+    }
+}
+
 fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<String> {
     let pick = |pair: &(&'static str, &'static str)| if feminine { pair.1 } else { pair.0 };
     let one = BigInt::from(1u8);
@@ -1958,6 +2020,7 @@ impl Lang for LangAr {
     /// `Num2Word_AR.to_ordinal(number, gender="m", prefix="")` at the kwarg
     /// defaults (masculine, no prefix).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
         to_ordinal_impl(value, false, "")
     }
 
@@ -1980,6 +2043,9 @@ impl Lang for LangAr {
             // None/bool/int/list all compare unequal to "m" -> feminine.
             Some(_) => true,
         };
+        // verify_ordinal runs before the kwargs are read, matching Base:
+        // to_ordinal(-1, gender="f") is TypeError, not a feminine "one".
+        verify_ordinal(value)?;
         let prefix = kw.get("prefix").map(kwval_display).unwrap_or_default();
         to_ordinal_impl(value, feminine, &prefix)
     }
@@ -1991,24 +2057,28 @@ impl Lang for LangAr {
     /// signature takes no kwargs, so `to_ordinal_num_kw` stays at the trait
     /// default (any kwarg → NotImplemented → Python's original TypeError).
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
         Ok(to_ordinal_impl(value, false, "")?.trim().to_string())
     }
 
-    /// `to_ordinal(float/Decimal)`: Python's first line is
-    /// `number = int(number)`, so a fractional operand is *truncated toward
-    /// zero* and then read as an ordinary ordinal — `to_ordinal(2.5)` is
-    /// `"الثاني"`, `to_ordinal(-1.5)` is `int → -1` → the feminine-leak
-    /// fallback `"إحدى"` (bug 6), and `-0.0` truncates to plain 0 → `"صفر"`.
-    /// No validation, no float grammar, no pointword anywhere.
+    /// `to_ordinal(float/Decimal)`.
+    ///
+    /// Upstream's first line used to be `number = int(number)`, so a
+    /// fractional operand was *truncated toward zero* and read as an ordinary
+    /// ordinal — `to_ordinal(2.5)` was `"الثاني"` and `to_ordinal(-1.5)`
+    /// truncated to -1 and hit the feminine-leak fallback `"إحدى"`.
+    /// savoirfairelinux/num2words#672 puts `verify_ordinal` ahead of that, so
+    /// both now raise `TypeError`. A *whole* float is still fine: `-0.0`
+    /// verifies as 0 and renders `"صفر"`.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        to_ordinal_impl(&float_int_trunc(value)?, false, "")
+        to_ordinal_impl(&verify_ordinal_float(value)?, false, "")
     }
 
     /// `to_ordinal_num(float/Decimal)` == `to_ordinal(value).strip()` — AR
     /// overrides base's echo-the-repr default outright, so floats and
     /// Decimals get the same `int()`-truncated ordinal as [`Self::ordinal_float_entry`].
     fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
-        Ok(to_ordinal_impl(&float_int_trunc(value)?, false, "")?
+        Ok(to_ordinal_impl(&verify_ordinal_float(value)?, false, "")?
             .trim()
             .to_string())
     }
@@ -2451,24 +2521,19 @@ mod tests {
         Kwargs(pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect())
     }
 
-    /// `to_ordinal` floats/Decimals: `number = int(number)` truncates toward
-    /// zero, then the ordinary ordinal tables/fallback apply. Every row is a
-    /// wholefloat-corpus row for `ar`.
+    /// `to_ordinal` floats/Decimals: `verify_ordinal` first (ported from
+    /// savoirfairelinux/num2words#672), then the ordinary ordinal
+    /// tables/fallback for the whole, non-negative remainder.
+    ///
+    /// The negative and fractional rows this used to assert now live in
+    /// [`ordinal_rejects_negative_and_fractional`] — they raise `TypeError`
+    /// rather than truncating.
     #[test]
     fn ordinal_float_entry_truncates_like_int() {
         for (arg, out) in [
-            (-1000000.0, "مليون"),
-            (-1000.0, "ألف"),
-            (-21.0, "إحدى وعشرون"),
-            (-2.0, "اثنتان"),
-            (-1.0, "إحدى"),
             (-0.0, "صفر"),
             (0.0, "صفر"),
-            (0.5, "صفر"),
             (1.0, "الأول"),
-            (2.5, "الثاني"),
-            (-1.5, "إحدى"),
-            (3.25, "الثالث"),
             (12.0, "الثاني عشر"),
             (20.0, "العشرون"),
             (21.0, "الأول والعشرون"),
@@ -2486,12 +2551,10 @@ mod tests {
             ("0", "صفر"),
             ("5", "الخامس"),
             ("5.00", "الخامس"),
-            ("-3.0", "ثلاث"),
             ("1E+2", "المائة"),
             ("12345.000", "اثنا عشر ألفاً وثلاثمائة وخمسة وأربعون"),
             ("1E+20", "مائة كوينتليون"),
             ("-0.0", "صفر"),
-            ("1.5", "الأول"),
         ] {
             assert_eq!(ord_f(d(arg)), out, "ordinal Decimal {}", arg);
             assert_eq!(ordnum_f(d(arg), "x"), out, "ordinal_num Decimal {}", arg);
@@ -2573,8 +2636,12 @@ mod tests {
         assert_eq!(l.to_ordinal_kw(&n(11), &fem).unwrap(), "الحادية عشرة");
         assert_eq!(l.to_ordinal_kw(&n(21), &fem).unwrap(), "الأولى والعشرون");
         assert_eq!(l.to_ordinal_kw(&n(100), &fem).unwrap(), "المائة");
-        // Fallback ignores gender (bug 6 supplies the femininity).
-        assert_eq!(l.to_ordinal_kw(&n(-5), &fem).unwrap(), "خمس");
+        // A negative is rejected before the kwargs are read (#672); it used
+        // to fall through to the gender-ignoring fallback and return "خمس".
+        assert!(matches!(
+            l.to_ordinal_kw(&n(-5), &fem),
+            Err(N2WError::Type(_))
+        ));
         assert_eq!(l.to_ordinal_kw(&n(1234), &fem).unwrap(), "ألف ومئتان وأربعة وثلاثون");
         // Any non-"m" gender is feminine — "M", None, ints included.
         for v in [KwVal::Str("M".into()), KwVal::None, KwVal::Int(0)] {

@@ -632,6 +632,13 @@ def test_pt_br_dot_string_pronounced_as_ponto():
     from num2words2 import num2words
 
     # Dot-string is US notation; pronounce as 'ponto'.
-    assert num2words("1.50", lang="pt_BR") == "um ponto cinco"
+    #
+    # A string keeps the precision it was written with, so "1.50" has two
+    # fractional digits and the trailing zero is spoken — the same rule that
+    # makes num2words("1.50", lang="en") == "one point five zero". This line
+    # predates that decision (num2words2#75) and expected the float's
+    # one-digit reading.
+    assert num2words("1.50", lang="pt_BR") == "um ponto cinco zero"
+    assert num2words("1.5", lang="pt_BR") == "um ponto cinco"
     # Comma-string and float are canonical pt-BR; pronounce as 'vírgula'.
     assert "vírgula" in num2words(1.50, lang="pt_BR")

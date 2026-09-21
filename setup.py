@@ -68,5 +68,9 @@ setup(
     package_data={"num2words2": ["py.typed"]},
     include_package_data=True,
     classifiers=CLASSIFIERS,
-    scripts=["bin/num2words2"],
+    # The CLI is a console entry point declared in pyproject.toml
+    # ([project.scripts]) and implemented in num2words2/__main__.py.
+    # maturin, not setup.py, builds the wheel, so a `scripts=` list
+    # here never reached a user. Ports savoirfairelinux/num2words#624.
+    entry_points={"console_scripts": ["num2words2=num2words2.__main__:main"]},
 )
