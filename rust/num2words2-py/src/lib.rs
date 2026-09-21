@@ -90,7 +90,7 @@ fn map_err(e: N2WError) -> PyErr {
         {
             NumberTooLargeError::new_err(msg)
         }
-        N2WError::Custom { module, class, msg } => Python::with_gil(|py| {
+        N2WError::Custom { module, class, msg } => Python::attach(|py| {
             match py
                 .import(module)
                 .and_then(|m| m.getattr(class))
@@ -831,7 +831,7 @@ fn classify_cents(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<(bool, 
         Some(v) => {
             if v.is_none() {
                 presentation::normalize_cents(CentsArg::Other)
-            } else if let Ok(b) = v.downcast::<PyBool>() {
+            } else if let Ok(b) = v.cast::<PyBool>() {
                 presentation::normalize_cents(CentsArg::Bool(b.is_true()))
             } else if let Ok(s) = v.extract::<String>() {
                 presentation::normalize_cents(CentsArg::Str(&s))
@@ -863,7 +863,7 @@ fn extras_to_kwargs(
         // bool before int (a Python bool is an int).
         let val = if v.is_none() {
             KwVal::None
-        } else if let Ok(b) = v.downcast::<PyBool>() {
+        } else if let Ok(b) = v.cast::<PyBool>() {
             KwVal::Bool(b.is_true())
         } else if v.is_instance_of::<PyInt>() {
             match v.extract::<i64>() {
