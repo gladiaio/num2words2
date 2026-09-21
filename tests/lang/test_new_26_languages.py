@@ -19,7 +19,7 @@ EXPECTED_BASICS = {
     "fil": ("sero", "isa", "sampu"),
     "hmn": ("xoom", "ib", "kaum"),
     "ki": ("wĩra", "ĩmwe", "ikũmi"),
-    "kok": ("xunya", "ek", "dha"),
+    "kok": ("शून्य", "एक", "धा"),
     "ksw": ("lah", "ta", "tasi"),
     "ku": ("sifir", "yek", "deh"),
     "ky": ("нөл", "бир", "он"),

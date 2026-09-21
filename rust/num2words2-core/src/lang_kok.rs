@@ -1,5 +1,42 @@
 //! Port of `lang_KOK.py` (Konkani).
 //!
+//! # Deliberate divergences from upstream
+//!
+//! Two: the **script** (Devanagari, not Latin) and the **ordinals for
+//! 1..=10**. Everything else is ported verbatim, bug for bug.
+//!
+//! ## 1. Devanagari script
+//!
+//! `lang_KOK.py` spells every numeral in **Latin transliteration** ("ek",
+//! "don", "chalis", "xambhar"). Devanagari is Konkani's official script —
+//! it is the script named in the Goa Official Language Act and the one the
+//! Sahitya Akademi standard uses — and every sibling Indic module in this
+//! crate already emits its own script. The tables here are the Devanagari
+//! spellings: "एक", "दोन", "चाळीस", "शंभर".
+//!
+//! Konkani is genuinely pluriscriptal (Roman/Romi is in real literary use in
+//! Goa, and Kannada script is used in coastal Karnataka), so a future
+//! `kok_Latn` / `kok_Knda` split along the `sr_Cyrl`/`sr_Latn` precedent
+//! would be reasonable. But the *default* `kok` should be the official
+//! script, which it now is.
+//!
+//! This is a lexicon change only — the composition rules, the mixed
+//! `" आनी "` / `" "` joints (bug 3), the 10^9 cliff and the currency
+//! fallback are all still ported verbatim.
+//!
+//! ## 2. Ordinals 1..=10
+//!
+//! Upstream builds every ordinal as `to_cardinal(n) + "vo"`. वो is the
+//! genuine Konkani ordinal marker, so 5, 7, 8 and 10 already came out right
+//! (पांचवो, सातवो, आठवो, धावो) — but 1-4 are suppletive (पयलो, दुसरो,
+//! तिसरो, चवथो, nothing to do with एक/दोन/तीन/चार) and 6 and 9 contract
+//! (सव्वो, नव्वो, not *सववो / *नववो). See [`ORDINAL_IRREGULARS`].
+//!
+//! **From 11 up nothing changed but the script**: `to_ordinal(11)` is
+//! "धा आनी एकवो", as before. `verify_ordinal` is still not called, so
+//! `to_ordinal(0)` is still *शून्यवो and `to_ordinal(-1)` still takes the
+//! suffix arm.
+//!
 //! Shape: **self-contained**. `Num2Word_KOK` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
@@ -11,12 +48,13 @@
 //! All four in-scope modes are overridden by KOK, so nothing is inherited
 //! from `Num2Word_Base` in the integer path:
 //!   * `to_cardinal(number)`    — string-sniffs the sign, then `_int_to_word`
-//!   * `to_ordinal(number)`     — `to_cardinal(number) + "vo"`
-//!   * `to_ordinal_num(number)` — `str(number) + "vo"`
+//!   * `to_ordinal(number)`     — suppletive for 1..=10, else
+//!     `to_cardinal(number) + "वो"`
+//!   * `to_ordinal_num(number)` — `str(number) + "वो"`
 //!   * `to_year(val, longval=True)` — ignores `longval`, delegates to
 //!     `to_cardinal`. There is no era/two-chunk year logic: `to_year(1999)`
-//!     is just the plain cardinal "ek hozar nov xambhar ani novod ani nov",
-//!     and `to_year(-500)` is "rin panch xambhar" (no "BC"-style suffix).
+//!     is just the plain cardinal "एक हजार नव शंभर आनी नव्वद आनी नव",
+//!     and `to_year(-500)` is "रीण पांच शंभर" (no "BC"-style suffix).
 //!
 //! # Float/Decimal routing — everything is string surgery on `str(number)`
 //!
@@ -24,10 +62,10 @@
 //! branches on the *text*. That gives the whole float surface its shape:
 //!
 //! * **`"." in n` → per-digit decimal grammar, whole values included.**
-//!   `to_cardinal(5.0)` is "panch punto xunya" — `str(5.0)` is "5.0", so the
+//!   `to_cardinal(5.0)` is "पांच पुंतो शून्य" — `str(5.0)` is "5.0", so the
 //!   float grammar fires even though the value is whole. Trailing Decimal
-//!   zeros survive: `Decimal("5.00")` → "panch punto xunya xunya".
-//! * **No "." → `int(n)`**, so `Decimal("5")` → "panch" but any value whose
+//!   zeros survive: `Decimal("5.00")` → "पांच पुंतो शून्य शून्य".
+//! * **No "." → `int(n)`**, so `Decimal("5")` → "पांच" but any value whose
 //!   string is exponential notation raises `int()`'s **ValueError**:
 //!   `to_cardinal(1e16)` (repr "1e+16"), `Decimal("1E+2")`, `Decimal("1E+20")`
 //!   all raise "invalid literal for int() with base 10: '...'". So do the
@@ -36,10 +74,10 @@
 //!   raises). See [`LangKok::str_to_number`] for where the Inf/NaN raise is
 //!   modelled.
 //! * **`str(-0.0)` is "-0.0"**, so negative zero keeps its negword:
-//!   `to_cardinal(-0.0)` == "rin xunya punto xunya".
-//! * `to_ordinal(float)` is `to_cardinal(float) + "vo"` — the suffix binds to
-//!   the decimal spelling ("panch punto xunyavo"); `to_ordinal_num(float)` is
-//!   `str(number) + "vo"` verbatim, "-0.0vo"/"1e+16vo" included; `to_year`
+//!   `to_cardinal(-0.0)` == "रीण शून्य पुंतो शून्य".
+//! * `to_ordinal(float)` is `to_cardinal(float) + "वो"` — the suffix binds to
+//!   the decimal spelling ("पांच पुंतो शून्यवो"); `to_ordinal_num(float)` is
+//!   `str(number) + "वो"` verbatim, "-0.0वो"/"1e+16वो" included; `to_year`
 //!   delegates to `to_cardinal`.
 //! * `self.precision` is never read, so the `precision=` kwarg has no effect
 //!   on any of this.
@@ -51,27 +89,27 @@
 //!
 //! 1. **`_int_to_word` gives up at 10^9 and returns the bare digits.** The
 //!    final `return str(number)` is a fallthrough, not a raise: `to_cardinal(
-//!    10**9)` == "1000000000" and `to_ordinal(10**9)` == "1000000000vo".
+//!    10**9)` == "1000000000" and `to_ordinal(10**9)` == "1000000000वो".
 //!    This is why the language never raises `OverflowError` and why the
 //!    value must stay a `BigInt` — the digit string is the output for every
 //!    input from 10^9 up to 10^606 and beyond. See [`LangKok::int_to_word`].
-//! 2. **`million` is spelled "dosh lakh"** — literally "ten lakh". So 10^6
-//!    is "ek dosh lakh" and 10^7 renders as "dha dosh lakh" ("ten ten
+//! 2. **`million` is spelled "धा लाख"** — literally "ten लाख". So 10^6
+//!    is "एक धा लाख" and 10^7 renders as "धा धा लाख" ("ten ten
 //!    lakh"), which is arithmetically odd but verbatim Python. Kept as-is.
 //! 3. **Separator asymmetry.** The hundreds branch joins its remainder with
-//!    `" ani "`, but the thousands and millions branches join theirs with a
-//!    bare `" "`. Hence 101 == "ek xambhar ani ek" but 1001 == "ek hozar ek"
-//!    (no "ani"), and 1234 == "ek hozar don xambhar ani tis ani char".
-//! 4. **`ones[6]` is "so"**, which collides visually with nothing else but
-//!    reads oddly next to `hundred` = "xambhar"; 16 == "dha ani so".
-//! 5. **`negword` is "rin "** (with a trailing space) and the negative path
+//!    `" आनी "`, but the thousands and millions branches join theirs with a
+//!    bare `" "`. Hence 101 == "एक शंभर आनी एक" but 1001 == "एक हजार एक"
+//!    (no "आनी"), and 1234 == "एक हजार दोन शंभर आनी तीस आनी चार".
+//! 4. **`ones[6]` is "सव"**, which collides visually with nothing else but
+//!    reads oddly next to `hundred` = "शंभर"; 16 == "धा आनी सव".
+//! 5. **`negword` is "रीण "** (with a trailing space) and the negative path
 //!    concatenates then `.strip()`s. `_int_to_word` never returns an empty
-//!    string (0 short-circuits to "xunya"), so the strip is a no-op in
+//!    string (0 short-circuits to "शून्य"), so the strip is a no-op in
 //!    practice — but it is reproduced for fidelity.
 //! 6. **No negative-ordinal guard.** `Num2Word_Base.to_ordinal` would raise
 //!    on negatives via `errmsg_negord`, but KOK overrides it without that
-//!    check, so `to_ordinal(-1)` == "rin ekvo" and `to_ordinal_num(-1)` ==
-//!    "-1vo". Both are corpus-confirmed.
+//!    check, so `to_ordinal(-1)` == "रीण एकवो" and `to_ordinal_num(-1)` ==
+//!    "-1वो". Both are corpus-confirmed.
 //!
 //! # Currency
 //!
@@ -81,7 +119,7 @@
 //! * **`to_currency` is overridden wholesale** and shares nothing with
 //!   `Num2Word_Base.to_currency`. It never raises: an unknown code silently
 //!   falls back to `list(self.CURRENCY_FORMS.values())[0]` — the first
-//!   *inserted* value, INR — so `currency:GBP` renders "rupya"/"paiso". It
+//!   *inserted* value, INR — so `currency:GBP` renders "रुपया"/"पैसो". It
 //!   never consults `CURRENCY_PRECISION`, `CURRENCY_ADJECTIVES`, or
 //!   `pluralize`, and it ignores its own `adjective` argument entirely.
 //! * **`to_cheque` is inherited from `Num2Word_Base`** and does
@@ -102,10 +140,10 @@
 //!    cents (and the segment vanishes), 2.675 -> 67, 1.999 -> 99. There is no
 //!    `ROUND_HALF_UP` anywhere on this path.
 //! 8. **A float with zero cents drops the cents segment.** Guarded by
-//!    `if cents and right:`, so `1.0` is "ek yuro" — *unlike* the base class,
+//!    `if cents and right:`, so `1.0` is "एक युरो" — *unlike* the base class,
 //!    which shows "zero cents" for any float. The int/float distinction the
 //!    `CurrencyValue` split exists to preserve therefore has **no observable
-//!    effect** in KOK: `1` and `1.0` both render "ek yuro". It is still
+//!    effect** in KOK: `1` and `1.0` both render "एक युरो". It is still
 //!    honoured exactly, because `str(1)` and `str(1.0)` differ.
 //! 9. **`cr1[1]` / `cr2[1]`, not `[-1]`.** Every KOK form is a 2-tuple so the
 //!    two coincide, but the literal index is kept.
@@ -132,31 +170,70 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 /// `self.ones`. Index 0 is "" and is only ever reachable through the float
-/// path (`self.ones[int(digit)] or "xunya"`), which is out of scope — the
+/// path (`self.ones[int(digit)] or "शून्य"`), which is out of scope — the
 /// integer path guards every lookup with `number > 0`.
 const ONES: [&str; 10] = [
-    "", "ek", "don", "tin", "char", "panch", "so", "sat", "aath", "nov",
+    "", "एक", "दोन", "तीन", "चार", "पांच", "सव", "सात", "आठ", "नव",
 ];
 
 /// `self.tens`. Index 0 is "" and unreachable: the branch that indexes this
 /// runs only for `10 <= number < 100`, so the tens digit is always 1..=9.
 const TENS: [&str; 10] = [
-    "", "dha", "vis", "tis", "chalis", "ponnas", "saath", "sattar", "aaishi", "novod",
+    "", "धा", "वीस", "तीस", "चाळीस", "पन्नास", "साठ", "सत्तर", "ऐंशी", "नव्वद",
 ];
 
-const HUNDRED: &str = "xambhar";
-const THOUSAND: &str = "hozar";
-/// sic — Python spells 10^6 "dosh lakh" ("ten lakh"). See bug 2.
-const MILLION: &str = "dosh lakh";
+const HUNDRED: &str = "शंभर";
+const THOUSAND: &str = "हजार";
+/// Python spells 10^6 "dosh lakh" — "ten lakh". See bug 2 for why that is
+/// the wrong *scale* word; the spelling here is the Devanagari for it.
+///
+/// "dosh" has no Konkani reading: Konkani for ten is धा (the `TENS[1]` entry
+/// just above), and Marathi's दहा is the nearest neighbour. It is written धा
+/// here so the phrase reads as the "ten lakh" the module header says it is,
+/// rather than transliterating a token that spells nothing.
+const MILLION: &str = "धा लाख";
 /// sic — trailing space is part of the word in Python. See bug 5.
-const NEGWORD: &str = "rin ";
-const POINTWORD: &str = "punto";
+const NEGWORD: &str = "रीण ";
+const POINTWORD: &str = "पुंतो";
 /// The zero word, and (in the out-of-scope float path) the `or` fallback for
 /// a "0" fraction digit.
-const ZERO_WORD: &str = "xunya";
+const ZERO_WORD: &str = "शून्य";
 
-/// The ordinal suffix appended by both `to_ordinal` and `to_ordinal_num`.
-const ORDINAL_SUFFIX: &str = "vo";
+/// The ordinal suffix appended from 11 up, and by `to_ordinal_num` at every
+/// magnitude.
+///
+/// वो is the genuine Konkani ordinal marker — it is what ends पांचवो, सातवो,
+/// आठवो and धावो — which is why upstream's blind `+ "vo"` looked plausible.
+/// It is wrong only where a suppletive form exists; see
+/// [`ORDINAL_IRREGULARS`].
+const ORDINAL_SUFFIX: &str = "वो";
+
+/// Konkani ordinals 1..=10.
+///
+/// 1-4 are suppletive (पयलो, दुसरो, तिसरो, चवथो — nothing to do with एक,
+/// दोन, तीन, चार), and 6 and 9 contract rather than simply concatenating
+/// (सव्वो, नव्वो, not *सववो / *नववो). 5, 7, 8 and 10 are what the plain
+/// suffix already produced.
+///
+/// Index 0 is unused — Konkani has no ordinal for zero, and upstream's blind
+/// suffix produced the non-word *शून्यवो for it.
+///
+/// Forms cross-checked against Omniglot's Konkani numbers page, which lists
+/// them as "poilo, dusro, tisro, chouto, panchvo, sovvo, satvo, attvo,
+/// novvo, dhavo".
+const ORDINAL_IRREGULARS: [&str; 11] = [
+    "",
+    "पयलो",
+    "दुसरो",
+    "तिसरो",
+    "चवथो",
+    "पांचवो",
+    "सव्वो",
+    "सातवो",
+    "आठवो",
+    "नव्वो",
+    "धावो",
+];
 
 /// `Num2Word_KOK.CURRENCY_FORMS`, **in Python's insertion order**.
 ///
@@ -165,9 +242,9 @@ const ORDINAL_SUFFIX: &str = "vo";
 /// which is INR's. A `HashMap` cannot answer that question, so index 0 of this
 /// table is lifted into [`LangKok::fallback_forms`] at construction time.
 const CURRENCY_FORMS: [(&str, [&str; 2], [&str; 2]); 3] = [
-    ("INR", ["rupya", "rupya"], ["paiso", "paiso"]),
-    ("USD", ["dollar", "dollar"], ["sent", "sent"]),
-    ("EUR", ["yuro", "yuro"], ["sent", "sent"]),
+    ("INR", ["रुपया", "रुपया"], ["पैसो", "पैसो"]),
+    ("USD", ["डॉलर", "डॉलर"], ["सेंट", "सेंट"]),
+    ("EUR", ["युरो", "युरो"], ["सेंट", "सेंट"]),
 ];
 
 /// KOK's own `to_currency` signature defaults `separator=" "`, where
@@ -221,7 +298,7 @@ impl LangKok {
         }
         let (_, unit, subunit) = CURRENCY_FORMS[0];
         LangKok {
-            exclude_title: vec!["ani".to_string(), POINTWORD.to_string(), "rin".to_string()],
+            exclude_title: vec!["आनी".to_string(), POINTWORD.to_string(), "रीण".to_string()],
             currency_forms,
             fallback_forms: CurrencyForms::new(&unit, &subunit),
         }
@@ -252,7 +329,7 @@ impl LangKok {
             let (t, o) = number.div_mod_floor(&ten);
             let mut s = TENS[digit_index(&t)].to_string();
             if !o.is_zero() {
-                s.push_str(" ani ");
+                s.push_str(" आनी ");
                 s.push_str(ONES[digit_index(&o)]);
             }
             return s;
@@ -264,8 +341,8 @@ impl LangKok {
             let (h, r) = number.div_mod_floor(&hundred);
             let mut s = format!("{} {}", ONES[digit_index(&h)], HUNDRED);
             if !r.is_zero() {
-                // Hundreds join with " ani " — unlike thousands/millions.
-                s.push_str(" ani ");
+                // Hundreds join with " आनी " — unlike thousands/millions.
+                s.push_str(" आनी ");
                 s.push_str(&self.int_to_word(&r));
             }
             return s;
@@ -277,7 +354,7 @@ impl LangKok {
             let (t, r) = number.div_mod_floor(&thousand);
             let mut s = format!("{} {}", self.int_to_word(&t), THOUSAND);
             if !r.is_zero() {
-                // Bare space, no "ani" — see bug 3.
+                // Bare space, no "आनी" — see bug 3.
                 s.push(' ');
                 s.push_str(&self.int_to_word(&r));
             }
@@ -290,7 +367,7 @@ impl LangKok {
             let (m, r) = number.div_mod_floor(&million);
             let mut s = format!("{} {}", self.int_to_word(&m), MILLION);
             if !r.is_zero() {
-                // Bare space, no "ani" — see bug 3.
+                // Bare space, no "आनी" — see bug 3.
                 s.push(' ');
                 s.push_str(&self.int_to_word(&r));
             }
@@ -369,7 +446,7 @@ impl LangKok {
     /// |---|---|---|---|
     /// | 1 | `1e+16` | `["1e+16"]` | `int("1e+16")` -> **ValueError** |
     /// | 2 | `1.5e+16` | `["1", "5e+16"]` | `int("5e")` -> **ValueError** |
-    /// | 3+ | `1.2345…e+19` | `["1", "2345…e+19"]` | `int("23")` -> **succeeds**, "ek yuro vis ani tin sent" |
+    /// | 3+ | `1.2345…e+19` | `["1", "2345…e+19"]` | `int("23")` -> **succeeds**, "एक युरो वीस आनी तीन सेंट" |
     ///
     /// The 3+ case is not a mistake: Python really does return that. Only the
     /// first two characters of the fraction are ever read, so the exponent
@@ -412,7 +489,7 @@ impl LangKok {
     ///     left, right = n.split(".", 1)
     ///     ret = self._int_to_word(int(left)) + " " + self.pointword
     ///     for digit in right:
-    ///         ret += " " + (self.ones[int(digit)] or "xunya")
+    ///         ret += " " + (self.ones[int(digit)] or "शून्य")
     ///     return ret.strip()
     /// return self._int_to_word(int(n))
     /// ```
@@ -439,12 +516,12 @@ impl LangKok {
                 // ret = self._int_to_word(int(left)) + " " + self.pointword
                 let mut ret = format!("{} {}", self.int_to_word(&py_int(left)?), POINTWORD);
                 // for digit in right:
-                //     ret += " " + (self.ones[int(digit)] or "xunya")
+                //     ret += " " + (self.ones[int(digit)] or "शून्य")
                 for ch in right.chars() {
                     let d = py_int(&ch.to_string())?
                         .to_usize()
                         .expect("KOK: int(single decimal char) is 0..=9");
-                    // `ones[0]` is "" (falsy) -> "xunya"; 1..=9 spell out.
+                    // `ones[0]` is "" (falsy) -> "शून्य"; 1..=9 spell out.
                     let word = if ONES[d].is_empty() { ZERO_WORD } else { ONES[d] };
                     ret.push(' ');
                     ret.push_str(word);
@@ -549,7 +626,7 @@ impl Lang for LangKok {
     }
 
     fn pointword(&self) -> &str {
-        "punto"
+        "पुंतो"
     }
 
     fn exclude_title(&self) -> &[String] {
@@ -582,18 +659,23 @@ impl Lang for LangKok {
         Ok(self.int_to_word(value))
     }
 
-    /// Port of `Num2Word_KOK.to_ordinal`: `to_cardinal(number) + "vo"`.
+    /// Port of `Num2Word_KOK.to_ordinal`: `to_cardinal(number) + "वो"`.
     ///
     /// No negative guard and no float guard — the suffix is glued onto
     /// whatever `to_cardinal` produced, including the bare digit string for
-    /// values >= 10^9 ("1000000000vo") and the negative form ("rin ekvo").
+    /// values >= 10^9 ("1000000000वो") and the negative form ("रीण एकवो").
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        if let Some(i) = value.to_usize() {
+            if (1..=10).contains(&i) {
+                return Ok(ORDINAL_IRREGULARS[i].to_string());
+            }
+        }
         let cardinal = self.to_cardinal(value)?;
         Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
     }
 
-    /// Port of `Num2Word_KOK.to_ordinal_num`: `str(number) + "vo"`.
-    /// Keeps the minus sign: `to_ordinal_num(-1)` == "-1vo".
+    /// Port of `Num2Word_KOK.to_ordinal_num`: `str(number) + "वो"`.
+    /// Keeps the minus sign: `to_ordinal_num(-1)` == "-1वो".
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
@@ -628,7 +710,7 @@ impl Lang for LangKok {
 
     /// `to_cardinal(float/Decimal)` — full routing. Whole values are *not*
     /// short-circuited to the integer path: `str(5.0)` is "5.0", so 5.0 is
-    /// "panch punto xunya" while `Decimal("5")` ("5", no dot) is "panch".
+    /// "पांच पुंतो शून्य" while `Decimal("5")` ("5", no dot) is "पांच".
     /// The base default (whole -> int path) is exactly what this override
     /// removes.
     fn cardinal_float_entry(
@@ -639,16 +721,16 @@ impl Lang for LangKok {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`: `to_cardinal(number) + "vo"`, same as the
-    /// integer mode — the suffix binds to the decimal spelling ("panch punto
-    /// xunyavo") and any `int()` ValueError propagates before it is appended.
+    /// `to_ordinal(float/Decimal)`: `to_cardinal(number) + "वो"`, same as the
+    /// integer mode — the suffix binds to the decimal spelling ("पांच पुंतो
+    /// शून्यवो") and any `int()` ValueError propagates before it is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let cardinal = self.cardinal_float_entry(value, None)?;
         Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "vo"` verbatim —
-    /// "-0.0vo", "5.00vo", "1e+16vo" (this mode never calls `int()`, so the
+    /// `to_ordinal_num(float/Decimal)`: `str(number) + "वो"` verbatim —
+    /// "-0.0वो", "5.00वो", "1e+16वो" (this mode never calls `int()`, so the
     /// exponential inputs that make the other modes raise sail through).
     fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
         Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
@@ -710,7 +792,7 @@ impl Lang for LangKok {
     // defaults on purpose: KOK inherits CURRENCY_PRECISION = {} and
     // CURRENCY_ADJECTIVES = {} from Num2Word_Base and never populates either,
     // so every code has divisor 100 and no adjective. That is why the corpus
-    // shows `currency:JPY 12.34` -> "...tis ani char paiso" (cents shown, not
+    // shows `currency:JPY 12.34` -> "...तीस आनी चार पैसो" (cents shown, not
     // rounded away) rather than the 0-decimal treatment JPY gets elsewhere.
 
     // money_verbose()/cents_verbose()/cents_terse() also stay at their
@@ -829,7 +911,7 @@ impl Lang for LangKok {
         let mut result = format!("{} {}", self.int_to_word(&left), unit);
 
         // `if cents and right:` — a zero `right` drops the whole segment, so
-        // 1.0 is "ek yuro" and not "ek yuro xunya sent". See quirk 8.
+        // 1.0 is "एक युरो" and not "एक युरो शून्य सेंट". See quirk 8.
         if cents && !right.is_zero() {
             let subunit = if right.is_one() {
                 &forms.subunit[0]
@@ -843,7 +925,7 @@ impl Lang for LangKok {
         }
 
         if is_negative {
-            // negword carries a trailing space: "rin " + "dha ani don yuro".
+            // negword carries a trailing space: "रीण " + "धा आनी दोन युरो".
             result = format!("{}{}", NEGWORD, result);
         }
         // result.strip() — inert in practice (int_to_word never returns "",
