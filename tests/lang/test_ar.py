@@ -215,3 +215,36 @@ def test_ar_dual_endings_switch_with_case_kwarg():
     assert num2words(205, lang="ar") == "مئتان وخمسة"
     assert num2words(205, lang="ar", case="accusative") == "مئتين وخمسة"
     assert num2words(2005, lang="ar", case="accusative") == "ألفين وخمسة"
+
+
+class TestARNegativeOrdinal(TestCase):
+    """Ports savoirfairelinux/num2words#672 by @santhreal.
+
+    ``Num2Word_AR.to_ordinal`` never called ``verify_ordinal``, so a negative
+    indexed ``arabicOrdinal`` backwards instead of raising: ``-1`` came back as
+    "إحدى" (the feminine "one") and ``-100`` as "مائة" ("hundred"). Upstream
+    added the guard; this pins the ported behaviour.
+    """
+
+    def test_ordinal_rejects_negative(self):
+        for value in (-1, -100, -1000):
+            with self.subTest(value=value):
+                with self.assertRaises(TypeError):
+                    num2words(value, lang="ar", to="ordinal")
+                with self.assertRaises(TypeError):
+                    num2words(value, lang="ar", to="ordinal_num")
+
+    def test_ordinal_rejects_fractional(self):
+        # Upstream used to do `number = int(number)` and silently truncate, so
+        # 2.5 rendered as "الثاني". verify_ordinal rejects it first.
+        for value in (2.5, -1.5, 3.25):
+            with self.subTest(value=value):
+                with self.assertRaises(TypeError):
+                    num2words(value, lang="ar", to="ordinal")
+
+    def test_whole_floats_and_non_negatives_still_work(self):
+        self.assertEqual(num2words(1, lang="ar", to="ordinal"), "الأول")
+        self.assertEqual(num2words(100, lang="ar", to="ordinal"), "المائة")
+        self.assertEqual(num2words(12.0, lang="ar", to="ordinal"), "الثاني عشر")
+        # -0.0 is not negative; it verifies as 0.
+        self.assertEqual(num2words(-0.0, lang="ar", to="ordinal"), "صفر")

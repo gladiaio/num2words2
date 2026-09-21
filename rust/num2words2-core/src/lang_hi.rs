@@ -225,6 +225,22 @@ fn convert_to_hindi_numerals(value: &BigInt) -> Result<String> {
 /// Python does `value in self._irregular_ordinals`, an exact dict lookup on an
 /// int key. Comparing against `BigInt::from(k)` reproduces that for arbitrarily
 /// large / negative values without narrowing the input.
+/// `Num2Word_Base.verify_ordinal`, which `Num2Word_HI.to_ordinal_num` did not
+/// call — ported from savoirfairelinux/num2words#672.
+///
+/// Only the negative arm is reachable from an integer; the float arm lives
+/// inline in `ordinal_num_float_entry`.
+fn verify_ordinal(value: &BigInt) -> Result<()> {
+    if value.is_negative() {
+        // Base's `errmsg_negord`, verbatim.
+        return Err(N2WError::Type(format!(
+            "Cannot treat negative num {} as ordinal.",
+            value
+        )));
+    }
+    Ok(())
+}
+
 fn irregular_lookup(table: &[(u8, &'static str)], value: &BigInt) -> Option<&'static str> {
     table
         .iter()
@@ -370,10 +386,18 @@ impl Lang for LangHi {
 
     /// Port of `Num2Word_HI.to_ordinal_num`.
     ///
-    /// Deliberately never calls `to_cardinal`, so there is **no** overflow
-    /// check (module docs, quirk 4) — and negatives raise `KeyError` from the
-    /// digit map rather than being rejected up front (quirk 3).
+    /// Deliberately never calls `to_cardinal`, so there is still **no**
+    /// overflow check (module docs, quirk 4).
+    ///
+    /// `verify_ordinal` now runs first — ported from
+    /// savoirfairelinux/num2words#672. Without it a negative reached the
+    /// per-character digit map and died on the sign with
+    /// `KeyError: "'-'"`, and a fractional value died on the point with
+    /// `KeyError: "'.'"`. Both are `TypeError` now, matching every other
+    /// language. Word ordinals are untouched: `to_ordinal(-1)` is still
+    /// "माइनस एकवाँ", which is what upstream's own test for #672 asserts.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
         if let Some(word) = irregular_lookup(&IRREGULAR_ORDINALS_NUMS, value) {
             return Ok(word.to_string());
         }
@@ -418,6 +442,18 @@ impl Lang for LangHi {
     /// KeyError('E'). Only point-free whole Decimals survive:
     /// `Decimal("100")` → "१००वाँ".
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
+        // #672: the float arm of verify_ordinal. A fractional value used to
+        // reach the digit map and raise `KeyError: "'.'"`.
+        let whole = match value.as_whole_int() {
+            Some(i) => i,
+            None => {
+                return Err(N2WError::Type(format!(
+                    "Cannot treat float {} as ordinal.",
+                    repr_str
+                )))
+            }
+        };
+        verify_ordinal(&whole)?;
         if let Some(i) = value.as_whole_int() {
             if let Some(word) = irregular_lookup(&IRREGULAR_ORDINALS_NUMS, &i) {
                 return Ok(word.to_string());
