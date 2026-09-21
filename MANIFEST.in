@@ -1,5 +1,4 @@
 include CHANGELOG.md
 include COPYING
 include tests/*
-include bin/num2words
 include num2words2/py.typed
