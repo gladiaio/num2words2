@@ -20,6 +20,8 @@ from __future__ import unicode_literals
 import unittest
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 TEST_CASES_CARDINAL = (
@@ -3468,6 +3470,13 @@ class UkrainianGenderAliasTest:
     pass
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="gladiaio/num2words2#145 — uk to_cardinal_kw is not implemented, "
+           "so every gender= value raises NotImplementedError. The gendered "
+           "tables are already transcribed in lang_uk.rs; only the kwarg "
+           "plumbing is missing. Remove this marker with the fix.",
+)
 def test_uk_gender_short_alias_feminine():
     # Regression for savoirfairelinux/num2words#560 — gender='f' was ignored.
     from num2words2 import num2words

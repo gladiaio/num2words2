@@ -420,8 +420,16 @@ def test_tr_spaced_precision_decimal_word_kwargs():
     # precision= controls fractional-digit count
     assert num2words(3.14159, lang="tr", precision=5) == "üçvirgülondörtbinyüzellidokuz"
 
-    # decimal_word= swaps virgül for any chosen word
-    assert num2words(1.5, lang="tr", decimal_word="nokta") == "birnoktaelli"
+    # decimal_word= swaps virgül for any chosen word.
+    #
+    # The fractional part is read off the *literal* — the float 1.5 has one
+    # fractional digit and reads "beş", the string "1.50" has two and reads
+    # "elli". This line used to pass the float and expect the string's
+    # reading, which contradicted the `num2words(1.5, lang="tr")` assertion
+    # six lines above; only decimal_word is under test here, so both spellings
+    # are pinned.
+    assert num2words(1.5, lang="tr", decimal_word="nokta") == "birnoktabeş"
+    assert num2words("1.50", lang="tr", decimal_word="nokta") == "birnoktaelli"
 
     # Combined
     assert num2words(3.14, lang="tr", spaced=True, decimal_word="nokta") == "üç nokta on dört"
