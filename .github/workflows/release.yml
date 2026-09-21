@@ -2,6 +2,7 @@ name: Release
 
 # Builds per-platform wheels with maturin and publishes them:
 #   * SLIM wheels (no lingua-rs models, ~2 MB) + sdist  -> PyPI
+#     (trusted publishing / OIDC, publisher: gladiaio/num2words2 + release.yml + env pypi)
 #   * FULL wheels (embedded language-detection models, ~140 MB) -> GitHub Release
 # Triggered by pushing a version tag, e.g. `v1.0.10`.
 
@@ -112,6 +113,8 @@ jobs:
     needs: [build, sdist]
     runs-on: ubuntu-latest
     environment: pypi
+    permissions:
+      id-token: write   # PyPI trusted publishing (OIDC) — no API token
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -127,7 +130,6 @@ jobs:
         with:
           packages-dir: dist
           skip-existing: true
-          password: ${{ secrets.PYPI_API_TOKEN }}
 
   # ---------------------------------------------------------------------------
   github-release:
