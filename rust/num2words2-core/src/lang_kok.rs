@@ -76,8 +76,8 @@
 //! * **`str(-0.0)` is "-0.0"**, so negative zero keeps its negword:
 //!   `to_cardinal(-0.0)` == "रीण शून्य पुंतो शून्य".
 //! * `to_ordinal(float)` is `to_cardinal(float) + "वो"` — the suffix binds to
-//!   the decimal spelling ("पांच पुंतो xunyavo"); `to_ordinal_num(float)` is
-//!   `str(number) + "वो"` verbatim, "-0.0vo"/"1e+16vo" included; `to_year`
+//!   the decimal spelling ("पांच पुंतो शून्यवो"); `to_ordinal_num(float)` is
+//!   `str(number) + "वो"` verbatim, "-0.0वो"/"1e+16वो" included; `to_year`
 //!   delegates to `to_cardinal`.
 //! * `self.precision` is never read, so the `precision=` kwarg has no effect
 //!   on any of this.
@@ -89,7 +89,7 @@
 //!
 //! 1. **`_int_to_word` gives up at 10^9 and returns the bare digits.** The
 //!    final `return str(number)` is a fallthrough, not a raise: `to_cardinal(
-//!    10**9)` == "1000000000" and `to_ordinal(10**9)` == "1000000000vo".
+//!    10**9)` == "1000000000" and `to_ordinal(10**9)` == "1000000000वो".
 //!    This is why the language never raises `OverflowError` and why the
 //!    value must stay a `BigInt` — the digit string is the output for every
 //!    input from 10^9 up to 10^606 and beyond. See [`LangKok::int_to_word`].
@@ -108,8 +108,8 @@
 //!    practice — but it is reproduced for fidelity.
 //! 6. **No negative-ordinal guard.** `Num2Word_Base.to_ordinal` would raise
 //!    on negatives via `errmsg_negord`, but KOK overrides it without that
-//!    check, so `to_ordinal(-1)` == "रीण ekvo" and `to_ordinal_num(-1)` ==
-//!    "-1vo". Both are corpus-confirmed.
+//!    check, so `to_ordinal(-1)` == "रीण एकवो" and `to_ordinal_num(-1)` ==
+//!    "-1वो". Both are corpus-confirmed.
 //!
 //! # Currency
 //!
@@ -520,7 +520,7 @@ impl LangKok {
                 for ch in right.chars() {
                     let d = py_int(&ch.to_string())?
                         .to_usize()
-                        .expect("KOK: int(single decimal चार) is 0..=9");
+                        .expect("KOK: int(single decimal char) is 0..=9");
                     // `ones[0]` is "" (falsy) -> "शून्य"; 1..=9 spell out.
                     let word = if ONES[d].is_empty() { ZERO_WORD } else { ONES[d] };
                     ret.push(' ');
@@ -663,7 +663,7 @@ impl Lang for LangKok {
     ///
     /// No negative guard and no float guard — the suffix is glued onto
     /// whatever `to_cardinal` produced, including the bare digit string for
-    /// values >= 10^9 ("1000000000vo") and the negative form ("रीण ekvo").
+    /// values >= 10^9 ("1000000000वो") and the negative form ("रीण एकवो").
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         if let Some(i) = value.to_usize() {
             if (1..=10).contains(&i) {
@@ -675,7 +675,7 @@ impl Lang for LangKok {
     }
 
     /// Port of `Num2Word_KOK.to_ordinal_num`: `str(number) + "वो"`.
-    /// Keeps the minus sign: `to_ordinal_num(-1)` == "-1vo".
+    /// Keeps the minus sign: `to_ordinal_num(-1)` == "-1वो".
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
@@ -722,15 +722,15 @@ impl Lang for LangKok {
     }
 
     /// `to_ordinal(float/Decimal)`: `to_cardinal(number) + "वो"`, same as the
-    /// integer mode — the suffix binds to the decimal spelling ("panch punto
-    /// xunyavo") and any `int()` ValueError propagates before it is appended.
+    /// integer mode — the suffix binds to the decimal spelling ("पांच पुंतो
+    /// शून्यवो") and any `int()` ValueError propagates before it is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let cardinal = self.cardinal_float_entry(value, None)?;
         Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "वो"` verbatim —
-    /// "-0.0vo", "5.00vo", "1e+16vo" (this mode never calls `int()`, so the
+    /// "-0.0वो", "5.00वो", "1e+16वो" (this mode never calls `int()`, so the
     /// exponential inputs that make the other modes raise sail through).
     fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
         Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
