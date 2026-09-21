@@ -22,7 +22,7 @@ EXPECTED_BASICS = {
     "kok": ("xunya", "ek", "dha"),
     "ksw": ("lah", "ta", "tasi"),
     "ku": ("sifir", "yek", "deh"),
-    "ky": ("nöl", "bir", "on"),
+    "ky": ("нөл", "бир", "он"),
     "lg": ("nuli", "emu", "kkumi"),
     "lus": ("a awmlo", "pakhat", "sawm"),
     "om": ("zeeroo", "tokko", "kudhan"),
