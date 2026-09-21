@@ -791,9 +791,9 @@ impl Lang for LangOr {
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + ମ`. `repr_str` is
     /// the binding's Python `str(value)`, so exponent forms echo verbatim:
-    /// `to_ordinal_num(1e16)` == "1e+16ma".
+    /// `to_ordinal_num(1e16)` == "1e+16ମ".
     fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}ma", repr_str))
+        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
     }
 
     /// `to_year(float/Decimal)`: OR's `to_year` forwards to `to_cardinal`,
@@ -825,7 +825,7 @@ impl Lang for LangOr {
         match to {
             "ordinal_num" => {
                 let token = if negative { "-Infinity" } else { "Infinity" };
-                Ok(format!("{}ma", token))
+                Ok(format!("{}{}", token, ORDINAL_SUFFIX))
             }
             _ => Err(N2WError::Value(
                 "invalid literal for int() with base 10: 'Infinity'".to_string(),
@@ -834,10 +834,10 @@ impl Lang for LangOr {
     }
 
     /// `Decimal('NaN')` reached OR. `int("NaN")` → `ValueError` on the
-    /// cardinal/ordinal/year paths; `to_ordinal_num` echoes "NaNma".
+    /// cardinal/ordinal/year paths; `to_ordinal_num` echoes "NaNମ".
     fn nan_result(&self, to: &str) -> Result<String> {
         match to {
-            "ordinal_num" => Ok("NaNma".to_string()),
+            "ordinal_num" => Ok(format!("NaN{}", ORDINAL_SUFFIX)),
             _ => Err(N2WError::Value(
                 "invalid literal for int() with base 10: 'NaN'".to_string(),
             )),

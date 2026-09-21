@@ -113,6 +113,18 @@ class TestOR(LangTest, TestCase):
         self.assertEqual(num2words(-1, to="ordinal", lang="or"), "ଋଣ ଏକମ")
         self.assertEqual(num2words(-1, to="ordinal_num", lang="or"), "-1ମ")
 
+    def test_ordinal_num_non_integer_takes_odia_suffix(self):
+        # The float / Decimal / Infinity / NaN paths of to_ordinal_num are
+        # separate entry points from the integer one; all of them must glue
+        # the same Odia ମ, never the transliterated "ma".
+        # (An integral float such as 5.0 is routed to the integer path, so a
+        # fractional value is what reaches the float entry point.)
+        self.assertEqual(num2words(5.5, to="ordinal_num", lang="or"), "5.5ମ")
+        self.assertEqual(num2words("3.10", to="ordinal_num", lang="or"), "3.10ମ")
+        self.assertEqual(num2words("Infinity", to="ordinal_num", lang="or"), "Infinityମ")
+        self.assertEqual(num2words("-Infinity", to="ordinal_num", lang="or"), "-Infinityମ")
+        self.assertEqual(num2words("NaN", to="ordinal_num", lang="or"), "NaNମ")
+
 
 def test_or_is_written_in_odia_not_transliteration():
     # lang_OR.py spelled every numeral in IAST transliteration ("eka",
