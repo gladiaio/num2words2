@@ -117,7 +117,8 @@
 //! "O MIE …", not "UNA MIE …". Flagged in the report regardless.
 
 use crate::base::{
-    clean, set_low_numwords, set_mid_numwords, splitnum, Cards, Lang, N2WError, Node, Result,
+    clean, set_low_numwords, set_mid_numwords, splitnum, Cards, KwVal, Kwargs, Lang, N2WError, Node,
+    Result,
 };
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
@@ -349,6 +350,26 @@ impl Default for LangRo {
 }
 
 impl LangRo {
+    /// The era handling of `Num2Word_RO.to_year`, applied to the cardinal
+    /// `result`. negword is "minus " (with the trailing space); to_cardinal
+    /// emits exactly that prefix for negatives. str.replace is global in both
+    /// languages, matching Python's `.replace(negword, "")`. A negative year
+    /// defaults to "î.Hr." unless the caller passed a suffix; a caller's
+    /// suffix is appended to positive years too.
+    fn year_suffix(&self, mut result: String, suffix: Option<&str>) -> String {
+        let mut suffix = suffix;
+        if result.starts_with(self.negword()) {
+            result = result.replace(self.negword(), "");
+            if suffix.is_none() {
+                suffix = Some("î.Hr.");
+            }
+        }
+        match suffix {
+            Some(s) => format!("{} {}", result, s),
+            None => result,
+        }
+    }
+
     pub fn new() -> Self {
         // Num2Word_EUR.setup()
         let lows = ["non", "oct", "sept", "sext", "quint", "quadr", "tr", "b", "m"];
@@ -697,27 +718,29 @@ impl Lang for LangRo {
         Ok(format!("al {}-lea", value))
     }
 
-    /// `Num2Word_RO.to_year`.
+    /// `Num2Word_RO.to_year`, `suffix=None` path.
     ///
-    /// Python's signature is `to_year(self, val, suffix=None, longval=True)`;
     /// `super().to_year` is `Num2Word_Base.to_year(value, **kwargs)`, which
-    /// swallows `longval` and just returns `to_cardinal(value)`. The trait
-    /// carries no suffix parameter, so this is the `suffix=None` path — the
-    /// only one the dispatcher's year mode exercises.
+    /// swallows `longval` and just returns `to_cardinal(value)`.
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        let mut result = self.to_cardinal(value)?;
-        let mut suffix: Option<&str> = None;
-        // negword is "minus " (with the trailing space); to_cardinal emits
-        // exactly that prefix for negatives, so the test hits. str.replace is
-        // global in both languages, matching Python's `.replace(negword, "")`.
-        if result.starts_with(self.negword()) {
-            result = result.replace(self.negword(), "");
-            suffix = Some("î.Hr.");
+        Ok(self.year_suffix(self.to_cardinal(value)?, None))
+    }
+
+    /// `Num2Word_RO.to_year(val, suffix=None, longval=True)` with the
+    /// caller's kwargs. `longval` is accepted and ignored (base swallows it).
+    /// `suffix` is tested truthily, so `suffix=""` behaves like `None`;
+    /// non-str values are declined rather than guessing at Python's join.
+    fn to_year_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
+        if !kw.only(&["suffix", "longval"]) {
+            return Err(N2WError::Fallback("kwargs".into()));
         }
-        if let Some(s) = suffix {
-            result = format!("{} {}", result, s);
-        }
-        Ok(result)
+        let suffix = match kw.get("suffix") {
+            None | Some(KwVal::None) => None,
+            Some(KwVal::Str(s)) if s.is_empty() => None,
+            Some(KwVal::Str(s)) => Some(s.as_str()),
+            _ => return Err(N2WError::Fallback("kwargs".into())),
+        };
+        Ok(self.year_suffix(self.to_cardinal(value)?, suffix))
     }
 
     /// `to_ordinal(float/Decimal)`. `verify_ordinal` raises TypeError for a
@@ -760,16 +783,7 @@ impl Lang for LangRo {
     /// RO then strips a leading negword (a *global* `str.replace`) and
     /// appends " î.Hr." — "unu virgulă cinci î.Hr." for -1.5.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
-        let mut result = self.cardinal_float_entry(value, None)?;
-        let mut suffix: Option<&str> = None;
-        if result.starts_with(self.negword()) {
-            result = result.replace(self.negword(), "");
-            suffix = Some("î.Hr.");
-        }
-        if let Some(s) = suffix {
-            result = format!("{} {}", result, s);
-        }
-        Ok(result)
+        Ok(self.year_suffix(self.cardinal_float_entry(value, None)?, None))
     }
 
     // ---- currency -------------------------------------------------------
