@@ -391,7 +391,10 @@ fn to_float_core(
                 l.to_cardinal_float_kw(&v, precision_override, kw)
             }
         }
-        // kwargs on the non-cardinal float modes stay on the Python side.
+        // year owns its kwargs (zh_TW era=, ...); the hook declines the
+        // ones a language does not take.
+        "year" => l.year_float_kw(&v, kw),
+        // kwargs on the other non-cardinal float modes stay unported.
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
         "ordinal" => l.ordinal_float_entry(&v),
         // PR savoirfairelinux/num2words#666: an integer-valued float (1.0,
@@ -407,7 +410,6 @@ fn to_float_core(
             (true, Some(n)) => l.to_ordinal_num(&n),
             _ => l.ordinal_num_float_entry(&v, repr_str),
         },
-        "year" => l.year_float_entry(&v),
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
@@ -750,10 +752,10 @@ fn dec_mode(
                 kw,
             )
         }
+        "year" => l.year_float_kw(&fv, kw),
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
         "ordinal" => l.ordinal_float_entry(&fv),
         "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
-        "year" => l.year_float_entry(&fv),
         // Python: getattr(converter, "to_fraction")(number) — TypeError
         // (missing denominator) when the class has the method, AttributeError
         // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the

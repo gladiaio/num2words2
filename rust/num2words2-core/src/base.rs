@@ -459,6 +459,15 @@ pub trait Lang {
         self.cardinal_float_entry(value, None)
     }
 
+    /// `to_year(float/Decimal, **kwargs)`. Like the integer `*_kw` hooks the
+    /// default serves only an empty bag and declines any actual kwarg.
+    fn year_float_kw(&self, value: &FloatValue, kw: &Kwargs) -> Result<String> {
+        if kw.is_empty() {
+            return self.year_float_entry(value);
+        }
+        Err(N2WError::Fallback("kwargs".into()))
+    }
+
     // ---- string inputs ---------------------------------------------------
 
     /// `converter.str_to_number`. Base is `Decimal(value)`; ES ("1ro" ->

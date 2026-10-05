@@ -17,7 +17,6 @@
 
 from __future__ import division, print_function, unicode_literals
 
-import unittest
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -107,9 +106,6 @@ class Num2WordsZhTWTest(TestCase):
         with self.assertRaises(NotImplementedError):
             n2zh_tw(4, to="ordinal_num", reading=True, counter="隻")
 
-    # Known num2words2-core Rust-port gap: Chinese (zh_tw) year
-    # (to="year") is not ported.
-    @unittest.expectedFailure
     def test_year(self):
         self.assertEqual(n2zh_tw(1912, to="year", era=True), "民國元年")
         self.assertEqual(n2zh_tw(1912, to="year", era=True, reading="arabic"), "民國1年")
@@ -125,6 +121,12 @@ class Num2WordsZhTWTest(TestCase):
         self.assertEqual(n2zh_tw(2020, to="year"), "二零二零年")
         with self.assertRaises(TypeError):
             n2zh_tw(2020.1, to="year", era=True)
+        # Whole floats / decimal strings take the integer era path
+        # (gladiaio/num2words2#167).
+        self.assertEqual(n2zh_tw(2025.0, to="year", era=True), "民國一一四年")
+        self.assertEqual(n2zh_tw("2025", to="year", era=True), "民國一一四年")
+        with self.assertRaises(TypeError):
+            n2zh_tw("2020.1", to="year", era=True)
 
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4
