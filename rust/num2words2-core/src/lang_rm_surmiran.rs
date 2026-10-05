@@ -86,11 +86,12 @@
 //!    (123 000 → "tschentvantgatremella"), but it is worth noting that the
 //!    rule is positional-blind.
 //!
-//! 7. **Numbers with 66 or more digits raise `NotImplementedError`** ("The
-//!    given number is too large."), checked *before* anything else in
-//!    `big_number_to_cardinal`. `10**64` (65 digits) is the largest input that
-//!    works → "diesch decilliardas". `10**65` raises. There is no `maxval`
-//!    overflow check of the usual kind.
+//! 7. **Numbers with 66 or more digits raise**, checked *before* anything else
+//!    in `big_number_to_cardinal`. `10**64` (65 digits) works → "diesch
+//!    decilliardas"; `10**65` raises. Python raises `NotImplementedError`
+//!    ("The given number is too large."). Fixed (gladiaio/num2words2#159):
+//!    the port raises `OverflowError` ("abs(v) must be less than 10^65.") and
+//!    `maxval()` reports 10^65.
 //!
 //! # Python semantics that matter here
 //!
@@ -113,7 +114,8 @@
 //!   here, so it is always false and the float branch is dropped as out of
 //!   scope.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
@@ -379,11 +381,7 @@ impl LangRmSurmiran {
     fn big_number_to_cardinal(&self, number: &BigInt) -> Result<String> {
         let digits: Vec<char> = number.to_string().chars().collect();
         let length = digits.len();
-        if length >= 66 {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
+        check_maxval(number, maxval_ceiling())?;
         // This is how many digits come before the "illion" term.
         //   tschent milliardas => 3
         //   diesch milliuns => 2
@@ -504,8 +502,8 @@ impl LangRmSurmiran {
         let int_str = parts.next().unwrap_or("");
         // int(float_number) truncates toward zero; for value >= 0 that is the
         // integer part of the repr string. Computed *before* the point probe,
-        // exactly as Python does — for a huge float the 66-digit
-        // NotImplementedError beats the IndexError below.
+        // exactly as Python does — for a huge float the maxval
+        // OverflowError (#159) beats the IndexError below.
         let prefix = self.cardinal(&parse_int(int_str)?)?;
         // Python indexes `str(value).split('.')[1]`; an absent point (a float
         // whose repr carries no '.', i.e. exponent form) raises IndexError.
@@ -574,6 +572,9 @@ impl LangRmSurmiran {
                 "list indices must be integers or slices, not decimal.Decimal".to_string(),
             ));
         }
+        // gladiaio/num2words2#159: a magnitude past maxval is an OverflowError,
+        // checked before Python's `len(str(number)) >= 66` string guard.
+        check_maxval(&value.with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
         // number >= 10**6 -> big_number_to_cardinal(Decimal), over str(number).
         // `python_decimal_str` reproduces Python's `str(Decimal)` exactly,
         // including the scientific form: `str(Decimal("1E+20"))` is `"1E+20"`,
@@ -592,6 +593,8 @@ impl LangRmSurmiran {
     fn big_number_to_cardinal_str(&self, s: &str) -> Result<String> {
         let digits: Vec<char> = s.chars().collect();
         let length = digits.len();
+        // Only reachable below maxval when the fraction digits push str(number)
+        // past 65 characters; magnitudes past maxval were rejected above (#159).
         if length >= 66 {
             return Err(N2WError::NotImplemented(
                 "The given number is too large.".to_string(),
@@ -774,7 +777,19 @@ impl Default for LangRmSurmiran {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `big_number_to_cardinal`
+/// names numbers of up to 65 digits, so 10^65 and above raise
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(65))
+}
+
 impl Lang for LangRmSurmiran {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     // Num2Word_RM and its variants define no to_currency / to_cheque
     // at all, so Python raises AttributeError on attribute lookup —
     // not the NotImplementedError the trait default would give.
@@ -799,10 +814,10 @@ impl Lang for LangRmSurmiran {
         )))
     }
 
-    // cards/maxval/merge stay at their trait defaults: the Python class has no
-    // base class and never builds self.cards, so splitnum/clean/merge are
-    // unreachable and there is no MAXVAL overflow check. The magnitude guard
-    // is the 66-digit NotImplementedError instead. See the module docs.
+    // cards/merge stay at their trait defaults: the Python class has no base
+    // class and never builds self.cards, so splitnum/clean/merge are
+    // unreachable. The magnitude guard is the 66-digit one, an OverflowError
+    // since #159, reported by maxval() above. See the module docs.
     //
     // negword likewise stays at its default: the class has no negword
     // attribute at all and signs go through MINUS_PREFIX_WORD.

@@ -4,9 +4,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `SCALE` table (see below),
-//! which raises `KeyError` rather than `OverflowError`.
+//! `cards`/`merge` stay at their trait defaults here. The `SCALE` table ends
+//! at 10^30; `maxval()` is 10^33 and larger values raise `OverflowError`
+//! (gladiaio/num2words2#159, see below).
 //!
 //! `setup()` sets `negword = "minus"` and `pointword = "zarez"`; everything
 //! else stays at the `Num2Word_Base.__init__` defaults (notably
@@ -47,7 +47,7 @@
 //!     to exponent form at 1e16), `str(Decimal("1E+2"))` is "1E+2". Both are
 //!     corpus-pinned as ValueError for cardinal and year. This is HR's de
 //!     facto float ceiling, and it is a *ValueError*, unlike the int path's
-//!     `SCALE` `KeyError`.
+//!     10^33 `OverflowError`.
 //!   * `str(-0.0)` is "-0.0", so **negative zero renders the negword**:
 //!     "minus nula zarez nula nula" (corpus-pinned for float and Decimal
 //!     alike; the binding smuggles `Decimal("-0.0")` in as an f64 `-0.0`
@@ -116,23 +116,23 @@
 //!    `ONES[6]` + "o" would spell. That is genuinely the Croatian word; noted
 //!    only because it makes 675 read "šesto sedamdeset pet".
 //!
-//! # The SCALE ceiling — a `KeyError`, not an `OverflowError`
+//! # The SCALE ceiling — now an `OverflowError` (#159)
 //!
 //! `SCALE` is keyed 0..=10, i.e. chunk indices up to 1000^10 == 10^30
 //! ("kvintilijun"). `_int2word` indexes it with the chunk index for **every**
 //! non-zero chunk, so a value needing a 12th chunk — that is, any
-//! `abs(n) >= 10**33` — raises `KeyError` with the missing chunk index as the
-//! key. This is Croatian's de facto (and rather abrupt) MAXVAL.
+//! `abs(n) >= 10**33` — raised `KeyError` in Python with the missing chunk
+//! index as the key.
 //!
 //! The leading chunk of a Python `int` is never zero, so the guard
 //! `if chunk_len > 0 and chunk != 0` never spares it: the crash is
-//! unconditional above the ceiling. Verified against the interpreter:
-//!   * `to_cardinal(10**33 - 1)` → "devetsto devedeset devet kvintilijuna …" (ok)
-//!   * `to_cardinal(10**33)`     → `KeyError: 11`
-//!   * `to_cardinal(10**36)`     → `KeyError: 12`
-//! [`scale`] returns `None` past the table and each call site converts that to
-//! [`N2WError::Key`] carrying the same key, matching both the type and the
-//! payload.
+//! unconditional above the ceiling. Fixed (gladiaio/num2words2#159):
+//! `maxval()` is 10^33 and `_int2word` raises `OverflowError` for
+//! `abs(n) >= 10**33` before any lookup, so `to_cardinal(10**33 - 1)` is
+//! "devetsto devedeset devet kvintilijuna …" and `to_cardinal(10**33)` is an
+//! `OverflowError`. [`scale`] still returns `None` past the table and the call
+//! sites map that to [`N2WError::Key`], but that arm is unreachable from the
+//! public entry points.
 //!
 //! # Currency
 //!
@@ -246,7 +246,8 @@
 //! kwargs swallow, `int("Infinity")`'s exact ValueError text, and
 //! `to_currency(0.6535)`'s digit-by-digit "šezdeset pet zarez tri pet centi".
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -344,7 +345,8 @@ const SCALE: [(&str, &str, &str, bool); 11] = [
 
 /// Python's `SCALE[idx]`. `None` models the `KeyError` the dict raises past
 /// key 10; callers turn it into [`N2WError::Key`] with `idx` as the key, which
-/// is what CPython puts in the exception (`KeyError: 11`).
+/// is what CPython puts in the exception (`KeyError: 11`). Unreachable from
+/// the public entry points since the 10^33 MAXVAL check (#159).
 fn scale(idx: usize) -> Option<&'static (&'static str, &'static str, &'static str, bool)> {
     SCALE.get(idx)
 }
@@ -747,6 +749,7 @@ impl LangHr {
 
     /// Port of `Num2Word_HR._int2word`.
     fn int2word(&self, number: &BigInt, feminine: bool) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_negative() {
             // Python: " ".join([self.negword, self._int2word(abs(number))])
             //
@@ -931,7 +934,19 @@ impl LangHr {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangHr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

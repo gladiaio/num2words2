@@ -9,8 +9,8 @@
 //! runs**. The cards table survives only as a lookup table for
 //! `self.cards[value]` / `self.cards[exp]`. Hence `cards()`/`maxval()` are
 //! exposed below to mirror the constructed Python state, but `merge` is left
-//! at the trait default (unreachable), and huge values raise `KeyError`
-//! rather than `OverflowError` — see bug 4.
+//! at the trait default (unreachable). The port runs the `MAXVAL` check itself
+//! — see bug 4.
 //!
 //! Inheritance chain actually exercised:
 //!   * `Num2Word_EUR.setup` → `gen_high_numwords` + `high_numwords`
@@ -46,12 +46,13 @@
 //! 3. **`to_ordinal` never calls `verify_ordinal`**, so negatives are happily
 //!    ordinalised: `to_ordinal(-1)` == "mínusz első". Only `to_ordinal_num`
 //!    verifies, and there a negative raises `TypeError`.
-//! 4. **No overflow guard.** `to_cardinal` bypasses `MAXVAL` entirely, so a
-//!    value with ≥ 607 decimal digits computes `exp = 10**606`, which is one
-//!    step past the highest card (`10**603` == "centilliárd"), and
-//!    `self.cards[exp]` raises **`KeyError`** — not the `OverflowError` a
-//!    base-driven language would raise. Modelled by [`card`]. (Untested by
-//!    the corpus, whose largest case is 10**21.)
+//! 4. **Fixed (gladiaio/num2words2#159): no overflow guard.** Python's
+//!    `to_cardinal` bypasses `MAXVAL` entirely, so a value with ≥ 607 decimal
+//!    digits computes `exp = 10**606`, one step past the highest card
+//!    (`10**603` == "centilliárd"), and `self.cards[exp]` raised `KeyError`.
+//!    The port checks `MAXVAL` (10^606) at the top of `to_cardinal_z` and
+//!    raises `OverflowError`, so [`card`]'s `KeyError` arm is unreachable for
+//!    whole numbers.
 //! 5. **`két` only ever replaces a bare 2.** The `zero == "" and value == 2`
 //!    special case tests the *whole* value, so 12 in a compound stays
 //!    `"tizenkettő"`, giving `to_cardinal(12345)` ==
@@ -188,7 +189,7 @@
 //!   table, whose every entry has ≥ 2 forms.
 
 use crate::base::{
-    set_low_numwords, set_mid_numwords, Cards, KwVal, Kwargs, Lang, N2WError, Result,
+    check_maxval, set_low_numwords, set_mid_numwords, Cards, KwVal, Kwargs, Lang, N2WError, Result,
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
@@ -591,6 +592,8 @@ impl LangHu {
     /// the word emitted for 0 (`""` in compound position, so the segment
     /// vanishes) and the flag that switches 2 from "kettő" to "két".
     fn to_cardinal_z(&self, value: &BigInt, zero: &str) -> Result<String> {
+        // The MAXVAL check Python never runs (bug 4, #159).
+        check_maxval(value, &self.maxval)?;
         // `if int(value) != value` is always false for integral input.
         if value.is_negative() {
             // NB: recurses with the *default* zero, not the current one.
@@ -1033,6 +1036,10 @@ impl Lang for LangHu {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        // A whole value past MAXVAL is an OverflowError here too (#159).
+        if let Some(i) = value.as_whole_int() {
+            check_maxval(&i, &self.maxval)?;
+        }
         self.hu_cardinal_any(value, precision_override, ZERO)
     }
 

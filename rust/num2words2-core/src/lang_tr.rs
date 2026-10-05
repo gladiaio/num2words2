@@ -22,12 +22,15 @@
 //!   therefore disagree: `to_cardinal(1234567890123456789)` reads ...768 but
 //!   `to_ordinal` of the same reads ...789. `float_round_digits` reproduces
 //!   the double rounding exactly. See `python_float_int`.
-//! * Because of that float cast, the 65535 inputs in
-//!   `10**21 - 65536 ..= 10**21 - 2` (all still below MAXVAL = 10**21 - 1, so
-//!   they pass `verify_cardinal`) round *up* to the 22-digit "1000...0" and
-//!   index `CARDINAL_TRIPLETS[7]`, which Python raises `KeyError` for. Mapped
-//!   to `N2WError::Key`. `to_ordinal` is immune — it never casts to float, so
-//!   it tops out at 21 digits and `CARDINAL_TRIPLETS[6]`.
+//! * Fixed (gladiaio/num2words2#159): because of that float cast, the 65535
+//!   inputs in `10**21 - 65536 ..= 10**21 - 2` (all below Python's MAXVAL =
+//!   10**21 - 1, so they passed `verify_cardinal`) round *up* to the 22-digit
+//!   "1000...0" and index `CARDINAL_TRIPLETS[7]`, which Python raised
+//!   `KeyError` for. The port lowers MAXVAL to `10**21 - 65536`, the real
+//!   exclusive ceiling, so those inputs are an `OverflowError` and
+//!   `maxval("tr") - 1` converts. Python's message also named MAXVAL itself as
+//!   "the largest convertible number" while rejecting it; the port names
+//!   `MAXVAL - 1`.
 //! * `verify_ordinal` raises `TypeError(errmsg_negord)` *inside* its own
 //!   `try`, which its `except (ValueError, TypeError)` then swallows and
 //!   re-raises as `TypeError(errmsg_nonnum)`. Negative ordinals therefore
@@ -115,7 +118,8 @@ fn errmsg_toobig(value: &BigInt, maxval: &BigInt) -> String {
     format!(
         "abs({}) sayı yazıya çevirmek için çok büyük. \
          Yazıya çevrilebilecek en büyük rakam {}.",
-        value, maxval
+        value,
+        maxval - 1u32
     )
 }
 
@@ -320,9 +324,12 @@ impl Default for LangTr {
 
 impl LangTr {
     pub fn new() -> Self {
-        // MAXVAL = 10 ** ((len(CARDINAL_TRIPLETS) + 1) * 3) - 1 = 10**21 - 1.
+        // Python: MAXVAL = 10 ** ((len(CARDINAL_TRIPLETS) + 1) * 3) - 1 =
+        // 10**21 - 1. Lowered to 10**21 - 2**16 (#159): `to_cardinal`'s float
+        // cast rounds every value from there up to 10**21, one triplet past
+        // the table, so that is the real exclusive ceiling (module docs).
         LangTr {
-            maxval: BigInt::from(10u8).pow(21u32) - 1,
+            maxval: BigInt::from(10u8).pow(21u32) - 65536u32,
             // Built once here, never per call.
             currency_forms: build_currency_forms(),
         }
@@ -956,7 +963,8 @@ fn errmsg_toobig_repr(value_repr: &str, maxval: &BigInt) -> String {
     format!(
         "abs({}) sayı yazıya çevirmek için çok büyük. \
          Yazıya çevrilebilecek en büyük rakam {}.",
-        value_repr, maxval
+        value_repr,
+        maxval - 1u32
     )
 }
 

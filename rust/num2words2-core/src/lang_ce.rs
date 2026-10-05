@@ -6,11 +6,12 @@
 //! — but every one of the four in-scope methods is overridden, so cards,
 //! `merge` and `MAXVAL` are never read. Two consequences:
 //!
-//!   * `cards`/`maxval`/`merge` stay at their trait defaults here.
-//!   * **There is no overflow check.** Chechen's ceiling is the literal
-//!     `return "NOT IMPLEMENTED"` at `number >= 10**34` — a plain string, not
-//!     an `OverflowError`. `to_cardinal(10**21)` == "цхьа триллиард" confirms
-//!     `MAXVAL` is inert.
+//!   * `cards`/`merge` stay at their trait defaults here.
+//!   * **Fixed (gladiaio/num2words2#159): the ceiling is 10^34.** Python
+//!     returned the literal string `"NOT IMPLEMENTED"` as the "words" for
+//!     `number >= 10**34` (and for ±Infinity), while its inherited `MAXVAL`
+//!     claimed ~10^606. The port raises `OverflowError` ("abs(v) must be less
+//!     than 10^34.") there instead, and `maxval("ce")` reports 10^34.
 //!
 //! Python's `to_cardinal(number, clazz="д", case="abs")` carries two keyword
 //! arguments. The bare trait entry points always run at the defaults ("д" /
@@ -101,7 +102,8 @@
 //! Decimal arm of the float path reaches them constantly — every `cardinal_dec`
 //! row in the corpus is a `KeyError` (see [`LangCe::cardinal_decimal`]).
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -1073,7 +1075,12 @@ impl LangCe {
             return Ok(out.join(" "));
         }
 
-        Ok("NOT IMPLEMENTED".to_string())
+        // Python returned the string "NOT IMPLEMENTED" here (#159).
+        Err(N2WError::Overflow(format!(
+            "abs({}) must be less than {}.",
+            number,
+            maxval_ceiling()
+        )))
     }
 
     /// Python's `Num2Word_CE.to_cardinal(number, clazz, case)`, integer path.
@@ -1128,18 +1135,26 @@ impl LangCe {
             return Ok(out.join(" "));
         }
 
-        // The literal fall-through for number >= 10**34. Not an OverflowError:
-        // Python returns this as an ordinary string.
-        Ok("NOT IMPLEMENTED".to_string())
+        // number >= 10**34. Python returned the string "NOT IMPLEMENTED"
+        // here (#159); `number` is already non-negative.
+        check_maxval(number, maxval_ceiling())?;
+        unreachable!("number >= 10**34 is rejected by check_maxval")
     }
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#159): `ILLIONS` ends below
+/// 10^34, so 10^34 and above raise `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10(34))
 }
 
 impl Lang for LangCe {
 
-    fn python_maxval(&self) -> Option<num_bigint::BigInt> {
-        // Python class attribute MAXVAL (self-contained converter).
-        Some(num_bigint::BigInt::from(10u32).pow(606))
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
     }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -1272,32 +1287,17 @@ impl Lang for LangCe {
     /// never calls `int()`:
     ///
     /// * `Decimal("Infinity")` falls through every `<` comparison to the
-    ///   literal `return "NOT IMPLEMENTED"` (and "-Infinity" to
-    ///   "минус NOT IMPLEMENTED" via the negative branch) — a *string*, not
-    ///   the OverflowError other languages raise.
+    ///   literal `return "NOT IMPLEMENTED"` in Python; the port keeps the
+    ///   default [`Lang::inf_result`], an OverflowError (#159).
     /// * `Decimal("NaN")` dies on the very first comparison, `number < 0`,
     ///   with `decimal.InvalidOperation` — not the ValueError from `int()`.
     ///
     /// Neither is expressible through `ParsedNumber` (a `BigDecimal` cannot
     /// hold Inf/NaN), so the parse itself is the plain default and the two
-    /// specials are served natively by the [`Lang::inf_result`] /
-    /// [`Lang::nan_result`] hooks below — no Python fallback.
+    /// specials are served natively by the [`Lang::inf_result`] default /
+    /// the [`Lang::nan_result`] hook below — no Python fallback.
     fn str_to_number(&self, s: &str) -> Result<ParsedNumber> {
         python_decimal_parse(s)
-    }
-
-    /// `Decimal("Infinity")` / `-Infinity`. CE's `to_cardinal` never calls
-    /// `int()`: the value falls through every `<` comparison to the literal
-    /// `return "NOT IMPLEMENTED"`, and the negative branch prepends
-    /// `self.negword + " "` — a *string*, not the OverflowError the base path
-    /// raises. Every mode routes through `to_cardinal` (`to_ordinal`/`to_year`
-    /// forward to it, and the fall-through ignores `case`), so `to` is unread.
-    fn inf_result(&self, negative: bool, _to: &str) -> Result<String> {
-        if negative {
-            Ok(format!("{} NOT IMPLEMENTED", NEGWORD))
-        } else {
-            Ok("NOT IMPLEMENTED".to_string())
-        }
     }
 
     /// `Decimal("NaN")`. CE's `to_cardinal` dies on its very first branch,
@@ -1792,9 +1792,11 @@ mod tests {
         (0x4341c37937e08000_u64, 16, Raises("IndexError: list index out of range")), // 1e+16
         (0x0000000000000001_u64, 324, Raises("IndexError: list index out of range")), // 5e-324
         (0x46fed09bead87c03_u64, 34, Raises("IndexError: list index out of range")), // 1e+34
-        (0x47071c74f0225d03_u64, 33, Raises("ValueError: invalid literal for int() with base 10: 'e'")), // 1.5e+34
+        // #159: past the 10^34 ceiling the float is an OverflowError (Python
+        // returned "NOT IMPLEMENTED" for 1e34 and hit int('e') here).
+        (0x47071c74f0225d03_u64, 33, Raises("OverflowError: abs(15000000000000000913010721715912704) must be less than 10000000000000000000000000000000000.")), // 1.5e+34
         (0xc0934a3d70a3d70a_u64, 2, Words("минус эзар ши бӀе ткъе дейтта а пхиъ ялх")), // -1234.56
-        (0x54b249ad2594c37d_u64, 100, Raises("IndexError: list index out of range")), // 1e+100
+        (0x54b249ad2594c37d_u64, 100, Raises("OverflowError: abs(10000000000000000159028911097599180468360808563945281389781327557747838772170381060813469985856815104) must be less than 10000000000000000000000000000000000.")), // 1e+100 (#159; Python: IndexError)
         (0x4034800000000000_u64, 1, Words("ткъа а пхиъ")), // 20.5
         (0x4044000000000000_u64, 1, Words("шовзткъа а ноль")), // 40.0
         (0x408f3ffdf3b645a2_u64, 3, Words("исс бӀе дезткъе ткъайесна а исс исс исс")), // 999.999
@@ -1831,7 +1833,7 @@ mod tests {
         ("323029.99", Raises("KeyError: Decimal('9.99')")),
         ("29.99", Raises("KeyError: Decimal('9.99')")),
         ("-0.00", Words("ноль")),
-        ("1e34", Words("NOT IMPLEMENTED")),
+        ("1e34", Raises("OverflowError: abs(1e+34) must be less than 10000000000000000000000000000000000.")),
         ("0", Words("ноль")),
         ("19.999", Raises("KeyError: Decimal('19.999')")),
         ("1000000.5", Raises("KeyError: Decimal('0.5')")),
@@ -2049,11 +2051,9 @@ mod tests {
         assert!(matches!(l.str_to_number("5"), Ok(ParsedNumber::Dec(_))));
 
         // Native Inf/NaN/-0.0 outcomes.
-        assert_eq!(show(l.inf_result(false, "cardinal")), "NOT IMPLEMENTED");
-        assert_eq!(
-            show(l.inf_result(true, "cardinal")),
-            "минус NOT IMPLEMENTED"
-        );
+        // #159: Infinity is an OverflowError, not the "NOT IMPLEMENTED" string.
+        assert!(matches!(l.inf_result(false, "cardinal"), Err(N2WError::Overflow(_))));
+        assert!(matches!(l.inf_result(true, "cardinal"), Err(N2WError::Overflow(_))));
         assert!(matches!(
             l.nan_result("cardinal"),
             Err(N2WError::Custom {

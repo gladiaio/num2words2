@@ -3,9 +3,9 @@
 //! Shape: **self-contained**. `Num2Word_RM_SURSILV` is a *bare* class — it
 //! subclasses nothing at all (not even `Num2Word_Base`), and its `__init__` is
 //! a single `pass`. There is no inheritance chain to chase: everything the
-//! class can do is the six methods in the file. Consequently `cards`,
-//! `maxval` and `merge` stay at their trait defaults and are never reached,
-//! and there is **no `OverflowError` path** anywhere in this language.
+//! class can do is the six methods in the file. Consequently `cards` and
+//! `merge` stay at their trait defaults and are never reached; `maxval()`
+//! reports the ceiling below.
 //!
 //! The module header says "Based on lang_IT template from Filippo Costa", and
 //! the skeleton matches `lang_IT`/`lang_LIJ`: `MINUS_PREFIX_WORD`, a size
@@ -38,10 +38,12 @@
 //! # Ceiling
 //!
 //! `big_number_to_cardinal` raises `NotImplementedError("The given number is
-//! too large.")` when `len(str(number)) >= 66`, so the wall is at **10**65**
+//! too large.")` in Python when `len(str(number)) >= 66`, so the wall is at **10**65**
 //! exactly (10**65 - 1, a 65-digit number, is the largest convertible value).
 //! `to_cardinal` tests the sign *before* the size dispatch, so `-10**65`
-//! raises too. Note this is `NotImplementedError`, **not** `OverflowError`.
+//! raises too. Python raises `NotImplementedError`; fixed
+//! (gladiaio/num2words2#159): the port raises `OverflowError` ("abs(v) must
+//! be less than 10^65.").
 //!
 //! That bound also makes `EXPONENT_PREFIXES` provably safe: `len(exponent)`
 //! peaks at 63 (a 65-digit number gives `predigits = 65 % 3 = 2`), and
@@ -102,7 +104,8 @@
 //!    raising. This class has no `verify_ordinal` at all, and `to_ordinal(0)`
 //!    happily returns "nulla".
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
@@ -373,9 +376,7 @@ fn big_number_to_cardinal(number: &BigInt) -> Result<String> {
     debug_assert!(!number.is_negative());
     let digits: Vec<char> = number.to_string().chars().collect();
     let length = digits.len();
-    if length >= 66 {
-        return Err(N2WError::NotImplemented("The given number is too large.".into()));
-    }
+    check_maxval(number, maxval_ceiling())?;
     // This is how many digits come before the "illion" term.
     //   tschien milliardas => 3
     //   diesch milliuns => 2
@@ -424,7 +425,7 @@ fn big_number_to_cardinal(number: &BigInt) -> Result<String> {
 ///
 /// The `isinstance(number, float)` branch is dead for integer input and is
 /// omitted along with `float_to_words`. Note the sign test comes *first*, so
-/// `-10**65` raises `NotImplementedError` just like `+10**65`.
+/// `-10**65` raises `OverflowError` just like `+10**65`.
 fn to_cardinal_impl(number: &BigInt) -> Result<String> {
     if number.is_negative() {
         return Ok(MINUS_PREFIX_WORD.to_string() + &to_cardinal_impl(&(-number))?);
@@ -529,7 +530,7 @@ fn f64_trunc_to_bigint(f: f64) -> Result<BigInt> {
 fn float_body_f64(x: f64, precision: u32) -> Result<String> {
     // prefix = to_cardinal(int(float_number)); `int()` truncates toward zero.
     // Computed *before* the point probe, exactly as Python does — for a huge
-    // float the 66-digit NotImplementedError beats the IndexError below.
+    // float the maxval OverflowError (#159) beats the IndexError below.
     let pre = f64_trunc_to_bigint(x)?;
     let prefix = to_cardinal_impl(&pre)?;
 
@@ -598,8 +599,9 @@ fn decimal_fixed_str(d: &BigDecimal, precision: u32) -> String {
 /// * `abs(d) >= 10**6` → `big_number_to_cardinal` splits `str(number)` — which
 ///   carries the '.' — and, since the integer part has `>= 7` digits while
 ///   `predigits <= 3`, the '.' always lands in `digits[predigits:]`; the branch
-///   then calls `int("...<frac>...")` → **ValueError**. If `len(str(number))
-///   >= 66` it raises **NotImplementedError** first.
+///   then calls `int("...<frac>...")` → **ValueError**. A magnitude `>=
+///   10**65` raises **OverflowError** first (#159); a `str(number)` of 66+
+///   characters below that still raises **NotImplementedError**.
 ///
 /// A negative Decimal prepends "minus " *after* the recursive call, which
 /// raises, so the sign never reaches the output — take abs and reproduce the
@@ -614,9 +616,14 @@ fn decimal_to_cardinal(value: &BigDecimal, precision: u32) -> Result<String> {
         ));
     }
 
+    // gladiaio/num2words2#159: a magnitude past maxval is an OverflowError,
+    // checked before Python's `len(str(number)) >= 66` string guard.
+    check_maxval(&d.with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
     // >= 10**6: reproduce big_number_to_cardinal on str(number).
     let s = decimal_fixed_str(&d, precision);
     let length = s.chars().count();
+    // Only reachable below maxval when the fraction digits push str(number)
+    // past 65 characters; magnitudes past maxval were rejected above (#159).
     if length >= 66 {
         return Err(N2WError::NotImplemented(
             "The given number is too large.".into(),
@@ -764,7 +771,19 @@ impl Default for LangRmSursilv {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `big_number_to_cardinal`
+/// names numbers of up to 65 digits, so 10^65 and above raise
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(65))
+}
+
 impl Lang for LangRmSursilv {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     // Num2Word_RM and its variants define no to_currency / to_cheque
     // at all, so Python raises AttributeError on attribute lookup —
     // not the NotImplementedError the trait default would give.

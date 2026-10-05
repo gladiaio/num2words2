@@ -5,10 +5,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! populates `self.cards` and `MAXVAL` is never consulted. `to_cardinal` is
 //! overridden outright and drives `_int2word` over 3-digit chunks, so
-//! `cards`/`maxval`/`merge` stay at their trait defaults here and there is
-//! **no `OverflowError` path at all**. The only ceiling is the `THOUSANDS` /
-//! `prefixes_ordinal` tables (keys 1..=10, i.e. up to 10^30 "нонільйон");
-//! past that Python raises `KeyError`, not `OverflowError`.
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` /
+//! `prefixes_ordinal` tables (keys 1..=10) end at 10^30 "нонільйон"; past
+//! that Python raised `KeyError`. Fixed (gladiaio/num2words2#159): `maxval()`
+//! is 10^33 and values at or above it raise `OverflowError` (quirk 8).
 //!
 //! Inherited from `Num2Word_Base`, unchanged by UK:
 //!   * `verify_ordinal(value)` — raises `TypeError` for negatives. UK's
@@ -59,9 +59,11 @@
 //!    chunk) because "тисяча" is feminine — hence "одна тисяча" / "дві тисячі"
 //!    but "один мільйон" / "два мільйони". Correct Ukrainian, noted because
 //!    the condition looks like a gender bug at a glance.
-//! 8. `KeyError` is the de facto MAXVAL: `THOUSANDS`/`prefixes_ordinal` stop
-//!    at key 10, so both `to_cardinal(10**33)` and `to_ordinal(10**33)` raise
-//!    `KeyError: 11`, and `10**36` raises `KeyError: 12`. Verified.
+//! 8. Fixed (gladiaio/num2words2#159): `THOUSANDS`/`prefixes_ordinal` stop
+//!    at key 10, so Python's `to_cardinal(10**33)` and `to_ordinal(10**33)`
+//!    raised `KeyError: 11`. `_int2word` and `to_ordinal` now check
+//!    `abs(n) >= 10**33` first and raise `OverflowError`, and `maxval()`
+//!    reports 10^33.
 //!
 //! # Dropped kwargs (out of scope, flagged in the report)
 //!
@@ -122,7 +124,8 @@
 //! may catch, so parity means reproducing the type rather than tidying it
 //! into a `TypeError`.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -424,7 +427,8 @@ static HUNDREDS_ORDINALS: [[&str; 2]; 10] = [
 
 /// `THOUSANDS`: chunk index 1..=10 (10^3 … 10^30) × 6 cases × 3 plural forms.
 /// Index 0 is absent in Python and unreachable (guarded by `i > 0`).
-/// A chunk index of 11 or more is a `KeyError` — the de facto MAXVAL.
+/// A chunk index of 11 or more would be a `KeyError`; the 10^33 MAXVAL
+/// check (#159) keeps it unreachable.
 static THOUSANDS: [[[&str; 3]; 6]; 11] = [
     // 0 — absent in Python
     [
@@ -1022,6 +1026,7 @@ impl LangUk {
     /// scope (the trait exposes no kwargs), but both are threaded through so
     /// the algorithm matches the source line for line.
     fn int2word(&self, n: &BigInt, feminine: bool, mcase: usize) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
             let n_value = self.int2word(&n.abs(), feminine, mcase)?;
             return Ok(format!("{} {}", NEGWORD, n_value));
@@ -1080,7 +1085,19 @@ impl LangUk {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangUk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -1365,6 +1382,7 @@ impl Lang for LangUk {
         if value.is_zero() {
             return Ok("нульовий".to_string());
         }
+        check_maxval(value, maxval_ceiling())?;
 
         let mut words: Vec<String> = Vec::new();
         let mut fragments = splitbyx(&value.to_string(), 3)?;

@@ -4,9 +4,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `THOUSANDS` table, which
-//! raises `KeyError` rather than `OverflowError` (see bug 4 below).
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` table
+//! ends at 10^30; `maxval()` is 10^33 and larger values raise
+//! `OverflowError` (see bug 4 below).
 //!
 //! `setup()` sets `negword = "minus"` and `pointword = "kablelis"`.
 //!
@@ -44,12 +44,11 @@
 //!    transliteration where Lithuanian would use "nonilijonas". Hence
 //!    `to_cardinal(10**21)` == "vienas sikstilijonas" and `to_cardinal(10**30)`
 //!    == "vienas naintilijonas".
-//! 4. `THOUSANDS` stops at index 10, so 10^33 and above raise `KeyError`. The
-//!    key is the index of the highest non-zero chunk, i.e. `len(chunks) - 1`
-//!    (the leading chunk of `str(n)` is never zero, so it is always the one
-//!    that trips first): `to_cardinal(10**33)` → `KeyError: 11`,
-//!    `to_cardinal(10**60 + 5)` → `KeyError: 20`. This is LT's de facto (and
-//!    rather abrupt) MAXVAL: 10^33 - 1 is the largest convertible value.
+//! 4. Fixed (gladiaio/num2words2#159): `THOUSANDS` stops at index 10, so
+//!    Python raised `KeyError` from 10^33 up (`to_cardinal(10**33)` →
+//!    `KeyError: 11`). `maxval()` is now 10^33 and `_int2word` raises
+//!    `OverflowError` for `abs(n) >= 10**33` first; 10^33 - 1 is the largest
+//!    convertible value.
 //! 5. **`ONES_FEMININE` is unreachable dead code** from every in-scope entry
 //!    point — see [`LangLt::int2word`] for the full argument. The table and the
 //!    branch are reproduced anyway so the control flow mirrors Python exactly.
@@ -71,14 +70,13 @@
 //!
 //! # Error variants
 //!
-//! Lithuanian raises two exception types in scope: `KeyError` (bug 4), mapped to
-//! `N2WError::Key`, and `NotImplementedError` for an unknown currency code,
-//! mapped to `N2WError::NotImplemented`. The former is a Python crash rather
-//! than a deliberate raise, but the exception *type* is observable, so parity
-//! means reproducing it rather than tidying it into an `OverflowError`. See
-//! [`key_error`].
+//! Lithuanian raises two exception types in scope: `OverflowError` for values
+//! at or above 10^33 (bug 4), and `NotImplementedError` for an unknown
+//! currency code, mapped to `N2WError::NotImplemented`. The table `KeyError`
+//! ([`key_error`]) is unreachable from the public entry points since #159.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::ParsedNumber;
@@ -140,8 +138,8 @@ const HUNDRED: [&str; 2] = ["šimtas", "šimtai"];
 
 /// `THOUSANDS`: chunk index → the three plural forms (singular, nominative
 /// plural, genitive plural). Keys 1..=10, i.e. up to 1000^10 == 10^30. Index 0
-/// is absent in Python (guarded by `i > 0`); index 11 and beyond is the
-/// `KeyError` of bug 4. Spellings at 7 and 10 are Python's typos (bug 3).
+/// is absent in Python (guarded by `i > 0`); index 11 and beyond was the
+/// `KeyError` of bug 4, now pre-empted by the MAXVAL check. Spellings at 7 and 10 are Python's typos (bug 3).
 ///
 /// `static` rather than `const` so that `thousands_at` can hand out a
 /// `&'static` borrow without relying on const promotion.
@@ -159,15 +157,13 @@ static THOUSANDS: [[&str; 3]; 11] = [
     ["naintilijonas", "naintilijonai", "naintilijonų"],
 ];
 
-/// Python `KeyError`. `THOUSANDS[i]` past index 10 is a crash, not a
-/// deliberate raise, but the exception *type* is observable behaviour a caller
-/// may catch, so parity requires reproducing it rather than tidying it into an
-/// `OverflowError`.
+/// Python `KeyError` for `THOUSANDS[i]` past index 10. Unreachable from the
+/// public entry points since the 10^33 MAXVAL check (bug 4, #159).
 fn key_error(key: String) -> N2WError {
     N2WError::Key(key)
 }
 
-/// `THOUSANDS[i]`, raising `KeyError` past 10.
+/// `THOUSANDS[i]`, raising `KeyError` past 10 (unreachable, see bug 4).
 fn thousands_at(i: usize) -> Result<&'static [&'static str; 3]> {
     THOUSANDS
         .get(i)
@@ -546,6 +542,7 @@ impl LangLt {
     /// ever passes `feminine=true` with `n < 1000`, this reproduces what Python
     /// would then do.
     fn int2word(&self, n: &BigInt, feminine: bool) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO.to_string());
         }
@@ -589,7 +586,8 @@ impl LangLt {
             }
 
             if i > 0 {
-                // THOUSANDS[i] — KeyError past index 10 (bug 4).
+                // THOUSANDS[i] — KeyError past index 10, pre-empted by the
+                // MAXVAL check (bug 4).
                 let forms = thousands_at(i)?;
                 words.push(self.pluralize(x, forms));
             }
@@ -599,7 +597,19 @@ impl LangLt {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangLt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -653,8 +663,8 @@ impl Lang for LangLt {
     ///
     /// The `int()` guard cannot fire for integral input, so it is not modelled.
     /// Everything outside the table gets the cardinal with "as" glued on
-    /// (bug 1), and a `KeyError` from `to_cardinal` propagates unchanged
-    /// (bug 4).
+    /// (bug 1), and an `OverflowError` from `to_cardinal` propagates
+    /// unchanged (bug 4).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         if let Some(word) = ordinal_lookup(value) {
             return Ok(word.to_string());
@@ -698,7 +708,7 @@ impl Lang for LangLt {
     /// precision kwarg and never reads `self.precision`, so a caller-supplied
     /// precision has no effect (verified against the interpreter:
     /// `num2words(1.5, lang="lt", precision=5)` is still "vienas kablelis
-    /// penki"). `int2word` may still raise `KeyError` past 10^33 (bug 4), and a
+    /// penki"). `int2word` raises `OverflowError` from 10^33 (bug 4), and a
     /// leading-zero fractional digit string parses fine (`int("005") == 5`).
     fn to_cardinal_float(
         &self,

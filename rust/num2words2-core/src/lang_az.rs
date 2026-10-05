@@ -7,10 +7,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! populates `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `int_to_word` over the decimal *string*, digit by digit,
-//! from the least significant end. Consequently `cards`/`maxval`/`merge` stay at
-//! their trait defaults here, and there is **no overflow check** — the only
-//! ceiling is the `POWERS_OF_TEN` table, which raises `KeyError` rather than
-//! `OverflowError` (see below).
+//! from the least significant end. Consequently `cards`/`merge` stay at their
+//! trait defaults here. The only ceiling is the `POWERS_OF_TEN` table (up to
+//! 10^63), so `maxval()` is 10^66 and larger whole numbers raise
+//! `OverflowError` (see bug 2).
 //!
 //! Inherited from `Num2Word_Base` and left unchanged by AZ:
 //!   * nothing in scope — AZ overrides all four of `to_cardinal`, `to_ordinal`,
@@ -95,9 +95,11 @@
 //!    correct. The bug is confined to the thousands chunk. Reproduced verbatim
 //!    in [`int_to_word`]; do not "fix" it.
 //!
-//! 2. **`POWERS_OF_TEN` stops at 10^63, so 10^66 and up raise `KeyError`**
-//!    rather than a deliberate `OverflowError`. `to_cardinal(10**65)` ==
-//!    `"yüz vigintilyon"` is the largest value that works.
+//! 2. **Fixed (gladiaio/num2words2#159): `POWERS_OF_TEN` stops at 10^63.**
+//!    Python raised `KeyError` from 10^66 up; the port now raises
+//!    `OverflowError` ("abs(v) must be less than 10^66.") before the scan, and
+//!    `maxval("az")` reports 10^66. `to_cardinal(10**66 - 1)` is the largest
+//!    value that works.
 //!
 //! 3. **`leading_zeros` under-counts an all-zero fraction by one.** The count
 //!    is `len(num_str) - len(str(int(num_str)))`, and `str(int("00"))` is `"0"`
@@ -127,21 +129,9 @@
 //! `KeyError`. `"5e-324"` therefore reports `'-'` and not a `KeyError` on the
 //! hundreds slot it walks through on the way.
 //!
-//! `KeyError` (bug 2 above) maps to [`N2WError::Key`]. It is a Python crash
-//! rather than a deliberate raise, but the exception *type* is observable and
-//! callers may catch it, so parity means reproducing it rather than tidying it
-//! into an `OverflowError`.
-//!
-//! The *index* reported by the `KeyError` is load-bearing and is **not** simply
-//! the first multiple of 3 past 63. `int_to_word` only emits a power word when
-//! that power's own 3-digit chunk is non-zero (`set(chunk) != {"0"}`), so an
-//! all-zero chunk is skipped and the crash moves outward. Verified against
-//! CPython:
-//!   * `10**66` → `KeyError: 66`  (chunk at 66 is `['1']`)
-//!   * `10**69` → `KeyError: 69`  (chunk at 66 is all zeros → skipped)
-//!   * `10**70` → `KeyError: 69`  (chunk at 69 is `['0','1']`)
-//!   * `10**72` → `KeyError: 72`  (chunks at 66 and 69 both all zeros)
-//! [`int_to_word`] models the scan order so the reported index matches.
+//! A `KeyError` from `POWERS_OF_TEN` (bug 2) is now reachable only through a
+//! fraction digit string of more than 66 digits; whole numbers that large are
+//! an `OverflowError`.
 //!
 //! `to_ordinal`/`to_ordinal_num`/`to_year` also carry `assert int(value) ==
 //! value` and (the first two) `assert last_vowel is not None`. The first is
@@ -179,7 +169,8 @@
 //! separator=",", adjective=False)`, i.e. Base's defaults unchanged; the
 //! generated `default_currency`/`default_separator` below already match it.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::CurrencyForms;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -334,6 +325,15 @@ fn ordinal_num_suffix_for(cardinal: &str) -> Result<&'static str> {
 /// prepends, so the list is built most-significant-first while the scan runs
 /// least-significant-first.
 fn int_to_word(num_str: &str, leading_zeros: bool) -> Result<String> {
+    // Fixed (gladiaio/num2words2#159): a whole number past the table is an
+    // OverflowError up front, not the KeyError of bug 2. A fraction digit
+    // string (`leading_zeros`) is not a magnitude and keeps the old scan.
+    if !leading_zeros {
+        if let Ok(n) = num_str.parse::<BigInt>() {
+            check_maxval(&n, maxval_ceiling())?;
+        }
+    }
+    let mut words: Vec<&'static str> = Vec::new();
     let mut words: Vec<&'static str> = Vec::new();
     let reversed: Vec<char> = num_str.chars().rev().collect();
 
@@ -365,7 +365,8 @@ fn int_to_word(num_str: &str, leading_zeros: bool) -> Result<String> {
                 let end = std::cmp::min(index + 3, reversed.len());
                 let chunk_is_zero = reversed[index..end].iter().all(|c| *c == '0');
                 if !chunk_is_zero {
-                    // BUG 2: no entry past 63 → KeyError, not OverflowError.
+                    // No entry past 63: only a fraction digit string this long
+                    // gets here (bug 2); whole numbers are rejected above.
                     let word = power_of_ten(index)
                         .ok_or_else(|| N2WError::Key(format!("{}", index)))?;
                     words.insert(0, word);
@@ -658,7 +659,18 @@ impl Default for LangAz {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `POWERS_OF_TEN` ends at
+/// 10^63, so 10^66 and above raise `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(66))
+}
+
 impl Lang for LangAz {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

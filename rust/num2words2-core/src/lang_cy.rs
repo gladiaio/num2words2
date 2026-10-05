@@ -16,10 +16,12 @@
 //!     word list, so nothing in the four in-scope modes ever touches the
 //!     missing attributes.
 //!
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here, and
+//! Consequently `cards`/`merge` stay at their trait defaults here, and
 //! `to_cardinal` is overridden outright. The ceiling is CY's own explicit
-//! `999 * 10**33` guard, which raises **NotImplementedError** — not the
-//! `OverflowError` that `Num2Word_Base.to_cardinal` would have raised.
+//! `999 * 10**33` guard, which `maxval()` reports. Python raises
+//! NotImplementedError there; fixed (gladiaio/num2words2#159): the port
+//! raises `OverflowError` ("abs(v) must be less than 999 * 10^33."), like
+//! `Num2Word_Base.to_cardinal` would.
 //!
 //! Inherited from `Num2Word_Base` (CY does not override either, so the trait
 //! defaults are correct):
@@ -125,16 +127,14 @@
 //! `.split(".")[1]` raises **IndexError** ("1e+16" has no dot) or the
 //! digit-by-digit `int(c)` hits the 'e' and raises **ValueError**
 //! ("1.5e+16"). The prefix `to_cardinal(int(abs_float))` is computed *before*
-//! the split, so a float past `999 * 10**33` raises NotImplementedError
+//! the split, so a float past `999 * 10**33` raises OverflowError (#159)
 //! first. Reproduced via [`py_float_str`].
 //!
 //! `Decimal('Infinity')` / `Decimal('NaN')` parse fine in `str_to_number` and
 //! only blow up inside `to_cardinal`: the `not number < 999 * 10**33` ceiling
-//! raises **NotImplementedError** for ±Infinity, and `number < 0` raises
-//! **decimal.InvalidOperation** for NaN. The binding's generic Inf/NaN arms
-//! raise Base's OverflowError/ValueError instead, so [`Lang::str_to_number`]
-//! is overridden to return NotImplemented for Inf/NaN — the shim then reruns
-//! the original Python string path, which owns those raises exactly.
+//! fires for ±Infinity (an OverflowError since #159; NotImplementedError in
+//! Python), and `number < 0` raises **decimal.InvalidOperation** for NaN.
+//! Both are served natively by [`Lang::inf_result`] / [`Lang::nan_result`].
 //!
 //! # Fractions
 //!
@@ -258,7 +258,8 @@
 //!   negative float with an *unknown* code raises `NotImplementedError` instead,
 //!   because Base looks `CURRENCY_FORMS` up before it touches `negword`.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -784,9 +785,11 @@ fn hundred_group(number: i64, _informal: bool, gender: &str, ordinal: bool) -> V
     result
 }
 
-/// The `999 * 10**33` ceiling from `to_cardinal`.
-fn maxval_cy() -> BigInt {
-    BigInt::from(999) * BigInt::from(10u32).pow(33)
+/// The `999 * 10**33` ceiling from `to_cardinal` — the exclusive maxval
+/// (gladiaio/num2words2#159).
+fn maxval_cy() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| BigInt::from(999) * pow10_big(33))
 }
 
 /// `Num2Word_CY.CURRENCY_FORMS` — CY's **own** class-body dict, all four codes.
@@ -899,17 +902,9 @@ impl LangCy {
             // "dim" either way.
             return Ok(CARDINAL_WORDS[0].to_vec());
         }
-        // Mirrors Python's `elif not number < 999 * 10**33` verbatim. Kept in
-        // the negated form rather than the "minimal" `>=` so the correspondence
-        // to the source line stays greppable; the two are equivalent for BigInt.
-        #[allow(clippy::nonminimal_bool)]
-        if !(number < maxval_cy()) {
-            // NotImplementedError, *not* the OverflowError that
-            // Num2Word_Base.to_cardinal would raise — CY never reaches base.
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
+        // Python's `elif not number < 999 * 10**33` raised NotImplementedError;
+        // an OverflowError since gladiaio/num2words2#159.
+        check_maxval(&number, maxval_cy())?;
 
         // Split into groups of three digits, from the right. Python iterates
         // pot ascending, so `lowestgroup` ends up holding the *value* of the
@@ -1034,7 +1029,7 @@ impl LangCy {
     ///
     /// Note the order: `prefix = self.to_cardinal(int(abs_float))` runs
     /// *before* the split, so a float at/above `999 * 10**33` raises
-    /// NotImplementedError first.
+    /// OverflowError first (#159).
     ///
     /// `precision_override` is ignored, exactly as Python ignores it here: CY's
     /// `pass` `__init__` never creates `self.precision`, so the dispatcher's
@@ -1112,12 +1107,14 @@ impl LangCy {
         if absval.is_zero() {
             return Ok(makestring(CARDINAL_WORDS[0], None));
         }
-        // `elif not number < 999 * 10**33`, on the full Decimal.
-        #[allow(clippy::nonminimal_bool)]
-        if !(absval < BigDecimal::from(maxval_cy())) {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
+        // `elif not number < 999 * 10**33`, on the full Decimal. An
+        // OverflowError since gladiaio/num2words2#159.
+        if absval >= BigDecimal::from(maxval_cy().clone()) {
+            return Err(N2WError::Overflow(format!(
+                "abs({}) must be less than {}.",
+                absval,
+                maxval_cy()
+            )));
         }
 
         // `(number % 10**pot) // 10**(pot-3)` on the Decimal equals the same
@@ -1199,6 +1196,10 @@ impl LangCy {
 }
 
 impl Lang for LangCy {
+    fn maxval(&self) -> &BigInt {
+        maxval_cy()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -1357,18 +1358,23 @@ impl Lang for LangCy {
     /// `not number < 999 * 10**33` ceiling fires first —
     /// `Decimal('Infinity') < 999*10**33` is False for both signs (the `-`
     /// case flips to `+Infinity` via `number = -number` before the ceiling),
-    /// so it raises **NotImplementedError**. `to_ordinal`/`to_year` reach the
-    /// same raise. `to_ordinal_num` would echo the repr, but no corpus row
-    /// exercises it.
+    /// so it raises — an OverflowError since #159 (NotImplementedError in
+    /// Python). `to_year` reaches the same raise; `to_ordinal` stops at its
+    /// own `> 100` NotImplementedError first. `to_ordinal_num` would echo the
+    /// repr, but no corpus row exercises it.
     fn inf_result(&self, negative: bool, to: &str) -> Result<String> {
         match to {
             "ordinal_num" => Ok(format!(
                 "{}Infinity",
                 if negative { "-" } else { "" }
             )),
-            _ => Err(N2WError::NotImplemented(
+            "ordinal" => Err(N2WError::NotImplemented(
                 "The given number is too large.".to_string(),
             )),
+            _ => Err(N2WError::Overflow(format!(
+                "abs(Infinity) must be less than {}.",
+                maxval_cy()
+            ))),
         }
     }
 
@@ -1701,7 +1707,7 @@ impl Lang for LangCy {
             // "minws ", not CY's own MINUS_PREFIX_WORD "meinws " — bug 9.
             let minus_str = if v.is_negative() { "minws " } else { "" };
             let abs_val = v.abs();
-            // Can still raise NotImplementedError past 999 * 10**33.
+            // Raises OverflowError past 999 * 10**33 (#159).
             let money_str = self.to_cardinal(&abs_val)?;
             // Pre-mutated GBP literals, whatever `currency` says — bugs 8, 10.
             let currency_str = if abs_val.is_one() { "bunt" } else { "bunnoedd" };

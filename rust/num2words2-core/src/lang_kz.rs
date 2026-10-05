@@ -4,9 +4,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `THOUSANDS` table, which
-//! raises `KeyError` rather than `OverflowError` (see below).
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` table
+//! ends at 10^30; `maxval()` is 10^33 and larger values raise
+//! `OverflowError` (see below).
 //!
 //! `setup()` sets `negword = "минус"` and `pointword = "бүтін"`.
 //!
@@ -104,18 +104,17 @@
 //!
 //! `THOUSANDS` has keys 1..=10 (up to "нониллион" == 1000^10 == 10^30), so the
 //! largest representable value is 10^33 - 1 (11 chunks, top chunk index 10).
-//! At 10^33 the top chunk index becomes 11 and Python raises `KeyError: 11` —
-//! a crash, not a deliberate raise, but the exception *type* is observable, so
-//! parity means reproducing it rather than tidying it into an `OverflowError`.
-//! Verified against the interpreter: `to_cardinal(10**33)` → `KeyError: 11`.
-//! The corpus tops out at 10^21 ("бір секстиллион"), so this bound is
-//! reproduced from the source and a live probe, not from corpus coverage.
+//! At 10^33 the top chunk index becomes 11 and Python raised `KeyError: 11`.
+//! Fixed (gladiaio/num2words2#159): `maxval()` is 10^33 and `_int2word`
+//! raises `OverflowError` for `abs(n) >= 10**33` before the lookup, so the
+//! `KeyError` is unreachable from the public entry points.
 //!
 //! Unlike `lang_PL`, negatives are safe in every mode: `_int2word` strips the
 //! sign and recurses on `abs(n)` *before* `splitbyx`/`get_digits` ever see the
 //! string, so no `'-'` survives into `int()`.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::CurrencyForms;
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::ParsedNumber;
@@ -141,7 +140,8 @@ const TWENTIES: [&str; 10] = [
 ];
 
 /// `THOUSANDS`, keys 1..=10. Index 0 is absent in Python (guarded by `i > 0`).
-/// Index 11 and beyond do not exist — that is the `KeyError` ceiling.
+/// Index 11 and beyond do not exist; the 10^33 MAXVAL check keeps them
+/// unreachable.
 const THOUSANDS: [&str; 11] = [
     "",
     "мың",
@@ -365,6 +365,7 @@ impl LangKz {
     /// method body (only `_cents_verbose`, out of scope, ever passes it), so
     /// it is omitted here.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
             // Python: " ".join([self.negword, self._int2word(abs(n))]).
             // negword is "минус" with no padding, so this is a plain space
@@ -409,7 +410,8 @@ impl LangKz {
 
             if i > 0 {
                 // Python: THOUSANDS[i] — a bare dict lookup. Keys stop at 10,
-                // so i >= 11 (n >= 10^33) raises KeyError: 11.
+                // so i >= 11 (n >= 10^33) would raise KeyError: 11 — the
+                // MAXVAL check above rules that out (#159).
                 let word = THOUSANDS
                     .get(i)
                     .copied()
@@ -422,7 +424,19 @@ impl LangKz {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangKz {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

@@ -5,12 +5,12 @@
 //! is no `Num2Word_Base` in its ancestry at all, which drives three facts the
 //! rest of this file depends on:
 //!
-//!   * `self.cards` / `self.MAXVAL` / `merge` never exist, so `cards`,
-//!     `maxval` and `merge` stay at their trait defaults and are never
-//!     reached. There is **no `OverflowError` path** in this language.
+//!   * `self.cards` / `self.MAXVAL` / `merge` never exist, so `cards` and
+//!     `merge` stay at their trait defaults and are never reached.
 //!   * The only ceiling is `big_number_to_cardinal`'s explicit
 //!     `raise NotImplementedError("The given number is too large.")` at
-//!     >= 66 digits — see "Ceiling" below.
+//!     >= 66 digits — an `OverflowError` in the port since
+//!     gladiaio/num2words2#159, and `maxval()` reports 10^65. See "Ceiling".
 //!   * **`to_ordinal_num` and `to_year` do not exist.** Not inherited, not
 //!     defined. Calling either raises `AttributeError`. See "The
 //!     AttributeError modes" below — this is the single most important thing
@@ -94,13 +94,14 @@
 //!
 //! # Ceiling
 //!
-//! `big_number_to_cardinal` raises `NotImplementedError` at `len(str(n)) >= 66`
+//! `big_number_to_cardinal` raises at `len(str(n)) >= 66` (`OverflowError`
+//! since #159; Python raises `NotImplementedError`)
 //! — i.e. the largest representable value is 65 digits. That bound is exactly
 //! what keeps `EXPONENT_PREFIXES` (11 entries, 0..=10) in range: 65 digits →
 //! `predigits = 2` → `exponent_length = 63` → `63 // 6 == 10`, the last index.
 //! So the `IndexError` modelled in [`exponent_length_to_string`] is
 //! unreachable. `to_cardinal(10**64)` == `"ün decilliard"`;
-//! `to_cardinal(10**65)` raises `NotImplementedError`. Values are `BigInt`
+//! `to_cardinal(10**65)` raises `OverflowError`. Values are `BigInt`
 //! throughout — 65 digits does not fit a `u128`.
 //!
 //! # Python semantics that matter here
@@ -129,7 +130,8 @@
 //! rows exist for this language. Currency/cheque/fraction do not exist on this
 //! class at all and would likewise raise `AttributeError`.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
@@ -515,11 +517,7 @@ impl LangRmPuter {
     fn big_number_to_cardinal(&self, number: &BigInt) -> Result<String> {
         let digits: Vec<char> = number.to_string().chars().collect();
         let length = digits.len();
-        if length >= 66 {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
+        check_maxval(number, maxval_ceiling())?;
 
         // How many digits come before the "illion" term:
         //   tschient milliards => 3 / desch milliuns => 2 / ün milliard => 1
@@ -600,7 +598,7 @@ impl LangRmPuter {
 
         // prefix = self.to_cardinal(int(a)) — int() truncates toward zero; a >= 0.
         // Computed *before* the split, exactly as Python does — for a huge
-        // float the 66-digit NotImplementedError beats the IndexError below.
+        // float the maxval OverflowError (#159) beats the IndexError below.
         let pre = f64_trunc_to_bigint(a)?;
         let prefix = self.card(&pre)?;
 
@@ -648,7 +646,8 @@ impl LangRmPuter {
     ///     list index. True even for whole-valued Decimals like `Decimal("100")`.
     ///
     ///   * `a >= 1_000_000` → `big_number_to_cardinal(str(a))`:
-    ///       - `len(str(a)) >= 66` → **`NotImplementedError`** (checked first).
+    ///       - `a >= 10**65` → **`OverflowError`** (#159, checked first); a
+    ///         longer-than-65-char `str(a)` below that → `NotImplementedError`.
     ///       - otherwise, if `a` has a fractional part (`precision > 0`), `str(a)`
     ///         contains a `.`; since `a >= 1e6` the integer part is at least 7
     ///         digits and `predigits <= 3`, so the `.` always lands in the
@@ -671,6 +670,9 @@ impl LangRmPuter {
             ));
         }
 
+        // gladiaio/num2words2#159: a magnitude past maxval is an OverflowError,
+        // checked before Python's `len(str(number)) >= 66` string guard.
+        check_maxval(&a.with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
         if precision == 0 {
             // str(a) is all digits: big_number_to_cardinal succeeds and matches
             // the integer path. card() also owns the `>= 66 digits` ceiling.
@@ -698,6 +700,8 @@ impl LangRmPuter {
 
         // big_number_to_cardinal: the `length >= 66` guard runs before any int().
         let length = s.chars().count();
+        // Only reachable below maxval when the fraction digits push str(number)
+        // past 65 characters; magnitudes past maxval were rejected above (#159).
         if length >= 66 {
             return Err(N2WError::NotImplemented(
                 "The given number is too large.".to_string(),
@@ -842,7 +846,19 @@ impl LangRmPuter {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `big_number_to_cardinal`
+/// names numbers of up to 65 digits, so 10^65 and above raise
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(65))
+}
+
 impl Lang for LangRmPuter {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     // Num2Word_RM and its variants define no to_currency / to_cheque
     // at all, so Python raises AttributeError on attribute lookup —
     // not the NotImplementedError the trait default would give.

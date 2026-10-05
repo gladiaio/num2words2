@@ -12,11 +12,10 @@
 //!     `AttributeError`; the frozen corpus records exactly that for
 //!     `currency:*` with a negative arg. See [`LangLij::to_currency`].
 //!   * `self.cards` / `self.MAXVAL` are never built (LIJ defines no
-//!     `high_numwords`/`mid_numwords`/`low_numwords` either), so `cards`,
-//!     `maxval` and `merge` stay at their trait defaults and are never
-//!     reached. There is **no `OverflowError` path** in this language.
-//!   * The only ceiling is `big_number_to_cardinal`'s explicit
-//!     `NotImplementedError` — see "Ceiling" below.
+//!     `high_numwords`/`mid_numwords`/`low_numwords` either), so `cards`
+//!     and `merge` stay at their trait defaults and are never reached.
+//!   * The only ceiling is `big_number_to_cardinal`'s `EXPONENTS` table;
+//!     `maxval()` reports it (10^36) — see "Ceiling" below.
 //!
 //! Inherited from `Num2Word_EU` — note that `Num2Word_EU` is the *Basque*
 //! converter, so LIJ picks up two Basque-flavoured methods verbatim. This is
@@ -56,8 +55,9 @@
 //! large.")`. `len(str(mils)) > 30` ⇒ 11 triplets, so the wall is at
 //! **10**36** exactly (10**36 - 1 is the largest convertible value, and
 //! `to_cardinal` checks the sign *first*, so -10**36 raises too). Verified
-//! against the interpreter. Note this is `NotImplementedError`, not
-//! `OverflowError`.
+//! against the interpreter. Python raises `NotImplementedError` there; fixed
+//! (gladiaio/num2words2#159): the port raises `OverflowError` ("abs(v) must
+//! be less than 10^36.").
 //!
 //! # Faithfully reproduced Python oddities
 //!
@@ -118,7 +118,8 @@
 //! and uses `plural` for truthiness only, so the `*_kw` hooks normalise
 //! accordingly. `zero` is immune to both gender and plural in the ordinals.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
@@ -421,8 +422,10 @@ fn big_number_to_cardinal(number: &BigInt, gender: &str) -> Result<String> {
         i += 3;
     }
 
+    // Python: `len(triplets) > len(EXPONENTS)` raised NotImplementedError
+    // here; it is an OverflowError since gladiaio/num2words2#159.
     if triplets.len() > EXPONENTS.len() {
-        return Err(N2WError::NotImplemented("The given number is too large.".into()));
+        check_maxval(number, maxval_ceiling())?;
     }
 
     let mut string = if !remainder.is_zero() {
@@ -469,7 +472,7 @@ fn big_number_to_cardinal(number: &BigInt, gender: &str) -> Result<String> {
 fn to_cardinal_gender(number: &BigInt, gender: &str) -> Result<String> {
     if number.is_negative() {
         // Sign is handled *before* the size dispatch, so -10**36 raises
-        // NotImplementedError just like +10**36.
+        // OverflowError just like +10**36.
         return Ok(MINUS_PREFIX_WORD.to_string() + &to_cardinal_gender(&(-number), gender)?);
     }
     // Each branch below 10**6 is bounded by its own guard, so the u32
@@ -705,7 +708,18 @@ impl Default for LangLij {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `EXPONENTS` names ten
+/// triplets above the million, so 10^36 and above raise `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(36))
+}
+
 impl Lang for LangLij {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -926,7 +940,7 @@ impl Lang for LangLij {
     /// "trei quartos", `0/-5` short-circuits to "zero", and `-5/1`
     /// short-circuits into LIJ's own `to_cardinal` ("meno çinque", via
     /// `MINUS_PREFIX_WORD`). The raise happens *before* `num_word`/`den_word`
-    /// are computed, so `-10**36/2` is AttributeError, not NotImplementedError.
+    /// are computed, so `-10**36/2` is AttributeError, not OverflowError.
     fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
         if denominator.is_zero() {
             return Err(N2WError::ZeroDivision("denominator must not be zero".into()));

@@ -707,6 +707,26 @@ pub fn clean<L: Lang + ?Sized>(lang: &L, val: Vec<Node>) -> Node {
     val.into_iter().next().unwrap()
 }
 
+/// `10**exp` as a `BigInt` (callers cache it in a `OnceLock`).
+pub fn pow10_big(exp: u32) -> BigInt {
+    BigInt::from(10u8).pow(exp)
+}
+
+/// The `abs(v) must be less than MAXVAL.` guard for self-contained languages
+/// whose scale-word tables run out (gladiaio/num2words2#159). Call it at the
+/// top of the routine that receives the whole integer, and return the same
+/// `maxval` from `Lang::maxval` so `maxval(lang)` reports the real ceiling.
+pub fn check_maxval(value: &BigInt, maxval: &BigInt) -> Result<()> {
+    let v = value.abs();
+    if &v >= maxval {
+        return Err(N2WError::Overflow(format!(
+            "abs({}) must be less than {}.",
+            v, maxval
+        )));
+    }
+    Ok(())
+}
+
 /// Python's `Num2Word_Base.to_cardinal` for integral input.
 pub fn default_to_cardinal<L: Lang + ?Sized>(lang: &L, value: &BigInt) -> Result<String> {
     let mut out = String::new();

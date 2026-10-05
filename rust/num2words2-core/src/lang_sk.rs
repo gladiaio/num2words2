@@ -4,10 +4,10 @@
 //! Shape: **self-contained**. `Num2Word_SK` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
-//! outright and drives `_int2word` over 3-digit chunks. `cards`/`maxval`/
-//! `merge` therefore stay at their trait defaults, and there is **no overflow
-//! check**: the only ceiling is the `THOUSANDS` table, which raises `KeyError`
-//! rather than `OverflowError` (see bug 4 below).
+//! outright and drives `_int2word` over 3-digit chunks. `cards`/`merge`
+//! therefore stay at their trait defaults. The `THOUSANDS` table ends at
+//! 10^30; `maxval()` is 10^33 and larger values raise `OverflowError` (see
+//! bug 4 below).
 //!
 //! Inherited from `Num2Word_Base` (SK does not override either, so the trait
 //! defaults are exactly right):
@@ -44,8 +44,9 @@
 //!    than its last digit, so 123 selects form 2: `123456789` ==
 //!    "sto dvadsať tri **miliónov** …" where Slovak wants "milióny".
 //! 4. **`THOUSANDS` stops at key 10 (10^30).** A chunk index of 11 or more —
-//!    i.e. any value >= 10^33 — is a `KeyError`, which is Slovak's de facto
-//!    (and rather abrupt) MAXVAL. Modelled by [`LangSk::thousands_at`].
+//!    i.e. any value >= 10^33 — was a `KeyError` in Python. Fixed
+//!    (gladiaio/num2words2#159): `_int2word` raises `OverflowError` for
+//!    `abs(n) >= 10**33` first, so [`LangSk::thousands_at`] never misses.
 //! 5. **Typo in `THOUSANDS[10]`**: the plural form is "kvintillióny" with a
 //!    doubled `l`, while the singular "kvintilión" and genitive
 //!    "kvintiliónov" both have one. Kept verbatim.
@@ -112,10 +113,9 @@
 //!
 //! # Error variants
 //!
-//! `KeyError` (bug 4) is reachable via [`key_error`]. It is a Python crash
-//! rather than a deliberate raise, but the exception *type* is observable and
-//! callers may catch it, so parity means reproducing it rather than tidying it
-//! into an `OverflowError`. [`value_error`] models `int()` on a non-numeric
+//! `KeyError` (bug 4) is modelled by [`key_error`], but since #159 the MAXVAL
+//! check makes it unreachable from the public entry points: too-large values
+//! are an `OverflowError`. [`value_error`] models `int()` on a non-numeric
 //! token: on the integer path the sign is stripped before the digit helpers, so
 //! it never fires there, but the float path ([`LangSk::to_cardinal_float`])
 //! *does* reach it — a repr/str with no "." (scientific notation, `inf`, `nan`)
@@ -128,12 +128,13 @@
 //!     `currency::default_to_currency`/`default_to_cheque` off
 //!     [`Lang::currency_forms`] returning `None`. Message verified byte for
 //!     byte: `Currency code "GBP" not implemented for "Num2Word_SK"`.
-//!   * `KeyError` again — bug 4 is reachable *through* `to_currency`, since the
-//!     int path calls `to_cardinal`: `to_currency(10**33, "EUR")` is
-//!     `KeyError: 11` in Python, not an OverflowError. `to_currency(10**30)` is
-//!     fine ("kvintilión eurá").
+//!   * `OverflowError` — bug 4 is reachable *through* `to_currency`, since the
+//!     int path calls `to_cardinal`: `to_currency(10**33, "EUR")` was
+//!     `KeyError: 11` in Python and is now an OverflowError (#159).
+//!     `to_currency(10**30)` is fine ("kvintilión eurá").
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -568,7 +569,8 @@ impl LangSk {
         }
     }
 
-    /// `THOUSANDS[i]`, raising `KeyError` past 10 — see bug 4.
+    /// `THOUSANDS[i]`, raising `KeyError` past 10 — unreachable since the
+    /// MAXVAL check (bug 4, #159).
     fn thousands_at(&self, i: usize) -> Result<&'static [&'static str; 3]> {
         if (1..=10).contains(&i) {
             Ok(&THOUSANDS[i])
@@ -602,6 +604,7 @@ impl LangSk {
     /// Port of `Num2Word_SK._int2word`. Only ever called with a non-negative
     /// `n` — `to_cardinal` removes the sign before delegating here.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO.to_string());
         }
@@ -656,7 +659,19 @@ impl LangSk {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangSk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -1008,8 +1023,7 @@ impl Lang for LangSk {
     /// "mínus jeden euro".
     ///
     /// Bug 4 reaches through here: `to_cardinal` is called unguarded, so
-    /// `to_currency(10**33, "EUR")` propagates `KeyError: 11` rather than
-    /// raising OverflowError or rendering.
+    /// `to_currency(10**33, "EUR")` propagates its MAXVAL OverflowError (#159).
     fn to_currency(
         &self,
         val: &CurrencyValue,

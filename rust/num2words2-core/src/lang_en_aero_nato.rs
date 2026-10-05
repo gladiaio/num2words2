@@ -261,6 +261,13 @@ impl Lang for LangEnAeroNato {
         self.english.maxval()
     }
 
+    /// `maxval()` is None (gladiaio/num2words2#159): the cardinal reads digit
+    /// by digit with no ceiling, so the inherited `Num2Word_EN.MAXVAL` (10^306)
+    /// is not reported — the cardinal happily converts past it.
+    fn python_maxval(&self) -> Option<num_bigint::BigInt> {
+        None
+    }
+
     fn merge(&self, l: (&str, &BigInt), r: (&str, &BigInt)) -> (String, BigInt) {
         self.english.merge(l, r)
     }

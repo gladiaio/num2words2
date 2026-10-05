@@ -45,7 +45,8 @@
 //! whole floats ordinalize ("пятый") and non-whole/negative ones are
 //! TypeError. `to_year` is base's, i.e. RU's own `to_cardinal`.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -755,10 +756,9 @@ impl LangRu {
     /// Python's `get_thousands_elements(num, case)`.
     ///
     /// THOUSANDS only has keys 1..=10, so a chunk index above 10 — i.e. a value
-    /// >= 10^33 — is a bare `KeyError` in Python. That exception has no mapping
-    /// in the porting contract; `Overflow` is used as the closest fit since the
-    /// condition is exactly "number too large to name". No corpus row reaches
-    /// it (the largest is 10^21).
+    /// >= 10^33 — was a bare `KeyError` in Python. `int2word` now rejects
+    /// those values up front with `OverflowError` (gladiaio/num2words2#159),
+    /// so the `Key` arm here is unreachable from the public entry points.
     fn thousands_elements(&self, num: usize, case: usize) -> Result<&[String; 3]> {
         match self.thousands.get(num).and_then(|x| x.as_ref()) {
             Some(cases) => Ok(&cases[case]),
@@ -783,6 +783,7 @@ impl LangRu {
 
     /// Python's `Num2Word_RU._int2word`.
     fn int2word(&self, n: &BigInt, cardinal: bool, o: Opts<'_>) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
             // Python: " ".join([self.negword, ...]) — negword is "минус" with
             // no trailing space, and there is no `.strip()` here.
@@ -1334,7 +1335,19 @@ fn get_digits(x: u32) -> (u32, u32, u32) {
     (x % 10, (x / 10) % 10, (x / 100) % 10)
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangRu {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

@@ -355,7 +355,6 @@ TEST_CASES_MILLIONS = [
         5600560000000000000000000000000000,
         "пхи квинтиллиард ялх бӀе квинтиллион пхи бӀе кхузткъе квадриллиард",
     ),
-    (10**56, "NOT IMPLEMENTED"),
 ]
 
 TEST_CURRENCY = [
@@ -375,6 +374,11 @@ class Num2WordsCETest(TestCase):
     def test_millions(self):
         for test in TEST_CASES_MILLIONS:
             self.assertEqual(num2words(test[0], lang="ce"), test[1])
+
+    def test_too_large(self):
+        # gladiaio/num2words2#159: used to return the string "NOT IMPLEMENTED".
+        with self.assertRaises(OverflowError):
+            num2words(10**56, lang="ce")
 
     def test_ordinal_number(self):
         for test in TEST_CASES_ORDINAL:

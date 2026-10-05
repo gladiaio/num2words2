@@ -4,9 +4,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `THOUSANDS` table (see
-//! below), which raises `KeyError` rather than `OverflowError`.
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` table
+//! ends at 10^63 (see below); Python raised `KeyError` from 10^66 up. Fixed
+//! (gladiaio/num2words2#159): `maxval()` is 10^66 and `_int2word` /
+//! `to_ordinal` raise `OverflowError` for `abs(n) >= 10**66` up front.
 //!
 //! Inherited from `Num2Word_Base` (unchanged by PL, so the trait defaults do
 //! the right thing):
@@ -58,7 +59,8 @@
 //! observable, so parity means reproducing it rather than tidying it into a
 //! `TypeError`. See [`value_error`], [`index_error`], [`key_error`].
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -388,8 +390,8 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
 
 pub struct LangPl {
     /// `THOUSANDS`: chunk index → the three plural forms. Keys 1..=21, i.e.
-    /// up to 1000^21 == 10^63 ("decyliard"). A chunk index of 22 or more is a
-    /// `KeyError`, which is Polish's de facto (and rather abrupt) MAXVAL.
+    /// up to 1000^21 == 10^63 ("decyliard"). A chunk index of 22 or more
+    /// (10^66 and up) is pre-empted by the MAXVAL check (#159).
     thousands: HashMap<usize, [String; 3]>,
     /// `CURRENCY_FORMS`, built once here rather than per `to_currency` call.
     currency_forms: HashMap<&'static str, CurrencyForms>,
@@ -435,7 +437,7 @@ impl LangPl {
         }
     }
 
-    /// `THOUSANDS[i]`, raising `KeyError` past 21.
+    /// `THOUSANDS[i]`, raising `KeyError` past 21 (unreachable, #159).
     fn thousands_at(&self, i: usize) -> Result<&[String; 3]> {
         self.thousands
             .get(&i)
@@ -473,6 +475,7 @@ impl LangPl {
     /// `pre_part` can hand it a negative, which raises `ValueError` via
     /// `get_digits` exactly as Python does.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO.to_string());
         }
@@ -644,7 +647,19 @@ fn is_plain_int_str(s: &str) -> bool {
     !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^63, so 10^66 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(66))
+}
+
 impl Lang for LangPl {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -686,7 +701,8 @@ impl Lang for LangPl {
     ///
     /// `if number % 1 != 0: raise NotImplementedError()` is unreachable for
     /// integers, so it is not modelled. Raises `IndexError` for 0, `KeyError`
-    /// for level >= 4 (>= 10^12), and `ValueError` for every negative.
+    /// for level >= 4 (>= 10^12), `ValueError` for every negative, and
+    /// `OverflowError` for values >= 10^66 (#159).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         // PR savoirfairelinux/num2words#668: splitbyx("0") yields a single
         // zero fragment; the pop loop below empties the list and then indexes
@@ -694,6 +710,7 @@ impl Lang for LangPl {
         if value.is_zero() {
             return Ok("zerowy".to_string());
         }
+        check_maxval(value, maxval_ceiling())?;
         let mut words: Vec<String> = Vec::new();
         let mut fragments = splitbyx(&value.to_string(), 3)?;
 

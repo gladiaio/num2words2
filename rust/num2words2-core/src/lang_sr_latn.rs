@@ -7,10 +7,10 @@
 //! Shape: **self-contained**. `Num2Word_SR_LATN` subclasses `Num2Word_SR`,
 //! which subclasses `Num2Word_Base` but defines no `high_numwords` /
 //! `mid_numwords` / `low_numwords`. Python therefore never builds
-//! `self.cards` and never sets `MAXVAL`, so `cards`/`maxval`/`merge` stay at
-//! their trait defaults here and there is **no overflow check**. The only
-//! ceiling is the `SCALE` table (10**33 and up raises `KeyError` — see
-//! [`scale`]).
+//! `self.cards` and never sets `MAXVAL`, so `cards`/`merge` stay at their
+//! trait defaults here. The `SCALE` table ends at 10**30; Python raised
+//! `KeyError` from 10**33 up. Fixed (gladiaio/num2words2#159): `maxval()` is
+//! 10**33 and larger values raise `OverflowError` up front (see [`scale`]).
 //!
 //! `Num2Word_SR_LATN` itself is a pure transliteration wrapper: every method
 //! calls `super()` and pipes the Cyrillic result through `cyrl_to_latn`. All
@@ -93,7 +93,8 @@
 //! "digraphs" are digraphs on the *output* side ("Lj"). A plain per-char map
 //! is therefore exactly equivalent — see [`cyrl_to_latn`].
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -171,8 +172,8 @@ const HUNDREDS: [&str; 10] = [
 ///
 /// Python's `SCALE` is a dict with keys 0..=10, i.e. it tops out at 10**30
 /// ("квинтилион"). A chunk index of 11 or more — any value >= 10**33 —
-/// raises `KeyError`, which is the *only* ceiling this language has (there is
-/// no `MAXVAL`, so no `OverflowError`). Serbian uses the long scale, hence
+/// raised `KeyError` in Python; `int2word` now rejects those values with
+/// `OverflowError` first (#159), so that arm is unreachable. Serbian uses the long scale, hence
 /// милијарда at 10**9 rather than a short-scale "billion".
 fn scale(chunk_len: usize) -> Result<(&'static str, &'static str, &'static str, bool)> {
     Ok(match chunk_len {
@@ -204,7 +205,8 @@ fn attribute_error(msg: &str) -> N2WError {
     N2WError::Attribute(msg.to_string())
 }
 
-/// Python raised `KeyError` — a missing `SCALE` entry for values >= 10**33.
+/// Python raised `KeyError` — a missing `SCALE` entry for values >= 10**33
+/// (unreachable since the MAXVAL check, #159).
 fn key_error(msg: &str) -> N2WError {
     N2WError::Key(msg.to_string())
 }
@@ -366,6 +368,7 @@ fn pluralize(number: u32, forms: (&'static str, &'static str, &'static str, bool
 
 /// `Num2Word_SR._int2word`. Returns **Cyrillic**; the caller transliterates.
 fn int2word(number: &BigInt, feminine: bool) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     if number.is_negative() {
         // Python: " ".join([self.negword, self._int2word(abs(number))]).
         // Note the dropped `feminine` argument — reproduced verbatim (bug 4).
@@ -398,8 +401,9 @@ fn int2word(number: &BigInt, feminine: bool) -> Result<String> {
             // Skip 'један' for thousands (1000, 1001, etc.)
             if !(chunk_len > 0 && *chunk == 1) {
                 // SCALE is indexed here *before* the `chunk != 0` guard below,
-                // so a >= 10**33 chunk whose skip-condition misses raises
-                // KeyError at this line in Python. Order preserved.
+                // so a >= 10**33 chunk whose skip-condition misses raised
+                // KeyError at this line in Python. Order preserved; the MAXVAL
+                // check (#159) keeps such chunks from reaching it.
                 let is_feminine = feminine || scale(chunk_len)?.3;
                 words.push(if is_feminine {
                     ONES[digit_right].1
@@ -715,7 +719,19 @@ impl Default for LangSrLatn {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangSrLatn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     fn negword(&self) -> &str {
         NEGWORD
     }

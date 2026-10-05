@@ -431,8 +431,9 @@ class Num2WordsCYTest(TestCase):
         for test in TEST_CASES_CARDINAL_FEM:
             self.assertEqual(num2words(test[0], lang="cy", gender="fem"), test[1])
 
-    def test_number_not_implemented(self):
-        with self.assertRaises(NotImplementedError):
+    def test_number_too_large(self):
+        # gladiaio/num2words2#159: OverflowError, not NotImplementedError.
+        with self.assertRaises(OverflowError):
             num2words(10**66, lang="cy")
 
     def test_decimals(self):

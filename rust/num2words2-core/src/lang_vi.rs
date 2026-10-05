@@ -3,9 +3,9 @@
 //! Shape: **self-contained**. `Num2Word_VI` subclasses plain `object` — it has
 //! no `Num2Word_Base` ancestry at all, so there is no inheritance chain to
 //! chase, no `cards`, no `MAXVAL`, no `splitnum`/`clean`/`merge`, and no
-//! `OverflowError` guard. Every one of the four in-scope methods is defined
-//! directly on the class. `cards`/`maxval`/`merge` therefore stay at their
-//! trait defaults and are never reached.
+//! `OverflowError` guard of its own (the port adds one, see bug 5). Every one
+//! of the four in-scope methods is defined directly on the class.
+//! `cards`/`merge` therefore stay at their trait defaults.
 //!
 //! Verified: `__init__.py` CONVERTER_CLASSES maps `"vi"` → `lang_VI.Num2Word_VI`.
 //!
@@ -49,12 +49,13 @@
 //!    `for v in range(len(denom))` → `v` tops out at 20, giving `didx = v-1 = 19`.
 //!    Reaching `didx == 20` would need `v == 21`. Dead entry, kept for indexing.
 //!
-//! 5. **`vietnam_number` falls off its loop and returns `None`** once the
-//!    (float-rounded!) value is >= 1000^20 == 10^60. Note the guard is applied
-//!    to the *rounded* value, which is why `to_cardinal(10**60)` still succeeds
-//!    — `float(10**60)` is 999999999999999949387135297074018866963645011013410073083904,
-//!    which is *below* 10^60 — while `to_cardinal(10**61)` returns `None`.
-//!    See [`LangVi::vietnam_number`] and the `concerns` note in the report.
+//! 5. **Fixed (gladiaio/num2words2#159): `vietnam_number` runs out of `denom`
+//!    at 1000^20 == 10^60.** Python fell off its loop there and returned
+//!    `None` (so `num2words(10**63, lang="vi")` was `None`, and negatives a
+//!    TypeError). The port checks the exact integer up front and raises
+//!    `OverflowError` ("abs(v) must be less than 10^60."), so `maxval("vi")`
+//!    is 10^60; the float path raises the same error where `vietnam_number`
+//!    would have returned `None`.
 //!
 //! 6. **Dead store in `_convert_nn`.** `a = "lăm"` is assigned then immediately
 //!    overwritten by the if/else below it (which is exhaustive). The net rule is
@@ -158,7 +159,8 @@
 //!     ZeroDivisionError, and every `fraction2` corpus row is
 //!     AttributeError regardless of the operands.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
+use std::sync::OnceLock;
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
 use crate::strnum::ParsedNumber;
@@ -320,6 +322,21 @@ fn py_float_int(n: &BigInt) -> Result<BigInt> {
     Ok(res)
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `denom` ends at
+/// 1000^19, so 10^60 and above raise `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(60))
+}
+
+fn too_large(value: &BigInt) -> N2WError {
+    N2WError::Overflow(format!(
+        "abs({}) must be less than {}.",
+        value,
+        maxval_ceiling()
+    ))
+}
+
 pub struct LangVi;
 
 impl Default for LangVi {
@@ -456,6 +473,7 @@ impl LangVi {
         // `number = "%.2f" % number` — the lossy int→float coercion (bug #1).
         // This is also the only site that can raise, and it raises *before*
         // the sign is re-applied, so negatives overflow identically.
+        check_maxval(&number, maxval_ceiling())?;
         let rounded = py_float_int(&number)?;
 
         match self.vietnam_number(&rounded) {
@@ -466,21 +484,9 @@ impl LangVi {
                     Ok(start_word)
                 }
             }
-            None => {
-                // Python: `final_result = None` (the function falls off the
-                // end past 10^75 rather than raising).
-                //   * negative → `"âm " + None` → TypeError.
-                //   * positive → `to_cardinal` returns the bare object `None`.
-                if is_negative {
-                    Err(type_error(
-                        "can only concatenate str (not \"NoneType\") to str",
-                    ))
-                } else {
-                    // Success returning None — the binding maps this sentinel
-                    // to Python `None`. See N2WError::ReturnsNone.
-                    Err(N2WError::ReturnsNone)
-                }
-            }
+            // Unreachable: `number < 10^60` never float-rounds up to 10^60
+            // (the nearest double is below it), so `vietnam_number` succeeds.
+            None => Err(too_large(&rounded)),
         }
     }
 
@@ -603,14 +609,9 @@ impl LangVi {
     ///
     /// Distinct from [`LangVi::number_to_text_decimal`] (the *currency*
     /// re-entry) in one load-bearing way: there the `vietnam_number` `None`
-    /// fall-off is capped unreachable by bug #12's 10**26 guard, so that method
-    /// can flatten `None` to a `TypeError`. Here there is no such cap —
-    /// `to_cardinal(1e61)` really does hand `vietnam_number` a value >= 10^60 —
-    /// so the `None` semantics are those of the *integer* `number_to_text`:
-    ///   * positive → `to_cardinal` returns a bare `None` (`ReturnsNone`);
-    ///   * negative → `"âm " + None` → `TypeError`.
-    /// The `" phẩy "` tail can never fire in that fall-off: any double >= 10^60
-    /// is an exact integer, so `"%.2f"` ends in `".00"` and the fraction is 0.
+    /// fall-off is capped unreachable by bug #12's 10**26 guard. Here there is
+    /// no such cap — `to_cardinal(1e61)` really does hand `vietnam_number` a
+    /// value >= 10^60 — and that is an `OverflowError` (bug #5, #159).
     ///
     /// `precision` / the `precision=` kwarg are irrelevant: `"%.2f"` is always
     /// two places, and the dispatcher pops `precision=` before `to_cardinal`
@@ -661,20 +662,9 @@ impl LangVi {
                 }
                 Ok(final_result)
             }
-            None => {
-                // vietnam_number fell off (int part >= 10^60). Any such double
-                // ends `".00"`, so the phẩy tail never ran and `final_result`
-                // is exactly `start_word == None`.
-                if is_negative {
-                    // Python: `final_result = "âm " + None` → TypeError.
-                    Err(type_error(
-                        "can only concatenate str (not \"NoneType\") to str",
-                    ))
-                } else {
-                    // Python: `to_cardinal` returns the bare object `None`.
-                    Err(N2WError::ReturnsNone)
-                }
-            }
+            // vietnam_number ran out of `denom` (int part >= 10^60). Python
+            // returned `None` here (#159).
+            None => Err(too_large(&int_val)),
         }
     }
 
@@ -717,8 +707,12 @@ impl Lang for LangVi {
         ","
     }
 
-    // cards / maxval / merge: Num2Word_VI subclasses `object` and has no engine
-    // at all — the trait defaults are never reached.
+    // cards / merge: Num2Word_VI subclasses `object` and has no engine at
+    // all — the trait defaults are never reached.
+
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         self.number_to_text(value)
@@ -1070,11 +1064,10 @@ mod tests {
         assert_eq!(got, "mười hai phẩy ba mươi lăm");
     }
 
-    /// Past 10^60 `vietnam_number` returns `None`; positive input surfaces
-    /// the bare-None sentinel, negative concatenates into a TypeError. Only
-    /// reachable through the Decimal arm (any non-integral double is < 2^53).
+    /// Past 10^60 `vietnam_number` runs out of scale words: OverflowError
+    /// for either sign (#159; Python returned None / raised TypeError).
     #[test]
-    fn none_falloff_past_1e60() {
+    fn overflow_past_1e60() {
         let lang = LangVi::new();
         let big = "2".to_string() + &"0".repeat(60) + ".5";
         let v = FloatValue::Decimal {
@@ -1083,7 +1076,7 @@ mod tests {
         };
         assert!(matches!(
             lang.to_cardinal_float(&v, None),
-            Err(N2WError::ReturnsNone)
+            Err(N2WError::Overflow(_))
         ));
         let neg = FloatValue::Decimal {
             value: BigDecimal::from_str(&format!("-{}", big)).unwrap(),
@@ -1091,7 +1084,7 @@ mod tests {
         };
         assert!(matches!(
             lang.to_cardinal_float(&neg, None),
-            Err(N2WError::Type(_))
+            Err(N2WError::Overflow(_))
         ));
     }
 }

@@ -4,10 +4,11 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
 //! `set_high_numwords`, so Python never populates `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives `_int2word` over
-//! 3-digit chunks produced by `utils.splitbyx`. `cards`/`maxval`/`merge`
-//! therefore stay at their trait defaults here, and there is **no overflow
-//! check** — the only ceiling is the `THOUSANDS` table (keys 1..=22), which
-//! raises `KeyError` rather than `OverflowError` for values >= 10^69.
+//! 3-digit chunks produced by `utils.splitbyx`. `cards`/`merge` therefore
+//! stay at their trait defaults here. The `THOUSANDS` table (keys 1..=22)
+//! ends at 10^66; Python raised `KeyError` for values >= 10^69. Fixed
+//! (gladiaio/num2words2#159): `maxval()` is 10^69 and `_int2word` raises
+//! `OverflowError` for `abs(n) >= 10**69` up front.
 //!
 //! `setup()` sets `negword = "хасах"`; everything else in the four in-scope
 //! modes is defined locally, so nothing is inherited from `Num2Word_Base`
@@ -95,9 +96,9 @@
 //! PORTING.md (Overflow/Type/NotImplemented/ZeroDivision) does not cover:
 //! `IndexError` (quirk 2 above) and `KeyError` (`THOUSANDS[i]` for i >= 23,
 //! i.e. values >= 10^69). Both are Python *crashes* rather than deliberate
-//! raises, but the exception type is observable, so parity means reproducing
-//! it rather than tidying it into a `TypeError`. See [`index_error`] and
-//! [`key_error`].
+//! raises. The `IndexError` is reproduced (see [`index_error`]); the
+//! `KeyError` ([`key_error`]) is unreachable from the public entry points
+//! since the 10^69 MAXVAL check (#159) raises `OverflowError` first.
 //!
 //! # The float/`POINT_WORDS` branch of `to_cardinal`
 //!
@@ -139,7 +140,7 @@
 //!   (`Decimal("1e3")` prints "1E+3", `Decimal("1E-7")` prints "1E-7"), and
 //!   `Decimal("Infinity")`/`"NaN"`. The corpus pins 1e+16/1e+20/1E+2/1E+20 and
 //!   the "Infinity" strings. So MN's ceiling on the cardinal *float* path is
-//!   1e16, while ints run to the `THOUSANDS` KeyError at 10^69 — and
+//!   1e16, while ints run to the 10^69 MAXVAL `OverflowError` — and
 //!   `to_ordinal(1e+16)` still works, because it truncates the float without
 //!   ever stringifying it (see below).
 //!
@@ -185,7 +186,8 @@
 //! `to_cardinal(-5, all_suffixed=True)` is "хасах тав": quirk 1 drops the
 //! flag across the negative recursion.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, prefix_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, python_int_parse, ParsedNumber};
@@ -243,9 +245,9 @@ const HUNDRED: (&str, &str) = ("зуу", "зуун");
 
 /// `THOUSANDS`: chunk index → scale word, keys 1..=22 in Python (10^3 through
 /// 10^66). Index 0 is a placeholder — `THOUSANDS[i]` is only read under
-/// `if i > 0`. A chunk index of 23 or more is a `KeyError`, which is
-/// Mongolian's de facto (and rather abrupt) MAXVAL: a value with 70+ decimal
-/// digits, i.e. >= 10^69, splits into 24+ chunks and blows up on the first one.
+/// `if i > 0`. A chunk index of 23 or more (any value >= 10^69) was a
+/// `KeyError` in Python; the MAXVAL check (#159) now rejects those values
+/// with `OverflowError` before the lookup.
 const THOUSANDS: [&str; 23] = [
     "",                       // unused (i == 0 never reaches the lookup)
     "мянга",                  // 10^3
@@ -318,7 +320,8 @@ fn key_error(key: usize) -> N2WError {
     N2WError::Key(key.to_string())
 }
 
-/// `THOUSANDS[i]`. Python raises `KeyError: i` for i > 22.
+/// `THOUSANDS[i]`. Python raises `KeyError: i` for i > 22 (unreachable here
+/// since the MAXVAL check, #159).
 fn thousands(i: usize) -> Result<&'static str> {
     THOUSANDS.get(i).copied().ok_or_else(|| key_error(i))
 }
@@ -365,6 +368,7 @@ fn get_digits(x: u16) -> (u16, u16, u16) {
 
 /// Port of `Num2Word_MN._int2word`.
 fn int2word(n: &BigInt, all_suffixed: bool) -> Result<String> {
+    check_maxval(n, maxval_ceiling())?;
     if n.is_negative() {
         // Python: `" ".join([self.negword, self._int2word(abs(n))])`.
         // `all_suffixed` is NOT forwarded — see quirk 1 in the module docs.
@@ -774,7 +778,19 @@ impl LangMn {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^66, so 10^69 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(69))
+}
+
 impl Lang for LangMn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// `self.pointword`, read from the live Python instance.
     /// Unused by the four integer modes, so phase 1 never needed
     /// it — the float path is its first caller.

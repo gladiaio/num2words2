@@ -10,10 +10,12 @@
 //!
 //!   1. `self.cards` / `self.MAXVAL` are never built (the `high_numwords`
 //!      guard in `Num2Word_Base.__init__` never runs), so `splitnum`/`clean`/
-//!      `merge` are dead code and **there is no overflow check**. The only
-//!      ceiling is `big_number_to_cardinal`'s explicit `length >= 66` guard,
-//!      which raises `NotImplementedError`. `cards`/`maxval`/`merge` therefore
-//!      stay at their trait defaults here.
+//!      `merge` are dead code. The only ceiling is `big_number_to_cardinal`'s
+//!      explicit `length >= 66` guard, which Python raises as
+//!      `NotImplementedError`. Fixed (gladiaio/num2words2#159): the port
+//!      raises `OverflowError` ("abs(v) must be less than 10^65.") and
+//!      `maxval()` reports 10^65. `cards`/`merge` stay at their trait
+//!      defaults here.
 //!   2. The `errmsg_*` attributes are never assigned either — see bug 4 below.
 //!
 //! `Num2Word_EUR.setup` only populates `self.high_numwords`, which is dead
@@ -150,7 +152,8 @@
 //! `saturating_sub`. `str.split()` with no argument splits on whitespace runs
 //! and drops empties — `split_whitespace` matches it.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -457,17 +460,13 @@ impl LangIt {
 
     /// `big_number_to_cardinal`. Only ever called with `number >= 10**6`, and
     /// `number` is genuinely unbounded here (`BigInt`, never a fixed-width
-    /// cast) up to the 66-digit guard.
+    /// cast) up to the maxval (10^65) guard.
     fn big_number_to_cardinal(&self, number: &BigInt) -> Result<String> {
         // Python: digits = [c for c in str(int(number))]. `number` is known
         // non-negative at this point, so no sign leaks into the digit list.
         let digits: Vec<char> = number.to_string().chars().collect();
         let length = digits.len();
-        if length >= 66 {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
+        check_maxval(number, maxval_ceiling())?;
         // This is how many digits come before the "illion" term.
         //   cento miliardi => 3
         //   dieci milioni => 2
@@ -757,7 +756,19 @@ impl Default for LangIt {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `big_number_to_cardinal`
+/// names numbers of up to 65 digits, so 10^65 and above raise
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(65))
+}
+
 impl Lang for LangIt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

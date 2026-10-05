@@ -9,9 +9,9 @@
 //! `hasattr` guard in `Num2Word_Base.__init__` never fires: Python builds
 //! neither `self.cards` nor `self.MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `SCALE` table, which
-//! raises `KeyError` rather than `OverflowError` (see below).
+//! `cards`/`merge` stay at their trait defaults here. The `SCALE` table ends
+//! at 10^30; `maxval()` is 10^33 and larger values raise `OverflowError`
+//! (gladiaio/num2words2#159, see below).
 //!
 //! `setup()` sets `negword = "минус"` and `pointword = "запета"`. The
 //! pointword is reached through the float/Decimal branch of `to_cardinal`,
@@ -105,11 +105,11 @@
 //!    `feminine` argument is not forwarded, so `_int2word(-2, feminine=True)`
 //!    yields "минус два" rather than "минус две". Unreachable from the four
 //!    ported modes (they always pass `feminine=False`), but reproduced.
-//! 6. **`SCALE` is Serbian's de facto MAXVAL, and it raises `KeyError`.**
-//!    Keys run 0..=10, i.e. up to 10^30 ("квинтилион"), covering values below
-//!    10^33. At or above 10^33 a chunk index of 11+ is reached and Python
-//!    dies with `KeyError: 11`. See [`scale_at`] and the note on access order
-//!    in [`LangSr::int2word`].
+//! 6. **Fixed (gladiaio/num2words2#159): `SCALE` ends at 10^30.** Keys run
+//!    0..=10, i.e. up to 10^30 ("квинтилион"), covering values below 10^33.
+//!    At or above 10^33 Python reached chunk index 11+ and died with
+//!    `KeyError: 11`. `maxval()` is now 10^33 and [`LangSr::int2word`] raises
+//!    `OverflowError` for `abs(n) >= 10**33` before touching [`scale_at`].
 //! 7. **Long scale.** `SCALE[3]` is "милијарда" for 10^9 and `SCALE[4]` is
 //!    "билион" for 10^12, as the Python comments state explicitly.
 //!
@@ -178,17 +178,17 @@
 //!
 //! # Error variants
 //!
-//! Serbian's only in-scope failure is the `SCALE` `KeyError` of quirk 6,
-//! mapped to `N2WError::Key`. It is a Python crash rather than a deliberate
-//! raise, but the exception *type* is observable, so parity means
-//! reproducing it rather than tidying it into an `OverflowError`.
+//! The `SCALE` `KeyError` of quirk 6 is still mapped to `N2WError::Key` in
+//! [`scale_at`], but since #159 the MAXVAL check makes it unreachable from
+//! the public entry points: too-large values are an `OverflowError`.
 //!
 //! On the currency side the only reachable raise is the deliberate
 //! `NotImplementedError` for an unknown code on the float path, which
 //! `currency::default_to_currency`/`default_to_cheque` already emit with
 //! Python's exact message from [`LangSr::lang_name`].
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -271,7 +271,8 @@ const HUNDREDS: [&str; 10] = [
 /// `SCALE`: chunk index → (form0, form1, form2, is_feminine).
 ///
 /// Keys 0..=10 exactly as in Python — 10^0 through 10^30. Index 11 and above
-/// is a `KeyError`; see quirk 6 in the module docs. The trailing `bool` is
+/// would be a `KeyError`; the 10^33 MAXVAL check keeps it unreachable (quirk
+/// 6). The trailing `bool` is
 /// read as `SCALE[chunk_len][-1]` to pick the gender of the unit word, and is
 /// never a `pluralize` output (`pluralize` only ever returns index 0, 1 or 2).
 const SCALE: [(&str, &str, &str, bool); 11] = [
@@ -341,7 +342,8 @@ fn ordinal_word(num: &BigInt) -> Option<&'static str> {
         .map(|(_, w)| *w)
 }
 
-/// `SCALE[idx]`. Missing keys are Python's `KeyError`; see quirk 6.
+/// `SCALE[idx]`. Missing keys are Python's `KeyError` (unreachable since the
+/// MAXVAL check; see quirk 6).
 fn scale_at(idx: usize) -> Result<&'static (&'static str, &'static str, &'static str, bool)> {
     SCALE
         .get(idx)
@@ -590,10 +592,11 @@ impl LangSr {
     /// `str(number)` is never zero, so the highest chunk index always clears
     /// the `chunk != 0` guard of access 2 and raises. (Verified: 3000 random
     /// values in 10^33..10^45 all raise, including ones whose leading chunk
-    /// takes the `digit_mid == 1` arm and thus skips access 1.) The guards are
-    /// still mirrored literally rather than hoisted into an up-front range
-    /// check, so that *where* the `KeyError` fires matches Python exactly.
+    /// takes the `digit_mid == 1` arm and thus skips access 1.) Since #159 an
+    /// up-front `check_maxval` turns that into `OverflowError`, so neither
+    /// access can miss.
     fn int2word(&self, number: &BigInt, feminine: bool) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_negative() {
             // Python: " ".join([self.negword, self._int2word(abs(number))])
             // `feminine` is NOT forwarded — quirk 5, reproduced verbatim.
@@ -738,7 +741,19 @@ impl LangSr {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangSr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -781,7 +796,7 @@ impl Lang for LangSr {
         if let Some(word) = ordinal_word(value) {
             return Ok(word.to_string());
         }
-        // Propagates the SCALE KeyError for huge inputs, as Python does.
+        // Propagates the MAXVAL OverflowError for huge inputs (#159).
         let cardinal = self.to_cardinal(value)?;
         Ok(format!("{}и", cardinal))
     }

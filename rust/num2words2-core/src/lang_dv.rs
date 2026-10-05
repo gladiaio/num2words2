@@ -67,51 +67,21 @@
 //!    (`convert_two2stem(d0) + base_stem[100] + " " + tail`). Hence 101 →
 //!    `ސަތޭކައެކެއް` (no space) but 555 → `ފަސްސަތޭކަ ފަންސާސްފަހެއް` (space).
 //!
-//! 4. **The overflow bound is not `MAXVAL`.** `MAXVAL` is 10^33, but the guard
-//!    reads
+//! 4. **Fixed (gladiaio/num2words2#159): the overflow bound is `MAXVAL`.**
+//!    Python's guard reads
 //!
 //!    ```python
 //!    if Decimal(self.MAXVAL).compare(abs(decimal_value).to_integral(ROUND_FLOOR)) < 1:
 //!    ```
 //!
-//!    and `Decimal.__abs__` is a **context operation**: it rounds to the
-//!    default context precision of 28 significant digits with ROUND_HALF_EVEN.
-//!    (`__init__` has `getcontext().prec = 34` sitting commented out, so this
-//!    is a latent bug the author half-noticed.) A 33-digit input is therefore
-//!    rounded *up* to 10^33 before the comparison, and `compare(...) < 1` means
-//!    `MAXVAL <= rounded`, so it raises. The true threshold is
-//!    `abs(value) >= 10^33 - 50000`: `to_cardinal(10**33 - 50001)` succeeds but
-//!    `to_cardinal(10**33 - 50000)` raises `OverflowError` (the tie rounds to
-//!    even, i.e. up). `ROUND_FLOOR` on `to_integral` is a red herring — `abs`
-//!    has already made the value integral, so `to_integral` is a no-op.
-//!    Modelled by [`round_half_even_28`]. Crucially the *conversion* still uses
-//!    the exact digits — only the guard sees the rounded value.
+//!    and `Decimal.__abs__` rounds to the context precision (28 significant
+//!    digits) first, so every input from `10**33 - 50000` up rounded to 10^33
+//!    and raised — `to_cardinal(10**33 - 1)` was an `OverflowError` although
+//!    `maxval("dv")` is 10^33. The port compares the exact value instead, so
+//!    the guard trips at `abs(value) >= 10**33` and everything below converts.
 //!
 //! 5. `to_ordinal`/`to_ordinal_num` raise `TypeError` (not ValueError) for any
 //!    negative input, via `verify_ordinal`. `to_cardinal` is unaffected.
-//!
-//! # Hazard: the overflow bound depends on *global* interpreter state
-//!
-//! [`CTX_PREC`] is pinned to 28 — the pristine `decimal` default, and the
-//! value the frozen corpus was generated under. But `getcontext()` is global
-//! (thread-local) mutable state, and `lang_AR.py:408` mutates it and never
-//! restores it:
-//!
-//! ```python
-//! except decimal.InvalidOperation:
-//!     decimal.getcontext().prec = len(temp_number_dec.as_tuple().digits)
-//! ```
-//!
-//! That handler fires for any input with more digits than the current
-//! precision, so a single `Num2Word_AR().to_cardinal(10**33 - 1)` earlier in
-//! the *same process* raises the global precision to 33 — after which
-//! `Num2Word_DV().to_cardinal(10**33 - 1)` stops raising `OverflowError` and
-//! happily returns a string. Same object, same input, different answer,
-//! depending on whether an unrelated language ran first.
-//!
-//! This port is deliberately order-independent and reproduces the pristine
-//! (prec == 28) behaviour. If a differential harness ever runs AR-then-DV in
-//! one interpreter, Python — not this file — is what changed.
 //!
 //! # Currency
 //!
@@ -294,10 +264,6 @@ const HIGH_SUFFIX: &str = "ޔަން";
 const GROUPING: [isize; 13] = [
     -3, -5, -6, -9, -12, -15, -18, -21, -24, -27, -30, -33, -36,
 ];
-
-/// Number of significant digits `Decimal.__abs__` rounds to (the default
-/// context precision, which `__init__` leaves untouched).
-const CTX_PREC: usize = 28;
 
 /// `self.MAXVAL` == `list(self.cards.keys())[0] * 1000` == 10^30 * 1000.
 const MAXVAL_EXP: usize = 33;
@@ -647,9 +613,9 @@ impl LangDv {
     fn to_cardinal_float(&self, value: &BigInt, nominal: bool) -> Result<String> {
         // if Decimal(self.MAXVAL).compare(abs(v).to_integral(ROUND_FLOOR)) < 1
         //
-        // `compare(x) < 1` means `MAXVAL <= x`. `abs()` rounds to 28
-        // significant digits first (quirk 4), so this is *not* `v >= 10^33`.
-        if round_half_even_28(&value.abs()) >= self.maxval {
+        // `compare(x) < 1` means `MAXVAL <= x`. Compared exactly, without
+        // Python's 28-digit rounding (quirk 4).
+        if value.abs() >= self.maxval {
             // Python formats the signed value, not its absolute value.
             return Err(N2WError::Overflow(format!(
                 "abs({}) must be less than {}.",
@@ -709,7 +675,7 @@ impl LangDv {
 
     /// `to_cardinal_float`'s overflow guard for a `Decimal` argument:
     /// `Decimal(MAXVAL).compare(abs(v).to_integral(ROUND_FLOOR)) < 1`, i.e.
-    /// `MAXVAL <= round_to_28_significant_digits(|v|)` — see quirk 4.
+    /// `MAXVAL <= |v|`, compared exactly — see quirk 4.
     ///
     /// `exponent` is Python's, so `>= 0` for every caller.
     fn overflows(&self, coefficient: &BigInt, exponent: i64) -> bool {
@@ -720,18 +686,13 @@ impl LangDv {
         // leading digit. So adjusted >= 33 settles it as MAXVAL <= |v| without
         // materialising 10^exponent — which a Decimal("1E+999999999") would
         // otherwise demand, turning Python's instant OverflowError into an OOM.
-        // Exact, not an approximation: rounding to nearest cannot pull a value
-        // that is already >= 10^33 below 10^33, since 10^33 is itself
-        // representable in 28 significant digits.
         let ndigits = coefficient.abs().to_string().len() as i64;
         if exponent + ndigits - 1 >= MAXVAL_EXP as i64 {
             return true;
         }
-        // |v| < 10^33 now, so the exact integer is cheap. Rounding to 28
-        // significant digits can still carry it up to exactly 10^33 — that is
-        // the whole of quirk 4 — so the full check still has to run.
+        // |v| < 10^33 now, so the exact integer is cheap.
         let exact = coefficient.abs() * pow10(exponent.max(0) as usize);
-        round_half_even_28(&exact) >= self.maxval
+        exact >= self.maxval
     }
 
     /// `verify_ordinal`. The `value == int(value)` float check cannot fail for
@@ -832,21 +793,14 @@ impl LangDv {
 
     /// `to_cardinal_float`'s overflow guard for genuine float/Decimal input:
     /// `Decimal(MAXVAL).compare(abs(v).to_integral(ROUND_FLOOR)) < 1`, i.e.
-    /// `MAXVAL <= floor(round_to_28_significant_digits(|v|))` (quirk 4). Unlike
+    /// `MAXVAL <= floor(|v|)`, compared exactly (quirk 4). Unlike
     /// [`LangDv::overflows`], this floors the fractional part, matching
     /// `to_integral(ROUND_FLOOR)` — the value here can carry a real fraction.
-    ///
-    /// The 28-digit rounding is a no-op for any float (<= 17 significant digits)
-    /// and for every corpus Decimal, but is reproduced for faithfulness.
     fn float_path_overflows(&self, digit_str: &str, exponent: i64) -> bool {
         let d = match BigInt::parse_bytes(digit_str.as_bytes(), 10) {
             Some(d) if !d.is_zero() => d,
             _ => return false,
         };
-        // abs(v) context-rounds |coefficient| to 28 significant digits; scaling
-        // by 10**exponent does not change which digits are significant, so
-        // rounding the coefficient is rounding the value.
-        let d = round_half_even_28(&d);
         // to_integral(ROUND_FLOOR): floor(d * 10**exponent), with d >= 0.
         let floored = if exponent >= 0 {
             d * pow10(exponent as usize)
@@ -1492,34 +1446,6 @@ fn py_decimal_str_parts(sign_negative: bool, digit_str: &str, exponent: i64) -> 
     format!("{}{}E{}{}", sign, coeff, esign, adjusted.abs())
 }
 
-/// Round a non-negative integer to `CTX_PREC` significant decimal digits using
-/// ROUND_HALF_EVEN — what `Decimal.__abs__` does under the default context.
-///
-/// Verified against CPython at the boundary: `10**33 - 50001` rounds to
-/// `9.999999999999999999999999999E+32` (below MAXVAL, converts fine) while
-/// `10**33 - 50000` is a tie and rounds to even, giving `1E+33` == MAXVAL and
-/// tripping the overflow guard.
-fn round_half_even_28(a: &BigInt) -> BigInt {
-    let ndigits = a.to_string().len(); // `a` is non-negative: no sign char
-    if ndigits <= CTX_PREC {
-        return a.clone();
-    }
-
-    let divisor = pow10(ndigits - CTX_PREC);
-    let (mut q, r) = a.div_rem(&divisor);
-    let twice = &r * 2;
-
-    if twice > divisor {
-        q += 1;
-    } else if twice == divisor {
-        // Exact tie: round half to even.
-        if !q.is_even() {
-            q += 1;
-        }
-    }
-    q * divisor
-}
-
 /// Python's `Decimal.to_integral_value()` — round to an integer using the
 /// context's rounding, which `__init__` leaves at the default ROUND_HALF_EVEN.
 /// (The commented-out `getcontext().rounding = ROUND_FLOOR` never took effect;
@@ -1859,15 +1785,14 @@ mod float_tests {
     }
 
     #[test]
-    fn overflow_boundary_matches_python() {
-        // Python raises OverflowError when floor(round28(|v|)) >= 10**33 in the
-        // float/Decimal path (quirk 4: abs() rounds to 28 significant digits
-        // half-to-even first). Boundary values verified against CPython.
+    fn overflow_boundary_is_maxval() {
+        // OverflowError exactly when floor(|v|) >= 10**33 (quirk 4, #159:
+        // Python's 28-digit rounding of abs() is no longer reproduced).
         let overflow = |s: &str| matches!(d(s), Err(N2WError::Overflow(_)));
 
-        assert!(overflow(&"9".repeat(33))); // 10**33 - 1 rounds up to 10**33
+        assert!(d(&"9".repeat(33)).is_ok()); // 10**33 - 1 converts
         assert!(overflow(&format!("1{}", "0".repeat(33)))); // 10**33
-        assert!(overflow(&(10u128.pow(33) - 50000).to_string())); // exact tie, up
+        assert!(d(&(10u128.pow(33) - 50000).to_string()).is_ok());
         assert!(d(&(10u128.pow(33) - 50001).to_string()).is_ok()); // just under
         assert!(d(&"9".repeat(28)).is_ok()); // 28 digits, no rounding
         assert!(d(&format!("1{}", "0".repeat(32))).is_ok()); // 10**32

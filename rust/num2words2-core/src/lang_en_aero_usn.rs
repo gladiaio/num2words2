@@ -439,9 +439,11 @@ fn shortest_digits(a: f64) -> (String, i32) {
 
 impl Lang for LangEnAeroUsn {
 
+    /// `maxval()` is None (gladiaio/num2words2#159): the cardinal reads digit
+    /// by digit with no ceiling, so the inherited `Num2Word_EN.MAXVAL` (10^306)
+    /// is not reported — the cardinal happily converts past it.
     fn python_maxval(&self) -> Option<num_bigint::BigInt> {
-        // Python class attribute MAXVAL (self-contained converter).
-        Some(num_bigint::BigInt::from(10u32).pow(306))
+        None
     }
     /// `self.pointword`, read from the live Python instance (inherited from
     /// `Num2Word_Base`). Kept for fidelity, but AERO never speaks it: the

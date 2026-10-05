@@ -39,10 +39,14 @@
 //! `MEGA_SUFFIX`, giving cards 10^54 "nonilião" … 10^6 "milião", and
 //! `MAXVAL = 1000 * 10^54 = 10^57`. Verified against the interpreter.
 //!
-//! **The overflow check is unreachable.** `Num2Word_PT_BR.to_cardinal` only
-//! ever hands `super()` a value `< 10^9` (see the per-branch notes below), so
-//! `default_to_cardinal`'s `>= MAXVAL` test never fires and no card above
-//! 10^6 is ever consulted. The table is still built in full for fidelity.
+//! **Fixed (gladiaio/num2words2#159): `MAXVAL` is enforced.** Python's
+//! `Num2Word_PT_BR.to_cardinal` only ever hands `super()` a value `< 10^9`
+//! (see the per-branch notes below), so base's `>= MAXVAL` test never fired
+//! and `to_cardinal(10**57)` returned "um bilhão trilhões trilhões trilhões
+//! trilhões" although `maxval("pt_BR")` is 10^57. The port checks `MAXVAL` at
+//! the top of [`Lang::to_cardinal`] instead, so 10^57 and above raise
+//! `OverflowError`. No card above 10^6 is ever consulted; the table is still
+//! built in full for fidelity.
 //!
 //! # Faithfully reproduced Python quirks
 //!
@@ -186,7 +190,7 @@
 //!   `NotImplementedError` → [`N2WError::NotImplemented`], but for
 //!   `to_currency` *only* when the value is not an integer (quirk 7).
 
-use crate::base::{default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
+use crate::base::{check_maxval, default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -1182,6 +1186,8 @@ impl Lang for LangPtBr {
     ///     falls through to the trailing comma loop — every other branch
     ///     returns early (quirk 3).
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
+        // The MAXVAL check Python never reaches (module docs, #159).
+        check_maxval(value, &self.maxval)?;
         // Handle negative numbers. negword already carries its trailing space.
         if value.is_negative() {
             return Ok(format!("{}{}", self.negword(), self.to_cardinal(&(-value))?));

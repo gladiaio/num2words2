@@ -7,9 +7,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `THOUSANDS` table (keys
-//! 1..=10), which raises `KeyError` rather than `OverflowError`. See bug 4.
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` table
+//! (keys 1..=10) ends at 10^30; `maxval()` is 10^33 and larger values raise
+//! `OverflowError`. See bug 4.
 //!
 //! Inherited from `Num2Word_Base` (unchanged by LV, so the trait defaults do
 //! the right thing):
@@ -41,12 +41,11 @@
 //!    through `to_cardinal`, which strips the sign before chunking. The suffix
 //!    is then appended to the whole phrase: `to_ordinal(-7)` ==
 //!    "mīnus septiņiais", `to_ordinal(-1)` == "mīnus vienais". Corpus-confirmed.
-//! 4. There is no `MAXVAL`. `_int2word` indexes `THOUSANDS[i]` with the chunk
-//!    index, and the table stops at 10. The first non-zero chunk at `i >= 11`
-//!    therefore raises `KeyError` — this is Latvian's de facto (and abrupt)
-//!    ceiling at 10^33. Verified: `10**32` → "simts nontiljoni" but `10**33`
-//!    → `KeyError: 11` and `10**36` → `KeyError: 12`. The key in the message is
-//!    the chunk index, not the value. Modelled by [`LangLv::thousands_at`].
+//! 4. Fixed (gladiaio/num2words2#159): Python has no `MAXVAL`. `_int2word`
+//!    indexes `THOUSANDS[i]` with the chunk index, and the table stops at 10,
+//!    so Python's `10**33` raised `KeyError: 11`. `maxval()` is now 10^33 and
+//!    `_int2word` raises `OverflowError` for `abs(n) >= 10**33` first, so
+//!    [`LangLv::thousands_at`] never misses from the public entry points.
 //! 5. `pluralize`'s third form (`forms[2]`, the genitive "tūkstošu"/"miljonu"
 //!    column) is **dead code** on the `_int2word` path: `form` is 2 only when
 //!    `n == 0`, but `_int2word` `continue`s on zero chunks before ever calling
@@ -99,7 +98,8 @@
 //!   * otherwise (`n3 == 1`)      → "simts" (100 → "simts"; 110 → "simts
 //!     desmit", because `n2 != 0` drops it out of the "simtu" arm)
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::ParsedNumber;
@@ -152,7 +152,8 @@ const HUNDRED: [&str; 3] = ["simts", "simti", "simtu"];
 
 /// `THOUSANDS`: chunk index → (nominative sg, nominative pl, genitive pl).
 /// Keys 1..=10, i.e. up to 1000^10 == 10^30 ("nontiljons"). Index 0 is absent
-/// in Python and unreachable (guarded by `i > 0`); index >= 11 is a `KeyError`.
+/// in Python and unreachable (guarded by `i > 0`); index >= 11 would be a
+/// `KeyError`, pre-empted by the 10^33 MAXVAL check (#159).
 ///
 /// Key 7 ships "sikstiljons"; key 10 ships "nontiljons". Both are Python's
 /// spelling — see bug 1 in the module docs.
@@ -299,9 +300,8 @@ fn build_currency_adjectives() -> HashMap<&'static str, &'static str> {
 // --- Python exception encoding -------------------------------------------
 //
 // This is a crash site, not a deliberate raise: `THOUSANDS[i]` on a missing
-// key. The exception *type* is observable behaviour a caller may catch, so
-// parity requires reproducing KeyError rather than tidying it into a
-// TypeError or an OverflowError.
+// key. Unreachable from the public entry points since the 10^33 MAXVAL check
+// (bug 4, #159), which raises OverflowError first.
 fn key_error(key: String) -> N2WError {
     N2WError::Key(key)
 }
@@ -380,7 +380,8 @@ impl LangLv {
         }
     }
 
-    /// `THOUSANDS[i]`, raising `KeyError` past 10. See bug 4 in the module docs.
+    /// `THOUSANDS[i]`, raising `KeyError` past 10 (unreachable). See bug 4 in
+    /// the module docs.
     fn thousands_at(&self, i: usize) -> Result<&'static [&'static str; 3]> {
         if (1..=10).contains(&i) {
             Ok(&THOUSANDS[i])
@@ -412,6 +413,7 @@ impl LangLv {
 
     /// Port of `Num2Word_LV._int2word`. Called only with non-negative values.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO.to_string());
         }
@@ -508,7 +510,19 @@ fn float_no_point_str(f: f64) -> String {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangLv {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

@@ -8,11 +8,10 @@
 //! `Num2Word_Base` but defines no `high_numwords`/`mid_numwords`/
 //! `low_numwords`, so Python never builds `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives `_int2word` over
-//! 3-digit chunks. `cards`/`maxval`/`merge` therefore stay at their trait
-//! defaults, and there is **no overflow check** — the only ceiling is the
-//! `THOUSANDS` table (keys 1..=10), which raises `KeyError` rather than
-//! `OverflowError` once a non-zero chunk sits at index >= 11, i.e. from
-//! 10^33 upward.
+//! 3-digit chunks. `cards`/`merge` therefore stay at their trait defaults.
+//! The `THOUSANDS` table (keys 1..=10) ends at 10^30; Python raised
+//! `KeyError` from 10^33 upward. Fixed (gladiaio/num2words2#159): `maxval()`
+//! is 10^33 and `_int2word` raises `OverflowError` for `abs(n) >= 10**33`.
 //!
 //! Inherited from `Num2Word_Base` (unchanged by UZ_CYR, so the trait defaults
 //! do the right thing):
@@ -169,14 +168,14 @@
 //!   -42, -100, -999, -1000, -1000000 — and for negative whole floats
 //!   (-3.0, -1000000.0) and fractional values (0.5, -1.5) through the float
 //!   entry.
-//! * A non-zero chunk at index >= 11 → `KeyError` on `THOUSANDS[i]`
-//!   (`N2WError::Key`). This is a crash, not a deliberate raise, but the
-//!   exception *type* is observable, so parity means reproducing it rather
-//!   than tidying it into an `OverflowError`.
+//! * `abs(n) >= 10**33` → `OverflowError` (#159). Python crashed with a
+//!   `KeyError` on `THOUSANDS[i]` there; that `N2WError::Key` arm is now
+//!   unreachable from the public entry points.
 //! * `to_cardinal` accepts negatives fine (`_int2word` strips the sign and
 //!   recurses), and `to_ordinal_num` never inspects the value.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::CurrencyForms;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -320,8 +319,8 @@ fn plural_form_index(n: &BigInt) -> usize {
     }
 }
 
-/// Python's `KeyError`. A crash site, not a deliberate raise — but the type is
-/// observable, so it is reproduced rather than tidied away.
+/// Python's `KeyError`. A crash site, not a deliberate raise; the
+/// `THOUSANDS` miss is unreachable since the 10^33 MAXVAL check (#159).
 fn key_error(key: String) -> N2WError {
     N2WError::Key(key)
 }
@@ -497,8 +496,7 @@ fn char_from_end(chars: &[char], k: usize) -> Result<char> {
 pub struct LangUzCyr {
     /// `THOUSANDS`: chunk index → the three plural forms. Keys 1..=10, i.e.
     /// up to 1000^10 == 10^30 ("нониллион"). A non-zero chunk at index >= 11
-    /// is a `KeyError` — Uzbek Cyrillic's de facto (and rather abrupt) MAXVAL,
-    /// reached at 10^33.
+    /// (10^33 and up) is pre-empted by the MAXVAL check (#159).
     thousands: HashMap<usize, [&'static str; 3]>,
     /// `self.ords`, set in `setup()`. Note the "ноль" key, which `ZERO`
     /// ("нол") can never match — quirk 1.
@@ -566,7 +564,7 @@ impl LangUzCyr {
         }
     }
 
-    /// `THOUSANDS[i]`, raising `KeyError` past 10.
+    /// `THOUSANDS[i]`, raising `KeyError` past 10 (unreachable, #159).
     fn thousands_at(&self, i: usize) -> Result<&[&'static str; 3]> {
         self.thousands.get(&i).ok_or_else(|| key_error(i.to_string()))
     }
@@ -594,6 +592,7 @@ impl LangUzCyr {
     /// default `false`. It is threaded through anyway so the `ones` selector
     /// ports 1:1 — and since `ONES_FEMININE == ONES` (quirk 6) it is inert.
     fn int2word(&self, n: &BigInt, feminine: bool) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
             // Python: ' '.join([self.negword, self._int2word(abs(n))])
             // Note this uses self.negword verbatim, NOT negword.strip().
@@ -810,7 +809,19 @@ impl LangUzCyr {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangUzCyr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -1024,7 +1035,7 @@ impl Lang for LangUzCyr {
     ///
     /// Evaluation order matches Python's `%`-tuple, left to right:
     /// `int(left)`, `_int2word(left)`, `int(right)`, `_int2word(right)` — so
-    /// a 10^35 integer part raises its KeyError before a malformed fraction
+    /// a 10^35 integer part raises its OverflowError before a malformed fraction
     /// raises its ValueError.
     ///
     /// `precision_override` (the `precision=` kwarg) is **ignored**: Python's

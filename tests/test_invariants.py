@@ -151,16 +151,7 @@ ALLOW = {
         "bg", "bn", "ce", "cy", "dv", "et", "ha", "pt_BR", "rm", "rm_puter",
         "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader", "sn", "vi",
     },
-    # gladiaio/num2words2#159
-    "maxval": {
-        "az", "be", "ce", "cs", "cy", "cz", "dv", "en_AERO", "en_Aero_FAA",
-        "en_Aero_ICAO", "en_Aero_NATO", "en_Aero_USN", "en_Aero_US_Army",
-        "en_Aero_US_Navy", "en_aero_icao", "en_x_aero_icao", "hr", "hu",
-        "it", "kz", "lij", "lt", "lv", "mn", "pl", "pt_BR", "rm", "rm_puter",
-        "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader", "ru", "sk",
-        "sr", "sr_Cyrl", "sr_Latn", "th", "tr", "uk", "uz_Cyrl", "uz_cyr",
-        "vi",
-    },
+    "maxval": set(),
 }
 
 
