@@ -5,7 +5,6 @@ exclude =
     venv,
     build,
     dist,
-    num2words2/_version.py,
     .git,
     __pycache__,
     *.egg-info
