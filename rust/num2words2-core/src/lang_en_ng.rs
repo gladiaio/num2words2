@@ -18,9 +18,9 @@
 //! `to_ordinal_num`'s `str(value) + ordinal[-2:]`, `to_year`'s issue-#67
 //! non-integer-float guard with silent Decimal truncation),
 //! `Num2Word_EN.to_fraction`'s idiomatic half/quarter forms (issue #584),
-//! and — unique to en_NG in this family — the grammatical kwargs its Python
-//! signatures accept: `to_currency(kobo=...)` (the `cents` flag renamed) and
-//! the inherited `to_year(suffix=..., longval=...)`.
+//! and the grammatical kwargs its Python signatures accept:
+//! `to_currency(kobo=...)` (the `cents` flag renamed, unique to en_NG) and
+//! the inherited `to_year(suffix=..., longval=...)` (shared with `lang_en.rs`).
 //!
 //! Inheritance chain walked: `Num2Word_EN_NG` → `lang_EN.Num2Word_EN` →
 //! `lang_EUR.Num2Word_EUR` → `base.Num2Word_Base`. EN overrides
