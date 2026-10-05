@@ -152,9 +152,9 @@
 //! 10. **`_money_verbose` drops the unit's gender.** It is `Num2Word_Base`'s,
 //!    i.e. `self.to_cardinal(number)`, which passes `feminine=False`. So a
 //!    feminine unit still gets a masculine numeral: `to_currency(1.0, "RUB")`
-//!    == "један rublja, нула kopejki" — "једна rublja" would be the correct
+//!    == "један рубља, нула копејки" — "једна рубља" would be the correct
 //!    Serbian. Only `_cents_verbose` consults the flag, so the *cents* half is
-//!    gendered correctly ("нула kopejki", "једна para"). Verified live.
+//!    gendered correctly ("нула копејки", "једна пара"). Verified live.
 //! 11. **`to_cheque` prints the gender flag as the currency name.**
 //!    `Num2Word_Base.to_cheque` does `cr1, _cr2 = self.CURRENCY_FORMS[currency]`
 //!    then `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, intending "the
@@ -507,7 +507,14 @@ fn feminine_kwarg(kw: &Kwargs) -> Result<bool> {
     }
 }
 
-/// `Num2Word_SR.CURRENCY_FORMS`, verbatim — RUB, EUR, RSD and nothing else.
+/// `Num2Word_SR.CURRENCY_FORMS` — RUB, EUR, RSD and nothing else.
+///
+/// Python spells these names in Latin script ("dinar", "evro", ...) inside
+/// otherwise Cyrillic output ("један dinar, педесет para"). This port
+/// transliterates them to Cyrillic (gladiaio/num2words2#154); Serbian
+/// Latin/Cyrillic is a one-to-one mapping, and `sr_Latn` keeps its own Latin
+/// table.
+
 ///
 /// # Why the gender flag is a `"False"`/`"True"` string
 ///
@@ -535,22 +542,22 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert(
         "RUB",
         CurrencyForms::new(
-            &["rublja", "rublje", "rublji", "True"],
-            &["kopejka", "kopejke", "kopejki", "True"],
+            &["рубља", "рубље", "рубљи", "True"],
+            &["копејка", "копејке", "копејки", "True"],
         ),
     );
     m.insert(
         "EUR",
         CurrencyForms::new(
-            &["evro", "evra", "evra", "False"],
-            &["cent", "centa", "centi", "False"],
+            &["евро", "евра", "евра", "False"],
+            &["цент", "цента", "центи", "False"],
         ),
     );
     m.insert(
         "RSD",
         CurrencyForms::new(
-            &["dinar", "dinara", "dinara", "False"],
-            &["para", "pare", "para", "True"],
+            &["динар", "динара", "динара", "False"],
+            &["пара", "паре", "пара", "True"],
         ),
     );
     m
@@ -954,7 +961,7 @@ impl Lang for LangSr {
     /// than generalised underneath it.
     ///
     /// Reproduces quirk 3 here too: `number % 100 == 10` is neither `< 10` nor
-    /// `> 20`, so it falls to form 2 ("десет evra", not "десет evro").
+    /// `> 20`, so it falls to form 2 ("десет евра", not "десет евро").
     ///
     /// `mod_floor` rather than `%`: Python's `%` floors on negatives. `left`
     /// and `right` both arrive non-negative from `parse_currency_parts`, so
@@ -991,7 +998,7 @@ impl Lang for LangSr {
     ///
     /// Note it calls `_int2word` directly rather than `to_cardinal`, and that
     /// the gender flag is the subunit tuple's trailing element — so RSD's
-    /// `para` (flag `True`) gets feminine numerals ("једна para", "две pare")
+    /// `пара` (flag `True`) gets feminine numerals ("једна пара", "две паре")
     /// while EUR's `cent` (flag `False`) stays masculine ("један cent").
     ///
     /// The `CURRENCY_FORMS[currency]` lookup is Python's `KeyError`, but it is

@@ -25,7 +25,7 @@ class Num2WordsMKTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="mk"), "zero")
+        self.assertEqual(num2words(0, lang="mk"), "нула")
         self.assertEqual(num2words(1, lang="mk"), "еден")
         self.assertEqual(num2words(2, lang="mk"), "два")
         self.assertEqual(num2words(3, lang="mk"), "три")
@@ -218,53 +218,53 @@ class Num2WordsMKTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="mk"), "minus еден")
-        self.assertEqual(num2words(-2, lang="mk"), "minus два")
-        self.assertEqual(num2words(-5, lang="mk"), "minus пет")
-        self.assertEqual(num2words(-10, lang="mk"), "minus десет")
-        self.assertEqual(num2words(-11, lang="mk"), "minus десет еден")
-        self.assertEqual(num2words(-20, lang="mk"), "minus дваесет")
-        self.assertEqual(num2words(-50, lang="mk"), "minus педесет")
-        self.assertEqual(num2words(-99, lang="mk"), "minus деведесет девет")
-        self.assertEqual(num2words(-100, lang="mk"), "minus еден сто")
-        self.assertEqual(num2words(-101, lang="mk"), "minus еден сто еден")
-        self.assertEqual(num2words(-200, lang="mk"), "minus два сто")
-        self.assertEqual(num2words(-999, lang="mk"), "minus девет сто деведесет девет")
-        self.assertEqual(num2words(-1000, lang="mk"), "minus еден илјада")
-        self.assertEqual(num2words(-1001, lang="mk"), "minus еден илјада еден")
-        self.assertEqual(num2words(-10000, lang="mk"), "minus десет илјада")
-        self.assertEqual(num2words(-100000, lang="mk"), "minus еден сто илјада")
-        self.assertEqual(num2words(-1000000, lang="mk"), "minus еден милион")
+        self.assertEqual(num2words(-1, lang="mk"), "минус еден")
+        self.assertEqual(num2words(-2, lang="mk"), "минус два")
+        self.assertEqual(num2words(-5, lang="mk"), "минус пет")
+        self.assertEqual(num2words(-10, lang="mk"), "минус десет")
+        self.assertEqual(num2words(-11, lang="mk"), "минус десет еден")
+        self.assertEqual(num2words(-20, lang="mk"), "минус дваесет")
+        self.assertEqual(num2words(-50, lang="mk"), "минус педесет")
+        self.assertEqual(num2words(-99, lang="mk"), "минус деведесет девет")
+        self.assertEqual(num2words(-100, lang="mk"), "минус еден сто")
+        self.assertEqual(num2words(-101, lang="mk"), "минус еден сто еден")
+        self.assertEqual(num2words(-200, lang="mk"), "минус два сто")
+        self.assertEqual(num2words(-999, lang="mk"), "минус девет сто деведесет девет")
+        self.assertEqual(num2words(-1000, lang="mk"), "минус еден илјада")
+        self.assertEqual(num2words(-1001, lang="mk"), "минус еден илјада еден")
+        self.assertEqual(num2words(-10000, lang="mk"), "минус десет илјада")
+        self.assertEqual(num2words(-100000, lang="mk"), "минус еден сто илјада")
+        self.assertEqual(num2words(-1000000, lang="mk"), "минус еден милион")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="mk"), "zero point еден")
-        self.assertEqual(num2words(0.5, lang="mk"), "zero point пет")
-        self.assertEqual(num2words(0.9, lang="mk"), "zero point девет")
-        self.assertEqual(num2words(1.1, lang="mk"), "еден point еден")
-        self.assertEqual(num2words(1.5, lang="mk"), "еден point пет")
-        self.assertEqual(num2words(2.5, lang="mk"), "два point пет")
-        self.assertEqual(num2words(3.14, lang="mk"), "три point еден четири")
-        self.assertEqual(num2words(10.5, lang="mk"), "десет point пет")
-        self.assertEqual(num2words(11.11, lang="mk"), "десет еден point еден еден")
-        self.assertEqual(num2words(20.2, lang="mk"), "дваесет point два")
+        self.assertEqual(num2words(0.1, lang="mk"), "нула запирка еден")
+        self.assertEqual(num2words(0.5, lang="mk"), "нула запирка пет")
+        self.assertEqual(num2words(0.9, lang="mk"), "нула запирка девет")
+        self.assertEqual(num2words(1.1, lang="mk"), "еден запирка еден")
+        self.assertEqual(num2words(1.5, lang="mk"), "еден запирка пет")
+        self.assertEqual(num2words(2.5, lang="mk"), "два запирка пет")
+        self.assertEqual(num2words(3.14, lang="mk"), "три запирка еден четири")
+        self.assertEqual(num2words(10.5, lang="mk"), "десет запирка пет")
+        self.assertEqual(num2words(11.11, lang="mk"), "десет еден запирка еден еден")
+        self.assertEqual(num2words(20.2, lang="mk"), "дваесет запирка два")
         self.assertEqual(
-            num2words(99.99, lang="mk"), "деведесет девет point девет девет"
+            num2words(99.99, lang="mk"), "деведесет девет запирка девет девет"
         )
-        self.assertEqual(num2words(100.01, lang="mk"), "еден сто point zero еден")
-        self.assertEqual(num2words(100.5, lang="mk"), "еден сто point пет")
+        self.assertEqual(num2words(100.01, lang="mk"), "еден сто запирка нула еден")
+        self.assertEqual(num2words(100.5, lang="mk"), "еден сто запирка пет")
         self.assertEqual(
-            num2words(123.45, lang="mk"), "еден сто дваесет три point четири пет"
+            num2words(123.45, lang="mk"), "еден сто дваесет три запирка четири пет"
         )
-        self.assertEqual(num2words(1000.5, lang="mk"), "еден илјада point пет")
+        self.assertEqual(num2words(1000.5, lang="mk"), "еден илјада запирка пет")
         self.assertEqual(
             num2words(1234.56, lang="mk"),
-            "еден илјада два сто триесет четири point пет шест",
+            "еден илјада два сто триесет четири запирка пет шест",
         )
-        self.assertEqual(num2words(10000.01, lang="mk"), "десет илјада point zero еден")
-        self.assertEqual(num2words(-0.5, lang="mk"), "minus zero point пет")
-        self.assertEqual(num2words(-1.5, lang="mk"), "minus еден point пет")
-        self.assertEqual(num2words(-10.5, lang="mk"), "minus десет point пет")
+        self.assertEqual(num2words(10000.01, lang="mk"), "десет илјада запирка нула еден")
+        self.assertEqual(num2words(-0.5, lang="mk"), "минус нула запирка пет")
+        self.assertEqual(num2words(-1.5, lang="mk"), "минус еден запирка пет")
+        self.assertEqual(num2words(-10.5, lang="mk"), "минус десет запирка пет")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -311,15 +311,15 @@ class Num2WordsMKTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="mk", to="currency", currency="MKD"), "zero денари"
+            num2words(0, lang="mk", to="currency", currency="MKD"), "нула денари"
         )
         self.assertEqual(
             num2words(0.01, lang="mk", to="currency", currency="MKD"),
-            "zero денари еден дени",
+            "нула денари еден дени",
         )
         self.assertEqual(
             num2words(0.5, lang="mk", to="currency", currency="MKD"),
-            "zero денари педесет дени",
+            "нула денари педесет дени",
         )
         self.assertEqual(
             num2words(1, lang="mk", to="currency", currency="MKD"), "еден денар"
@@ -329,15 +329,15 @@ class Num2WordsMKTest(TestCase):
             "еден денар педесет дени",
         )
         self.assertEqual(
-            num2words(0, lang="mk", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="mk", to="currency", currency="USD"), "нула dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="mk", to="currency", currency="USD"),
-            "zero dollars еден cent",
+            "нула dollars еден cent",
         )
         self.assertEqual(
             num2words(0.5, lang="mk", to="currency", currency="USD"),
-            "zero dollars педесет cents",
+            "нула dollars педесет cents",
         )
         self.assertEqual(
             num2words(1, lang="mk", to="currency", currency="USD"), "еден dollar"
@@ -347,15 +347,15 @@ class Num2WordsMKTest(TestCase):
             "еден dollar педесет cents",
         )
         self.assertEqual(
-            num2words(0, lang="mk", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="mk", to="currency", currency="EUR"), "нула euros"
         )
         self.assertEqual(
             num2words(0.01, lang="mk", to="currency", currency="EUR"),
-            "zero euros еден cent",
+            "нула euros еден cent",
         )
         self.assertEqual(
             num2words(0.5, lang="mk", to="currency", currency="EUR"),
-            "zero euros педесет cents",
+            "нула euros педесет cents",
         )
         self.assertEqual(
             num2words(1, lang="mk", to="currency", currency="EUR"), "еден euro"
@@ -400,7 +400,7 @@ class Num2WordsMKTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="mk"), "zero")
+        self.assertEqual(num2words("0", lang="mk"), "нула")
         self.assertEqual(num2words("1", lang="mk"), "еден")
         self.assertEqual(num2words("10", lang="mk"), "десет")
         self.assertEqual(num2words("100", lang="mk"), "еден сто")
@@ -412,7 +412,7 @@ class Num2WordsMKTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="mk"), "zero")
+        self.assertEqual(num2words(0, lang="mk"), "нула")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mk"), num2words("100", lang="mk"))

@@ -31,13 +31,16 @@
 //! This is a port, not a rewrite. Everything below looks wrong and is exactly
 //! what Python emits — each one is confirmed against the frozen corpus.
 //!
-//! 1. **`to_cardinal(0)` == "zero"**, an English word, in a Luxembourgish
-//!    converter (correct would be "null"). `_int_to_word` opens with
+//! 1. **Zero and the decimal word (fixed, gladiaio/num2words2#154).**
+//!    Python's `_int_to_word` opens with
 //!    `return self.ones[0] if self.ones[0] else "zero"`. `self.ones[0]` is the
 //!    empty string — a placeholder so that `ones[n]` can be indexed by digit —
-//!    and `""` is falsy, so the conditional *always* takes the "zero" branch.
-//!    The `self.ones[0]` arm is dead code. Modelled by the unconditional
-//!    [`ZERO`] return in [`LangLb::int_to_word`].
+//!    and `""` is falsy, so Python always answered with the English "zero";
+//!    its `pointword` is the English "point". This port says the
+//!    Luxembourgish "null" and "Komma" (a decimal comma, capitalised as a noun
+//!    like "Millioun"): `to_cardinal(0)` == "null", `1.5` == "eent Komma
+//!    fënnef". Modelled by the unconditional [`ZERO`] return in
+//!    [`LangLb::int_to_word`].
 //! 2. **There are no teens.** `tens[1]` is "zéng" (10) and 11..=19 are built by
 //!    the generic `tens[n/10] + " " + ones[n%10]` rule, so `to_cardinal(11)` ==
 //!    "zéng eent" ("ten one") rather than "eelef", and `to_cardinal(19)` ==
@@ -66,7 +69,7 @@
 //! 6. **`to_ordinal` is a blind suffix append**, `to_cardinal(n) + "-ten"`,
 //!    with no stem change, no agreement and no special-casing whatsoever. It
 //!    inherits every quirk above and adds its own:
-//!      * `to_ordinal(0)` == "zero-ten" (bug 1 leaks through).
+//!      * `to_ordinal(0)` == "null-ten".
 //!      * `to_ordinal(-1)` == "minus eent-ten" — negatives are cheerfully
 //!        ordinalised, where most modules raise
 //!        "Cannot treat negative num %s as ordinal".
@@ -112,7 +115,7 @@
 //! 8. **An unknown currency code silently becomes EUR.** `to_currency` looks up
 //!    `self.CURRENCY_FORMS.get(currency, list(self.CURRENCY_FORMS.values())[0])`
 //!    — a `.get` with the *first dict value* as its default, not a `[]`. So
-//!    `to_currency(0.5, currency="JPY")` == "zero euro fofzeg cents" and
+//!    `to_currency(0.5, currency="JPY")` == "null euro fofzeg cents" and
 //!    `to_currency(12.34, currency="KWD")` == "zéng zwou euro drësseg véier
 //!    cents": every unimplemented code renders as euro, and no code ever raises
 //!    from `to_currency`. The corpus records this for GBP, JPY, KWD, BHD, INR,
@@ -139,7 +142,7 @@
 //!    `_cents_terse` and emit digits. `to_currency(12.34, cents=False)` ==
 //!    "zéng zwou euro" — the 34 cents are gone, not abbreviated.
 //! 14. **Zero cents suppress the segment even for a float.** `right` is `0`,
-//!    which is falsy, so `1.0` renders "eent euro" with no "zero cents" tail —
+//!    which is falsy, so `1.0` renders "eent euro" with no "null cents" tail —
 //!    the same string a true `int` 1 produces. LB never calls
 //!    `isinstance(val, int)`, so unlike every `Num2Word_Base` descendant the
 //!    int/float split is invisible here. [`CurrencyValue`]'s two arms are still
@@ -156,13 +159,13 @@
 //! entries), with these pinned consequences:
 //!
 //! 16. **Whole floats keep their ".0" tail.** `str(5.0)` == "5.0" has a
-//!     point, so `to_cardinal(5.0)` == "fënnef point zero", *not* "fënnef".
-//!     Likewise `Decimal("5.00")` == "fënnef point zero zero" — every
+//!     point, so `to_cardinal(5.0)` == "fënnef Komma null", *not* "fënnef".
+//!     Likewise `Decimal("5.00")` == "fënnef Komma null null" — every
 //!     fractional character is spelled via `_int_to_word(int(digit))`,
-//!     trailing zeros included (each '0' is "zero", bug 1 again).
+//!     trailing zeros included (each '0' is "null", bug 1).
 //! 17. **`-0.0` renders the negword.** The sign is read off the string
 //!     (`str(-0.0)` == "-0.0" starts with "-"), so `to_cardinal(-0.0)` ==
-//!     "minus zero point zero". A `< 0` test would miss it.
+//!     "minus null Komma null". A `< 0` test would miss it.
 //! 18. **Scientific notation is a `ValueError`.** `str(1e16)` == "1e+16" has
 //!     no point, so Python runs `int("1e+16")` and dies: `invalid literal
 //!     for int() with base 10: '1e+16'`. Same for `1e+20`, tiny floats
@@ -172,8 +175,8 @@
 //! 19. **Point-less integral Decimals take the integer grammar.**
 //!     `Decimal("100")` stringifies as "100" — no point — and `int("100")`
 //!     succeeds, so it renders "eent honnert" like the int would.
-//! 20. `to_ordinal(float)` is `to_cardinal(float) + "-ten"` ("fënnef point
-//!     zero-ten"); `to_ordinal_num(float)` is `str(number) + "."` ("5.0.",
+//! 20. `to_ordinal(float)` is `to_cardinal(float) + "-ten"` ("fënnef Komma
+//!     null-ten"); `to_ordinal_num(float)` is `str(number) + "."` ("5.0.",
 //!     "1e+16." — nothing is parsed, so no ValueError there); `to_year(float)`
 //!     is `to_cardinal(float)` (the trait default already routes through the
 //!     override).
@@ -208,8 +211,12 @@ use std::collections::HashMap;
 
 /// `_int_to_word`'s zero case. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`, but `ones[0]` is `""` (falsy),
-/// so this English word is the only reachable result. See module bug 1.
-const ZERO: &str = "zero";
+/// so Python's English word is the only reachable result; this port says
+/// "null". See module bug 1.
+const ZERO: &str = "null";
+
+/// `self.pointword`: English "point" in Python, "Komma" here (bug 1, #154).
+const POINTWORD: &str = "Komma";
 
 /// `self.negword`. The trailing space is Python's and is load-bearing:
 /// `to_cardinal` builds `negword + word` with no separator of its own.
@@ -596,10 +603,11 @@ impl Lang for LangLb {
 
     /// `self.pointword`. Unreachable from the integer paths: Python only
     /// consults it in `to_cardinal`'s `"." in n` branch, and an integer's
-    /// rendering never contains a point. Kept for trait parity.
+    /// rendering never contains a point.
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
+
 
     /// Python's `to_cardinal`.
     ///
@@ -615,7 +623,7 @@ impl Lang for LangLb {
         let ret = if value.is_negative() { NEGWORD } else { "" };
 
         // Python's trailing `.strip()`. A no-op in practice — `_int_to_word`
-        // never returns "" (0 yields "zero") nor pads its output — but kept so
+        // never returns "" (0 yields "null") nor pads its output — but kept so
         // the port has no behaviour of its own.
         Ok(format!("{}{}", ret, self.int_to_word(&value.abs()))
             .trim()
@@ -672,7 +680,7 @@ impl Lang for LangLb {
     /// that parts ways with LB's *string* slice in two places:
     ///
     /// * **Sign of zero.** `str(-0.0)` is `"-0.0"`, which starts with `"-"`, so
-    ///   LB emits `"minus zero point zero"`; the base path keys the sign off
+    ///   LB emits `"minus null Komma null"`; the base path keys the sign off
     ///   `value < 0` (false for `-0.0`) and drops the minus.
     /// * **Large-magnitude floats.** For `588758963.044982` the f64 subtraction
     ///   loses low bits and `abs(v-pre)*1e6` lands ~0.1 off an integer, so the
@@ -763,7 +771,7 @@ impl Lang for LangLb {
         // stringifies without a ".") emits no pointword, just the integer.
         if precision > 0 {
             ret.push(' ');
-            // `self.pointword` == "point", emitted verbatim (LB never titles it;
+            // `self.pointword` == "Komma", emitted verbatim (LB never titles it;
             // `is_title` is false).
             ret.push_str(self.pointword());
             ret.push(' ');
@@ -787,8 +795,8 @@ impl Lang for LangLb {
     /// `to_cardinal(float/Decimal)` — the full entry, routing on
     /// `"." in str(number)` rather than on whole-ness (module quirks 16-19).
     ///
-    /// A whole float therefore keeps its ".0" tail (`5.0` -> "fënnef point
-    /// zero", `-0.0` -> "minus zero point zero"), a point-less integral
+    /// A whole float therefore keeps its ".0" tail (`5.0` -> "fënnef Komma
+    /// null", `-0.0` -> "minus null Komma null"), a point-less integral
     /// Decimal takes the integer grammar (`Decimal("100")` -> "eent
     /// honnert"), and a point-less non-integer form is Python's `int()`
     /// ValueError (`1e+16`, `Decimal("1E+2")`).
@@ -815,7 +823,7 @@ impl Lang for LangLb {
 
     /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-ten"` —
     /// the same blind suffix as the integer path (bug 6), so `5.0` ==
-    /// "fënnef point zero-ten" and the ValueError of `1e+16` propagates
+    /// "fënnef Komma null-ten" and the ValueError of `1e+16` propagates
     /// unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!(
@@ -835,7 +843,7 @@ impl Lang for LangLb {
     // `year_float_entry` is deliberately NOT overridden: LB's `to_year` is
     // `self.to_cardinal(val)`, and the trait default routes through the
     // overridden `cardinal_float_entry` above — so `to_year(5.0)` == "fënnef
-    // point zero" and `to_year(1e+16)` raises ValueError, as the corpus pins.
+    // Komma null" and `to_year(1e+16)` raises ValueError, as the corpus pins.
 
     /// `converter.str_to_number` — Base's `Decimal(value)`, which LB does not
     /// override. Inf/NaN parse fine here; the per-mode ValueError comes later
@@ -1023,37 +1031,37 @@ mod entry_routing_tests {
         // Whole floats keep their ".0" tail.
         assert_eq!(
             lb.cardinal_float_entry(&fv(5.0, 1), None).unwrap(),
-            "fënnef point zero"
+            "fënnef Komma null"
         );
         assert_eq!(
             lb.cardinal_float_entry(&fv(0.0, 1), None).unwrap(),
-            "zero point zero"
+            "null Komma null"
         );
         assert_eq!(
             lb.cardinal_float_entry(&fv(-1000000.0, 1), None).unwrap(),
-            "minus eent Millioun point zero"
+            "minus eent Millioun Komma null"
         );
         // -0.0: the sign lives in the *string*, so the negword survives.
         assert_eq!(
             lb.cardinal_float_entry(&fv(-0.0, 1), None).unwrap(),
-            "minus zero point zero"
+            "minus null Komma null"
         );
         // The >= 10^9 digit fallback composes with the ".0" tail (bug 5).
         assert_eq!(
             lb.cardinal_float_entry(&fv(1e9, 1), None).unwrap(),
-            "1000000000 point zero"
+            "1000000000 Komma null"
         );
-        // Decimals: trailing zeros of the literal are all spelled "zero".
+        // Decimals: trailing zeros of the literal are all spelled "null".
         assert_eq!(
             lb.cardinal_float_entry(&dv("5.00"), None).unwrap(),
-            "fënnef point zero zero"
+            "fënnef Komma null null"
         );
         assert_eq!(
             lb.cardinal_float_entry(&dv("12345.000"), None).unwrap(),
-            "zéng zwou dausend dräi honnert véierzeg fënnef point zero zero zero"
+            "zéng zwou dausend dräi honnert véierzeg fënnef Komma null null null"
         );
         // Point-less integral Decimals take the integer grammar.
-        assert_eq!(lb.cardinal_float_entry(&dv("0"), None).unwrap(), "zero");
+        assert_eq!(lb.cardinal_float_entry(&dv("0"), None).unwrap(), "null");
         assert_eq!(
             lb.cardinal_float_entry(&dv("100"), None).unwrap(),
             "eent honnert"
@@ -1097,20 +1105,20 @@ mod entry_routing_tests {
         let lb = LangLb::new();
         assert_eq!(
             lb.ordinal_float_entry(&fv(5.0, 1)).unwrap(),
-            "fënnef point zero-ten"
+            "fënnef Komma null-ten"
         );
         assert_eq!(
             lb.ordinal_float_entry(&fv(-0.0, 1)).unwrap(),
-            "minus zero point zero-ten"
+            "minus null Komma null-ten"
         );
         assert_eq!(
             lb.ordinal_float_entry(&fv(3.25, 2)).unwrap(),
-            "dräi point zwou fënnef-ten"
+            "dräi Komma zwou fënnef-ten"
         );
-        assert_eq!(lb.ordinal_float_entry(&dv("0")).unwrap(), "zero-ten");
+        assert_eq!(lb.ordinal_float_entry(&dv("0")).unwrap(), "null-ten");
         assert_eq!(
             lb.ordinal_float_entry(&dv("5.00")).unwrap(),
-            "fënnef point zero zero-ten"
+            "fënnef Komma null null-ten"
         );
         assert!(matches!(
             lb.ordinal_float_entry(&fv(1e16, 0)),
@@ -1152,11 +1160,11 @@ mod entry_routing_tests {
         let lb = LangLb::new();
         assert_eq!(
             lb.year_float_entry(&fv(5.0, 1)).unwrap(),
-            "fënnef point zero"
+            "fënnef Komma null"
         );
         assert_eq!(
             lb.year_float_entry(&fv(-0.0, 1)).unwrap(),
-            "minus zero point zero"
+            "minus null Komma null"
         );
         assert!(matches!(
             lb.year_float_entry(&fv(1e20, 0)),

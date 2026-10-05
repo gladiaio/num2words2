@@ -27,7 +27,7 @@
 //!    `to_cardinal(10**9)` == `"1000000000"` — the decimal digits, verbatim.
 //!    This is not an error path: it returns `Ok`. It composes with everything
 //!    downstream, giving `to_ordinal(10**9)` == `"1000000000-en"` and
-//!    `to_cardinal(-10**9)` == `"minus 1000000000"`. Because there is no
+//!    `to_cardinal(-10**9)` == `"mens 1000000000"`. Because there is no
 //!    MAXVAL, this holds for arbitrarily large BigInts (corpus covers 10^21).
 //! 2. **No teens.** `tens[1]` is "dètz" and 11..=19 fall through the generic
 //!    `tens[t] + " " + ones[o]` arm, so 11 == "dètz un", 15 == "dètz cinc",
@@ -40,10 +40,14 @@
 //!    directly, while the thousands/millions arms *recurse*, which is why
 //!    100000 == "un cent mil" (recursion produces "un cent" for the 100).
 //! 5. **`million` is never pluralised**: 999999999 ends "...nòu milion...".
-//! 6. `_int_to_word(0)` reads `self.ones[0] if self.ones[0] else "zero"`.
-//!    `ones[0]` is hardcoded `""` in `setup`, which is falsy, so this
-//!    conditional is a constant-folded no-op that always yields "zero".
-//!    Modelled as a plain `"zero"` return.
+//! 6. **Zero, minus and the decimal word (fixed, gladiaio/num2words2#154).**
+//!    Python's `_int_to_word(0)` reads
+//!    `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is hardcoded `""`
+//!    in `setup`, which is falsy, so Python always yields the English "zero",
+//!    and its `negword`/`pointword` are the English "minus "/"point". This
+//!    port says the Occitan "zèro", "mens " and "virgula" (Occitan writes a
+//!    decimal comma): `0` == "zèro", `-1` == "mens un", `1.5` == "un virgula
+//!    cinc". Modelled as a plain [`ZERO_WORD`] return.
 //!
 //! # Error variants
 //!
@@ -96,9 +100,13 @@ use num_traits::{One, Signed, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-/// `setup`: `self.negword = "minus "`. Note the trailing space; it is part of
-/// the constant and is what separates the sign from the number.
-const NEGWORD: &str = "minus ";
+/// `setup`: `self.negword = "minus "` (English; Occitan "mens " here, bug 6).
+/// Note the trailing space; it is part of the constant and is what separates
+/// the sign from the number.
+const NEGWORD: &str = "mens ";
+
+/// What `_int_to_word(0)` returns: English "zero" in Python, "zèro" here.
+const ZERO_WORD: &str = "zèro";
 
 /// `setup`: `self.ones`. Index 0 is the empty string (see bug 6).
 const ONES: [&str; 10] = [
@@ -124,10 +132,10 @@ const HUNDRED: &str = "cent";
 const THOUSAND: &str = "mil";
 const MILLION: &str = "milion";
 
-/// `setup`: `self.pointword = "point"`. Live on the float/Decimal path, where
-/// OC interpolates it raw (no `title()`) between the integral part and the
-/// spelled-out fraction digits.
-const POINTWORD: &str = "point";
+/// `setup`: `self.pointword = "point"` (English; Occitan "virgula" here, bug
+/// 6). Live on the float/Decimal path, where OC interpolates it raw (no
+/// `title()`) between the integral part and the spelled-out fraction digits.
+const POINTWORD: &str = "virgula";
 
 /// `Num2Word_OC.to_currency`'s own default: `separator=" "`. Note this is *not*
 /// `Num2Word_Base`'s `","` — see [`BASE_DEFAULT_SEPARATOR`].
@@ -225,16 +233,18 @@ impl LangOc {
     /// them to be in `0..10`.
     fn int_to_word(&self, number: &BigInt) -> String {
         // `if number == 0: return self.ones[0] if self.ones[0] else "zero"`
-        // — ones[0] is "" (falsy), so this is unconditionally "zero" (bug 6).
+        // — ones[0] is "" (falsy), so this is unconditionally the zero word
+        // (bug 6).
         if number.is_zero() {
-            return "zero".to_string();
+            return ZERO_WORD.to_string();
         }
 
         // `if number < 0: return self.negword + self._int_to_word(abs(number))`.
         // Dead code on every in-scope path: `to_cardinal` strips the sign from
         // the *string* before calling in, so this arm is only reachable from
         // `to_currency` (out of scope). Ported anyway for fidelity — it is the
-        // reason a stray negative yields "minus " glued on with no extra space.
+        // reason a stray negative yields "mens " glued on with no extra space.
+
         if number.is_negative() {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
         }
@@ -331,7 +341,7 @@ impl LangOc {
     ///   dot lands in `right` and reaches `int(digit)` as a bad literal.
     ///   `str()` never emits two dots, but `split_once` keeps the semantics.
     /// * Each fraction character is rendered through `_int_to_word(int(digit))`,
-    ///   **not** a bare `ones[]` lookup — so a `'0'` digit becomes "zero"
+    ///   **not** a bare `ones[]` lookup — so a `'0'` digit becomes "zèro"
     ///   (via bug 6), where the integer path's `ones[0]` would be "".
     /// * `int(digit)` is per **character**, so a malformed fraction (the 'e' of
     ///   "1.5e+16") raises `ValueError` quoting one character, where a
@@ -406,7 +416,7 @@ impl LangOc {
 /// pads the exponent to two digits, and appends `.0` to anything that would
 /// otherwise look like an integer. Rust's `{}` does none of this, so `1e16`
 /// and `1.0` would both come out wrong. Both matter here: `str(1.0)` is `"1.0"`
-/// -> `"un point zero"`, and `str(1e16)` is `"1e+16"` -> `ValueError`.
+/// -> `"un virgula zèro"`, and `str(1e16)` is `"1e+16"` -> `ValueError`.
 ///
 /// The `precision` that `FloatValue::Float` carries is deliberately *not* used
 /// to shortcut this. It is `abs(Decimal(str(value)).as_tuple().exponent)`,
@@ -422,7 +432,7 @@ fn python_float_repr(v: f64) -> String {
         return (if v.is_sign_negative() { "-inf" } else { "inf" }).to_string();
     }
     // The sign bit, not `v < 0.0`: repr(-0.0) is "-0.0", and OC renders that
-    // "minus zero point zero".
+    // "mens zèro virgula zèro".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let a = v.abs();
 
@@ -508,15 +518,15 @@ fn python_float_repr(v: f64) -> String {
 ///
 /// This reads `as_bigint_and_exponent()` rather than `BigDecimal`'s own
 /// `Display`, which is **not** `str(Decimal)`: it renders `Decimal("0.00")` as
-/// `"0"`, losing the two digits OC would have spoken (`"zero point zero zero"`).
+/// `"0"`, losing the two digits OC would have spoken (`"zèro virgula zèro zèro"`).
 /// The capital `E` and the unpadded exponent are Python's too.
 ///
 /// # The negative-zero hole
 ///
 /// Python's `Decimal` carries a sign flag independent of its digits, so
-/// `str(Decimal("-0.0"))` is `"-0.0"` and OC prepends `minus`. `BigInt` has no
+/// `str(Decimal("-0.0"))` is `"-0.0"` and OC prepends `mens`. `BigInt` has no
 /// negative zero, so `BigDecimal::from_str("-0.0")` discards the sign before
-/// this function ever sees it, and the `minus` is lost. The discriminator is
+/// this function ever sees it, and the `mens` is lost. The discriminator is
 /// the original string, which the `FloatValue::Decimal` boundary does not
 /// carry — the *float* `-0.0` is fine, because f64 keeps its sign bit. Flagged
 /// in the port report; no corpus row falls in the hole.
@@ -605,7 +615,7 @@ impl Lang for LangOc {
     /// `to_ordinal(float/Decimal)` — Python's `to_ordinal` is
     /// `to_cardinal(number) + "-en"` for *any* input (no
     /// `verify_ordinal`), so the float path is the float cardinal put through
-    /// the same literal transformation: `5.0` -> "cinc point zero-en".
+    /// the same literal transformation: `5.0` -> "cinc virgula zèro-en".
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -683,7 +693,7 @@ impl Lang for LangOc {
     ///
     /// Unconditional suffix — no agreement, no special-casing of 0 or of
     /// negatives, and no guard against the bug-1 digit fallback. Hence
-    /// `to_ordinal(0)` == "zero-en", `to_ordinal(-1)` == "minus un-en" and
+    /// `to_ordinal(0)` == "zèro-en", `to_ordinal(-1)` == "mens un-en" and
     /// `to_ordinal(10**9)` == "1000000000-en".
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}-en", self.to_cardinal(value)?))
@@ -700,8 +710,8 @@ impl Lang for LangOc {
     /// Python: `def to_year(self, val, longval=True): return self.to_cardinal(val)`.
     ///
     /// `longval` is accepted and ignored; there is no era handling, so a
-    /// negative year keeps the plain "minus " prefix rather than gaining a
-    /// "BC"-style suffix: `to_year(-500)` == "minus cinc cent".
+    /// negative year keeps the plain "mens " prefix rather than gaining a
+    /// "BC"-style suffix: `to_year(-500)` == "mens cinc cent".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -857,9 +867,9 @@ impl Lang for LangOc {
     /// | value | `str(val)` | Python | here |
     /// |---|---|---|---|
     /// | `1e15` | `1000000000000000.0` | `"1000000000000000 èuros"` | same |
-    /// | `0.0001` | `0.0001` | `"zero èuros"` | same |
-    /// | `1e-05` | `1e-05` | ValueError | `"zero èuros"` |
-    /// | `1e-06` | `1e-06` | ValueError | `"zero èuros"` |
+    /// | `0.0001` | `0.0001` | `"zèro èuros"` | same |
+    /// | `1e-05` | `1e-05` | ValueError | `"zèro èuros"` |
+    /// | `1e-06` | `1e-06` | ValueError | `"zèro èuros"` |
     /// | `1e-07` | `1e-07` | ValueError | ValueError (`N2WError::Value`) |
     /// | `1e+16` | `1e+16` | ValueError | ValueError (`N2WError::Value`) |
     ///
@@ -874,7 +884,7 @@ impl Lang for LangOc {
     /// parsed `BigDecimal`, not the string it was parsed from, and float and
     /// `Decimal` reprs disagree in precisely this window: Python's
     /// `str(1e-05)` is `"1e-05"` (-> ValueError) while
-    /// `str(Decimal("1e-5"))` is `"0.00001"` (-> `"zero èuros"`). Both arrive
+    /// `str(Decimal("1e-5"))` is `"0.00001"` (-> `"zèro èuros"`). Both arrive
     /// here as the identical `BigDecimal { int_val: 1, scale: 5 }`, so no rule
     /// applied to the value can be right for both — the two inputs are already
     /// indistinguishable by the time OC is called. Making it exact needs
@@ -1008,42 +1018,42 @@ mod float_tests {
     /// Every `"to": "cardinal"` corpus row for oc whose arg has a dot.
     #[test]
     fn corpus_cardinal_float() {
-        assert_eq!(f(0.0).unwrap(), "zero point zero");
-        assert_eq!(f(0.5).unwrap(), "zero point cinc");
-        assert_eq!(f(1.0).unwrap(), "un point zero");
-        assert_eq!(f(1.5).unwrap(), "un point cinc");
-        assert_eq!(f(2.25).unwrap(), "dos point dos cinc");
-        assert_eq!(f(3.14).unwrap(), "tres point un quatre");
-        assert_eq!(f(0.01).unwrap(), "zero point zero un");
-        assert_eq!(f(0.1).unwrap(), "zero point un");
-        assert_eq!(f(0.99).unwrap(), "zero point nòu nòu");
-        assert_eq!(f(1.01).unwrap(), "un point zero un");
-        assert_eq!(f(12.34).unwrap(), "dètz dos point tres quatre");
-        assert_eq!(f(99.99).unwrap(), "nonanta nòu point nòu nòu");
-        assert_eq!(f(100.5).unwrap(), "un cent point cinc");
+        assert_eq!(f(0.0).unwrap(), "zèro virgula zèro");
+        assert_eq!(f(0.5).unwrap(), "zèro virgula cinc");
+        assert_eq!(f(1.0).unwrap(), "un virgula zèro");
+        assert_eq!(f(1.5).unwrap(), "un virgula cinc");
+        assert_eq!(f(2.25).unwrap(), "dos virgula dos cinc");
+        assert_eq!(f(3.14).unwrap(), "tres virgula un quatre");
+        assert_eq!(f(0.01).unwrap(), "zèro virgula zèro un");
+        assert_eq!(f(0.1).unwrap(), "zèro virgula un");
+        assert_eq!(f(0.99).unwrap(), "zèro virgula nòu nòu");
+        assert_eq!(f(1.01).unwrap(), "un virgula zèro un");
+        assert_eq!(f(12.34).unwrap(), "dètz dos virgula tres quatre");
+        assert_eq!(f(99.99).unwrap(), "nonanta nòu virgula nòu nòu");
+        assert_eq!(f(100.5).unwrap(), "un cent virgula cinc");
         assert_eq!(
             f(1234.56).unwrap(),
-            "un mil dos cent trenta quatre point cinc sièis"
+            "un mil dos cent trenta quatre virgula cinc sièis"
         );
-        assert_eq!(f(-0.5).unwrap(), "minus zero point cinc");
-        assert_eq!(f(-1.5).unwrap(), "minus un point cinc");
-        assert_eq!(f(-12.34).unwrap(), "minus dètz dos point tres quatre");
+        assert_eq!(f(-0.5).unwrap(), "mens zèro virgula cinc");
+        assert_eq!(f(-1.5).unwrap(), "mens un virgula cinc");
+        assert_eq!(f(-12.34).unwrap(), "mens dètz dos virgula tres quatre");
     }
 
     /// Every `"to": "cardinal_dec"` corpus row for oc.
     #[test]
     fn corpus_cardinal_decimal() {
-        assert_eq!(d("0.01").unwrap(), "zero point zero un");
+        assert_eq!(d("0.01").unwrap(), "zèro virgula zèro un");
         // The trailing zero is a character, not a computed remainder.
-        assert_eq!(d("1.10").unwrap(), "un point un zero");
-        assert_eq!(d("12.345").unwrap(), "dètz dos point tres quatre cinc");
+        assert_eq!(d("1.10").unwrap(), "un virgula un zèro");
+        assert_eq!(d("12.345").unwrap(), "dètz dos virgula tres quatre cinc");
         // Issue #603: the Decimal arm never float-casts, so the ".99" survives
         // at trillion scale. The left part is past 10^9, hence the bare digits.
         assert_eq!(
             d("98746251323029.99").unwrap(),
-            "98746251323029 point nòu nòu"
+            "98746251323029 virgula nòu nòu"
         );
-        assert_eq!(d("0.001").unwrap(), "zero point zero zero un");
+        assert_eq!(d("0.001").unwrap(), "zèro virgula zèro zèro un");
     }
 
     /// The two artefact cases base's float path exists to rescue. OC never
@@ -1052,39 +1062,39 @@ mod float_tests {
     #[test]
     fn float_artefacts_are_not_reachable() {
         // base.float2tuple computes 674.9999999999998 for this one.
-        assert_eq!(f(2.675).unwrap(), "dos point sièis sèt cinc");
-        assert_eq!(f(1.005).unwrap(), "un point zero zero cinc");
+        assert_eq!(f(2.675).unwrap(), "dos virgula sièis sèt cinc");
+        assert_eq!(f(1.005).unwrap(), "un virgula zèro zèro cinc");
         // Banker's rounding never enters either: these are literal digits.
-        assert_eq!(f(2.5).unwrap(), "dos point cinc");
-        assert_eq!(f(0.005).unwrap(), "zero point zero zero cinc");
+        assert_eq!(f(2.5).unwrap(), "dos virgula cinc");
+        assert_eq!(f(0.005).unwrap(), "zèro virgula zèro zèro cinc");
     }
 
     /// CPython breaks exact shortest-repr ties to even; Rust's `{:e}` does not.
     /// 670352580196876.2 is such a value. Live-interpreter verified.
     #[test]
     fn shortest_repr_ties_go_to_even() {
-        assert_eq!(f(670352580196876.2).unwrap(), "670352580196876 point dos");
+        assert_eq!(f(670352580196876.2).unwrap(), "670352580196876 virgula dos");
     }
 
     /// `str(float)`'s two placement quirks, both observable here.
     #[test]
     fn float_repr_placement() {
         // ADD_DOT_0: an integral float still has a fraction to speak.
-        assert_eq!(f(1.0).unwrap(), "un point zero");
-        assert_eq!(f(-1.0).unwrap(), "minus un point zero");
+        assert_eq!(f(1.0).unwrap(), "un virgula zèro");
+        assert_eq!(f(-1.0).unwrap(), "mens un virgula zèro");
         // repr(-0.0) keeps the sign bit; `value < 0.0` would not.
-        assert_eq!(f(-0.0).unwrap(), "minus zero point zero");
+        assert_eq!(f(-0.0).unwrap(), "mens zèro virgula zèro");
         // The digit fallback in _int_to_word reaches the float path too.
-        assert_eq!(f(1000000000.5).unwrap(), "1000000000 point cinc");
-        assert_eq!(f(1e15).unwrap(), "1000000000000000 point zero");
+        assert_eq!(f(1000000000.5).unwrap(), "1000000000 virgula cinc");
+        assert_eq!(f(1e15).unwrap(), "1000000000000000 virgula zèro");
         // Just inside the exponent threshold (decpt == 16).
-        assert_eq!(f(9999999999999998.0).unwrap(), "9999999999999998 point zero");
+        assert_eq!(f(9999999999999998.0).unwrap(), "9999999999999998 virgula zèro");
         // 1e-4 stays positional (decpt == -3); 1e-5 does not.
-        assert_eq!(f(0.0001).unwrap(), "zero point zero zero zero un");
+        assert_eq!(f(0.0001).unwrap(), "zèro virgula zèro zèro zèro un");
         // A big-but-spellable integral part (< 10^9).
         assert_eq!(
             f(123456789.5).unwrap(),
-            "un cent vint tres milion quatre cent cinquanta sièis mil sèt cent ochanta nòu point cinc"
+            "un cent vint tres milion quatre cent cinquanta sièis mil sèt cent ochanta nòu virgula cinc"
         );
     }
 
@@ -1135,15 +1145,15 @@ mod float_tests {
     #[test]
     fn decimal_str_rules() {
         // Display would say "0"; str(Decimal("0.00")) keeps both digits.
-        assert_eq!(d("0.00").unwrap(), "zero point zero zero");
-        assert_eq!(d("5.00").unwrap(), "cinc point zero zero");
+        assert_eq!(d("0.00").unwrap(), "zèro virgula zèro zèro");
+        assert_eq!(d("5.00").unwrap(), "cinc virgula zèro zèro");
         // Integral Decimals have no "." at all -> the no-dot branch.
         assert_eq!(d("5").unwrap(), "cinc");
-        assert_eq!(d("-1").unwrap(), "minus un");
-        assert_eq!(d("-0.5").unwrap(), "minus zero point cinc");
+        assert_eq!(d("-1").unwrap(), "mens un");
+        assert_eq!(d("-0.5").unwrap(), "mens zèro virgula cinc");
         // Exactly at the scientific threshold: adjusted exponent -6 stays
         // positional, -7 flips to "1E-7" and int() then raises.
-        assert_eq!(d("0.000001").unwrap(), "zero point zero zero zero zero zero un");
+        assert_eq!(d("0.000001").unwrap(), "zèro virgula zèro zèro zèro zèro zèro un");
         match d("0.0000001") {
             Err(N2WError::Value(m)) => {
                 assert_eq!(m, "invalid literal for int() with base 10: '1E-7'")
@@ -1167,11 +1177,11 @@ mod float_tests {
         let v = FloatValue::Float { value: 2.675, precision: 3 };
         assert_eq!(
             l.to_cardinal_float(&v, Some(1)).unwrap(),
-            "dos point sièis sèt cinc"
+            "dos virgula sièis sèt cinc"
         );
         assert_eq!(
             l.to_cardinal_float(&v, Some(9)).unwrap(),
-            "dos point sièis sèt cinc"
+            "dos virgula sièis sèt cinc"
         );
     }
 }

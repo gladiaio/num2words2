@@ -112,21 +112,24 @@
 //!    words), `to_ordinal(10**9)` == "1000000000-o", and this holds for
 //!    every value >= 10^9 no matter how large. It does **not** raise
 //!    `OverflowError`. Verified against corpus rows up to 10^21.
-//!    Negatives inherit it too: `to_cardinal(-10**9)` == "minus 1000000000".
+//!    Negatives inherit it too: `to_cardinal(-10**9)` == "menos 1000000000".
 //! 6. **`to_ordinal` is just the cardinal plus a literal `"-o"` suffix**,
-//!    hyphen included: 0 == "zero-o", 100 == "un cento-o". Not a real
+//!    hyphen included: 0 == "cero-o", 100 == "un cento-o". Not a real
 //!    Galician ordinal ("primeiro", "centésimo").
 //! 7. **`to_ordinal` accepts negatives** — it never calls
-//!    `verify_ordinal()`, so `to_ordinal(-1)` == "minus un-o" rather than
+//!    `verify_ordinal()`, so `to_ordinal(-1)` == "menos un-o" rather than
 //!    raising `TypeError` the way most modules would.
-//! 8. **`negword` is `"minus "`** — the English word, with a trailing space,
-//!    in a Galician module (real: "menos"). GL's `to_cardinal` interpolates
-//!    it *raw* rather than via the base's `"%s " % self.negword.strip()`
-//!    idiom; the trailing space makes the two coincide, and the final
-//!    `.strip()` cleans up the rest. See [`NEGWORD`].
-//! 9. **`ones[0]` is `""`**, so `_int_to_word(0)` takes the
-//!    `self.ones[0] if self.ones[0] else "zero"` branch and yields the
-//!    English-ish "zero" (which is, coincidentally, also correct Galician).
+//! 8. **`negword` keeps its trailing space.** Python's is the English
+//!    `"minus "`; this port uses the Galician "menos " (gladiaio/num2words2#154).
+//!    GL's `to_cardinal` interpolates it *raw* rather than via the base's
+//!    `"%s " % self.negword.strip()` idiom; the trailing space makes the two
+//!    coincide, and the final `.strip()` cleans up the rest. See [`NEGWORD`].
+//! 9. **Zero and the decimal word (fixed, #154).** `ones[0]` is `""`, so
+//!    Python's `_int_to_word(0)` takes the
+//!    `self.ones[0] if self.ones[0] else "zero"` branch and yields the English
+//!    "zero", and its `pointword` is the English "point". This port uses the
+//!    RAG-standard "cero" and "coma" (Galician writes a decimal comma):
+//!    `0` == "cero", `1.5` == "un coma cinco".
 //!
 //! # Errors
 //!
@@ -145,15 +148,22 @@ use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-/// `self.negword`. Note the trailing space and the English word — both are
-/// verbatim from `lang_GL.py`'s `setup()`. GL's `to_cardinal` uses this raw
+/// `self.negword`. Note the trailing space, verbatim from `lang_GL.py`'s
+/// `setup()`; the word is Galician here, English there (#154). GL's
+/// `to_cardinal` uses this raw
 /// (`ret = self.negword`), unlike `Num2Word_Base.to_cardinal`, which would
 /// have written `"%s " % self.negword.strip()`. The two agree here only
 /// because the literal already carries exactly one trailing space.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "menos ";
+
+/// `self.pointword`. English "point" in Python; Galician "coma" here (#154).
+const POINTWORD: &str = "coma";
+
+/// What `_int_to_word(0)` returns. English "zero" in Python; "cero" here.
+const ZERO_WORD: &str = "cero";
 
 /// `self.ones`. Index 0 is the empty string — that emptiness is load-bearing:
-/// it is what makes `_int_to_word(0)` fall through to the literal "zero".
+/// it is what makes `_int_to_word(0)` fall through to [`ZERO_WORD`].
 const ONES: [&str; 10] = [
     "", "un", "dous", "tres", "catro", "cinco", "seis", "sete", "oito", "nove",
 ];
@@ -306,14 +316,14 @@ impl LangGl {
     /// `to_currency(1e-05)` also raises `ValueError` — but `"1e-05"` and
     /// `"0.00001"` both parse to the *same* `BigDecimal` `(1, 5)`, and only the
     /// first raises in Python (`str(Decimal("0.00001"))` keeps the plain form
-    /// and yields "zero euros"). The distinguishing information is the wire
+    /// and yields "cero euros"). The distinguishing information is the wire
     /// string, which `CurrencyValue::Decimal` has already discarded by the time
     /// this method runs. Telling them apart needs the raw `&str` carried
     /// through `to_currency`, which lives in `currency.rs`/`base.rs` — outside
     /// this port's remit.
     ///
     /// Blast radius: floats with `0 < |x| < 1e-4`, which Rust renders as
-    /// "zero euros" where Python raises `ValueError`. No corpus row covers it.
+    /// "cero euros" where Python raises `ValueError`. No corpus row covers it.
     /// Flagged in the port report.
     fn split_currency(&self, val: &BigDecimal) -> Result<(BigInt, BigInt)> {
         let (int_val, scale) = val.as_bigint_and_exponent();
@@ -368,10 +378,10 @@ impl LangGl {
     /// floor `//` and `%` — no `div_mod_floor` needed.
     fn int_to_word(&self, number: &BigInt) -> String {
         // Python: `return self.ones[0] if self.ones[0] else "zero"`.
-        // ONES[0] == "" is falsy, so this always yields "zero".
+        // ONES[0] == "" is falsy, so this always yields the zero word.
         if number.is_zero() {
             return if ONES[0].is_empty() {
-                "zero".to_string()
+                ZERO_WORD.to_string()
             } else {
                 ONES[0].to_string()
             };
@@ -475,7 +485,7 @@ impl LangGl {
         };
         let mut ret = String::new();
         if neg {
-            // `ret = self.negword` — raw "minus " (trailing space is the join).
+            // `ret = self.negword` — raw "menos " (trailing space is the join).
             ret.push_str(NEGWORD);
         }
         if let Some((left, right)) = n.split_once('.') {
@@ -648,7 +658,7 @@ impl Lang for LangGl {
     /// `to_ordinal(float/Decimal)` — Python's `to_ordinal` is
     /// `to_cardinal(number) + "-o"` for *any* input (no
     /// `verify_ordinal`), so the float path is the float cardinal put through
-    /// the same literal transformation: `5.0` -> "cinco point zero-o".
+    /// the same literal transformation: `5.0` -> "cinco coma cero-o".
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -698,8 +708,9 @@ impl Lang for LangGl {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
+
 
     /// `to_cardinal`.
     ///
@@ -737,7 +748,7 @@ impl Lang for LangGl {
 
     /// `to_year(val, longval=True)`: ignores `longval` entirely and just
     /// delegates to `to_cardinal`. No BC/AD suffix, no era handling — so
-    /// -500 -> "minus cinco cento".
+    /// -500 -> "menos cinco cento".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -898,7 +909,7 @@ impl Lang for LangGl {
         }
 
         if is_negative {
-            // `self.negword` raw — the trailing space in "minus " is what
+            // `self.negword` raw — the trailing space in "menos " is what
             // separates it from the number. See NEGWORD.
             result = format!("{}{}", NEGWORD, result);
         }

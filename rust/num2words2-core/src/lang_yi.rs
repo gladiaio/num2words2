@@ -22,7 +22,7 @@
 //!     "איינס טויזנט נײַן הונדערט", *not* "nineteen hundred".
 //!   * `verify_ordinal` is **never called** — `to_ordinal` accepts negatives
 //!     and simply suffixes the (sign-bearing) cardinal, so `to_ordinal(-1)` ==
-//!     "minus איינס-טער" rather than raising TypeError.
+//!     "מינוס איינס-טער" rather than raising TypeError.
 //!
 //! # Faithfully reproduced Python bugs
 //!
@@ -44,19 +44,20 @@
 //!    `to_cardinal(10**9)` == "1000000000" — a *digit string*, not words. It
 //!    does not raise OverflowError; there is no `MAXVAL`. `to_ordinal(10**9)`
 //!    therefore yields "1000000000-טער". Modelled by [`LangYi::int_to_word`].
-//! 4. **`ones[0]` is `""`, so zero routes through a dead ternary to the
-//!    English word.** `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"` — `""` is falsy, so the
-//!    branch is unreachable and zero is always the *English* "zero", never a
-//!    Yiddish word. Hence `to_cardinal(0)` == "zero" and `to_ordinal(0)` ==
-//!    "zero-טער". See [`ZERO`].
-//! 5. **`negword` is the English "minus "** (not "מינוס"), and `to_cardinal`
-//!    prepends it raw rather than via `parse_minus`, so the output mixes
-//!    scripts: `to_cardinal(-100)` == "minus איינס הונדערט".
+//! 4. **Zero (fixed, gladiaio/num2words2#154).** Python's `_int_to_word`
+//!    opens with `return self.ones[0] if self.ones[0] else "zero"` — `""` is
+//!    falsy, so Python always answered with the *English* "zero". This port
+//!    says the Yiddish "נול": `to_cardinal(0)` == "נול" and `to_ordinal(0)` ==
+//!    "נול-טער". See [`ZERO`].
+//! 5. **`negword` and `pointword` (fixed, #154).** Python has the English
+//!    "minus " and "point"; this port uses "מינוס " and "פּונקט" (YIVO
+//!    spelling, matching the pointed forms in the tables). `to_cardinal`
+//!    prepends the negword raw rather than via `parse_minus`:
+//!    `to_cardinal(-100)` == "מינוס איינס הונדערט".
 //! 6. **`to_ordinal` is cardinal + a hyphenated suffix, with no agreement and
 //!    no last-word inflection.** `return cardinal + "-טער"` — the suffix is
 //!    glued to whatever came out, including the digit-string fallback (bug 3)
-//!    and the English "zero" (bug 4).
+//!    and the zero word (bug 4).
 //!
 //! # Dead code in the source, reproduced anyway
 //!
@@ -106,13 +107,13 @@
 //! 10. **Currency mixes scripts and pluralizes in English.** USD carries the
 //!     ASCII `("dollar", "dollars")`/`("cent", "cents")` rather than Yiddish, so
 //!     `to_currency(2, "USD")` == "צוויי dollars", and a negative prepends the
-//!     English `negword`: "minus צען צוויי dollars דרײַסיק פיר cents".
+//!     `negword`: "מינוס צען צוויי dollars דרײַסיק פיר cents".
 //! 11. **EUR's singular and plural are the same string** (`("אייראָ", "אייראָ")`,
 //!     `("צענט", "צענט")`), so the `left != 1` test is a no-op for EUR — and for
 //!     every code that falls back to it (bug 7).
-//! 12. **`to_currency(0.0..1)` says "zero".** `left == 0` routes through
-//!     `_int_to_word(0)`, which is the English "zero" (bug 4): `to_currency(0.01)`
-//!     == "zero אייראָ איינס צענט".
+//! 12. **`to_currency(0.0..1)` says "נול".** `left == 0` routes through
+//!     `_int_to_word(0)` (bug 4): `to_currency(0.01)` == "נול אייראָ איינס
+//!     צענט".
 //!
 //! ## Unreachable from Rust: the sci-notation `ValueError`
 //!
@@ -163,13 +164,13 @@
 //!
 //! * **The f64 artefacts come from `repr`, not arithmetic.** `2.675` prints
 //!   "זעקס זיבן פינף" (6 7 5) because `str(2.675) == "2.675"` (shortest
-//!   round-trip), and `1.005` prints "zero zero פינף" because
+//!   round-trip), and `1.005` prints "נול נול פינף" because
 //!   `str(1.005) == "1.005"`. There is no `674.9999…`→`675` heuristic here; the
 //!   repr already carries the intended digits, so `py_str_f64` must be a
 //!   byte-exact `repr` — including CPython's tie-to-**even** last digit, which
 //!   Rust's shortest `{:e}` alone gets wrong (see [`shortest_repr_digits`]).
 //! * **A Decimal keeps every written digit.** `str(Decimal("1.10")) == "1.10"`,
-//!   so the trailing "zero" appears — something the float `1.1` could never
+//!   so the trailing "נול" appears — something the float `1.1` could never
 //!   express (`str(1.1) == "1.1"`). Handled by [`py_str_decimal`], not
 //!   `BigDecimal`'s own `Display`, which normalises differently.
 //! * **An exponent-form repr reaches `int()` and raises `ValueError`.** Unlike
@@ -185,7 +186,7 @@
 //! 13. **`_int_to_word(int(left))` inherits the `>= 10**9` digit-string
 //!     fallback (bug 3).** The integer part of a large value comes back as bare
 //!     digits: `to_cardinal_float(Decimal("98746251323029.99"))` ==
-//!     "98746251323029 point נײַן נײַן", not words.
+//!     "98746251323029 פּונקט נײַן נײַן", not words.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -198,13 +199,16 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 /// `_int_to_word(0)`. Python computes `self.ones[0] if self.ones[0] else "zero"`
-/// and `self.ones[0]` is `""` — falsy — so this English literal is the only
-/// reachable result. See module bug 4.
-const ZERO: &str = "zero";
+/// and `self.ones[0]` is `""` — falsy — so Python's English literal is the
+/// only reachable result; this port says "נול". See module bug 4.
+const ZERO: &str = "נול";
 
-/// `self.negword`. English, with a trailing space, and used verbatim (not via
+/// `self.negword`, with a trailing space, and used verbatim (not via
 /// `parse_minus`, which would `.strip()` it). See module bug 5.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "מינוס ";
+
+/// `self.pointword`. Python's English "point"; Yiddish here. See bug 5.
+const POINTWORD: &str = "פּונקט";
 
 /// `self.ones`; index 0 is `""` in Python and is never reached as a word —
 /// the `number == 0` guard fires first. See module bug 4.
@@ -375,7 +379,7 @@ fn shortest_repr_digits(a: f64) -> (String, i32) {
 /// (`str(1e15) == "1000000000000000.0"` but `str(1e16) == "1e+16"`;
 /// `str(0.0001) == "0.0001"` but `str(1e-05) == "1e-05"`), formatting the
 /// exponent `%+.02d`; otherwise print positionally and append `.0` if nothing
-/// follows the point (the reason `1.0` is "איינס point zero", not "איינס").
+/// follows the point (the reason `1.0` is "איינס פּונקט נול", not "איינס").
 fn py_str_f64(v: f64) -> String {
     // Unreachable from the shim (which derives `precision` from a finite
     // Decimal repr), but handled so this is a faithful `str()` rather than a
@@ -389,7 +393,7 @@ fn py_str_f64(v: f64) -> String {
     }
 
     // Sign from the sign *bit*, not `v < 0.0`, so `str(-0.0) == "-0.0"` and the
-    // leading-"-" branch fires: -0.0 renders "minus zero point zero".
+    // leading-"-" branch fires: -0.0 renders "מינוס נול פּונקט נול".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let (digits, decpt) = shortest_repr_digits(v.abs());
     let ndig = digits.len() as i32;
@@ -427,7 +431,7 @@ fn py_str_f64(v: f64) -> String {
 /// exponent are read off `as_bigint_and_exponent()` and reassembled by Python's
 /// rule. `BigDecimal::from_str` keeps the written scale rather than normalising
 /// (`"1.10"` stays coefficient 110 / scale 2), which is what makes the trailing
-/// "zero" appear, and `(coefficient, -scale)` is exactly Python's `(_int, _exp)`.
+/// "נול" appear, and `(coefficient, -scale)` is exactly Python's `(_int, _exp)`.
 fn py_str_decimal(value: &BigDecimal) -> String {
     // BigDecimal stores value = coefficient * 10^-scale, so Python's `_exp`
     // (which counts the other way) is the negated scale.
@@ -597,7 +601,7 @@ impl LangYi {
     /// ```
     ///
     /// The sign is stripped from the *string* before the dot check, so both
-    /// branches carry the raw `negword` ("minus ", not via `parse_minus`).
+    /// branches carry the raw `negword` ("מינוס ", not via `parse_minus`).
     /// `split(".", 1)` splits on the first dot only; `int(left)` / `int(digit)`
     /// raise `ValueError` on an exponent-form repr (`"1e+16"`) or a stray `'e'`.
     /// `int(left)` inherits `int_to_word`'s `>= 10**9` digit-string fallback
@@ -714,7 +718,7 @@ impl Lang for LangYi {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
 
     // cards / maxval / merge stay at their trait defaults: Python never builds
@@ -749,7 +753,7 @@ impl Lang for LangYi {
     /// `num2words(..., precision=N)` sets `converter.precision`, but
     /// `Num2Word_YI.to_cardinal` takes no such parameter and never reads
     /// `self.precision`. Verified inert against the live interpreter —
-    /// `precision=3` leaves `0.5` as "zero point פינף", not padded. The
+    /// `precision=3` leaves `0.5` as "נול פּונקט פינף", not padded. The
     /// `FloatValue`'s own `precision` field is likewise unread: the repr
     /// string carries the digit count by construction.
     fn to_cardinal_float(
@@ -759,7 +763,7 @@ impl Lang for LangYi {
     ) -> Result<String> {
         // n = str(number) — the float and Decimal arms are not interchangeable
         // (issue #603): `str` of a Decimal keeps every written digit, so
-        // Decimal("1.10") ends in a trailing "zero" the float 1.1 could never
+        // Decimal("1.10") ends in a trailing "נול" the float 1.1 could never
         // express, and Decimal("98746251323029.99") keeps its trillion-scale
         // integer part exact where a float cast would have rounded it.
         let n = match value {
@@ -773,7 +777,7 @@ impl Lang for LangYi {
     ///
     /// No `verify_ordinal` call, so negatives pass through; no last-word
     /// inflection, so the suffix lands on the digit-string fallback and on the
-    /// English "zero" too. Bugs 3, 4 and 6.
+    /// zero word too. Bugs 3, 4 and 6.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         let cardinal = self.to_cardinal(value)?;
         Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
@@ -924,7 +928,8 @@ impl Lang for LangYi {
         }
 
         if is_negative {
-            // The raw negword ("minus ", trailing space), not parse_minus.
+            // The raw negword ("מינוס ", trailing space), not parse_minus.
+
             result = format!("{}{}", NEGWORD, result);
         }
         // `.strip()` is a no-op — _int_to_word never returns padding and no
@@ -971,45 +976,45 @@ mod tests {
     /// Every `"to": "cardinal"` row in bench/corpus.jsonl whose arg is a float.
     #[test]
     fn corpus_float_rows() {
-        assert_eq!(f(0.0, 1).unwrap(), "zero point zero");
-        assert_eq!(f(0.5, 1).unwrap(), "zero point פינף");
-        assert_eq!(f(1.0, 1).unwrap(), "איינס point zero");
-        assert_eq!(f(1.5, 1).unwrap(), "איינס point פינף");
-        assert_eq!(f(2.25, 2).unwrap(), "צוויי point צוויי פינף");
-        assert_eq!(f(3.14, 2).unwrap(), "דרײַ point איינס פיר");
-        assert_eq!(f(0.01, 2).unwrap(), "zero point zero איינס");
-        assert_eq!(f(0.1, 1).unwrap(), "zero point איינס");
-        assert_eq!(f(0.99, 2).unwrap(), "zero point נײַן נײַן");
-        assert_eq!(f(1.01, 2).unwrap(), "איינס point zero איינס");
-        assert_eq!(f(12.34, 2).unwrap(), "צען צוויי point דרײַ פיר");
-        assert_eq!(f(99.99, 2).unwrap(), "נײַנציק נײַן point נײַן נײַן");
-        assert_eq!(f(100.5, 1).unwrap(), "איינס הונדערט point פינף");
+        assert_eq!(f(0.0, 1).unwrap(), "נול פּונקט נול");
+        assert_eq!(f(0.5, 1).unwrap(), "נול פּונקט פינף");
+        assert_eq!(f(1.0, 1).unwrap(), "איינס פּונקט נול");
+        assert_eq!(f(1.5, 1).unwrap(), "איינס פּונקט פינף");
+        assert_eq!(f(2.25, 2).unwrap(), "צוויי פּונקט צוויי פינף");
+        assert_eq!(f(3.14, 2).unwrap(), "דרײַ פּונקט איינס פיר");
+        assert_eq!(f(0.01, 2).unwrap(), "נול פּונקט נול איינס");
+        assert_eq!(f(0.1, 1).unwrap(), "נול פּונקט איינס");
+        assert_eq!(f(0.99, 2).unwrap(), "נול פּונקט נײַן נײַן");
+        assert_eq!(f(1.01, 2).unwrap(), "איינס פּונקט נול איינס");
+        assert_eq!(f(12.34, 2).unwrap(), "צען צוויי פּונקט דרײַ פיר");
+        assert_eq!(f(99.99, 2).unwrap(), "נײַנציק נײַן פּונקט נײַן נײַן");
+        assert_eq!(f(100.5, 1).unwrap(), "איינס הונדערט פּונקט פינף");
         assert_eq!(
             f(1234.56, 2).unwrap(),
-            "איינס טויזנט צוויי הונדערט דרײַסיק פיר point פינף זעקס"
+            "איינס טויזנט צוויי הונדערט דרײַסיק פיר פּונקט פינף זעקס"
         );
-        assert_eq!(f(-0.5, 1).unwrap(), "minus zero point פינף");
-        assert_eq!(f(-1.5, 1).unwrap(), "minus איינס point פינף");
-        assert_eq!(f(-12.34, 2).unwrap(), "minus צען צוויי point דרײַ פיר");
-        assert_eq!(f(1.005, 3).unwrap(), "איינס point zero zero פינף");
-        assert_eq!(f(2.675, 3).unwrap(), "צוויי point זעקס זיבן פינף");
+        assert_eq!(f(-0.5, 1).unwrap(), "מינוס נול פּונקט פינף");
+        assert_eq!(f(-1.5, 1).unwrap(), "מינוס איינס פּונקט פינף");
+        assert_eq!(f(-12.34, 2).unwrap(), "מינוס צען צוויי פּונקט דרײַ פיר");
+        assert_eq!(f(1.005, 3).unwrap(), "איינס פּונקט נול נול פינף");
+        assert_eq!(f(2.675, 3).unwrap(), "צוויי פּונקט זעקס זיבן פינף");
     }
 
     /// Every `"to": "cardinal_dec"` row in bench/corpus.jsonl.
     #[test]
     fn corpus_decimal_rows() {
-        assert_eq!(d("0.01", 2).unwrap(), "zero point zero איינס");
-        // The trailing "zero" is the point of this row: Decimal("1.10") keeps
+        assert_eq!(d("0.01", 2).unwrap(), "נול פּונקט נול איינס");
+        // The trailing "נול" is the point of this row: Decimal("1.10") keeps
         // its written scale, which the float 1.1 could never express.
-        assert_eq!(d("1.10", 2).unwrap(), "איינס point איינס zero");
-        assert_eq!(d("12.345", 3).unwrap(), "צען צוויי point דרײַ פיר פינף");
+        assert_eq!(d("1.10", 2).unwrap(), "איינס פּונקט איינס נול");
+        assert_eq!(d("12.345", 3).unwrap(), "צען צוויי פּונקט דרײַ פיר פינף");
         // Issue #603: the exact-Decimal arm at trillion scale. The integer
         // part exceeds 10**9, so bug 3 hands back bare digits (bug 13).
         assert_eq!(
             d("98746251323029.99", 2).unwrap(),
-            "98746251323029 point נײַן נײַן"
+            "98746251323029 פּונקט נײַן נײַן"
         );
-        assert_eq!(d("0.001", 3).unwrap(), "zero point zero zero איינס");
+        assert_eq!(d("0.001", 3).unwrap(), "נול פּונקט נול נול איינס");
     }
 
     /// Non-corpus rows verified against the live interpreter.
@@ -1017,14 +1022,14 @@ mod tests {
     fn live_interpreter_rows() {
         assert_eq!(
             f(1234567.89, 2).unwrap(),
-            "איינס מיליאָן צוויי הונדערט דרײַסיק פיר טויזנט פינף הונדערט זעכציק זיבן point אַכט נײַן"
+            "איינס מיליאָן צוויי הונדערט דרײַסיק פיר טויזנט פינף הונדערט זעכציק זיבן פּונקט אַכט נײַן"
         );
         // Integer part >= 10**9: the digit-string fallback (bugs 3/13).
-        assert_eq!(f(1500000000.25, 2).unwrap(), "1500000000 point צוויי פינף");
+        assert_eq!(f(1500000000.25, 2).unwrap(), "1500000000 פּונקט צוויי פינף");
         // str(-0.0) == "-0.0": the sign bit survives repr, so negword fires.
-        assert_eq!(f(-0.0, 1).unwrap(), "minus zero point zero");
+        assert_eq!(f(-0.0, 1).unwrap(), "מינוס נול פּונקט נול");
         // A negative Decimal takes the same string-level "-" strip.
-        assert_eq!(d("-12.34", 2).unwrap(), "minus צען צוויי point דרײַ פיר");
+        assert_eq!(d("-12.34", 2).unwrap(), "מינוס צען צוויי פּונקט דרײַ פיר");
     }
 
     /// The f64-artefact cases. YI reads `str()`, not `float2tuple`, so the
@@ -1032,12 +1037,12 @@ mod tests {
     /// rescue, no banker's rounding anywhere on this path.
     #[test]
     fn f64_artefacts_come_from_repr_not_float2tuple() {
-        assert_eq!(f(1.005, 3).unwrap(), "איינס point zero zero פינף");
-        assert_eq!(f(2.675, 3).unwrap(), "צוויי point זעקס זיבן פינף");
+        assert_eq!(f(1.005, 3).unwrap(), "איינס פּונקט נול נול פינף");
+        assert_eq!(f(2.675, 3).unwrap(), "צוויי פּונקט זעקס זיבן פינף");
         // repr keeps all 17 fractional digits of 0.1+0.2 ("0.30000000000000004")
         // and every one of them becomes a word — no rounding, no truncation.
         // Built rather than spelled out so the zero count cannot drift.
-        let expected = format!("zero point דרײַ {} פיר", ["zero"; 15].join(" "));
+        let expected = format!("נול פּונקט דרײַ {} פיר", ["נול"; 15].join(" "));
         assert_eq!(f(0.1 + 0.2, 17).unwrap(), expected);
     }
 
@@ -1049,7 +1054,7 @@ mod tests {
         for over in [None, Some(0), Some(1), Some(2), Some(5), Some(17)] {
             assert_eq!(
                 l.to_cardinal_float(&v, over).unwrap(),
-                "צוויי point זעקס זיבן פינף"
+                "צוויי פּונקט זעקס זיבן פינף"
             );
         }
     }
@@ -1059,7 +1064,7 @@ mod tests {
     #[test]
     fn exponent_form_repr_raises_value_error() {
         // 1e15 still prints positionally, so it survives (as digits, by bug 3).
-        assert_eq!(f(1e15, 1).unwrap(), "1000000000000000 point zero");
+        assert_eq!(f(1e15, 1).unwrap(), "1000000000000000 פּונקט נול");
         // One decade up, decpt > 16 and repr flips to "1e+16" — no "." at all,
         // so the whole token hits int().
         assert_eq!(

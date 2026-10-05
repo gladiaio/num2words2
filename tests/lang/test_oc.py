@@ -25,7 +25,7 @@ class Num2WordsOCTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="oc"), "zero")
+        self.assertEqual(num2words(0, lang="oc"), "zèro")
         self.assertEqual(num2words(1, lang="oc"), "un")
         self.assertEqual(num2words(2, lang="oc"), "dos")
         self.assertEqual(num2words(3, lang="oc"), "tres")
@@ -209,51 +209,51 @@ class Num2WordsOCTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="oc"), "minus un")
-        self.assertEqual(num2words(-2, lang="oc"), "minus dos")
-        self.assertEqual(num2words(-5, lang="oc"), "minus cinc")
-        self.assertEqual(num2words(-10, lang="oc"), "minus dètz")
-        self.assertEqual(num2words(-11, lang="oc"), "minus dètz un")
-        self.assertEqual(num2words(-20, lang="oc"), "minus vint")
-        self.assertEqual(num2words(-50, lang="oc"), "minus cinquanta")
-        self.assertEqual(num2words(-99, lang="oc"), "minus nonanta nòu")
-        self.assertEqual(num2words(-100, lang="oc"), "minus un cent")
-        self.assertEqual(num2words(-101, lang="oc"), "minus un cent un")
-        self.assertEqual(num2words(-200, lang="oc"), "minus dos cent")
-        self.assertEqual(num2words(-999, lang="oc"), "minus nòu cent nonanta nòu")
-        self.assertEqual(num2words(-1000, lang="oc"), "minus un mil")
-        self.assertEqual(num2words(-1001, lang="oc"), "minus un mil un")
-        self.assertEqual(num2words(-10000, lang="oc"), "minus dètz mil")
-        self.assertEqual(num2words(-100000, lang="oc"), "minus un cent mil")
-        self.assertEqual(num2words(-1000000, lang="oc"), "minus un milion")
+        self.assertEqual(num2words(-1, lang="oc"), "mens un")
+        self.assertEqual(num2words(-2, lang="oc"), "mens dos")
+        self.assertEqual(num2words(-5, lang="oc"), "mens cinc")
+        self.assertEqual(num2words(-10, lang="oc"), "mens dètz")
+        self.assertEqual(num2words(-11, lang="oc"), "mens dètz un")
+        self.assertEqual(num2words(-20, lang="oc"), "mens vint")
+        self.assertEqual(num2words(-50, lang="oc"), "mens cinquanta")
+        self.assertEqual(num2words(-99, lang="oc"), "mens nonanta nòu")
+        self.assertEqual(num2words(-100, lang="oc"), "mens un cent")
+        self.assertEqual(num2words(-101, lang="oc"), "mens un cent un")
+        self.assertEqual(num2words(-200, lang="oc"), "mens dos cent")
+        self.assertEqual(num2words(-999, lang="oc"), "mens nòu cent nonanta nòu")
+        self.assertEqual(num2words(-1000, lang="oc"), "mens un mil")
+        self.assertEqual(num2words(-1001, lang="oc"), "mens un mil un")
+        self.assertEqual(num2words(-10000, lang="oc"), "mens dètz mil")
+        self.assertEqual(num2words(-100000, lang="oc"), "mens un cent mil")
+        self.assertEqual(num2words(-1000000, lang="oc"), "mens un milion")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="oc"), "zero point un")
-        self.assertEqual(num2words(0.5, lang="oc"), "zero point cinc")
-        self.assertEqual(num2words(0.9, lang="oc"), "zero point nòu")
-        self.assertEqual(num2words(1.1, lang="oc"), "un point un")
-        self.assertEqual(num2words(1.5, lang="oc"), "un point cinc")
-        self.assertEqual(num2words(2.5, lang="oc"), "dos point cinc")
-        self.assertEqual(num2words(3.14, lang="oc"), "tres point un quatre")
-        self.assertEqual(num2words(10.5, lang="oc"), "dètz point cinc")
-        self.assertEqual(num2words(11.11, lang="oc"), "dètz un point un un")
-        self.assertEqual(num2words(20.2, lang="oc"), "vint point dos")
-        self.assertEqual(num2words(99.99, lang="oc"), "nonanta nòu point nòu nòu")
-        self.assertEqual(num2words(100.01, lang="oc"), "un cent point zero un")
-        self.assertEqual(num2words(100.5, lang="oc"), "un cent point cinc")
+        self.assertEqual(num2words(0.1, lang="oc"), "zèro virgula un")
+        self.assertEqual(num2words(0.5, lang="oc"), "zèro virgula cinc")
+        self.assertEqual(num2words(0.9, lang="oc"), "zèro virgula nòu")
+        self.assertEqual(num2words(1.1, lang="oc"), "un virgula un")
+        self.assertEqual(num2words(1.5, lang="oc"), "un virgula cinc")
+        self.assertEqual(num2words(2.5, lang="oc"), "dos virgula cinc")
+        self.assertEqual(num2words(3.14, lang="oc"), "tres virgula un quatre")
+        self.assertEqual(num2words(10.5, lang="oc"), "dètz virgula cinc")
+        self.assertEqual(num2words(11.11, lang="oc"), "dètz un virgula un un")
+        self.assertEqual(num2words(20.2, lang="oc"), "vint virgula dos")
+        self.assertEqual(num2words(99.99, lang="oc"), "nonanta nòu virgula nòu nòu")
+        self.assertEqual(num2words(100.01, lang="oc"), "un cent virgula zèro un")
+        self.assertEqual(num2words(100.5, lang="oc"), "un cent virgula cinc")
         self.assertEqual(
-            num2words(123.45, lang="oc"), "un cent vint tres point quatre cinc"
+            num2words(123.45, lang="oc"), "un cent vint tres virgula quatre cinc"
         )
-        self.assertEqual(num2words(1000.5, lang="oc"), "un mil point cinc")
+        self.assertEqual(num2words(1000.5, lang="oc"), "un mil virgula cinc")
         self.assertEqual(
             num2words(1234.56, lang="oc"),
-            "un mil dos cent trenta quatre point cinc sièis",
+            "un mil dos cent trenta quatre virgula cinc sièis",
         )
-        self.assertEqual(num2words(10000.01, lang="oc"), "dètz mil point zero un")
-        self.assertEqual(num2words(-0.5, lang="oc"), "minus zero point cinc")
-        self.assertEqual(num2words(-1.5, lang="oc"), "minus un point cinc")
-        self.assertEqual(num2words(-10.5, lang="oc"), "minus dètz point cinc")
+        self.assertEqual(num2words(10000.01, lang="oc"), "dètz mil virgula zèro un")
+        self.assertEqual(num2words(-0.5, lang="oc"), "mens zèro virgula cinc")
+        self.assertEqual(num2words(-1.5, lang="oc"), "mens un virgula cinc")
+        self.assertEqual(num2words(-10.5, lang="oc"), "mens dètz virgula cinc")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -298,15 +298,15 @@ class Num2WordsOCTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="oc", to="currency", currency="EUR"), "zero èuros"
+            num2words(0, lang="oc", to="currency", currency="EUR"), "zèro èuros"
         )
         self.assertEqual(
             num2words(0.01, lang="oc", to="currency", currency="EUR"),
-            "zero èuros un centim",
+            "zèro èuros un centim",
         )
         self.assertEqual(
             num2words(0.5, lang="oc", to="currency", currency="EUR"),
-            "zero èuros cinquanta centims",
+            "zèro èuros cinquanta centims",
         )
         self.assertEqual(
             num2words(1, lang="oc", to="currency", currency="EUR"), "un èuro"
@@ -316,15 +316,15 @@ class Num2WordsOCTest(TestCase):
             "un èuro cinquanta centims",
         )
         self.assertEqual(
-            num2words(0, lang="oc", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="oc", to="currency", currency="USD"), "zèro dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="oc", to="currency", currency="USD"),
-            "zero dollars un cent",
+            "zèro dollars un cent",
         )
         self.assertEqual(
             num2words(0.5, lang="oc", to="currency", currency="USD"),
-            "zero dollars cinquanta cents",
+            "zèro dollars cinquanta cents",
         )
         self.assertEqual(
             num2words(1, lang="oc", to="currency", currency="USD"), "un dollar"
@@ -363,7 +363,7 @@ class Num2WordsOCTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="oc"), "zero")
+        self.assertEqual(num2words("0", lang="oc"), "zèro")
         self.assertEqual(num2words("1", lang="oc"), "un")
         self.assertEqual(num2words("10", lang="oc"), "dètz")
         self.assertEqual(num2words("100", lang="oc"), "un cent")
@@ -375,7 +375,7 @@ class Num2WordsOCTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="oc"), "zero")
+        self.assertEqual(num2words(0, lang="oc"), "zèro")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="oc"), num2words("100", lang="oc"))

@@ -133,9 +133,8 @@ ALLOW = {
     "hygiene": set(),
     # gladiaio/num2words2#154
     "english_words": {
-        "br", "fo", "gl", "haw", "ht", "jv", "jw", "kk", "lb", "ln", "mg",
-        "mi", "mk", "mt", "nn", "oc", "ps", "sa", "sd", "si", "so", "su",
-        "tk", "tl", "tt", "uz", "wo", "yi", "yo",
+        "br", "haw", "ht", "jv", "jw", "kk", "ln", "mg", "mi", "mt", "sd",
+        "so", "su", "tk", "tl", "uz", "wo", "yo",
     },
     # gladiaio/num2words2#156 (pt_BR differs on purpose, see #92)
     "parity": {

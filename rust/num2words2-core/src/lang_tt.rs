@@ -27,13 +27,12 @@
 //! This is a port, not a rewrite. All of the following look wrong and are
 //! exactly what Python emits — each is confirmed against the frozen corpus:
 //!
-//! 1. **Zero is English.** `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is the
-//!    empty string (a placeholder so the list can be indexed by digit), which
-//!    is falsy, so the guard *always* takes the fallback branch and every
-//!    Tatar zero comes out as the English "zero". Hence `to_cardinal(0)` ==
-//!    "zero" and `to_ordinal(0)` == "zero-нче" (corpus rows confirm both).
-//!    The `if self.ones[0]` test is dead code that can never fire.
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** Python's `_int_to_word`
+//!    opens with `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]`
+//!    is the empty string (a placeholder so the list can be indexed by
+//!    digit), which is falsy, so Python always answered with the English
+//!    "zero". This port says the Tatar "нуль" (as the Bashkir module does):
+//!    `to_cardinal(0)` == "нуль" and `to_ordinal(0)` == "нуль-нче".
 //! 2. **Numbers >= 10^9 come back as digits.** The `elif` ladder in
 //!    `_int_to_word` stops at `number < 1000000000` and the trailing `else`
 //!    is `return str(number)` — a "fallback for very large numbers" that
@@ -42,9 +41,11 @@
 //!    word: the scale table simply has no entry above `million`. This is why
 //!    the value must stay a `BigInt` — the fallback is `str()` on an
 //!    unbounded int.
-//! 3. **The negative word is English too.** `setup` sets
-//!    `negword = "minus "`, not a Tatar form, so `to_cardinal(-1)` ==
-//!    "minus бер".
+//! 3. **Negative and decimal words (fixed, #154).** Python's `setup` sets the
+//!    English `negword = "minus "` and `pointword = "point"`. This port uses
+//!    "минус " and "өтер" (Tatar "comma": Tatar writes a decimal comma; the
+//!    Bashkir module likewise uses өтөр), so `to_cardinal(-1)` == "минус бер"
+//!    and `1.5` == "бер өтер биш".
 //! 4. **`бер йөз` for 100.** Hundreds always carry an explicit "бер" ("one"),
 //!    including the bare hundred: `result = self.ones[hundreds_val] + " " +
 //!    self.hundred` with no `hundreds_val == 1` special case. Likewise
@@ -125,7 +126,7 @@
 //!    `if cents and right:` is a truthiness test on the *number*, so `1.0`
 //!    (`parts[1] == "0"` -> `right == 0`) renders "бер euro", exactly like int
 //!    `1`. Base reaches the same output for `1` by a different route
-//!    (`isinstance(val, int)`) but renders `1.0` as "one euro, zero cents".
+//!    (`isinstance(val, int)`) but renders `1.0` as "one euro, нуль cents".
 //!    The `CurrencyValue` arms are still kept distinct here because they
 //!    produce different `str(val)` strings ("1" vs "1.0"), which is what the
 //!    code branches on.
@@ -163,12 +164,16 @@ const THOUSAND: &str = "мең";
 const MILLION: &str = "миллион";
 
 /// `self.negword`. Trailing space is significant: Python concatenates it
-/// directly onto the number word (`ret + self._int_to_word(...)`).
-const NEGWORD: &str = "minus ";
+/// directly onto the number word (`ret + self._int_to_word(...)`). Python has
+/// the English "minus "; Tatar here (#154).
+const NEGWORD: &str = "минус ";
 
-/// `self.pointword`. Only reachable on the float path, which is out of scope;
-/// kept so `Lang::pointword` reports what `setup` actually assigns.
-const POINTWORD: &str = "point";
+/// `self.pointword`, used on the float path. Python has the English "point";
+/// this port uses the Tatar decimal comma "өтер" (#154).
+const POINTWORD: &str = "өтер";
+
+/// What `_int_to_word(0)` returns. Python's English "zero"; Tatar here (#154).
+const ZERO_WORD: &str = "нуль";
 
 /// `Num2Word_TT.to_currency`'s own default: `separator=" "`. Note this is
 /// *not* `Num2Word_Base`'s `","` — see [`BASE_DEFAULT_SEPARATOR`].
@@ -335,7 +340,7 @@ fn python_int(token: &str) -> Result<BigInt> {
 /// `str(number)`. So the two float-path traps (banker's rounding, the
 /// `674.9999...` rescue) do **not** apply here: `2.675` renders "алты җиде биш"
 /// (repr digits 6·7·5), not the reconstructed-integer 675, and `1.005` keeps
-/// its literal "zero zero биш". The whole behaviour therefore hinges on
+/// its literal "нуль нуль биш". The whole behaviour therefore hinges on
 /// reproducing `str(number)` byte for byte, which is what this does.
 ///
 /// * **Float arm** — reproduce CPython's `repr`/`str(float)`. Rust's
@@ -466,9 +471,10 @@ impl LangTt {
     /// literal rather than incidental.
     fn int_to_word(&self, number: &BigInt) -> String {
         if number.is_zero() {
-            // Bug 1: ONES[0] is "" (falsy), so Python always lands on "zero".
+            // Bug 1: ONES[0] is "" (falsy), so Python always lands on its
+            // zero fallback (English there, ZERO_WORD here).
             return if ONES[0].is_empty() {
-                "zero".to_string()
+                ZERO_WORD.to_string()
             } else {
                 ONES[0].to_string()
             };
@@ -563,8 +569,9 @@ impl Lang for LangTt {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
+
 
     // cards / maxval / merge: left at their trait defaults. Python never
     // populates self.cards for TT (no *_numwords tables) and never reaches
@@ -586,7 +593,7 @@ impl Lang for LangTt {
         };
         // The trailing .strip() is a no-op for every integer input: NEGWORD's
         // trailing space is always followed by a non-empty word (bug 1
-        // guarantees even zero yields "zero"). Ported anyway for fidelity.
+        // guarantees even zero yields "нуль"). Ported anyway for fidelity.
         Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
     }
 
@@ -608,7 +615,7 @@ impl Lang for LangTt {
     /// Python's `to_year(val, longval=True)`: delegates straight to
     /// `to_cardinal` and ignores `longval` entirely — no century splitting,
     /// so 1900 is "бер мең тугыз йөз", not "nineteen hundred"-style.
-    /// Negatives get no BC/AD marker, just the "minus " of bug 3.
+    /// Negatives get no BC/AD marker, just the "минус " of bug 3.
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -619,7 +626,7 @@ impl Lang for LangTt {
     ///
     /// Python's `to_cardinal` is string-driven: `"." in str(number)` picks the
     /// decimal grammar, and `str(5.0)` is `"5.0"`, so **whole floats keep
-    /// their ".0" tail** ("биш point zero") — never Base's whole-value integer
+    /// their ".0" tail** ("биш өтер нуль") — never Base's whole-value integer
     /// route. [`LangTt::to_cardinal_float`] already reconstructs `str(number)`
     /// for both arms (dotless forms included: `Decimal("5")` -> "5" -> integer
     /// path, `str(1e16)` == "1e+16" / `str(Decimal("1E+2"))` == "1E+2" ->
@@ -634,7 +641,7 @@ impl Lang for LangTt {
 
     /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-нче"`, no
     /// type guard — floats get the full decimal phrase plus the suffix
-    /// ("биш point zero-нче"); the exponential-form ValueError propagates.
+    /// ("биш өтер нуль-нче"); the exponential-form ValueError propagates.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!("{}-нче", self.cardinal_float_entry(value, None)?))
     }
@@ -712,7 +719,7 @@ impl Lang for LangTt {
     ///   already been emitted, just as Python builds the string left to right.
     /// * The huge-integer-part digit fallback of `_int_to_word` (bug 2) flows
     ///   straight through the integer part, so `Decimal("98746251323029.99")`
-    ///   is "98746251323029 point тугыз тугыз".
+    ///   is "98746251323029 өтер тугыз тугыз".
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -909,7 +916,7 @@ impl Lang for LangTt {
 
         // `return result.strip()` — a no-op on every reachable input (nothing
         // pads the ends: `int_to_word` never returns "", bug 1 guaranteeing
-        // even zero yields "zero"), kept to match the source.
+        // even zero yields "нуль"), kept to match the source.
         Ok(result.trim().to_string())
     }
 }

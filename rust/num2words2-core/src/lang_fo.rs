@@ -52,10 +52,12 @@
 //!    50). Every ordinal is formed this way regardless of the stem, so
 //!    `to_ordinal(1)` == "ein-ti" where Faroese wants "fyrsti". The hyphen is
 //!    literal and always present.
-//! 7. `zero` is an English word. `_int_to_word(0)` reads
+//! 7. **Zero and the decimal word (fixed, gladiaio/num2words2#154).**
+//!    Python's `_int_to_word(0)` reads
 //!    `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""` — falsy —
-//!    so the guard *always* takes the fallback and 0 → "zero", never the
-//!    Faroese "null". `pointword` is likewise the English "point".
+//!    so Python's 0 is always the English "zero", and its `pointword` is the
+//!    English "point". This port uses the Faroese "null" and "komma" (Faroese
+//!    writes a decimal comma): 0 → "null", 1.5 → "ein komma fimm".
 //!
 //! # Error variants
 //!
@@ -73,7 +75,7 @@
 //! integer part just leaks digits, bug 3). Routing is pinned by the
 //! wholefloat corpus: `13x ValueError` rows for 1e+16/1e+20/1E+2/1E+20 across
 //! cardinal/ordinal/year, and `ok` rows for every pointed form including
-//! "-0.0" -> "minus zero point zero" (see [`route_by_str`]).
+//! "-0.0" -> "minus null komma null" (see [`route_by_str`]).
 //!
 //! `to_currency` never raises either — see bug 8 below, it has no
 //! `NotImplementedError` path at all. The **only** raising surface in this
@@ -124,7 +126,7 @@
 //!    the cent count, *not* `Num2Word_Base`'s `isinstance(val, int)` check. So
 //!    FO is one of the rare languages where `1` and `1.0` agree: both are "ein
 //!    euro", never "ein euro null cents". `0.001` likewise truncates to zero
-//!    cents and prints "zero euros".
+//!    cents and prints "null euros".
 //! 12. **The cent digits are truncated, never rounded**, and are read
 //!    left-to-right off the string: `12.999` → `"999"[:2]` → 99 cents, and
 //!    `0.5` → `"5".ljust(2, "0")` → "50" → 50 cents. So a trailing digit is
@@ -145,9 +147,13 @@ use std::collections::HashMap;
 /// `to_cardinal` concatenates it raw and lets the final `.strip()` tidy up.
 const NEGWORD: &str = "minus ";
 
-/// `self.pointword`. English, verbatim from Python (bug 7's sibling): every
-/// pointed value reads "... point ...", never the Faroese "komma".
-const POINTWORD: &str = "point";
+/// `self.pointword`. English "point" in Python; the Faroese "komma" here
+/// (bug 7, #154).
+const POINTWORD: &str = "komma";
+
+/// What `_int_to_word(0)` returns: English "zero" in Python, Faroese "null"
+/// here (bug 7, #154).
+const ZERO_WORD: &str = "null";
 
 /// `self.ones`. Index 0 is the empty string — see bug 7.
 const ONES: [&str; 10] = [
@@ -375,10 +381,10 @@ impl LangFo {
     fn int_to_word(&self, number: &BigInt) -> String {
         // Python: `return self.ones[0] if self.ones[0] else "zero"`.
         // ONES[0] is "" → falsy → the fallback always wins. The condition is
-        // kept verbatim rather than folded to "zero" to document the dead arm.
+        // kept verbatim rather than folded to ZERO_WORD to document the dead arm.
         if number.is_zero() {
             return if ONES[0].is_empty() {
-                "zero".to_string()
+                ZERO_WORD.to_string()
             } else {
                 ONES[0].to_string()
             };
@@ -468,8 +474,9 @@ impl Lang for LangFo {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
+
 
     /// Port of `Num2Word_FO.to_cardinal`, integer path only.
     ///
@@ -553,7 +560,7 @@ impl Lang for LangFo {
     /// `precision_override` (the `precision=` kwarg, issue #580) is **inert**
     /// for FO: `to_cardinal` takes no such parameter, so the kwarg is dropped
     /// before it can matter. Verified live:
-    /// `num2words(0.5, lang="fo", precision=3)` == "zero point fimm".
+    /// `num2words(0.5, lang="fo", precision=3)` == "null komma fimm".
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -566,8 +573,8 @@ impl Lang for LangFo {
         let (neg, left, right_str) = match value {
             FloatValue::Float { value, precision } => {
                 // Sign *bit*, not `< 0.0`: repr(-0.0) is "-0.0", so Python's
-                // startswith("-") is true and FO answers "minus zero point
-                // zero". A `< 0.0` test would drop the minus.
+                // startswith("-") is true and FO answers "minus null komma
+                // null". A `< 0.0` test would drop the minus.
                 let neg = value.is_sign_negative();
                 let prec = *precision as usize;
                 let s = format!("{:.p$}", value.abs(), p = prec);
@@ -601,7 +608,7 @@ impl Lang for LangFo {
             }
         };
 
-        // ret += _int_to_word(int(left)) [+ " point " + per-digit words];
+        // ret += _int_to_word(int(left)) [+ " komma " + per-digit words];
         // strip. `pointword` is used raw — FO applies no title() here.
         let mut tokens: Vec<String> = vec![self.int_to_word(&left)];
         if !right_str.is_empty() {
@@ -624,8 +631,8 @@ impl Lang for LangFo {
     /// `int(value) == value` test never runs; FO overrides `to_cardinal`
     /// outright).
     ///
-    /// A whole float therefore keeps its ".0" tail (`5.0` -> "fimm point
-    /// zero", `-0.0` -> "minus zero point zero"), a point-less integral
+    /// A whole float therefore keeps its ".0" tail (`5.0` -> "fimm komma
+    /// null", `-0.0` -> "minus null komma null"), a point-less integral
     /// Decimal takes the integer grammar (`Decimal("100")` -> "ein hundrað"),
     /// and a point-less non-integer form is Python's `int()` ValueError
     /// (`1e+16`, `Decimal("1E+2")`).
@@ -654,7 +661,7 @@ impl Lang for LangFo {
 
     /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-ti"` — the
     /// same blind suffix as the integer path (bugs 4/5/6), so `5.0` ==
-    /// "fimm point zero-ti" and the ValueError of `1e+16` propagates
+    /// "fimm komma null-ti" and the ValueError of `1e+16` propagates
     /// unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!("{}-ti", self.cardinal_float_entry(value, None)?))
@@ -670,7 +677,7 @@ impl Lang for LangFo {
     // `year_float_entry` is deliberately NOT overridden: FO's `to_year` is
     // `return self.to_cardinal(val)`, and the trait default routes through
     // the overridden `cardinal_float_entry` above — so `to_year(5.0)` ==
-    // "fimm point zero" and `to_year(1e+16)` raises ValueError, as the
+    // "fimm komma null" and `to_year(1e+16)` raises ValueError, as the
     // corpus pins.
 
     /// `converter.str_to_number` — Base's `Decimal(value)`, which FO does not

@@ -25,7 +25,7 @@ class Num2WordsSATest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="sa"), "zero")
+        self.assertEqual(num2words(0, lang="sa"), "शून्यम्")
         self.assertEqual(num2words(1, lang="sa"), "एकम्")
         self.assertEqual(num2words(2, lang="sa"), "द्वे")
         self.assertEqual(num2words(3, lang="sa"), "त्रीणि")
@@ -217,51 +217,51 @@ class Num2WordsSATest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="sa"), "minus एकम्")
-        self.assertEqual(num2words(-2, lang="sa"), "minus द्वे")
-        self.assertEqual(num2words(-5, lang="sa"), "minus पञ्च")
-        self.assertEqual(num2words(-10, lang="sa"), "minus दश")
-        self.assertEqual(num2words(-11, lang="sa"), "minus दश एकम्")
-        self.assertEqual(num2words(-20, lang="sa"), "minus विंशति")
-        self.assertEqual(num2words(-50, lang="sa"), "minus पञ्चाशत्")
-        self.assertEqual(num2words(-99, lang="sa"), "minus नवति नव")
-        self.assertEqual(num2words(-100, lang="sa"), "minus एकम् शतम्")
-        self.assertEqual(num2words(-101, lang="sa"), "minus एकम् शतम् एकम्")
-        self.assertEqual(num2words(-200, lang="sa"), "minus द्वे शतम्")
-        self.assertEqual(num2words(-999, lang="sa"), "minus नव शतम् नवति नव")
-        self.assertEqual(num2words(-1000, lang="sa"), "minus एकम् सहस्रम्")
-        self.assertEqual(num2words(-1001, lang="sa"), "minus एकम् सहस्रम् एकम्")
-        self.assertEqual(num2words(-10000, lang="sa"), "minus दश सहस्रम्")
-        self.assertEqual(num2words(-100000, lang="sa"), "minus एकम् शतम् सहस्रम्")
-        self.assertEqual(num2words(-1000000, lang="sa"), "minus एकम् दशलक्षम्")
+        self.assertEqual(num2words(-1, lang="sa"), "ऋण एकम्")
+        self.assertEqual(num2words(-2, lang="sa"), "ऋण द्वे")
+        self.assertEqual(num2words(-5, lang="sa"), "ऋण पञ्च")
+        self.assertEqual(num2words(-10, lang="sa"), "ऋण दश")
+        self.assertEqual(num2words(-11, lang="sa"), "ऋण दश एकम्")
+        self.assertEqual(num2words(-20, lang="sa"), "ऋण विंशति")
+        self.assertEqual(num2words(-50, lang="sa"), "ऋण पञ्चाशत्")
+        self.assertEqual(num2words(-99, lang="sa"), "ऋण नवति नव")
+        self.assertEqual(num2words(-100, lang="sa"), "ऋण एकम् शतम्")
+        self.assertEqual(num2words(-101, lang="sa"), "ऋण एकम् शतम् एकम्")
+        self.assertEqual(num2words(-200, lang="sa"), "ऋण द्वे शतम्")
+        self.assertEqual(num2words(-999, lang="sa"), "ऋण नव शतम् नवति नव")
+        self.assertEqual(num2words(-1000, lang="sa"), "ऋण एकम् सहस्रम्")
+        self.assertEqual(num2words(-1001, lang="sa"), "ऋण एकम् सहस्रम् एकम्")
+        self.assertEqual(num2words(-10000, lang="sa"), "ऋण दश सहस्रम्")
+        self.assertEqual(num2words(-100000, lang="sa"), "ऋण एकम् शतम् सहस्रम्")
+        self.assertEqual(num2words(-1000000, lang="sa"), "ऋण एकम् दशलक्षम्")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="sa"), "zero point एकम्")
-        self.assertEqual(num2words(0.5, lang="sa"), "zero point पञ्च")
-        self.assertEqual(num2words(0.9, lang="sa"), "zero point नव")
-        self.assertEqual(num2words(1.1, lang="sa"), "एकम् point एकम्")
-        self.assertEqual(num2words(1.5, lang="sa"), "एकम् point पञ्च")
-        self.assertEqual(num2words(2.5, lang="sa"), "द्वे point पञ्च")
-        self.assertEqual(num2words(3.14, lang="sa"), "त्रीणि point एकम् चत्वारि")
-        self.assertEqual(num2words(10.5, lang="sa"), "दश point पञ्च")
-        self.assertEqual(num2words(11.11, lang="sa"), "दश एकम् point एकम् एकम्")
-        self.assertEqual(num2words(20.2, lang="sa"), "विंशति point द्वे")
-        self.assertEqual(num2words(99.99, lang="sa"), "नवति नव point नव नव")
-        self.assertEqual(num2words(100.01, lang="sa"), "एकम् शतम् point zero एकम्")
-        self.assertEqual(num2words(100.5, lang="sa"), "एकम् शतम् point पञ्च")
+        self.assertEqual(num2words(0.1, lang="sa"), "शून्यम् दशमलव एकम्")
+        self.assertEqual(num2words(0.5, lang="sa"), "शून्यम् दशमलव पञ्च")
+        self.assertEqual(num2words(0.9, lang="sa"), "शून्यम् दशमलव नव")
+        self.assertEqual(num2words(1.1, lang="sa"), "एकम् दशमलव एकम्")
+        self.assertEqual(num2words(1.5, lang="sa"), "एकम् दशमलव पञ्च")
+        self.assertEqual(num2words(2.5, lang="sa"), "द्वे दशमलव पञ्च")
+        self.assertEqual(num2words(3.14, lang="sa"), "त्रीणि दशमलव एकम् चत्वारि")
+        self.assertEqual(num2words(10.5, lang="sa"), "दश दशमलव पञ्च")
+        self.assertEqual(num2words(11.11, lang="sa"), "दश एकम् दशमलव एकम् एकम्")
+        self.assertEqual(num2words(20.2, lang="sa"), "विंशति दशमलव द्वे")
+        self.assertEqual(num2words(99.99, lang="sa"), "नवति नव दशमलव नव नव")
+        self.assertEqual(num2words(100.01, lang="sa"), "एकम् शतम् दशमलव शून्यम् एकम्")
+        self.assertEqual(num2words(100.5, lang="sa"), "एकम् शतम् दशमलव पञ्च")
         self.assertEqual(
-            num2words(123.45, lang="sa"), "एकम् शतम् विंशति त्रीणि point चत्वारि पञ्च"
+            num2words(123.45, lang="sa"), "एकम् शतम् विंशति त्रीणि दशमलव चत्वारि पञ्च"
         )
-        self.assertEqual(num2words(1000.5, lang="sa"), "एकम् सहस्रम् point पञ्च")
+        self.assertEqual(num2words(1000.5, lang="sa"), "एकम् सहस्रम् दशमलव पञ्च")
         self.assertEqual(
             num2words(1234.56, lang="sa"),
-            "एकम् सहस्रम् द्वे शतम् त्रिंशत् चत्वारि point पञ्च षट्",
+            "एकम् सहस्रम् द्वे शतम् त्रिंशत् चत्वारि दशमलव पञ्च षट्",
         )
-        self.assertEqual(num2words(10000.01, lang="sa"), "दश सहस्रम् point zero एकम्")
-        self.assertEqual(num2words(-0.5, lang="sa"), "minus zero point पञ्च")
-        self.assertEqual(num2words(-1.5, lang="sa"), "minus एकम् point पञ्च")
-        self.assertEqual(num2words(-10.5, lang="sa"), "minus दश point पञ्च")
+        self.assertEqual(num2words(10000.01, lang="sa"), "दश सहस्रम् दशमलव शून्यम् एकम्")
+        self.assertEqual(num2words(-0.5, lang="sa"), "ऋण शून्यम् दशमलव पञ्च")
+        self.assertEqual(num2words(-1.5, lang="sa"), "ऋण एकम् दशमलव पञ्च")
+        self.assertEqual(num2words(-10.5, lang="sa"), "ऋण दश दशमलव पञ्च")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -308,15 +308,15 @@ class Num2WordsSATest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="sa", to="currency", currency="INR"), "zero रूप्यकाणि"
+            num2words(0, lang="sa", to="currency", currency="INR"), "शून्यम् रूप्यकाणि"
         )
         self.assertEqual(
             num2words(0.01, lang="sa", to="currency", currency="INR"),
-            "zero रूप्यकाणि एकम् पैसा",
+            "शून्यम् रूप्यकाणि एकम् पैसा",
         )
         self.assertEqual(
             num2words(0.5, lang="sa", to="currency", currency="INR"),
-            "zero रूप्यकाणि पञ्चाशत् पैसा",
+            "शून्यम् रूप्यकाणि पञ्चाशत् पैसा",
         )
         self.assertEqual(
             num2words(1, lang="sa", to="currency", currency="INR"), "एकम् रूप्यकाणि"
@@ -326,15 +326,15 @@ class Num2WordsSATest(TestCase):
             "एकम् रूप्यकाणि पञ्चाशत् पैसा",
         )
         self.assertEqual(
-            num2words(0, lang="sa", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="sa", to="currency", currency="USD"), "शून्यम् dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="sa", to="currency", currency="USD"),
-            "zero dollars एकम् cent",
+            "शून्यम् dollars एकम् cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sa", to="currency", currency="USD"),
-            "zero dollars पञ्चाशत् cents",
+            "शून्यम् dollars पञ्चाशत् cents",
         )
         self.assertEqual(
             num2words(1, lang="sa", to="currency", currency="USD"), "एकम् dollar"
@@ -344,15 +344,15 @@ class Num2WordsSATest(TestCase):
             "एकम् dollar पञ्चाशत् cents",
         )
         self.assertEqual(
-            num2words(0, lang="sa", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="sa", to="currency", currency="EUR"), "शून्यम् euros"
         )
         self.assertEqual(
             num2words(0.01, lang="sa", to="currency", currency="EUR"),
-            "zero euros एकम् cent",
+            "शून्यम् euros एकम् cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sa", to="currency", currency="EUR"),
-            "zero euros पञ्चाशत् cents",
+            "शून्यम् euros पञ्चाशत् cents",
         )
         self.assertEqual(
             num2words(1, lang="sa", to="currency", currency="EUR"), "एकम् euro"
@@ -397,7 +397,7 @@ class Num2WordsSATest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="sa"), "zero")
+        self.assertEqual(num2words("0", lang="sa"), "शून्यम्")
         self.assertEqual(num2words("1", lang="sa"), "एकम्")
         self.assertEqual(num2words("10", lang="sa"), "दश")
         self.assertEqual(num2words("100", lang="sa"), "एकम् शतम्")
@@ -409,7 +409,7 @@ class Num2WordsSATest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="sa"), "zero")
+        self.assertEqual(num2words(0, lang="sa"), "शून्यम्")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="sa"), num2words("100", lang="sa"))

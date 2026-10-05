@@ -19,11 +19,12 @@
 //! item below is exactly what Python emits — each is pinned by a row in
 //! `bench/corpus.jsonl`:
 //!
-//! 1. **Zero is English.** `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""`,
-//!    which is falsy, so the guard *always* takes the `else` branch and 0
-//!    renders as the English "zero" in an otherwise Macedonian output.
-//!    Hence `to_cardinal(0)` == "zero" and `to_ordinal(0)` == "zero-ти".
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** Python's `_int_to_word`
+//!    opens with `return self.ones[0] if self.ones[0] else "zero"`, and
+//!    `ones[0]` is `""`, so Python always answered with the English "zero".
+//!    This port says the Macedonian "нула" instead: `to_cardinal(0)` ==
+//!    "нула" and `to_ordinal(0)` == "нула-ти" (the suffix is still glued on,
+//!    see bug 6).
 //! 2. **No teens table.** 11..=19 are built from the generic
 //!    `tens[n // 10] + " " + ones[n % 10]` rule, so 11 == "десет еден"
 //!    ("ten one") rather than the correct "единаесет". Likewise 12 ==
@@ -40,15 +41,17 @@
 //!    "еден сто" ("one hundred", where Macedonian says "сто"), 200 == "два сто"
 //!    (vs. "двесте"), 1000 == "еден илјада", and there is no plural agreement:
 //!    9_000_000 == "девет милион", not "девет милиони".
-//! 5. **`negword` keeps its trailing space and the minus is English.**
-//!    `setup` sets `negword = "minus "` — with the space — and MK's own
-//!    `to_cardinal` concatenates it *verbatim* rather than trimming it the way
-//!    `Num2Word_Base.to_cardinal` does. So `to_cardinal(-1)` == "minus еден",
-//!    with an English "minus" rather than the Macedonian "минус".
+//! 5. **`negword` keeps its trailing space.** `setup` sets
+//!    `negword = "minus "` — with the space — and MK's own `to_cardinal`
+//!    concatenates it *verbatim* rather than trimming it the way
+//!    `Num2Word_Base.to_cardinal` does. The English word itself is replaced
+//!    by the Macedonian "минус " (gladiaio/num2words2#154), and likewise
+//!    `pointword` "point" by "запирка" (Macedonian writes a decimal comma),
+//!    so `to_cardinal(-1)` == "минус еден" and `1.5` == "еден запирка пет".
 //! 6. **The ordinal suffix is bolted onto the cardinal.**
 //!    `to_ordinal` is `self.to_cardinal(number) + "-ти"`, applied blindly with
 //!    no agreement and no adjustment of the final word: `to_ordinal(2)` ==
-//!    "два-ти" and `to_ordinal(-1)` == "minus еден-ти". Note that MK's ordinal
+//!    "два-ти" and `to_ordinal(-1)` == "минус еден-ти". Note that MK's ordinal
 //!    therefore *accepts negatives* rather than raising the way most modules
 //!    do.
 //!
@@ -108,8 +111,8 @@
 //!    never reads it; `CURRENCY_ADJECTIVES` is empty anyway.
 //! 11. **The unit/subunit words stay English (or Macedonian) per the table,
 //!    but the number is always Macedonian**, and the negative marker is still
-//!    the English "minus " of bug 5: `currency:EUR -12.34` ==
-//!    "minus десет два euros триесет четири cents".
+//!    the "минус " of bug 5: `currency:EUR -12.34` ==
+//!    "минус десет два euros триесет четири cents".
 //!
 //! # Error variants
 //!
@@ -137,17 +140,18 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-/// `setup`: `self.negword = "minus "`. The trailing space is load-bearing —
-/// MK's `to_cardinal` concatenates it raw (see bug 5).
-const NEGWORD: &str = "minus ";
+/// `setup`: `self.negword = "minus "`; this port uses the Macedonian word
+/// (#154). The trailing space is load-bearing — MK's `to_cardinal`
+/// concatenates it raw (see bug 5).
 
-/// `setup`: `self.pointword = "point"`. Unused in the integer-only scope;
-/// kept so the trait's `pointword()` reports the real attribute.
-const POINTWORD: &str = "point";
+const NEGWORD: &str = "минус ";
+
+/// `setup`: `self.pointword = "point"`, replaced by the Macedonian decimal
+/// comma "запирка" (#154).
+const POINTWORD: &str = "запирка";
 
 /// `setup`: `self.ones`. Index 0 is `""` and is never reached as a word —
-/// `_int_to_word` intercepts 0 first and (because `""` is falsy) returns the
-/// English "zero" instead. See bug 1.
+/// `_int_to_word` intercepts 0 first and returns [`ZERO_WORD`]. See bug 1.
 const ONES: [&str; 10] = [
     "", "еден", "два", "три", "четири", "пет", "шест", "седум", "осум", "девет",
 ];
@@ -174,8 +178,9 @@ const THOUSAND: &str = "илјада";
 /// `setup`: `self.million`.
 const MILLION: &str = "милион";
 
-/// The literal `_int_to_word` returns for 0 — see bug 1.
-const ZERO_WORD: &str = "zero";
+/// What `_int_to_word` returns for 0: Macedonian "нула", where Python says
+/// the English "zero" — see bug 1.
+const ZERO_WORD: &str = "нула";
 
 /// Python's `str(val)` for the `Decimal` arm of `to_currency`, rendered in
 /// plain (non-scientific) notation.
@@ -398,7 +403,7 @@ impl LangMk {
     /// than because a negative can reach it.
     fn int_to_word(&self, number: &BigInt) -> String {
         // `self.ones[0] if self.ones[0] else "zero"` — ones[0] == "" is
-        // falsy, so this is unconditionally "zero". See bug 1.
+        // falsy, so this is unconditionally the zero word. See bug 1.
         if number.is_zero() {
             return ZERO_WORD.to_string();
         }
@@ -406,7 +411,7 @@ impl LangMk {
         // Unreachable from the four in-scope modes: `to_cardinal` detaches the
         // "-" from `str(number)` before calling in, so `_int_to_word` only
         // ever sees a non-negative value. Ported anyway for fidelity — and
-        // note it would emit "minus " (with its trailing space) un-stripped.
+        // note it would emit "минус " (with its trailing space) un-stripped.
         if number.is_negative() {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
         }
@@ -496,7 +501,7 @@ impl Lang for LangMk {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
 
     /// Port of `Num2Word_MK.to_cardinal`, integer path only.
@@ -524,8 +529,8 @@ impl Lang for LangMk {
     /// Port of `Num2Word_MK.to_ordinal`: `self.to_cardinal(number) + "-ти"`.
     ///
     /// Applied blindly to whatever the cardinal produced, so it inherits every
-    /// cardinal quirk: `to_ordinal(0)` == "zero-ти", `to_ordinal(-1)` ==
-    /// "minus еден-ти", `to_ordinal(10**9)` == "1000000000-ти". Unlike most
+    /// cardinal quirk: `to_ordinal(0)` == "нула-ти", `to_ordinal(-1)` ==
+    /// "минус еден-ти", `to_ordinal(10**9)` == "1000000000-ти". Unlike most
     /// modules MK never rejects negatives here. See bug 6.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}-ти", self.to_cardinal(value)?))
@@ -573,22 +578,22 @@ impl Lang for LangMk {
     ///
     /// * **No `float2tuple`, so no artefact rescue and no banker's rounding.**
     ///   The fractional digits are taken *verbatim* from `str(number)`, digit
-    ///   by digit. `2.675` -> "два point шест седум пет" (digits 6,7,5), not a
-    ///   rounded "675"; `1.005` -> "еден point zero zero пет". `str(float)` is
+    ///   by digit. `2.675` -> "два запирка шест седум пет" (digits 6,7,5), not a
+    ///   rounded "675"; `1.005` -> "еден запирка нула нула пет". `str(float)` is
     ///   the shortest round-trip repr, reproduced here by formatting the f64 to
     ///   the repr-derived `precision`; `format!("{:.p$}", ...)` and Python's
     ///   `str` agree byte-for-byte on every corpus value, artefacts included.
     /// * **Integer-valued floats keep their `".0"`.** `str(1.0)` == "1.0", so
-    ///   `1.0` -> "еден point zero"; formatting to `precision` (>= 1 for every
+    ///   `1.0` -> "еден запирка нула"; formatting to `precision` (>= 1 for every
     ///   float) preserves the trailing zero that `format!("{}", 1.0_f64)` drops.
     /// * **Decimals keep their scale.** `str(Decimal("1.10"))` == "1.10", so
-    ///   the trailing zero survives: `1.10` -> "еден point еден zero". Rendered
+    ///   the trailing zero survives: `1.10` -> "еден запирка еден нула". Rendered
     ///   through `plain_decimal_string`, same as the currency arm.
     /// * **Each fractional digit routes through `_int_to_word(int(digit))`**, so
-    ///   a `0` digit becomes the English "zero" of bug 1 (`0.01` ->
-    ///   "zero point zero еден").
-    /// * **The English `pointword` "point" and the "minus " negword (space and
-    ///   all, bug 5) carry over** (`-0.5` -> "minus zero point пет").
+    ///   a `0` digit becomes the "нула" of bug 1 (`0.01` ->
+    ///   "нула запирка нула еден").
+    /// * **The `pointword` "запирка" and the "минус " negword (space and
+    ///   all, bug 5) carry over** (`-0.5` -> "минус нула запирка пет").
     ///
     /// MK's `to_cardinal` takes no `precision=` argument, so `precision_override`
     /// (the base's issue-#580 kwarg) is not a parameter of the ported method and
@@ -647,8 +652,8 @@ impl Lang for LangMk {
 
     /// `to_cardinal(float/Decimal)` — the FULL entry. Python routes *every*
     /// float/Decimal through the `str(number)` algorithm, so a whole value
-    /// keeps its visible point: `5.0` -> "пет point zero", `-0.0` ->
-    /// "minus zero point zero", `Decimal("5.00")` -> "пет point zero zero".
+    /// keeps its visible point: `5.0` -> "пет запирка нула", `-0.0` ->
+    /// "минус нула запирка нула", `Decimal("5.00")` -> "пет запирка нула нула".
     /// The base default's whole-value integer shortcut must not fire here.
     fn cardinal_float_entry(
         &self,
@@ -832,7 +837,8 @@ impl Lang for LangMk {
             ));
         }
 
-        // `result = self.negword + result` — "minus ", trailing space and all
+        // `result = self.negword + result` — "минус ", trailing space and all
+
         // (bug 5). The space is what separates it from the number.
         if is_negative {
             result = format!("{}{}", NEGWORD, result);

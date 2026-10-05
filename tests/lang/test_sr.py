@@ -93,65 +93,65 @@ class Num2WordsSRTest(TestCase):
         )
         self.assertEqual(
             num2words(2.01, lang="sr", to="currency", currency="EUR"),
-            "два evra, један cent",
+            "два евра, један цент",
         )
 
         self.assertEqual(
             num2words(2.02, lang="sr", to="currency", currency="EUR"),
-            "два evra, два centa",
+            "два евра, два цента",
         )
         self.assertEqual(
             num2words(2.05, lang="sr", to="currency", currency="EUR"),
-            "два evra, пет centi",
+            "два евра, пет центи",
         )
         self.assertEqual(
             num2words(2, lang="sr", to="currency", currency="RUB"), "два динара"
         )
         self.assertEqual(
             num2words(2.01, lang="sr", to="currency", currency="RUB"),
-            "два rublje, једна kopejka",
+            "два рубље, једна копејка",
         )
         self.assertEqual(
             num2words(2.02, lang="sr", to="currency", currency="RUB"),
-            "два rublje, две kopejke",
+            "два рубље, две копејке",
         )
         self.assertEqual(
-            "два rublje, пет kopejki",
+            "два рубље, пет копејки",
             num2words(2.05, lang="sr", to="currency", currency="RUB"),
         )
         self.assertEqual(
             "један динар", num2words(1, lang="sr", to="currency", currency="RSD")
         )
         self.assertEqual(
-            "два dinara, две pare",
+            "два динара, две паре",
             num2words(2.02, lang="sr", to="currency", currency="RSD"),
         )
         self.assertEqual(
-            "пет dinara, пет para",
+            "пет динара, пет пара",
             num2words(5.05, lang="sr", to="currency", currency="RSD"),
         )
         self.assertEqual(
-            "једанаест dinara, једанаест para",
+            "једанаест динара, једанаест пара",
             num2words(11.11, lang="sr", to="currency", currency="RSD"),
         )
         self.assertEqual(
-            "двадесет један dinar, двадесет једна para",
+            "двадесет један динар, двадесет једна пара",
             num2words(21.21, lang="sr", to="currency", currency="RSD"),
         )
         self.assertEqual(
-            "двадесет један evro, двадесет један cent",
+            "двадесет један евро, двадесет један цент",
             num2words(21.21, lang="sr", to="currency", currency="EUR"),
         )
         self.assertEqual(
-            "двадесет један rublja, двадесет једна kopejka",
+            "двадесет један рубља, двадесет једна копејка",
             num2words(21.21, lang="sr", to="currency", currency="RUB"),
         )
         self.assertEqual(
-            "хиљада двеста тридесет четири evra, " "педесет шест centi",
+            "хиљада двеста тридесет четири евра, " "педесет шест центи",
             num2words(1234.56, lang="sr", to="currency", currency="EUR"),
         )
         self.assertEqual(
-            "хиљада двеста тридесет четири rublje, " "педесет шест kopejki",
+            "хиљада двеста тридесет четири рубље, " "педесет шест копејки",
             num2words(1234.56, lang="sr", to="currency", currency="RUB"),
         )
         self.assertEqual(
@@ -175,7 +175,7 @@ class Num2WordsSRTest(TestCase):
             num2words(-1251985, lang="sr", to="currency", currency="EUR", cents=False),
         )
         self.assertEqual(
-            "тридесет осам evra i 40 centi",
+            "тридесет осам евра i 40 центи",
             num2words(
                 "38.4",
                 lang="sr",
