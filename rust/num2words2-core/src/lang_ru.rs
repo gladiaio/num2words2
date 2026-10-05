@@ -18,7 +18,9 @@
 //!
 //! Only the `n`(ominative)/singular/masculine/animate defaults are reachable
 //! from the plain entry points, but `to_cardinal`/`to_ordinal` accept
-//! `case=`/`plural=`/`gender=`/`animate=` kwargs (see `to_cardinal_kw`), and
+//! `case=`/`plural=`/`gender=`/`animate=` kwargs (see `to_cardinal_kw`, and
+//! `to_cardinal_float_kw` for float/Decimal input, where the "." branch
+//! ignores them), and
 //! the ordinal chunk helpers internally request other cases and genders
 //! (`case="g"`, `gender="f"`, `gender="n"`), so the tables must be complete.
 //!
@@ -998,6 +1000,23 @@ impl LangRu {
         Ok(words)
     }
 
+    /// Body of `Num2Word_RU.to_cardinal` for float/Decimal input; `kw` is
+    /// consulted only where Python passes `case`/`plural`/`gender`/`animate`.
+    fn cardinal_float_with(&self, value: &FloatValue, kw: &Kwargs) -> Result<String> {
+        let n = match value {
+            FloatValue::Float { value: f, .. } => {
+                if f.abs() < 0.01 {
+                    // _int2word(0, cardinal=True, case=case, ...) — "ноль".
+                    return self.int2word(&BigInt::zero(), true, self.opts_from_kwargs(kw)?);
+                }
+                py_float_repr(*f)
+            }
+            // No `< 0.01` guard on the Decimal arm; str(Decimal) verbatim.
+            FloatValue::Decimal { value: d, .. } => py_decimal_str(d),
+        };
+        self.cardinal_from_str(&n, kw)
+    }
+
     /// The `"." in n` arm of `Num2Word_RU.to_cardinal`, driven off the decimal
     /// string `n` (`str(number).replace(",", ".")`).
     ///
@@ -1025,9 +1044,9 @@ impl LangRu {
     /// else:
     ///     if "e" in n.lower() or "E" in n:
     ///         n = str(int(float(n)))
-    ///     return self._int2word(int(n), cardinal=True, ...)  # module defaults
+    ///     return self._int2word(int(n), cardinal=True, case=case, ...)  # caller's kwargs
     /// ```
-    fn cardinal_from_str(&self, number: &str) -> Result<String> {
+    fn cardinal_from_str(&self, number: &str, kw: &Kwargs) -> Result<String> {
         // The digit strings that reach here are pure ASCII (`str(float)` /
         // `str(Decimal)`), so byte slicing is safe throughout.
         let n = number.replace(',', ".");
@@ -1082,10 +1101,10 @@ impl LangRu {
                         f
                     ))
                 })?;
-                self.int2word(&bi, true, Opts::default())
+                self.int2word(&bi, true, self.opts_from_kwargs(kw)?)
             } else {
                 // int(n) — parses the sign; int2word re-emits the negword.
-                self.int2word(&parse_int(&n)?, true, Opts::default())
+                self.int2word(&parse_int(&n)?, true, self.opts_from_kwargs(kw)?)
             }
         }
     }
@@ -1502,7 +1521,7 @@ impl Lang for LangRu {
     /// so those return `None` and ride the exact `Float { -0.0 }` demotion.
     fn neg_zero_decimal(&self, to: &str) -> Option<Result<String>> {
         match to {
-            "cardinal" | "year" => Some(self.cardinal_from_str("-0.0")),
+            "cardinal" | "year" => Some(self.cardinal_from_str("-0.0", &Kwargs::default())),
             _ => None,
         }
     }
@@ -1552,18 +1571,26 @@ impl Lang for LangRu {
         precision_override: Option<u32>,
     ) -> Result<String> {
         let _ = precision_override;
-        let n = match value {
-            FloatValue::Float { value: f, .. } => {
-                if f.abs() < 0.01 {
-                    // _int2word(0, cardinal=True, <module defaults>) — "ноль".
-                    return self.int2word(&BigInt::zero(), true, Opts::default());
-                }
-                py_float_repr(*f)
-            }
-            // No `< 0.01` guard on the Decimal arm; str(Decimal) verbatim.
-            FloatValue::Decimal { value: d, .. } => py_decimal_str(d),
-        };
-        self.cardinal_from_str(&n)
+        self.cardinal_float_with(value, &Kwargs::default())
+    }
+
+    /// `to_cardinal(float/Decimal, case=, plural=, gender=, animate=)`. The
+    /// kwargs reach only the `abs(number) < 0.01` and dot-less (Decimal("5"),
+    /// exponent repr) branches; the "." branch hardcodes `gender="f"` and
+    /// default case for both parts, so `to_cardinal(125.1, gender="f")` is
+    /// the plain "сто двадцать пять целых одна десятая" and a bad `case=`
+    /// raises no KeyError there.
+    fn to_cardinal_float_kw(
+        &self,
+        value: &FloatValue,
+        precision_override: Option<u32>,
+        kw: &Kwargs,
+    ) -> Result<String> {
+        if !kw.only(&["case", "plural", "gender", "animate"]) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        let _ = precision_override;
+        self.cardinal_float_with(value, kw)
     }
 
     // ---- currency -------------------------------------------------------
