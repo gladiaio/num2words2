@@ -23,22 +23,38 @@ from num2words2 import num2words
 
 
 class Num2WordsKZTest(TestCase):
+    # "kz" is an alias of "kk" (gladiaio/num2words2#166). Hundreds carry
+    # their multiplier ("бір жүз"), the form "kk" always used; whether plain
+    # "жүз" is preferred is an open question for a native speaker.
+
+    def test_kz_is_an_alias_of_kk(self):
+        for value in (0, 7, 101, 1.5, -1, 10**30):
+            self.assertEqual(num2words(value, lang="kz"), num2words(value, lang="kk"))
+        for to in ("ordinal", "ordinal_num", "year", "currency"):
+            self.assertEqual(
+                num2words(21, lang="kz", to=to), num2words(21, lang="kk", to=to)
+            )
+
+    def test_default_currency_is_kzt(self):
+        # Used to raise NotImplementedError: the default was EUR (#166).
+        self.assertEqual(num2words(1, lang="kz", to="currency"), "бір теңге")
+
     def test_to_cardinal(self):
         self.maxDiff = None
         self.assertEqual(num2words(7, lang="kz"), "жеті")
         self.assertEqual(num2words(23, lang="kz"), "жиырма үш")
-        self.assertEqual(num2words(145, lang="kz"), "жүз қырық бес")
+        self.assertEqual(num2words(145, lang="kz"), "бір жүз қырық бес")
         self.assertEqual(num2words(2869, lang="kz"), "екі мың сегіз жүз алпыс тоғыз")
         self.assertEqual(
             num2words(-789000125, lang="kz"),
-            "минус жеті жүз сексен тоғыз миллион жүз жиырма бес",
+            "минус жеті жүз сексен тоғыз миллион бір жүз жиырма бес",
         )
         self.assertEqual(
             num2words(84932, lang="kz"), "сексен төрт мың тоғыз жүз отыз екі"
         )
 
     def test_to_cardinal_floats(self):
-        self.assertEqual(num2words(100.67, lang="kz"), "жүз бүтін алпыс жеті")
+        self.assertEqual(num2words(100.67, lang="kz"), "бір жүз бүтін алпыс жеті")
         self.assertEqual(num2words(0.7, lang="kz"), "нөл бүтін жеті")
         self.assertEqual(num2words(1.73, lang="kz"), "бір бүтін жетпіс үш")
         self.assertEqual(num2words(10.02, lang="kz"), "он бүтін нөл екі")
@@ -51,7 +67,7 @@ class Num2WordsKZTest(TestCase):
         self.assertEqual(num2words(5, lang="kz", to="ordinal"), "бесінші")
         self.assertEqual(num2words(10, lang="kz", to="ordinal"), "оныншы")
         self.assertEqual(num2words(21, lang="kz", to="ordinal"), "жиырма бірінші")
-        self.assertEqual(num2words(100, lang="kz", to="ordinal"), "жүзінші")
+        self.assertEqual(num2words(100, lang="kz", to="ordinal"), "бір жүзінші")
 
     def test_to_currency(self):
         self.assertEqual(

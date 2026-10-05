@@ -86,7 +86,6 @@ pub mod lang_kok;
 pub mod lang_ksw;
 pub mod lang_ku;
 pub mod lang_ky;
-pub mod lang_kz;
 pub mod lang_la;
 pub mod lang_lb;
 pub mod lang_lg;
@@ -249,7 +248,6 @@ pub use lang_kok::LangKok;
 pub use lang_ksw::LangKsw;
 pub use lang_ku::LangKu;
 pub use lang_ky::LangKy;
-pub use lang_kz::LangKz;
 pub use lang_la::LangLa;
 pub use lang_lb::LangLb;
 pub use lang_lg::LangLg;
@@ -412,7 +410,6 @@ pub fn get_lang_by_key(lang: &str) -> Option<&'static (dyn Lang + Sync)> {
     static KSW: OnceLock<LangKsw> = OnceLock::new();
     static KU: OnceLock<LangKu> = OnceLock::new();
     static KY: OnceLock<LangKy> = OnceLock::new();
-    static KZ: OnceLock<LangKz> = OnceLock::new();
     static LA: OnceLock<LangLa> = OnceLock::new();
     static LB: OnceLock<LangLb> = OnceLock::new();
     static LG: OnceLock<LangLg> = OnceLock::new();
@@ -563,7 +560,7 @@ pub fn get_lang_by_key(lang: &str) -> Option<&'static (dyn Lang + Sync)> {
         "jv" | "jw" => Some(JV.get_or_init(LangJv::new)),
         "ka" => Some(KA.get_or_init(LangKa::new)),
         "ki" => Some(KI.get_or_init(LangKi::new)),
-        "kk" => Some(KK.get_or_init(LangKk::new)),
+        "kk" | "kz" => Some(KK.get_or_init(LangKk::new)),
         "km" => Some(KM.get_or_init(LangKm::new)),
         "kn" => Some(KN.get_or_init(LangKn::new)),
         "ko" => Some(KO.get_or_init(LangKo::new)),
@@ -571,7 +568,6 @@ pub fn get_lang_by_key(lang: &str) -> Option<&'static (dyn Lang + Sync)> {
         "ksw" => Some(KSW.get_or_init(LangKsw::new)),
         "ku" => Some(KU.get_or_init(LangKu::new)),
         "ky" => Some(KY.get_or_init(LangKy::new)),
-        "kz" => Some(KZ.get_or_init(LangKz::new)),
         "la" => Some(LA.get_or_init(LangLa::new)),
         "lb" => Some(LB.get_or_init(LangLb::new)),
         "lg" => Some(LG.get_or_init(LangLg::new)),

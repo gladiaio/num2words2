@@ -1,269 +1,354 @@
-//! Port of `lang_KK.py` (Kazakh).
+//! Kazakh (`"kk"`, the ISO 639-1 code). `"kz"` (the country code) is kept as
+//! an alias for the same converter, the way `"cz"` maps to `cs`.
 //!
-//! Shape: **self-contained**. `Num2Word_KK` subclasses `Num2Word_Base` but
-//! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
-//! `set_high_numwords`, so Python never populates `self.cards` and never sets
-//! `MAXVAL`. `to_cardinal` is overridden outright and delegates to a hand
-//! written `_int_to_word` recursion. `cards`/`maxval`/`merge` therefore stay
-//! at their trait defaults here and are never reached — there is no overflow
-//! check at all (see bug 3 below for what happens instead).
+//! # One converter for two codes (gladiaio/num2words2#166)
 //!
-//! `Num2Word_KK` overrides every in-scope entry point (`to_cardinal`,
-//! `to_ordinal`, `to_ordinal_num`, `to_year`), so nothing is inherited from
-//! `Num2Word_Base` on the four supported paths. `setup()` only assigns the
-//! word tables reproduced below; the base `__init__` work (`self.cards`,
-//! `self.MAXVAL`, `self.title`) is inert for this language.
+//! Upstream shipped two unrelated Kazakh modules: `lang_KK.py` and
+//! `lang_KZ.py`. Each was broken in a different place:
+//!
+//! * `kk` said 0, decimals and negatives in English ("zero", "бір point бес",
+//!   "minus бір"), glued its ordinal suffix on with a hyphen ("бір-інші", the
+//!   kk row of #148), and printed bare digits from 10^9 up.
+//! * `kz` had native words ("нөл", "бір бүтін бес", "минус бір"), real
+//!   vowel-harmonic ordinals ("бірінші", "алтыншы") and scale words up to
+//!   нониллион, but its currency default was EUR, which is not in its table,
+//!   so `to="currency"` raised on every call that did not name a code.
+//!
+//! This module is the `kz` engine (a port of `lang_KZ.py`) with these changes
+//! so it can serve `kk`:
+//!
+//! * **Currency defaults to KZT** (теңге/тиын), as `kk` did. The rest of the
+//!   currency surface is `kz`'s, i.e. `Num2Word_Base.to_currency` with a ","
+//!   separator ("бір теңге, елу тиын"). EUR is added to the table (еуро/цент)
+//!   so `currency="EUR"`, which `kk` accepted, keeps working. Unknown codes
+//!   raise `NotImplementedError` instead of `kk`'s old silent fallback to
+//!   теңге.
+//! * **100–199 keep `kk`'s form**: every hundred carries its multiplier, so
+//!   100 == "бір жүз" and 101 == "бір жүз бір" (the `kz` module said "жүз",
+//!   "жүз бір"). Which form is preferred is an open question for a native
+//!   speaker; keeping `kk`'s form means `kk` callers see no change there.
+//! * **`to_ordinal_num` keeps `kk`'s "1."** (`str(number) + "."`) rather than
+//!   `kz`'s bare "1".
+//! * **Overflow is an `OverflowError`.** The `THOUSANDS` table stops at
+//!   нониллион (10^30), so 10^33 and above cannot be spelled. Python's `kz`
+//!   raised `KeyError: 11` there; this port raises `OverflowError` and
+//!   reports `maxval` as 10^33.
+//!
+//! `setup()` sets `negword = "минус"` and `pointword = "бүтін"` ("whole").
+//!
+//! Inherited from `Num2Word_Base` (the trait defaults do the right thing):
+//!   * `to_year(value) -> self.to_cardinal(value)` → default delegates
+//!     through `&self`, picking up the `to_cardinal` override below. Kazakh
+//!     has no special year form: `to_year(1999)` == `to_cardinal(1999)` ==
+//!     "бір мың тоғыз жүз тоқсан тоғыз".
+//!
+//! No cross-call mutable state.
+//!
+//! # Float / Decimal cardinal path (`to_cardinal_float`)
+//!
+//! Python overrides **`to_cardinal`**, not `to_cardinal_float`, and handles
+//! non-integers inline: `n = str(number).replace(",", ".")`, and on `"." in n`
+//! it splits `left.right`, spells `int(left)` and — crucially — `int(right)` as
+//! a *single whole number* (not digit by digit), prefixing one "нөл" per
+//! leading zero of `right`, then joins `left бүтін <zeros> <int(right)>`. A
+//! leading "минус" is added for any negative. It never reads `self.precision`,
+//! so the `precision=` kwarg (issue #580 → `precision_override`) is **inert**:
+//! `num2words(1.5, 'kk', precision=5)` and `precision=0` both give
+//! "бір бүтін бес".
+//!
+//! `right` (Python's fractional digit string) is reconstructed from
+//! `float2tuple`'s `post`, zero-padded to `precision`. That is exact here:
+//! `precision` is by construction the number of fractional digits in
+//! `str(number)` (`abs(Decimal(str(f)).as_tuple().exponent)` for floats, the
+//! Decimal scale otherwise), so `post` == `int(right)` and the padded string ==
+//! `right`. Using `float2tuple` keeps the load-bearing f64 arithmetic and its
+//! `< 0.01` rescue heuristic (e.g. `2.675` → `674.999…` → `675`) intact rather
+//! than recomputing from a decimal string.
+//!
+//! ```text
+//! to_cardinal(1.23)  "бір бүтін жиырма үш"   Base would say "бір бүтін екі үш"
+//! to_cardinal(0.25)  "нөл бүтін жиырма бес"  Base would say "нөл бүтін екі бес"
+//! ```
+//!
+//! # Fractional cents
+//!
+//! `base.to_currency` renders fractional cents (a subunit that is not a whole
+//! number, e.g. 65.3 cents) as `self.to_cardinal(float(right))`. The trait's
+//! `cardinal_from_decimal` default routes to `floatpath` (Base's
+//! digit-by-digit spelling), so it disagrees with the whole-number fraction
+//! above whenever the fractional cents carry two or more significant digits.
+//! Left at the default.
 //!
 //! # Faithfully reproduced Python bugs
 //!
-//! This is a port, not a rewrite. All of the following look wrong and are
-//! nevertheless exactly what Python emits — every one is pinned by the frozen
-//! corpus:
+//! `to_ordinal` picks its suffix by testing the cardinal's final character
+//! against three hand-written character classes. Those classes are
+//! **incomplete**, and the resulting wrong forms are kept:
 //!
-//! 1. **`to_cardinal(0)` == `"zero"`, in English.** `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is the
-//!    empty string (a placeholder so that `ones[n]` indexes by digit), which
-//!    is falsy, so the `else` branch always wins and the Kazakh converter
-//!    answers with the English word. The Kazakh "нөл" appears nowhere in the
-//!    module. Hence `to_ordinal(0)` == `"zero-інші"`.
-//! 2. **`negword` is `"minus "`, also English** (not "минус"), so
-//!    `to_cardinal(-1)` == `"minus бір"`. Likewise `pointword` is `"point"`.
-//! 3. **Numbers >= 10^9 are returned as bare digits.** `_int_to_word`'s final
-//!    `else` is `return str(number)` — commented "Fallback for very large
-//!    numbers" — so `to_cardinal(10**9)` == `"1000000000"` and
-//!    `to_ordinal(10**9)` == `"1000000000-інші"`. This is the de facto ceiling
-//!    of the language: no `OverflowError` is ever raised, the digits just leak
-//!    through. `billion`/`trillion` are never defined. The fallback prints the
-//!    *absolute* value, because `to_cardinal` strips the sign before calling
-//!    in, so `to_cardinal(-10**9)` == `"minus 1000000000"`.
-//! 4. **100 is `"бір жүз"`, not `"жүз"`.** The `number < 1000` branch is
-//!    unconditionally `self.ones[hundreds_val] + " " + self.hundred`, with no
-//!    `hundreds_val == 1` special case, so the leading "бір" ("one") is always
-//!    emitted. Natural Kazakh would say plain "жүз". Same for `1000` →
-//!    `"бір мың"` (via the `_int_to_word(1)` recursion on the thousands part).
+//! 1. `қ` (U+049B) is **missing** from the consonant class, and no vowel class
+//!    matches it either, so "қырық" (40) falls through to the `else` arm and
+//!    takes the front-vowel suffix: `to_ordinal(40)` == "қырықінші".
+//!    Idiomatic Kazakh is "қырқыншы".
+//! 2. The vowel arms append `ншы`/`нші` with no linking consonant, so
+//!    `to_ordinal(20)` == "жиырманшы" (idiomatic: "жиырмасыншы").
+//! 3. The back/front decision for consonant-final words inspects only the last
+//!    **two** characters, so "миллиард" (last two = "рд", no back vowel) is
+//!    misfiled as front: `to_ordinal(10**9)` == "бір миллиардінші"
+//!    (idiomatic: "бір миллиардыншы"). "триллион" and friends escape this only
+//!    because their last two characters are "он".
+//! 4. `у` (U+0443) appears in no class at all, so "елу" (50) also reaches the
+//!    `else` arm. Here the fallback happens to be right: "елуінші".
+//! 5. There is no "one thousand" elision: `to_cardinal(1000)` == "бір мың",
+//!    not "мың". Kept verbatim.
 //!
-//! # No overflow, no errors (integers) — one ValueError (floats)
+//! # Error variants
 //!
-//! Nothing on the four *integer* paths can raise: `_int_to_word` indexes
-//! `ones`/`tens` only with a digit it just computed by `% 10` or `// 100`, and
-//! every value too large for the tables hits the `str(number)` fallback. The
-//! frozen corpus agrees — no `err` row exists for kk on cardinal/ordinal/
-//! ordinal_num/year with integer input. All four functions return `Ok` for
-//! every `BigInt`.
+//! `THOUSANDS` has keys 1..=10 (up to "нониллион" == 1000^10 == 10^30), so the
+//! largest representable value is 10^33 - 1. At 10^33 the top chunk index
+//! becomes 11 and this port raises `OverflowError` (see above).
 //!
-//! The **float/Decimal** path has exactly one raising surface: `to_cardinal`
-//! re-parses the sign-stripped `str(number)` with `int()`, so any point-less
-//! form that is not an integer literal — `repr(1e16)` == "1e+16",
-//! `str(Decimal("1E+2"))` == "1E+2", "inf"/"nan"/"Infinity" — raises
-//! `ValueError: invalid literal for int() with base 10: '...'`. Pointed forms
-//! never raise, whatever their size (the >= 10^9 integer part just leaks
-//! digits, bug 3). Pinned by the wholefloat corpus: ValueError rows for
-//! 1e+16/1e+20/1E+2/1E+20 across cardinal/ordinal/year, `ok` rows for every
-//! pointed form including "-0.0" -> "minus zero point zero". See
-//! [`route_by_str`].
-//!
-//! # Currency
-//!
-//! `Num2Word_KK` overrides `to_currency` outright — `Num2Word_Base`'s version,
-//! and with it `parse_currency_parts`, `pluralize`, `CURRENCY_PRECISION` and
-//! `CURRENCY_ADJECTIVES`, is unreachable — but inherits `to_cheque` unchanged.
-//! The two therefore disagree about unknown codes, which is the single most
-//! important thing about this surface: `to_currency` *falls back* to KZT and
-//! never raises, while `to_cheque` raises `NotImplementedError`. See the four
-//! further reproduced bugs (5-9) documented on `to_currency` itself.
-//!
-//! The method is character-for-character the same as `Num2Word_FO`'s,
-//! `Num2Word_BR`'s and several others' — a copy-paste family whose shared
-//! quirks (string-surgery cent split, the eager `.get(..., values()[0])`
-//! default, the ignored `adjective`) are ported identically across those
-//! files.
+//! Negatives are safe in every mode: `_int2word` strips the sign and recurses
+//! on `abs(n)` *before* `splitbyx`/`get_digits` ever see the string, so no
+//! `'-'` survives into `int()`.
 
 use crate::base::{Lang, N2WError, Result};
-use crate::currency::{CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
-use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
-use bigdecimal::BigDecimal;
+use crate::currency::CurrencyForms;
+use crate::floatpath::{float2tuple, FloatValue};
+use crate::strnum::ParsedNumber;
 use num_bigint::BigInt;
-use num_integer::Integer;
-use num_traits::{One, Signed, ToPrimitive, Zero};
+use num_traits::{Signed, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
-/// `self.negword`. English, verbatim from Python — see module bug 2.
-const NEGWORD: &str = "minus ";
+const ZERO: &str = "нөл";
+const NEGWORD: &str = "минус";
+const TEN: &str = "он";
+const HUNDRED: &str = "жүз";
 
-/// `self.ones`. Index 0 is the empty string; `_int_to_word` never reaches it
-/// via the digit paths (they are guarded by `if ones_val == 0` / `if
-/// remainder`), and the `number == 0` path turns it into "zero" (bug 1).
+/// `ONES`, keys 1..=9. Index 0 is absent in Python (guarded by `n1 > 0` /
+/// `n3 > 1`), so the empty slot here is never read.
 const ONES: [&str; 10] = [
     "", "бір", "екі", "үш", "төрт", "бес", "алты", "жеті", "сегіз", "тоғыз",
 ];
 
-/// `self.tens`. Index 0 is the empty string and is unreachable: the `number <
-/// 100` branch is only entered when `number >= 10`, so `tens_val >= 1`.
-const TENS: [&str; 10] = [
-    "", "он", "жиырма", "отыз", "қырық", "елу", "алпыс", "жетпіс", "сексен", "тоқсан",
+/// `TWENTIES`, keys 2..=9. Indices 0 and 1 are absent in Python; `n2 == 1` is
+/// handled separately by `TEN`, and `n2 == 0` appends nothing.
+const TWENTIES: [&str; 10] = [
+    "", "", "жиырма", "отыз", "қырық", "елу", "алпыс", "жетпіс", "сексен", "тоқсан",
 ];
 
-/// `self.hundred`.
-const HUNDRED: &str = "жүз";
-/// `self.thousand`.
-const THOUSAND: &str = "мың";
-/// `self.million`.
-const MILLION: &str = "миллион";
+/// `THOUSANDS`, keys 1..=10. Index 0 is absent in Python (guarded by `i > 0`).
+/// Index 11 and beyond do not exist — that is the 10^33 ceiling (`MAXVAL`).
+const THOUSANDS: [&str; 11] = [
+    "",
+    "мың",
+    "миллион",
+    "миллиард",
+    "триллион",
+    "квадриллион",
+    "квинтиллион",
+    "секстиллион",
+    "септиллион",
+    "октиллион",
+    "нониллион",
+];
 
-/// `self.to_ordinal`'s suffix, appended to the cardinal with a literal hyphen.
-const ORDINAL_SUFFIX: &str = "-інші";
+/// Vowels taking the bare `ншы` suffix: а о ұ ы е э.
+const BACK_VOWELS: &str = "аоұыеэ";
 
-/// `self.__class__.__name__`, for the `NotImplementedError` message that
-/// `Num2Word_Base.to_cheque` raises on an unknown code.
-const LANG_NAME: &str = "Num2Word_KK";
+/// Vowels taking the bare `нші` suffix: ә і ү ө.
+const FRONT_VOWELS: &str = "әіүө";
 
-/// `Num2Word_KK.to_currency`'s own default: `separator=" "`, a bare space —
-/// *not* `Num2Word_Base`'s `","`.
-const SEPARATOR_DEFAULT: &str = " ";
+/// The consonant class. Transcribed verbatim from Python — note that `қ`
+/// (U+049B) and `у` (U+0443) are **absent**; see module bugs 1 and 4.
+const CONSONANTS: &str = "бвгғджзйклмнңпрстфхһцчшщ";
 
-/// The separator the pyo3 binding hands us when the Python caller omitted one.
-///
-/// `Num2Word_KK.to_currency` declares `separator=" "` in its own signature, but
-/// the `Lang` trait carries no per-language parameter defaults, and both
-/// `__init__.py`'s currency fast path and `bench/diff_test.py` substitute
-/// `kwargs.get("separator", ",")` — **`Num2Word_Base`'s** default, not KK's —
-/// before the value crosses the boundary. By then "caller omitted separator"
-/// and "caller explicitly passed a comma" are the same `&str`, and the
-/// information needed to tell them apart no longer exists on this side.
-///
-/// So `,` is read back as the unset sentinel and KK's own default restored.
-/// This is the only reading the oracle supports: every float row of the `kk`
-/// currency corpus was generated by `num2words(v, lang="kk", to="currency",
-/// currency=c)` with no `separator=`, which reaches `Num2Word_KK.to_currency`
-/// with its *own* default, and every one of them expects a bare space
-/// ("он екі euros отыз төрт cents", not "он екі euros,отыз төрт cents").
-///
-/// The cost is narrow and known: a caller who *explicitly* passes
-/// `separator=","` gets " " where Python would give ",". Expressing that case
-/// needs `Option<&str>` in the trait signature, which lives in `base.rs` —
-/// outside this port's remit. Flagged in the port report. `lang_fo.rs`,
-/// `lang_br.rs`, `lang_bs.rs` and `lang_ba.rs` resolve the identical conflict
-/// the same way; `lang_FO.py`'s `to_currency` is character-for-character the
-/// same method as this one.
-const SEPARATOR_UNSET: &str = ",";
+/// Back vowels probed against the last two characters to choose `ыншы` over
+/// `інші` after a consonant: а о ұ ы.
+const LAST2_BACK: &str = "аоұы";
 
-/// `to_currency`'s fallback code — see currency bug 5.
-///
-/// Python spells it `list(self.CURRENCY_FORMS.values())[0]`, i.e. "whichever
-/// entry was inserted first". `CURRENCY_FORMS` is a dict literal ordered
-/// `KZT, USD, EUR` and dicts preserve insertion order, so that is KZT. Pinning
-/// the *key* rather than reproducing a positional lookup keeps the intent
-/// legible; a `HashMap` has no insertion order to index into anyway.
-///
-/// Verified against the live interpreter rather than read off the source:
-/// `list(CONVERTER_CLASSES["kk"].CURRENCY_FORMS.keys())` == `['KZT', 'USD',
-/// 'EUR']`. Nothing mutates this dict — `Num2Word_KK` declares its own
-/// `CURRENCY_FORMS` and inherits from `Num2Word_Base`, not `Num2Word_EUR`, so
-/// the `Num2Word_EN.__init__` shared-dict rewrite documented in
-/// PORTING_CURRENCY.md does not reach it (`c.CURRENCY_FORMS is
-/// CONVERTER_CLASSES['en'].CURRENCY_FORMS` is `False`).
-const FALLBACK_CURRENCY: &str = "KZT";
-
-/// The hard-coded 2 in `parts[1][:2].ljust(2, "0")` — see currency bug 6.
-const CENT_DIVISOR: i64 = 100;
-
-/// Python's `int(s)` failure, message verbatim from CPython. `s` is the
-/// point-less `str(number)` slice `to_cardinal` feeds it — sign already
-/// stripped, because the leading "-" is peeled off the string before `int()`
-/// ever runs.
-fn int_value_error(s: &str) -> N2WError {
-    N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
+/// 10^33: the first value whose top 3-digit chunk has no `THOUSANDS` word.
+fn maxval() -> &'static BigInt {
+    static MAXVAL: OnceLock<BigInt> = OnceLock::new();
+    MAXVAL.get_or_init(|| BigInt::from(10u32).pow(33))
 }
 
-/// Python `repr(float)` for the scientific range, on an already-`abs()`ed
-/// finite f64 (`a >= 1e16`, or `0 < a < 1e-4`).
-///
-/// Rust's `{:e}` yields the shortest round-trip mantissa — the same digits
-/// CPython's repr picks — but lays the exponent out as `1e16` / `1e-5` where
-/// Python writes `1e+16` / `1e-05`: always a sign, zero-padded to two digits.
-/// Only the exponent dressing needs fixing up. (Same helper as `lang_ky.rs`
-/// and `lang_fo.rs`; `lang_KK.py`'s `to_cardinal` is character-for-character
-/// the same method.)
-fn py_float_sci_repr(a: f64) -> String {
-    let sci = format!("{:e}", a); // "1e16", "1.5e20", "1e-5"
-    let (mant, exp_str) = sci.split_once('e').expect("{:e} always emits an 'e'");
-    let exp: i64 = exp_str.parse().expect("{:e} exponent is a base-10 integer");
-    format!(
-        "{}e{}{:02}",
-        mant,
-        if exp < 0 { '-' } else { '+' },
-        exp.abs()
-    )
+/// Python's `kz` raised `KeyError` past the scale table; this port raises the
+/// `OverflowError` every other language uses for "too large".
+fn overflow_error(n: &BigInt) -> N2WError {
+    N2WError::Overflow(format!("abs({}) must be less than {}.", n, maxval()))
 }
 
-/// Where `str(number)` sends the value in `to_cardinal` (sign already peeled).
-enum StrRoute {
-    /// `"." in n` — the decimal grammar spells every fractional character.
-    Point,
-    /// No "." and `int(n)` succeeds — `_int_to_word` runs on this magnitude.
-    WholeDigits(BigInt),
-}
-
-/// Reproduce Python's `"." in str(number)` routing, including the `int(n)`
-/// `ValueError` for the point-less forms that are not integer literals.
+/// The suffix-selection tail of `Num2Word_KZ.to_ordinal`, shared by the
+/// integer path and the float/Decimal entry (Python has one method; its
+/// `cardinal = self.to_cardinal(number)` call is virtual over the input type,
+/// so the same character inspection runs on "бес" and on "бес бүтін нөл нөл"
+/// alike).
 ///
-/// * **Float** — repr is fixed-notation (always with a ".") for every finite
-///   value outside the scientific range, so the only no-point floats are the
-///   scientific ones (`|v| >= 1e16`, `0 < |v| < 1e-4`) and inf/nan — all of
-///   which make `int()` raise. `FloatValue::has_visible_point` is *not* used
-///   here: it reports `true` for tiny scientific floats (`1e-05`), whose repr
-///   has no point and must raise.
-/// * **Decimal** — `str(Decimal)` is reconstructed by `python_decimal_str`;
-///   a point routes to the decimal grammar, plain digits (canonical integral
-///   Decimals like "100") parse, and everything else ("1E+2", "1E+20") is the
-///   `int()` ValueError.
-fn route_by_str(v: &FloatValue) -> Result<StrRoute> {
-    match v {
-        FloatValue::Float { value, .. } => {
-            let a = value.abs();
-            if !a.is_finite() {
-                // str(float("inf")) == "inf", str(float("nan")) == "nan" —
-                // no ".", so int() raises. The "-" of "-inf" is stripped by
-                // the string-sign peel before int() ever sees it.
-                return Err(int_value_error(if a.is_nan() { "nan" } else { "inf" }));
-            }
-            if a >= 1e16 || (a > 0.0 && a < 1e-4) {
-                // repr picked exponent form: no "." in n -> int(n) raises.
-                return Err(int_value_error(&py_float_sci_repr(a)));
-            }
-            // Every other finite float reprs with a point ("5.0", "0.0001").
-            Ok(StrRoute::Point)
+/// Python indexes `cardinal[-1]` unguarded. `to_cardinal` of a non-zero value
+/// always yields at least one word, so the empty case is unreachable; an
+/// empty string would be an IndexError in Python, so mirror that rather than
+/// inventing a fallback.
+fn ordinal_suffix(cardinal: String) -> Result<String> {
+    let last = cardinal
+        .chars()
+        .next_back()
+        .ok_or_else(|| N2WError::Index("string index out of range".to_string()))?;
+
+    if BACK_VOWELS.contains(last) {
+        return Ok(format!("{}ншы", cardinal));
+    }
+    if FRONT_VOWELS.contains(last) {
+        return Ok(format!("{}нші", cardinal));
+    }
+    if CONSONANTS.contains(last) {
+        // Python: cardinal[-2:] — the last two *characters*, or the whole
+        // string if it is shorter than two.
+        let mut tail: Vec<char> = cardinal.chars().rev().take(2).collect();
+        tail.reverse();
+        let last2: String = tail.into_iter().collect();
+
+        // Python: any(v in cardinal[-2:] for v in "аоұы")
+        if LAST2_BACK.chars().any(|v| last2.contains(v)) {
+            return Ok(format!("{}ыншы", cardinal));
         }
-        FloatValue::Decimal { value, .. } => {
-            // abs() first: Python strips the string sign before this test.
-            let s = python_decimal_str(&value.abs());
-            if s.contains('.') {
-                Ok(StrRoute::Point)
-            } else if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
-                Ok(StrRoute::WholeDigits(s.parse().expect("digits only")))
-            } else {
-                // "1E+2", "1E+20", ... — int() raises.
-                Err(int_value_error(&s))
-            }
-        }
+        return Ok(format!("{}інші", cardinal));
+    }
+
+    // Default case: covers қ and у, neither of which is in any class.
+    Ok(format!("{}інші", cardinal))
+}
+
+/// `int(n)`'s ValueError for the no-`"."` branch of `to_cardinal`, reached
+/// when `str(number)` came out in exponent form (`1e+16`, `1E+2`), or as
+/// `inf`/`nan`. The message shape matches CPython's; only the exception type
+/// is corpus-checked.
+fn int_value_error(literal: &str) -> N2WError {
+    N2WError::Value(format!(
+        "invalid literal for int() with base 10: '{}'",
+        literal
+    ))
+}
+
+/// `str(number)` for a float that carries no visible point: exponent form for
+/// finite values (`1e+16`), `inf`/`nan` otherwise. Only used to build the
+/// `int()` ValueError message; the corpus checks exception *types*, so the
+/// digits just need to be recognisably Python-shaped, not a full repr port.
+fn float_no_point_str(f: f64) -> String {
+    if f.is_nan() {
+        return "nan".to_string();
+    }
+    if f.is_infinite() {
+        return if f < 0.0 { "-inf" } else { "inf" }.to_string();
+    }
+    let s = format!("{:e}", f); // e.g. "1e16"
+    match s.split_once('e') {
+        Some((m, e)) if !e.starts_with('-') => format!("{}e+{:0>2}", m, e),
+        Some((m, e)) => format!("{}e-{:0>2}", m, &e[1..]),
+        None => s,
     }
 }
 
-/// Python's `setup()` only assigns constant word tables, which are module-level
-/// `const`s here. The one piece of real state is `CURRENCY_FORMS`.
+/// Port of `utils.splitbyx(n, x)` with `x == 3` and `format_int=True`.
+///
+/// `n` is the decimal string of a **non-negative** integer here (`_int2word`
+/// has already stripped any sign), so every chunk is 1..=3 digits and lies in
+/// `0..=999`. That bound is what licenses `u32` rather than `BigInt`: the
+/// chunk width is fixed by the slicing, not by the magnitude of the input.
+/// The number of chunks is unbounded, but it is a length, so `usize` is fine.
+fn splitbyx(n: &str) -> Vec<u32> {
+    // ASCII digits only, so byte indexing and char indexing coincide; go via
+    // chars anyway to keep the slicing honest.
+    let chars: Vec<char> = n.chars().collect();
+    let length = chars.len();
+    let x = 3usize;
+    let parse = |i: usize, j: usize| -> u32 {
+        chars[i..j.min(length)]
+            .iter()
+            .collect::<String>()
+            .parse::<u32>()
+            .expect("splitbyx operates on a non-negative decimal string")
+    };
+
+    let mut out: Vec<u32> = Vec::new();
+    if length > x {
+        let start = length % x;
+        if start > 0 {
+            out.push(parse(0, start));
+        }
+        let mut i = start;
+        while i < length {
+            out.push(parse(i, i + x));
+            i += x;
+        }
+    } else {
+        out.push(parse(0, length));
+    }
+    out
+}
+
+/// Port of `utils.get_digits(n)`:
+/// `[int(x) for x in reversed(list(("%03d" % n)[-3:]))]` → `[n1, n2, n3]`
+/// (units, tens, hundreds).
+///
+/// Callers only ever pass a `splitbyx` chunk (`0..=999`), for which `"%03d"`
+/// yields exactly three digits and the `[-3:]` slice is a no-op. The negative
+/// hazard that breaks `lang_PL.to_ordinal` cannot arise here.
+fn get_digits(n: u32) -> [usize; 3] {
+    let s = format!("{:03}", n);
+    let chars: Vec<char> = s.chars().collect();
+    let tail = &chars[chars.len() - 3..];
+    let mut a = [0usize; 3];
+    for (k, c) in tail.iter().rev().enumerate() {
+        a[k] = c.to_digit(10).expect("format!(\"{:03}\") emits digits") as usize;
+    }
+    a
+}
+
+/// `Num2Word_KZ.CURRENCY_FORMS` (KZT, USD) plus EUR (еуро/цент), which the
+/// old `kk` module accepted and which must keep working for `kk` callers.
+///
+/// KZ declares its own dict in the class body and subclasses `Num2Word_Base`
+/// directly, so it never sees the `lang_EUR` table that `Num2Word_EN.__init__`
+/// mutates in place, and none of EN's ~24 added codes leak in. Confirmed
+/// against the live interpreter *after* import (i.e. after every converter has
+/// been constructed and any in-place mutation has happened):
+/// `{"KZT": ("теңге", "тиын"), "USD": ("доллар", "цент")}`. Every other code
+/// (GBP, JPY, KWD, BHD, INR, CNY, CHF, ...) raises `NotImplementedError`.
+
+///
+/// # The one-element arity is the port, not a shortcut
+///
+/// KZ's entries are **flat `(str, str)` pairs**, not the `(unit_forms,
+/// subunit_forms)` pairs-of-tuples EN uses. `base.py` unpacks them as
+/// `cr1, cr2 = ("доллар", "цент")`, so `cr1` is the *string* "доллар" and `cr2`
+/// the *string* "цент" — there is no plural form to index. All three readers of
+/// that shape are guarded to treat a non-tuple as an opaque whole:
+///
+/// * `pluralize(n, cr1)` — KZ's returns `form` unchanged (see below).
+/// * `cr2[1] if isinstance(cr2, tuple) and len(cr2) > 1 else cr2` — a str, so
+///   the whole string.
+/// * `to_cheque`: `unit = cr1[-1] if isinstance(cr1, tuple) else cr1` — a str,
+///   so the whole string. Without that `isinstance` guard, `cr1[-1]` on a str
+///   would yield the last *character*, "р".
+///
+/// Modelling each side as a **one-element** `Vec` makes all three fall out of
+/// the shared code correctly: `unit.last()` and `subunit.get(1).or(first())`
+/// both return the single string. Adding a second form here would be a
+/// plausible-looking "fix" — Kazakh does have "доллардар" — and would silently
+/// change `to_cheque` and the fractional-cents branch to pick it up. Don't.
+fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
+    let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
+    m.insert("USD", CurrencyForms::new(&["доллар"], &["цент"]));
+    m.insert("KZT", CurrencyForms::new(&["теңге"], &["тиын"]));
+    m.insert("EUR", CurrencyForms::new(&["еуро"], &["цент"]));
+    m
+}
+
 pub struct LangKk {
-    /// `Num2Word_KK.CURRENCY_FORMS`.
-    ///
-    /// Built once in [`LangKk::new`] and stored, never per call: the binding
-    /// holds the converter in a `OnceLock`, so this table is constructed
-    /// exactly once per process.
-    ///
-    /// Each entry is a 2-tuple of 2-tuples, `((unit_sg, unit_pl), (sub_sg,
-    /// sub_pl))`. The arity is load-bearing even where the two forms are
-    /// spelled identically (KZT's "теңге"/"теңге"): `to_currency` indexes `[1]`
-    /// for the plural and `Num2Word_Base.to_cheque` takes `cr1[-1]`, so both
-    /// slots must exist.
+    /// Built once in `new()`. `to_currency`/`to_cheque` only ever read this,
+    /// and rebuilding it per call is what made an earlier revision of this port
+    /// slower than the Python it replaces.
     currency_forms: HashMap<&'static str, CurrencyForms>,
 }
 
@@ -275,149 +360,75 @@ impl Default for LangKk {
 
 impl LangKk {
     pub fn new() -> Self {
-        // Insertion order is irrelevant to a HashMap; FALLBACK_CURRENCY
-        // captures the one place Python's ordering was observable.
-        let currency_forms: HashMap<&'static str, CurrencyForms> = [
-            ("KZT", &["теңге", "теңге"][..], &["тиын", "тиын"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
-        ]
-        .into_iter()
-        .map(|(k, u, s)| (k, CurrencyForms::new(u, s)))
-        .collect();
-        LangKk { currency_forms }
-    }
-
-    /// The `(left, right)` split at the head of `Num2Word_KK.to_currency`, for
-    /// a value already made non-negative.
-    ///
-    /// Python works on the *string*:
-    ///
-    /// ```python
-    /// parts = str(val).split(".")
-    /// left = int(parts[0]) if parts[0] else 0
-    /// right = int(parts[1][:2].ljust(2, "0")) if len(parts) > 1 and parts[1] else 0
-    /// ```
-    ///
-    /// Taking the first two fractional digits and right-padding to two is
-    /// exactly `trunc(frac * 100)` for any plain decimal string — `"5"` →
-    /// `"50"` → 50 is `trunc(0.5 * 100)`, `"345"` → `"34"` is
-    /// `trunc(0.345 * 100)` — so this computes the split arithmetically rather
-    /// than round-tripping the value back through `BigDecimal`'s `Display`,
-    /// which switches to exponential form on its own thresholds and is not a
-    /// formatting impl this port controls. (`lang_fo.rs` and `lang_eu.rs` port
-    /// the same idiom the same way.)
-    ///
-    /// `with_scale(0)` truncates (it divides the underlying `BigInt`), which is
-    /// what `int()` does, and both operands are non-negative here, so floor and
-    /// truncation agree.
-    ///
-    /// A true `int` has no "." in `str(val)`, so `len(parts) > 1` is false and
-    /// `right` is 0 — which is also what `frac == 0` gives here. KK therefore
-    /// needs no `isinstance(val, int)` branch: currency bug 7 means the
-    /// int/float distinction is invisible in this language's output.
-    fn split_currency(val: &CurrencyValue) -> (BigInt, BigInt) {
-        match val {
-            CurrencyValue::Int(i) => (i.abs(), BigInt::zero()),
-            CurrencyValue::Decimal { value: d, .. } => {
-                let abs = d.abs();
-                // int(parts[0]) — truncation toward zero; abs is non-negative.
-                let left = abs.with_scale(0).as_bigint_and_exponent().0;
-                let frac = &abs - BigDecimal::from(left.clone());
-                let right = (frac * BigDecimal::from(CENT_DIVISOR))
-                    .with_scale(0)
-                    .as_bigint_and_exponent()
-                    .0;
-                (left, right)
-            }
+        LangKk {
+            currency_forms: build_currency_forms(),
         }
     }
 
-    /// Python's `_int_to_word`.
+    /// Port of `Num2Word_KZ._int2word`.
     ///
-    /// Kept as a direct transcription, including the unreachable arms, so the
-    /// correspondence with the source stays checkable. Cannot fail.
-    fn int_to_word(&self, number: &BigInt) -> String {
-        // `if number == 0: return self.ones[0] if self.ones[0] else "zero"`
-        // ONES[0] is "" → falsy → always the English "zero". See bug 1.
-        if number.is_zero() {
-            return if ONES[0].is_empty() {
-                "zero".to_string()
-            } else {
-                ONES[0].to_string()
-            };
+    /// The `feminine` parameter exists in Python but is never read by the
+    /// method body (only `_cents_verbose`, out of scope, ever passes it), so
+    /// it is omitted here.
+    fn int2word(&self, n: &BigInt) -> Result<String> {
+        if n.is_negative() {
+            // Python: " ".join([self.negword, self._int2word(abs(n))]).
+            // negword is "минус" with no padding, so this is a plain space
+            // join — note it does *not* go through `negword.strip()` the way
+            // `Num2Word_Base.to_cardinal` would.
+            return Ok(format!("{} {}", NEGWORD, self.int2word(&n.abs())?));
         }
 
-        // `if number < 0: return self.negword + self._int_to_word(abs(number))`
-        // Dead code in practice: `to_cardinal` strips the sign from the string
-        // before parsing, so a negative never reaches here. Ported anyway.
-        if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+        if n.is_zero() {
+            return Ok(ZERO.to_string());
         }
 
-        let ten = BigInt::from(10);
-        let hundred = BigInt::from(100);
-        let thousand = BigInt::from(1_000);
-        let million = BigInt::from(1_000_000);
-        let billion = BigInt::from(1_000_000_000);
+        let mut words: Vec<&str> = Vec::new();
+        let chunks = splitbyx(&n.to_string());
+        let mut i = chunks.len();
 
-        if number < &ten {
-            // 1..=9, so the cast and the index are both in range.
-            return ONES[number.to_usize().unwrap()].to_string();
-        }
+        for x in chunks {
+            i -= 1;
 
-        if number < &hundred {
-            // Python: `number // 10`, `number % 10`. `number` is positive here,
-            // so floor-division and truncating division agree; div_rem is safe.
-            let (tens_val, ones_val) = number.div_rem(&ten);
-            let t = TENS[tens_val.to_usize().unwrap()]; // 1..=9
-            let o = ones_val.to_usize().unwrap(); // 0..=9
-            return if o == 0 {
-                t.to_string()
-            } else {
-                format!("{} {}", t, ONES[o])
-            };
-        }
-
-        if number < &thousand {
-            let (hundreds_val, remainder) = number.div_rem(&hundred);
-            // No `hundreds_val == 1` special case in Python → "бір жүз". Bug 4.
-            let mut result = format!("{} {}", ONES[hundreds_val.to_usize().unwrap()], HUNDRED);
-            if !remainder.is_zero() {
-                result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+            if x == 0 {
+                continue;
             }
-            return result;
-        }
 
-        if number < &million {
-            let (thousands_val, remainder) = number.div_rem(&thousand);
-            let mut result = format!("{} {}", self.int_to_word(&thousands_val), THOUSAND);
-            if !remainder.is_zero() {
-                result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+            let [n1, n2, n3] = get_digits(x);
+
+            if n3 > 0 {
+                // The `kz` module skips the multiplier for one hundred
+                // ("жүз бір"); `kk` always says it ("бір жүз бір"). The `kk`
+                // form is kept until a native speaker settles it (#166).
+                words.push(ONES[n3]);
+                words.push(HUNDRED);
             }
-            return result;
-        }
 
-        if number < &billion {
-            let (millions_val, remainder) = number.div_rem(&million);
-            let mut result = format!("{} {}", self.int_to_word(&millions_val), MILLION);
-            if !remainder.is_zero() {
-                result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+            if n2 == 1 {
+                words.push(TEN);
+            } else if n2 > 1 {
+                words.push(TWENTIES[n2]);
             }
-            return result;
+
+            if n1 > 0 {
+                words.push(ONES[n1]);
+            }
+
+            if i > 0 {
+                // THOUSANDS[i]. Keys stop at 10, so i >= 11 means n >= 10^33:
+                // OverflowError (Python's kz raised KeyError: 11).
+                let word = THOUSANDS.get(i).copied().ok_or_else(|| overflow_error(n))?;
+                words.push(word);
+            }
         }
 
-        // `return str(number)  # Fallback for very large numbers`. See bug 3.
-        number.to_string()
+        Ok(words.join(" "))
     }
 }
 
 impl Lang for LangKk {
-    /// This language's own `to_currency(currency=...)` default,
-    /// read from the live Python signature. Only 44 of 156 use EUR.
+    /// `kk`'s default (KZT). The `kz` module defaulted to EUR, which was not
+    /// in its own table, so every call without `currency=` raised (#166).
     fn default_currency(&self) -> &str {
         "KZT"
     }
@@ -427,7 +438,11 @@ impl Lang for LangKk {
     /// 36 of 149 languages actually use it — most default to " " or a
     /// conjunction, so inheriting Base's comma silently corrupts them.
     fn default_separator(&self) -> &str {
-        " "
+        ","
+    }
+
+    fn maxval(&self) -> &BigInt {
+        maxval()
     }
 
     fn negword(&self) -> &str {
@@ -435,452 +450,270 @@ impl Lang for LangKk {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "бүтін"
     }
 
-    /// Python's `to_cardinal`.
+    /// Port of `Num2Word_KZ.to_cardinal` for integer input.
     ///
-    /// The original round-trips through the decimal string (`n =
-    /// str(number).strip()`) to split off the sign and a possible fractional
-    /// part. For integral input the `"." in n` branch is unreachable, so this
-    /// reproduces only the `else` arm — sign strip, `int(n)`, `_int_to_word`,
-    /// then a final `.strip()`.
+    /// Python computes `n = str(number).replace(",", ".")` and branches on
+    /// `"." in n`. A Python `int` never stringifies with a `,` or `.`, so the
+    /// fractional branch is unreachable here and the whole method collapses to
+    /// `self._int2word(int(n))`.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        let n = value.to_string(); // already stripped: no stray whitespace
-        let (ret, digits) = match n.strip_prefix('-') {
-            Some(rest) => (NEGWORD, rest),
-            None => ("", n.as_str()),
-        };
-
-        // `int(n)` on the sign-stripped digits — the magnitude. Cannot fail:
-        // `BigInt::to_string` always yields a parseable decimal literal, and
-        // it is never the bare "-" that trips other languages up.
-        let parsed: BigInt = digits.parse().unwrap_or_else(|_| BigInt::zero());
-
-        // `(ret + self._int_to_word(int(n))).strip()`
-        Ok(format!("{}{}", ret, self.int_to_word(&parsed))
-            .trim()
-            .to_string())
+        self.int2word(value)
     }
 
-    /// Python: `return self.to_cardinal(number) + "-інші"`.
-    ///
-    /// A flat suffix with no agreement, no stem change, and no zero/negative
-    /// guard — hence `"zero-інші"` and `"minus бір-інші"`, and, above 10^9,
-    /// `"1000000000-інші"`.
-    fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
-    }
-
-    /// Python: `return str(number) + "."` — the sign survives ("-1.").
+    /// `kk`'s `to_ordinal_num`: `str(number) + "."` — the sign survives
+    /// ("-1."). The `kz` module returned the bare number.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}.", value))
     }
 
-    /// Python: `def to_year(self, val, longval=True): return
-    /// self.to_cardinal(val)`. `longval` is accepted and ignored, and there is
-    /// no century/"hundred" pairing — 1905 is "бір мың тоғыз жүз бес", i.e.
-    /// plain 1905, not "nineteen oh five".
-    fn to_year(&self, value: &BigInt) -> Result<String> {
-        self.to_cardinal(value)
+    /// `to_ordinal_num(float/Decimal)`: `str(number) + "."`, purely textual.
+    fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
+        Ok(format!("{}.", repr_str))
     }
 
-    /// Port of the float/Decimal path of `Num2Word_KK.to_cardinal`.
+    /// Port of `Num2Word_KZ.to_ordinal`.
     ///
-    /// KK does **not** inherit `Num2Word_Base.to_cardinal_float`/`float2tuple`.
-    /// It overrides `to_cardinal(number)`, which operates on `str(number)`:
+    /// Suffixes are chosen by inspecting the *last character* of the cardinal
+    /// (and, for consonant endings, the last two). All indexing is by `char`:
+    /// every letter involved is multi-byte in UTF-8, so byte offsets would be
+    /// wrong. See the module docs for the four classification bugs this
+    /// faithfully reproduces.
+    fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        if value.is_zero() {
+            return Ok(format!("{}інші", ZERO));
+        }
+
+        let cardinal = self.to_cardinal(value)?;
+        ordinal_suffix(cardinal)
+    }
+
+    /// Port of `Num2Word_KZ.to_cardinal`'s `"." in n` branch (float/Decimal
+    /// input). Python:
     ///
     /// ```python
-    /// n = str(number).strip()
-    /// if n.startswith("-"):
-    ///     n = n[1:]; ret = self.negword
-    /// else:
-    ///     ret = ""
-    /// if "." in n:
-    ///     left, right = n.split(".", 1)
-    ///     ret += self._int_to_word(int(left)) + " " + self.pointword + " "
-    ///     for digit in right:
-    ///         ret += self._int_to_word(int(digit)) + " "
-    ///     return ret.strip()
+    /// n = str(number).replace(",", ".")            # has "." here
+    /// is_negative = n.startswith("-")
+    /// abs_n = n[1:] if is_negative else n
+    /// left, right = abs_n.split(".")
+    /// leading_zero_count = len(right) - len(right.lstrip("0"))
+    /// result = "%s %s %s" % (
+    ///     self._int2word(int(left)),
+    ///     self.pointword,
+    ///     (ZERO + " ") * leading_zero_count + self._int2word(int(right)),
+    /// )
+    /// if is_negative: result = self.negword + " " + result
     /// ```
     ///
-    /// The fractional part is read **digit by digit off the decimal string**,
-    /// so the `float2tuple` f64-artefact heuristic never applies here: `2.675`
-    /// becomes `str` `"2.675"` → `"алты жеті бес"` directly, with no
-    /// `674.999…` to rescue. Reproduce that by rebuilding the repr string, not
-    /// by arithmetic on the raw double (which *would* reintroduce the artefact).
+    /// `right` is Python's fractional digit string; `int(right)` is spelled as a
+    /// single whole number (KZ's divergence from Base's digit-by-digit form),
+    /// with one "нөл" per leading zero of `right`. Reconstructed from
+    /// `float2tuple`: `precision` is exactly the length of `str(number)`'s
+    /// fractional part, so `post` == `int(right)` and `post` zero-padded to
+    /// `precision` == `right`. The f64 arithmetic (and its `< 0.01` rescue, e.g.
+    /// `2.675` → `675`) stays inside `float2tuple`; nothing is recomputed from a
+    /// decimal string.
     ///
-    /// * **Float** — Rust's `{}` drops the `.0` on whole floats (`1.0` → "1"),
-    ///   so the repr is reconstructed with `{:.precision$}` on the absolute
-    ///   value. `precision` is the repr-derived fractional length (== Python's
-    ///   `abs(Decimal(str(v)).as_tuple().exponent)`), and formatting the double
-    ///   back to that many places recovers exactly the shortest-round-trip
-    ///   digits (verified: `2.675` → "2.675", `1.005` → "1.005", `1.0` →
-    ///   "1.0").
-    /// * **Decimal** — reconstructed arithmetically (exact): `int(left)` is the
-    ///   truncated integer part, and the fractional digits are
-    ///   `(abs - left) * 10**precision` left-padded to `precision`. This keeps
-    ///   trailing zeros the way `str(Decimal("1.10"))` does ("1.10" → "10") and
-    ///   stays exact at trillion scale (`98746251323029.99`, issue #603), where
-    ///   `int(left)` overflows KK's `_int_to_word` word tables and leaks through
-    ///   as bare digits (module bug 3).
-    ///
-    /// The integer part `int(left)` runs back through KK's `int_to_word`, so
-    /// module bugs 1/3/4 all reach here: `0.x` → "zero point …" (English
-    /// "zero", bug 1), `100.5` → "бір жүз point …" (bug 4), and integer parts
-    /// ≥ 10^9 render as raw digits (bug 3).
-    ///
-    /// `precision_override` (the `precision=` kwarg, issue #580) is **inert**
-    /// for KK: `to_cardinal` takes no such parameter, so the kwarg is dropped
-    /// before it can matter. Verified live:
-    /// `num2words(0.5, lang="kk", precision=3)` == "zero point бес".
+    /// `precision_override` is ignored: KZ's Python `to_cardinal` never reads
+    /// `self.precision`, so the `precision=` kwarg is inert (verified live).
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
-        // Rebuild `n` (already sign-stripped) as "<left>.<right>" with exactly
-        // `precision` fractional digits — or no "." when precision is 0, which
-        // mirrors Python's `if "." in n` guard falling through to the integer
-        // branch. `neg` mirrors `str(number).startswith("-")`.
-        let (neg, left, right_str) = match value {
-            FloatValue::Float { value, precision } => {
-                // Sign *bit*, not `< 0.0`: repr(-0.0) is "-0.0", so Python's
-                // startswith("-") is true and KK answers "minus zero point
-                // zero". A `< 0.0` test would drop the minus.
-                let neg = value.is_sign_negative();
-                let prec = *precision as usize;
-                let s = format!("{:.p$}", value.abs(), p = prec);
-                match s.split_once('.') {
-                    Some((l, r)) => (
-                        neg,
-                        l.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero()),
-                        r.to_string(),
-                    ),
-                    None => (
-                        neg,
-                        s.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero()),
-                        String::new(),
-                    ),
-                }
-            }
-            FloatValue::Decimal { value, precision } => {
-                let neg = value.is_negative();
-                let abs = value.abs();
-                // int(left) — truncate the absolute value toward zero.
-                let left = abs.with_scale(0).as_bigint_and_exponent().0;
-                if *precision == 0 {
-                    (neg, left, String::new())
-                } else {
-                    let frac = &abs - BigDecimal::from(left.clone());
-                    let scale = BigInt::from(10).pow(*precision);
-                    let right = (frac * BigDecimal::from(scale))
-                        .with_scale(0)
-                        .as_bigint_and_exponent()
-                        .0;
-                    // Left-pad to `precision` digits (right is non-negative and
-                    // < 10**precision, so this never truncates). Manual pad
-                    // rather than a numeric fill so BigInt's Display is used
-                    // verbatim.
-                    let rs = right.to_string();
-                    let pad = (*precision as usize).saturating_sub(rs.len());
-                    (neg, left, format!("{}{}", "0".repeat(pad), rs))
-                }
-            }
-        };
+        let precision = value.precision() as usize;
 
-        // ret += _int_to_word(int(left)) [+ " point " + per-digit words];
-        // strip. `pointword` ("point") is used raw — KK's `to_cardinal` applies
-        // no title() here (and is_title is false anyway).
-        let mut tokens: Vec<String> = vec![self.int_to_word(&left)];
-        if !right_str.is_empty() {
-            tokens.push(self.pointword().to_string());
-            for ch in right_str.chars() {
-                // Each char is one decimal digit; int(digit) ∈ 0..=9.
-                let d = ch.to_digit(10).unwrap_or(0);
-                tokens.push(self.int_to_word(&BigInt::from(d)));
-            }
-        }
-        let joined = tokens.join(" ");
-        // negword ("minus ") is prepended raw, then the whole thing stripped —
-        // exactly Python's `ret = self.negword + ...; return ret.strip()`.
-        let result = if neg {
-            format!("{}{}", NEGWORD, joined)
-        } else {
-            joined
+        // (pre, post): pre = int(number) (signed, truncated toward zero),
+        // post = the fractional digits as a non-negative integer.
+        let (pre, post) = float2tuple(value);
+
+        // right = post zero-padded to `precision` digits (Python's fractional
+        // string). ASCII digits only, so byte length == char count.
+        let post_digits = post.to_string();
+        let right = format!(
+            "{}{}",
+            "0".repeat(precision.saturating_sub(post_digits.len())),
+            post_digits
+        );
+        // leading_zero_count = len(right) - len(right.lstrip("0")).
+        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+
+        // int(left): Python strips the sign from the string first, so `left` is
+        // the integer part of the *absolute* value; the sign is carried
+        // separately by `is_negative` below.
+        let left_words = self.int2word(&pre.abs())?;
+
+        // (ZERO + " ") * leading_zero_count + _int2word(int(right))
+        let fraction = format!(
+            "{}{}",
+            format!("{} ", ZERO).repeat(leading_zero_count),
+            self.int2word(&post)?
+        );
+
+        // "%s %s %s" % (left, pointword, fraction). pointword is used raw in
+        // Python (no title()); KZ is not a title language, so this matches.
+        let mut result = format!("{} {} {}", left_words, self.pointword(), fraction);
+
+        // if is_negative: result = negword + " " + result. Python's
+        // `is_negative = str(number).startswith("-")` follows the *string* sign,
+        // which for a float is the IEEE sign bit — so `-0.0` (str "-0.0") is
+        // negative even though `-0.0 < 0.0` is false. Match that on the raw f64
+        // via `is_sign_negative`; the Decimal arm keeps its own sign. KZ uses
+        // the raw negword ("минус") with no strip(), unlike Base's `negword.strip()`.
+        let is_negative = match value {
+            FloatValue::Float { value, .. } => value.is_sign_negative(),
+            FloatValue::Decimal { value, .. } => value.is_negative(),
         };
-        Ok(result.trim().to_string())
+        if is_negative {
+            result = format!("{} {}", NEGWORD, result);
+        }
+        Ok(result)
     }
 
-    /// `to_cardinal(float/Decimal)` — the full entry, routing on
-    /// `"." in str(number)` rather than on whole-ness (Base's
-    /// `int(value) == value` test never runs; KK overrides `to_cardinal`
-    /// outright).
+    /// Full `to_cardinal(float/Decimal)` routing — Python's gate is
+    /// `"." in str(number)`, NOT the base default's `int(value) == value`:
     ///
-    /// A whole float therefore keeps its ".0" tail (`5.0` -> "бес point
-    /// zero", `-0.0` -> "minus zero point zero"), a point-less integral
-    /// Decimal takes the integer grammar (`Decimal("100")` -> "бір жүз"),
-    /// and a point-less non-integer form is Python's `int()` ValueError
-    /// (`1e+16`, `Decimal("1E+2")`).
-    ///
-    /// `precision_override` is threaded through untouched; KK's grammar never
-    /// reads a precision, so it is inert either way (see `to_cardinal_float`).
+    /// * a **visible point** (any finite float below 1e16, or a Decimal with
+    ///   positive scale) takes the fractional branch even for whole values —
+    ///   `5.0` -> "бес бүтін нөл нөл", `Decimal("5.00")` -> "бес бүтін нөл нөл
+    ///   нөл" (one "нөл" per leading zero of the fractional string plus
+    ///   `_int2word(0)`).
+    /// * **no point** funnels the whole string into `int(n)`: plain digit
+    ///   Decimals ("5", "100") reach the integer path, while exponent forms
+    ///   (`str(1e16) == "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and
+    ///   inf/nan raise **ValueError**, not the base default's OverflowError.
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
-        match route_by_str(value)? {
-            StrRoute::Point => self.to_cardinal_float(value, precision_override),
-            StrRoute::WholeDigits(abs_int) => {
-                // `(ret + self._int_to_word(int(n))).strip()`, with the sign
-                // already peeled off the string into `ret = self.negword`.
-                let body = self.int_to_word(&abs_int);
-                if value.is_negative() {
-                    Ok(format!("{}{}", NEGWORD, body).trim().to_string())
-                } else {
-                    Ok(body)
+        if value.has_visible_point() {
+            return self.to_cardinal_float(value, precision_override);
+        }
+        match value {
+            // A finite float without a visible point stringifies in exponent
+            // form; inf/nan stringify as "inf"/"nan". int() rejects them all.
+            FloatValue::Float { value, .. } => Err(int_value_error(&float_no_point_str(*value))),
+            FloatValue::Decimal { value, .. } => {
+                let s = crate::strnum::python_decimal_str(value);
+                match crate::strnum::python_int_parse(&s) {
+                    Some(i) => self.to_cardinal(&i),
+                    None => Err(int_value_error(&s)),
                 }
             }
         }
     }
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-інші"` —
-    /// the same blind suffix as the integer path, so `5.0` == "бес point
-    /// zero-інші" and the ValueError of `1e+16` propagates unchanged.
-    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!(
-            "{}{}",
-            self.cardinal_float_entry(value, None)?,
-            ORDINAL_SUFFIX
-        ))
-    }
-
-    /// `to_ordinal_num(float/Decimal)`: `str(number) + "."`. Purely textual —
-    /// nothing is parsed, so even the scientific forms succeed: `1e+16` ==
-    /// "1e+16." and `Decimal("1E+2")` == "1E+2.".
-    fn ordinal_num_float_entry(&self, _value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}.", repr_str))
-    }
-
-    // `year_float_entry` is deliberately NOT overridden: KK's `to_year` is
-    // `return self.to_cardinal(val)`, and the trait default routes through
-    // the overridden `cardinal_float_entry` above — so `to_year(5.0)` ==
-    // "бес point zero" and `to_year(1e+16)` raises ValueError, as the
-    // corpus pins.
-
-    /// `converter.str_to_number` — Base's `Decimal(value)`, which KK does not
-    /// override. Inf/NaN parse fine here; the per-mode behaviour is served
-    /// natively by [`Lang::inf_result`] / [`Lang::nan_result`] below.
-    fn str_to_number(&self, s: &str) -> Result<ParsedNumber> {
-        python_decimal_parse(s)
-    }
-
-    /// `Decimal('Infinity')` / `-Infinity` reached KK. `to_cardinal` strips the
-    /// sign textually then does `int("Infinity")` → `ValueError`; `to_ordinal`
-    /// (`to_cardinal(...) + "-інші"`) and `to_year` (`to_cardinal`) raise the
-    /// same `ValueError` before their suffix/wrap. `to_ordinal_num` is a purely
-    /// textual `str(number) + "."`, so it echoes the token (sign preserved).
-    fn inf_result(&self, negative: bool, to: &str) -> Result<String> {
-        match to {
-            "ordinal_num" => {
-                let token = if negative { "-Infinity" } else { "Infinity" };
-                Ok(format!("{}.", token))
-            }
-            // cardinal/ordinal/year: int() sees the sign-stripped token.
-            _ => Err(int_value_error("Infinity")),
-        }
-    }
-
-    /// `Decimal('NaN')` reached KK. `int("NaN")` → `ValueError` on the
-    /// cardinal/ordinal/year paths; `to_ordinal_num` echoes "NaN.".
-    fn nan_result(&self, to: &str) -> Result<String> {
-        match to {
-            "ordinal_num" => Ok("NaN.".to_string()),
-            _ => Err(int_value_error("NaN")),
-        }
-    }
-
-    // ---- currency ------------------------------------------------------
-    //
-    // `Num2Word_KK` overrides `to_currency` outright and inherits `to_cheque`
-    // from `Num2Word_Base`. Those two entry points reach the class's state by
-    // completely separate routes, which is why only `currency_forms` and
-    // `lang_name` are overridden alongside `to_currency`:
-    //
-    // * `to_currency` never raises — it *falls back* to the first
-    //   `CURRENCY_FORMS` entry for an unknown code (bug 5).
-    // * `to_cheque` does `self.CURRENCY_FORMS[currency]` and turns the
-    //   `KeyError` into `NotImplementedError`.
-    //
-    // So the fallback must live in `to_currency` and must NOT leak into
-    // `currency_forms`, or `cheque:GBP` would return "... ТЕҢГЕ" instead of
-    // raising. The corpus pins both halves:
-    //   currency:GBP 12.34 -> "он екі теңге отыз төрт тиын"  (fallback)
-    //   cheque:GBP  1234.56 -> NotImplementedError            (no fallback)
-    //
-    // Not overridden, because `Num2Word_KK` does not override them either:
-    //
-    // * `currency_precision` — `Num2Word_KK` defines no `CURRENCY_PRECISION`
-    //   and inherits `Num2Word_Base`'s empty `{}`, so `.get(code, 100)` is 100
-    //   for every code. The trait default is already 100. KK inherits from
-    //   `Num2Word_Base`, not from `Num2Word_EN`, so it never sees EN's
-    //   KWD/BHD-style overrides: `cheque:KWD` would be /100, not /1000 — and
-    //   in fact never gets that far, since KWD is absent from the table and
-    //   raises first. Confirmed live: `CONVERTER_CLASSES["kk"].
-    //   CURRENCY_PRECISION == {}`.
-    // * `currency_adjective` — `CURRENCY_ADJECTIVES` is `{}` (inherited,
-    //   empty), and `to_currency` ignores `adjective` anyway (bug 8).
-    // * `pluralize` — abstract in `Num2Word_Base` and left abstract by
-    //   `Num2Word_KK`. Unreachable: `to_currency` selects the plural inline
-    //   with `left != 1`, and `to_cheque` takes `cr1[-1]` unconditionally. The
-    //   trait default (raise NotImplemented) is the faithful mirror.
-    // * `money_verbose` / `cents_verbose` / `cents_terse` — `Num2Word_Base`'s
-    //   `_money_verbose` is `return self.to_cardinal(number)`, which is the
-    //   trait default. `to_cheque` calls it; the other two are unreachable
-    //   because KK's `to_currency` never delegates to the base.
-    // * `cardinal_from_decimal` — the fractional-cents branch lives in
-    //   `Num2Word_Base.to_currency`, which KK never enters. Left at its
-    //   default.
-
-    /// `self.__class__.__name__`, read by `Num2Word_Base.to_cheque`'s
-    /// `NotImplementedError` message.
-    fn lang_name(&self) -> &str {
-        LANG_NAME
-    }
-
-    /// `self.CURRENCY_FORMS[code]` — a *strict* lookup, as `to_cheque` does it.
+    /// `to_ordinal(float/Decimal)`. Python:
     ///
-    /// Returns `None` for an unknown code so the inherited `to_cheque` raises
-    /// `NotImplementedError`. `to_currency`'s forgiving
-    /// `.get(code, <first entry>)` is a different lookup and is spelled out
-    /// there; the two must not be merged.
+    /// ```python
+    /// if number == 0: return ZERO + "інші"          # 0.0, -0.0, Decimal("0")
+    /// cardinal = self.to_cardinal(number)           # str-routed, see above
+    /// ... suffix by cardinal's last character ...
+    /// ```
+    ///
+    /// The zero test is numeric, so `-0.0` and `Decimal("0.00")` short-circuit
+    /// to "нөлінші" without ever seeing the float grammar. Everything else
+    /// (whole floats included) gets the fractional cardinal plus the suffix:
+    /// `5.0` -> "бес бүтін нөл нөлінші". Exponent forms raise the cardinal's
+    /// ValueError before any suffix logic runs.
+    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        if value.as_whole_int().is_some_and(|i| i.is_zero()) {
+            return Ok(format!("{}інші", ZERO));
+        }
+        let cardinal = self.cardinal_float_entry(value, None)?;
+        ordinal_suffix(cardinal)
+    }
+
+    // year_float_entry is deliberately left at the trait default: Python's
+    // Num2Word_Base.to_year is `self.to_cardinal(value)` and KZ does not
+    // override it, so the default's delegation to cardinal_float_entry —
+    // which now carries KZ's own routing — is exactly the port.
+
+    /// `converter.str_to_number` is Base's `Decimal(value)` (KZ doesn't
+    /// override it), but `Decimal("Infinity")` then hits KZ's `to_cardinal`,
+    /// where `str(number)` has no "." and `int("Infinity")` raises
+    /// **ValueError** — not the OverflowError the binding's generic Inf arm
+    /// (which models `int(Decimal("Infinity"))` in *base's* integer path)
+    /// would produce. NaN already maps to ValueError there, matching
+    /// `int("NaN")`, so only Inf needs intercepting.
+    fn str_to_number(&self, s: &str) -> Result<ParsedNumber> {
+        match crate::strnum::python_decimal_parse(s)? {
+            ParsedNumber::Inf { negative } => Err(int_value_error(if negative {
+                "-Infinity"
+            } else {
+                "Infinity"
+            })),
+            other => Ok(other),
+        }
+    }
+
+    // ---- currency -------------------------------------------------------
+    //
+    // KZ inherits `to_currency`, `to_cheque`, `_money_verbose` and
+    // `_cents_terse` from `Num2Word_Base` unchanged, so the trait defaults
+    // already are the port. It defines neither `CURRENCY_ADJECTIVES` nor
+    // `CURRENCY_PRECISION`, and nothing mutates Base's empty dicts in place —
+    // both read back as `{}` from the live interpreter after import. So:
+    //
+    //   * `currency_adjective` stays at the default `None`; the `adjective=True`
+    //     kwarg is inert for KZ (`currency in self.CURRENCY_ADJECTIVES` is
+    //     always False), and no `prefix_currency` call ever happens.
+    //   * `currency_precision` stays at the default 100, matching
+    //     `CURRENCY_PRECISION.get(code, 100)` over an empty dict. KZ has no
+    //     3-decimal and no 0-decimal currency, so the `divisor == 1000` and
+    //     `divisor == 1` branches of `default_to_currency` are unreachable here
+    //     — KWD/BHD/JPY raise NotImplementedError at the forms lookup instead,
+    //     long before precision matters.
+    //
+    // Only the forms table, the class name, `pluralize` and `_cents_verbose`
+    // are KZ's own.
+
+    /// Feeds `'Currency code "%s" not implemented for "%s"'`.
+    fn lang_name(&self) -> &str {
+        "Num2Word_KK"
+    }
+
+
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
     }
 
-    /// Port of `Num2Word_KK.to_currency`.
+    /// Port of `Num2Word_KZ.pluralize`: `def pluralize(self, n, form): return form`.
     ///
-    /// ```python
-    /// def to_currency(
-    ///     self, val, currency="KZT", cents=True, separator=" ", adjective=False
-    /// ):
-    ///     """Convert to currency in Kazakh."""
-    ///     is_negative = False
-    ///     if val < 0:
-    ///         is_negative = True
-    ///         val = abs(val)
+    /// Kazakh does not inflect the currency name for number, so this is the
+    /// identity on `form` and ignores `n` entirely — "бір доллар", "екі доллар",
+    /// "жүз доллар" all take the same word.
     ///
-    ///     parts = str(val).split(".")
-    ///     left = int(parts[0]) if parts[0] else 0
-    ///     right = int(parts[1][:2].ljust(2, "0")) if len(parts) > 1 and parts[1] else 0
-    ///
-    ///     cr1, cr2 = self.CURRENCY_FORMS.get(
-    ///         currency, list(self.CURRENCY_FORMS.values())[0]
-    ///     )
-    ///
-    ///     left_str = self._int_to_word(left)
-    ///     result = left_str + " " + (cr1[1] if left != 1 else cr1[0])
-    ///
-    ///     if cents and right:
-    ///         cents_str = self._int_to_word(right)
-    ///         result += separator + cents_str + " " + (cr2[1] if right != 1 else cr2[0])
-    ///
-    ///     if is_negative:
-    ///         result = self.negword + result
-    ///
-    ///     return result.strip()
-    /// ```
-    ///
-    /// A complete override: `Num2Word_Base.to_currency` is never called, so
-    /// none of `parse_currency_parts`, `pluralize`, `_cents_verbose`,
-    /// `_cents_terse`, `CURRENCY_PRECISION` or `CURRENCY_ADJECTIVES` is
-    /// reachable from here. Infallible — there is no `NotImplementedError`
-    /// path (bug 5) and no table index that can escape its range.
-    ///
-    /// # Faithfully reproduced Python bugs (currency)
-    ///
-    /// 5. **An unknown currency code silently becomes KZT.** Python's
-    ///    `.get(currency, list(self.CURRENCY_FORMS.values())[0])` falls back to
-    ///    the first-inserted entry instead of raising, so `currency:GBP`,
-    ///    `:JPY`, `:KWD`, `:BHD`, `:INR`, `:CNY` and `:CHF` all quietly render
-    ///    in теңге/тиын. All 84 such rows are in the corpus. The amounts are
-    ///    *not* converted — 12.34 GBP prints as 12 теңге 34 тиын.
-    /// 6. **Cents are always /100, whatever the currency.** `parts[1][:2]`
-    ///    hard-codes two fractional digits, so a 3-decimal currency would lose
-    ///    its third digit and a 0-decimal one would gain a subunit. Moot in
-    ///    practice given bug 5 — JPY and KWD never reach their own forms.
-    /// 7. **`int` and `float` are indistinguishable.** `Num2Word_Base`
-    ///    branches on `isinstance(val, int)` to skip cents; KK instead tests
-    ///    `if cents and right:`, a truthiness test on the *cent count*. So
-    ///    `1.0` and `1` both give "бір euro" — the float does not render a
-    ///    zero-cents segment the way the base class would. The corpus pins
-    ///    `1.0` -> "бір euro".
-    /// 8. **`adjective` is accepted and never read.** The parameter is in the
-    ///    signature and appears nowhere in the body, so `adjective=True` is a
-    ///    no-op. (`CURRENCY_ADJECTIVES` is empty anyway, so even the base class
-    ///    would have been a no-op here.)
-    /// 9. **The English "zero" leaks into every currency string.** `left == 0`
-    ///    routes through `_int_to_word`'s module bug 1, hence
-    ///    "zero euros бір cent" for 0.01.
-    fn to_currency(
-        &self,
-        val: &CurrencyValue,
-        currency: &str,
-        cents: bool,
-        separator: Option<&str>,
-        _adjective: bool, // declared by Python, never read — bug 8.
-    ) -> Result<String> {
-        // Trait now hands us None when the caller omitted separator=;
-        // resolve it to this language's own default before the ported body.
-        let separator = separator.unwrap_or(self.default_separator());
-        let separator = if separator == SEPARATOR_UNSET {
-            SEPARATOR_DEFAULT
-        } else {
-            separator
-        };
+    /// Python's `form` is a *single string*, because KZ's `CURRENCY_FORMS`
+    /// entries are flat `(str, str)` pairs (see `build_currency_forms`). The
+    /// trait hands it over as the one-element slice that models it, so
+    /// `concat()` reconstitutes the string exactly. Unlike `Num2Word_EUR`'s
+    /// `forms[0 if n == 1 else 1]`, this cannot raise: the identity has no index
+    /// to run off the end of, so there is no IndexError to reproduce and the
+    /// `Result` is always `Ok`.
+    fn pluralize(&self, _n: &BigInt, forms: &[String]) -> Result<String> {
+        Ok(forms.concat())
+    }
 
-        // Python: `if val < 0: is_negative = True; val = abs(val)`. The abs is
-        // folded into split_currency, which every later step reads through.
-        let is_negative = val.is_negative();
-        let (left, right) = Self::split_currency(val);
-
-        // `.get(currency, list(CURRENCY_FORMS.values())[0])` — bug 5. Python
-        // evaluates the default eagerly on every call, but it cannot fail:
-        // KZT is always present.
-        let forms = match self.currency_forms.get(currency) {
-            Some(f) => f,
-            None => &self.currency_forms[FALLBACK_CURRENCY],
-        };
-
-        let one = BigInt::one();
-        let left_str = self.int_to_word(&left);
-        let mut result = format!(
-            "{} {}",
-            left_str,
-            if left != one { &forms.unit[1] } else { &forms.unit[0] }
-        );
-
-        // `if cents and right:` — a truthiness test on the cent count, not on
-        // the type of `val`. See bug 7.
-        if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
-            result.push_str(separator);
-            result.push_str(&cents_str);
-            result.push(' ');
-            result.push_str(if right != one {
-                &forms.subunit[1]
-            } else {
-                &forms.subunit[0]
-            });
-        }
-
-        if is_negative {
-            // negword carries a trailing space ("minus "), so this is the seam
-            // the final strip() does *not* touch.
-            result = format!("{}{}", NEGWORD, result);
-        }
-
-        Ok(result.trim().to_string())
+    /// Port of `Num2Word_KZ._cents_verbose`:
+    /// `return self._int2word(number, currency == "KZT")`.
+    ///
+    /// The `feminine` flag KZ computes here (`currency == "KZT"`) is **dead**:
+    /// `_int2word` takes the parameter and never reads its body — so KZT and USD
+    /// cents spell identically, and only the trailing unit word differs
+    /// ("бір тиын" vs "бір цент"). Reproduced as-is rather than "simplified"
+    /// away, since the argument is part of the ported signature.
+    ///
+    /// Behaviourally this equals the inherited default
+    /// (`Num2Word_Base._cents_verbose` → `self.to_cardinal`), because KZ's
+    /// `to_cardinal` of an int is exactly `_int2word` after a str round-trip
+    /// that changes nothing. Overridden anyway because Python defines it: the
+    /// default only coincides by way of KZ's `to_cardinal` override, and
+    /// spelling it out keeps that coincidence from silently mattering.
+    fn cents_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        self.int2word(number)
     }
 }

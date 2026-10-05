@@ -129,17 +129,14 @@ NATIVE_ENGLISH_LOOKALIKES = set()
 # ever added. Issue numbers point at the open work.
 ALLOW = {
     "exceptions": set(),
-    # gladiaio/num2words2#160
     "hygiene": set(),
     # gladiaio/num2words2#154
     "english_words": {
-        "br", "haw", "ht", "jv", "jw", "kk", "ln", "mg", "mi", "mt", "sd",
+        "br", "haw", "ht", "jv", "jw", "ln", "mg", "mi", "mt", "sd",
         "so", "su", "tk", "tl", "uz", "wo", "yo",
     },
-    # gladiaio/num2words2#156 (pt_BR differs on purpose, see #92)
-    "parity": {
-        "pt_BR",
-    },
+    # pt_BR keeps the string's own notation on purpose, see #92
+    "parity": {"pt_BR"},
     "maxval": set(),
 }
 

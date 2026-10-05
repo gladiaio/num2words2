@@ -17,7 +17,7 @@
 
 from unittest import TestCase
 
-from num2words2 import num2words
+from num2words2 import maxval, num2words
 
 
 class Num2WordsKKTest(TestCase):
@@ -25,7 +25,7 @@ class Num2WordsKKTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="kk"), "zero")
+        self.assertEqual(num2words(0, lang="kk"), "нөл")
         self.assertEqual(num2words(1, lang="kk"), "бір")
         self.assertEqual(num2words(2, lang="kk"), "екі")
         self.assertEqual(num2words(3, lang="kk"), "үш")
@@ -191,154 +191,154 @@ class Num2WordsKKTest(TestCase):
             num2words(999999999, lang="kk"),
             "тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз",
         )
-        self.assertEqual(num2words(1000000000, lang="kk"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="kk"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="kk"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="kk"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="kk"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="kk"), "бір миллиард")
+        self.assertEqual(num2words(1234567890, lang="kk"), "бір миллиард екі жүз отыз төрт миллион бес жүз алпыс жеті мың сегіз жүз тоқсан")
+        self.assertEqual(num2words(9999999999, lang="kk"), "тоғыз миллиард тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз")
+        self.assertEqual(num2words(10000000000, lang="kk"), "он миллиард")
+        self.assertEqual(num2words(99999999999, lang="kk"), "тоқсан тоғыз миллиард тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз")
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="kk"), "minus бір")
-        self.assertEqual(num2words(-2, lang="kk"), "minus екі")
-        self.assertEqual(num2words(-5, lang="kk"), "minus бес")
-        self.assertEqual(num2words(-10, lang="kk"), "minus он")
-        self.assertEqual(num2words(-11, lang="kk"), "minus он бір")
-        self.assertEqual(num2words(-20, lang="kk"), "minus жиырма")
-        self.assertEqual(num2words(-50, lang="kk"), "minus елу")
-        self.assertEqual(num2words(-99, lang="kk"), "minus тоқсан тоғыз")
-        self.assertEqual(num2words(-100, lang="kk"), "minus бір жүз")
-        self.assertEqual(num2words(-101, lang="kk"), "minus бір жүз бір")
-        self.assertEqual(num2words(-200, lang="kk"), "minus екі жүз")
-        self.assertEqual(num2words(-999, lang="kk"), "minus тоғыз жүз тоқсан тоғыз")
-        self.assertEqual(num2words(-1000, lang="kk"), "minus бір мың")
-        self.assertEqual(num2words(-1001, lang="kk"), "minus бір мың бір")
-        self.assertEqual(num2words(-10000, lang="kk"), "minus он мың")
-        self.assertEqual(num2words(-100000, lang="kk"), "minus бір жүз мың")
-        self.assertEqual(num2words(-1000000, lang="kk"), "minus бір миллион")
+        self.assertEqual(num2words(-1, lang="kk"), "минус бір")
+        self.assertEqual(num2words(-2, lang="kk"), "минус екі")
+        self.assertEqual(num2words(-5, lang="kk"), "минус бес")
+        self.assertEqual(num2words(-10, lang="kk"), "минус он")
+        self.assertEqual(num2words(-11, lang="kk"), "минус он бір")
+        self.assertEqual(num2words(-20, lang="kk"), "минус жиырма")
+        self.assertEqual(num2words(-50, lang="kk"), "минус елу")
+        self.assertEqual(num2words(-99, lang="kk"), "минус тоқсан тоғыз")
+        self.assertEqual(num2words(-100, lang="kk"), "минус бір жүз")
+        self.assertEqual(num2words(-101, lang="kk"), "минус бір жүз бір")
+        self.assertEqual(num2words(-200, lang="kk"), "минус екі жүз")
+        self.assertEqual(num2words(-999, lang="kk"), "минус тоғыз жүз тоқсан тоғыз")
+        self.assertEqual(num2words(-1000, lang="kk"), "минус бір мың")
+        self.assertEqual(num2words(-1001, lang="kk"), "минус бір мың бір")
+        self.assertEqual(num2words(-10000, lang="kk"), "минус он мың")
+        self.assertEqual(num2words(-100000, lang="kk"), "минус бір жүз мың")
+        self.assertEqual(num2words(-1000000, lang="kk"), "минус бір миллион")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="kk"), "zero point бір")
-        self.assertEqual(num2words(0.5, lang="kk"), "zero point бес")
-        self.assertEqual(num2words(0.9, lang="kk"), "zero point тоғыз")
-        self.assertEqual(num2words(1.1, lang="kk"), "бір point бір")
-        self.assertEqual(num2words(1.5, lang="kk"), "бір point бес")
-        self.assertEqual(num2words(2.5, lang="kk"), "екі point бес")
-        self.assertEqual(num2words(3.14, lang="kk"), "үш point бір төрт")
-        self.assertEqual(num2words(10.5, lang="kk"), "он point бес")
-        self.assertEqual(num2words(11.11, lang="kk"), "он бір point бір бір")
-        self.assertEqual(num2words(20.2, lang="kk"), "жиырма point екі")
-        self.assertEqual(num2words(99.99, lang="kk"), "тоқсан тоғыз point тоғыз тоғыз")
-        self.assertEqual(num2words(100.01, lang="kk"), "бір жүз point zero бір")
-        self.assertEqual(num2words(100.5, lang="kk"), "бір жүз point бес")
+        self.assertEqual(num2words(0.1, lang="kk"), "нөл бүтін бір")
+        self.assertEqual(num2words(0.5, lang="kk"), "нөл бүтін бес")
+        self.assertEqual(num2words(0.9, lang="kk"), "нөл бүтін тоғыз")
+        self.assertEqual(num2words(1.1, lang="kk"), "бір бүтін бір")
+        self.assertEqual(num2words(1.5, lang="kk"), "бір бүтін бес")
+        self.assertEqual(num2words(2.5, lang="kk"), "екі бүтін бес")
+        self.assertEqual(num2words(3.14, lang="kk"), "үш бүтін он төрт")
+        self.assertEqual(num2words(10.5, lang="kk"), "он бүтін бес")
+        self.assertEqual(num2words(11.11, lang="kk"), "он бір бүтін он бір")
+        self.assertEqual(num2words(20.2, lang="kk"), "жиырма бүтін екі")
+        self.assertEqual(num2words(99.99, lang="kk"), "тоқсан тоғыз бүтін тоқсан тоғыз")
+        self.assertEqual(num2words(100.01, lang="kk"), "бір жүз бүтін нөл бір")
+        self.assertEqual(num2words(100.5, lang="kk"), "бір жүз бүтін бес")
         self.assertEqual(
-            num2words(123.45, lang="kk"), "бір жүз жиырма үш point төрт бес"
+            num2words(123.45, lang="kk"), "бір жүз жиырма үш бүтін қырық бес"
         )
-        self.assertEqual(num2words(1000.5, lang="kk"), "бір мың point бес")
+        self.assertEqual(num2words(1000.5, lang="kk"), "бір мың бүтін бес")
         self.assertEqual(
-            num2words(1234.56, lang="kk"), "бір мың екі жүз отыз төрт point бес алты"
+            num2words(1234.56, lang="kk"), "бір мың екі жүз отыз төрт бүтін елу алты"
         )
-        self.assertEqual(num2words(10000.01, lang="kk"), "он мың point zero бір")
-        self.assertEqual(num2words(-0.5, lang="kk"), "minus zero point бес")
-        self.assertEqual(num2words(-1.5, lang="kk"), "minus бір point бес")
-        self.assertEqual(num2words(-10.5, lang="kk"), "minus он point бес")
+        self.assertEqual(num2words(10000.01, lang="kk"), "он мың бүтін нөл бір")
+        self.assertEqual(num2words(-0.5, lang="kk"), "минус нөл бүтін бес")
+        self.assertEqual(num2words(-1.5, lang="kk"), "минус бір бүтін бес")
+        self.assertEqual(num2words(-10.5, lang="kk"), "минус он бүтін бес")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
-        self.assertEqual(num2words(1, lang="kk", ordinal=True), "бір-інші")
-        self.assertEqual(num2words(2, lang="kk", ordinal=True), "екі-інші")
-        self.assertEqual(num2words(3, lang="kk", ordinal=True), "үш-інші")
-        self.assertEqual(num2words(4, lang="kk", ordinal=True), "төрт-інші")
-        self.assertEqual(num2words(5, lang="kk", ordinal=True), "бес-інші")
-        self.assertEqual(num2words(6, lang="kk", ordinal=True), "алты-інші")
-        self.assertEqual(num2words(7, lang="kk", ordinal=True), "жеті-інші")
-        self.assertEqual(num2words(8, lang="kk", ordinal=True), "сегіз-інші")
-        self.assertEqual(num2words(9, lang="kk", ordinal=True), "тоғыз-інші")
-        self.assertEqual(num2words(10, lang="kk", ordinal=True), "он-інші")
-        self.assertEqual(num2words(11, lang="kk", ordinal=True), "он бір-інші")
-        self.assertEqual(num2words(12, lang="kk", ordinal=True), "он екі-інші")
-        self.assertEqual(num2words(13, lang="kk", ordinal=True), "он үш-інші")
-        self.assertEqual(num2words(14, lang="kk", ordinal=True), "он төрт-інші")
-        self.assertEqual(num2words(15, lang="kk", ordinal=True), "он бес-інші")
-        self.assertEqual(num2words(16, lang="kk", ordinal=True), "он алты-інші")
-        self.assertEqual(num2words(17, lang="kk", ordinal=True), "он жеті-інші")
-        self.assertEqual(num2words(18, lang="kk", ordinal=True), "он сегіз-інші")
-        self.assertEqual(num2words(19, lang="kk", ordinal=True), "он тоғыз-інші")
-        self.assertEqual(num2words(20, lang="kk", ordinal=True), "жиырма-інші")
-        self.assertEqual(num2words(21, lang="kk", ordinal=True), "жиырма бір-інші")
-        self.assertEqual(num2words(22, lang="kk", ordinal=True), "жиырма екі-інші")
-        self.assertEqual(num2words(25, lang="kk", ordinal=True), "жиырма бес-інші")
-        self.assertEqual(num2words(30, lang="kk", ordinal=True), "отыз-інші")
-        self.assertEqual(num2words(40, lang="kk", ordinal=True), "қырық-інші")
-        self.assertEqual(num2words(50, lang="kk", ordinal=True), "елу-інші")
-        self.assertEqual(num2words(60, lang="kk", ordinal=True), "алпыс-інші")
-        self.assertEqual(num2words(70, lang="kk", ordinal=True), "жетпіс-інші")
-        self.assertEqual(num2words(80, lang="kk", ordinal=True), "сексен-інші")
-        self.assertEqual(num2words(90, lang="kk", ordinal=True), "тоқсан-інші")
-        self.assertEqual(num2words(100, lang="kk", ordinal=True), "бір жүз-інші")
-        self.assertEqual(num2words(101, lang="kk", ordinal=True), "бір жүз бір-інші")
-        self.assertEqual(num2words(200, lang="kk", ordinal=True), "екі жүз-інші")
-        self.assertEqual(num2words(500, lang="kk", ordinal=True), "бес жүз-інші")
-        self.assertEqual(num2words(1000, lang="kk", ordinal=True), "бір мың-інші")
-        self.assertEqual(num2words(1001, lang="kk", ordinal=True), "бір мың бір-інші")
-        self.assertEqual(num2words(10000, lang="kk", ordinal=True), "он мың-інші")
+        self.assertEqual(num2words(1, lang="kk", ordinal=True), "бірінші")
+        self.assertEqual(num2words(2, lang="kk", ordinal=True), "екінші")
+        self.assertEqual(num2words(3, lang="kk", ordinal=True), "үшінші")
+        self.assertEqual(num2words(4, lang="kk", ordinal=True), "төртінші")
+        self.assertEqual(num2words(5, lang="kk", ordinal=True), "бесінші")
+        self.assertEqual(num2words(6, lang="kk", ordinal=True), "алтыншы")
+        self.assertEqual(num2words(7, lang="kk", ordinal=True), "жетінші")
+        self.assertEqual(num2words(8, lang="kk", ordinal=True), "сегізінші")
+        self.assertEqual(num2words(9, lang="kk", ordinal=True), "тоғызыншы")
+        self.assertEqual(num2words(10, lang="kk", ordinal=True), "оныншы")
+        self.assertEqual(num2words(11, lang="kk", ordinal=True), "он бірінші")
+        self.assertEqual(num2words(12, lang="kk", ordinal=True), "он екінші")
+        self.assertEqual(num2words(13, lang="kk", ordinal=True), "он үшінші")
+        self.assertEqual(num2words(14, lang="kk", ordinal=True), "он төртінші")
+        self.assertEqual(num2words(15, lang="kk", ordinal=True), "он бесінші")
+        self.assertEqual(num2words(16, lang="kk", ordinal=True), "он алтыншы")
+        self.assertEqual(num2words(17, lang="kk", ordinal=True), "он жетінші")
+        self.assertEqual(num2words(18, lang="kk", ordinal=True), "он сегізінші")
+        self.assertEqual(num2words(19, lang="kk", ordinal=True), "он тоғызыншы")
+        self.assertEqual(num2words(20, lang="kk", ordinal=True), "жиырманшы")
+        self.assertEqual(num2words(21, lang="kk", ordinal=True), "жиырма бірінші")
+        self.assertEqual(num2words(22, lang="kk", ordinal=True), "жиырма екінші")
+        self.assertEqual(num2words(25, lang="kk", ordinal=True), "жиырма бесінші")
+        self.assertEqual(num2words(30, lang="kk", ordinal=True), "отызыншы")
+        self.assertEqual(num2words(40, lang="kk", ordinal=True), "қырықінші")
+        self.assertEqual(num2words(50, lang="kk", ordinal=True), "елуінші")
+        self.assertEqual(num2words(60, lang="kk", ordinal=True), "алпысыншы")
+        self.assertEqual(num2words(70, lang="kk", ordinal=True), "жетпісінші")
+        self.assertEqual(num2words(80, lang="kk", ordinal=True), "сексенінші")
+        self.assertEqual(num2words(90, lang="kk", ordinal=True), "тоқсаныншы")
+        self.assertEqual(num2words(100, lang="kk", ordinal=True), "бір жүзінші")
+        self.assertEqual(num2words(101, lang="kk", ordinal=True), "бір жүз бірінші")
+        self.assertEqual(num2words(200, lang="kk", ordinal=True), "екі жүзінші")
+        self.assertEqual(num2words(500, lang="kk", ordinal=True), "бес жүзінші")
+        self.assertEqual(num2words(1000, lang="kk", ordinal=True), "бір мыңыншы")
+        self.assertEqual(num2words(1001, lang="kk", ordinal=True), "бір мың бірінші")
+        self.assertEqual(num2words(10000, lang="kk", ordinal=True), "он мыңыншы")
 
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="kk", to="currency", currency="KZT"), "zero теңге"
+            num2words(0, lang="kk", to="currency", currency="KZT"), "нөл теңге"
         )
         self.assertEqual(
             num2words(0.01, lang="kk", to="currency", currency="KZT"),
-            "zero теңге бір тиын",
+            "нөл теңге, бір тиын",
         )
         self.assertEqual(
             num2words(0.5, lang="kk", to="currency", currency="KZT"),
-            "zero теңге елу тиын",
+            "нөл теңге, елу тиын",
         )
         self.assertEqual(
             num2words(1, lang="kk", to="currency", currency="KZT"), "бір теңге"
         )
         self.assertEqual(
             num2words(1.5, lang="kk", to="currency", currency="KZT"),
-            "бір теңге елу тиын",
+            "бір теңге, елу тиын",
         )
         self.assertEqual(
-            num2words(0, lang="kk", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="kk", to="currency", currency="USD"), "нөл доллар"
         )
         self.assertEqual(
             num2words(0.01, lang="kk", to="currency", currency="USD"),
-            "zero dollars бір cent",
+            "нөл доллар, бір цент",
         )
         self.assertEqual(
             num2words(0.5, lang="kk", to="currency", currency="USD"),
-            "zero dollars елу cents",
+            "нөл доллар, елу цент",
         )
         self.assertEqual(
-            num2words(1, lang="kk", to="currency", currency="USD"), "бір dollar"
+            num2words(1, lang="kk", to="currency", currency="USD"), "бір доллар"
         )
         self.assertEqual(
             num2words(1.5, lang="kk", to="currency", currency="USD"),
-            "бір dollar елу cents",
+            "бір доллар, елу цент",
         )
         self.assertEqual(
-            num2words(0, lang="kk", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="kk", to="currency", currency="EUR"), "нөл еуро"
         )
         self.assertEqual(
             num2words(0.01, lang="kk", to="currency", currency="EUR"),
-            "zero euros бір cent",
+            "нөл еуро, бір цент",
         )
         self.assertEqual(
             num2words(0.5, lang="kk", to="currency", currency="EUR"),
-            "zero euros елу cents",
+            "нөл еуро, елу цент",
         )
         self.assertEqual(
-            num2words(1, lang="kk", to="currency", currency="EUR"), "бір euro"
+            num2words(1, lang="kk", to="currency", currency="EUR"), "бір еуро"
         )
         self.assertEqual(
             num2words(1.5, lang="kk", to="currency", currency="EUR"),
-            "бір euro елу cents",
+            "бір еуро, елу цент",
         )
 
     def test_year(self):
@@ -368,7 +368,7 @@ class Num2WordsKKTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="kk"), "zero")
+        self.assertEqual(num2words("0", lang="kk"), "нөл")
         self.assertEqual(num2words("1", lang="kk"), "бір")
         self.assertEqual(num2words("10", lang="kk"), "он")
         self.assertEqual(num2words("100", lang="kk"), "бір жүз")
@@ -380,9 +380,39 @@ class Num2WordsKKTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="kk"), "zero")
+        self.assertEqual(num2words(0, lang="kk"), "нөл")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="kk"), num2words("100", lang="kk"))
         self.assertEqual(num2words(1000, lang="kk"), num2words("1000", lang="kk"))
 
+
+    def test_native_zero_minus_decimal(self):
+        # gladiaio/num2words2#154, #166: these used to be English
+        # ("zero", "minus бір", "бір point бес").
+        self.assertEqual(num2words(0, lang="kk"), "нөл")
+        self.assertEqual(num2words(-1, lang="kk"), "минус бір")
+        self.assertEqual(num2words(1.5, lang="kk"), "бір бүтін бес")
+        self.assertEqual(num2words(0, lang="kk", to="ordinal"), "нөлінші")
+
+    def test_ordinals_are_not_hyphen_glued(self):
+        # Part of #148: used to be "бір-інші".
+        self.assertEqual(num2words(1, lang="kk", to="ordinal"), "бірінші")
+        self.assertEqual(num2words(6, lang="kk", to="ordinal"), "алтыншы")
+        self.assertEqual(num2words(1, lang="kk", to="ordinal_num"), "1.")
+
+    def test_billions_are_words(self):
+        # Used to fall back to the digit string at 10**9.
+        self.assertEqual(num2words(10**9, lang="kk"), "бір миллиард")
+
+    def test_overflow(self):
+        self.assertEqual(maxval("kk"), 10**33)
+        self.assertTrue(num2words(10**33 - 1, lang="kk").startswith("тоғыз жүз"))
+        with self.assertRaises(OverflowError):
+            num2words(10**33, lang="kk")
+
+    def test_currency_default_and_unknown_code(self):
+        self.assertEqual(num2words(1, lang="kk", to="currency"), "бір теңге")
+        # Used to fall back to теңге silently.
+        with self.assertRaises(NotImplementedError):
+            num2words(1, lang="kk", to="currency", currency="GBP")
