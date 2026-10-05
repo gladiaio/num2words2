@@ -17,7 +17,6 @@
 
 from __future__ import unicode_literals
 
-import unittest
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -276,9 +275,6 @@ class Num2WordsHETest(TestCase):
             "תשע מאות תשעים ותשעה אלף תשע מאות תשעים ותשעה",
         )
 
-    # Known num2words2-core Rust-port gap: Hebrew (he) cardinal-for-float
-    # output differs from the reference converter.
-    @unittest.expectedFailure
     def test_cardinal_for_float_number(self):
         self.assertEqual(num2words(12.5, lang="he"), "שתים עשרה נקודה חמש")
         self.assertEqual(num2words(12.51, lang="he"), "שתים עשרה נקודה חמש אחת")
@@ -298,6 +294,11 @@ class Num2WordsHETest(TestCase):
             num2words(12.594132, lang="he", gender="m"),
             "שנים עשר נקודה חמש תשע ארבע אחת שלוש שתיים",
         )
+        # gender= on floats (gladiaio/num2words2#167): a whole float takes the
+        # integer path, a Decimal string the same float grammar.
+        self.assertEqual(num2words(12.0, lang="he", gender="m"), "שנים עשר")
+        self.assertEqual(num2words("12.5", lang="he", gender="m"), "שנים עשר נקודה חמש")
+        self.assertEqual(num2words(-1.5, lang="he", gender="m"), "מינוס אחד נקודה חמש")
 
 
 

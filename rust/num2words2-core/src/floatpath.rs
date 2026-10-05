@@ -173,6 +173,19 @@ pub fn default_to_cardinal_float<L: Lang + ?Sized>(
     v: &FloatValue,
     precision_override: Option<u32>,
 ) -> Result<String> {
+    default_to_cardinal_float_by(lang, v, precision_override, |pre| lang.to_cardinal(pre))
+}
+
+/// [`default_to_cardinal_float`] with the integer part rendered by
+/// `pre_word` instead of `to_cardinal` — for a language whose
+/// `to_cardinal_float` forwards a kwarg (HE's `gender=`) to the integer
+/// part only; the fractional digits stay plain `to_cardinal`.
+pub fn default_to_cardinal_float_by<L: Lang + ?Sized>(
+    lang: &L,
+    v: &FloatValue,
+    precision_override: Option<u32>,
+    pre_word: impl Fn(&BigInt) -> Result<String>,
+) -> Result<String> {
     let precision = precision_override.unwrap_or_else(|| v.precision());
     let v = match (v, precision_override) {
         // A caller-supplied precision replaces the repr-derived one.
@@ -197,7 +210,7 @@ pub fn default_to_cardinal_float<L: Lang + ?Sized>(
         post_str
     );
 
-    let mut out = vec![lang.to_cardinal(&pre)?];
+    let mut out = vec![pre_word(&pre)?];
     // Python: `if value < 0 and pre == 0: out = [negword] + out` — the sign is
     // otherwise lost, because int(-0.5) == 0 carries no minus.
     if v.is_negative() && pre.is_zero() {
@@ -261,7 +274,7 @@ pub fn cardinal_from_bigdecimal<L: Lang + ?Sized>(
 /// Rust's `{}` for f64 is shortest-round-trip, the same contract as Python's
 /// `repr`, so counting the digits after the point matches. Exponent form
 /// (`1e21`) has no fractional digits, matching Python's exponent-0 tuple.
-fn float_repr_precision(f: f64) -> u32 {
+pub fn float_repr_precision(f: f64) -> u32 {
     let s = format!("{}", f);
     match s.split_once('.') {
         Some((_, frac)) if !frac.contains('e') => frac.len() as u32,
