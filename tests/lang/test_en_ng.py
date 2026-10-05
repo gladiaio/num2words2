@@ -15,7 +15,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 # MA 02110-1301 USA
 
-import unittest
+from decimal import Decimal
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -28,9 +28,6 @@ class Num2WordsENNGTest(TestCase):
     # test test_en which tests the parent class
     # upon which this class inherits
 
-    # Known num2words2-core Rust-port gap: en_NG currency (to="currency")
-    # is not ported.
-    @unittest.expectedFailure
     def test_to_currency(self):
         language = "en_NG"
         separator = " and"
@@ -108,6 +105,18 @@ class Num2WordsENNGTest(TestCase):
                 "2000.00", lang=language, to="currency", separator=separator, kobo=True
             ),
             "two thousand naira and zero kobo",
+        )
+
+    def test_to_currency_kobo_decimal_string(self):
+        # A decimal string with kobo= used to be declined by the Rust core
+        # (gladiaio/num2words2#167); it must match the float/Decimal path.
+        self.assertEqual(
+            num2words("1.5", lang="en_NG", to="currency", kobo=False),
+            "one naira, 50 kobo",
+        )
+        self.assertEqual(
+            num2words("1.5", lang="en_NG", to="currency", kobo=False),
+            num2words(Decimal("1.5"), lang="en_NG", to="currency", kobo=False),
         )
 
     def test_negative_decimals(self):

@@ -731,10 +731,8 @@ fn dec_mode(
                 l.to_cardinal_float_kw(&fv, None, kw)
             }
         }
-        _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        "ordinal" => l.ordinal_float_entry(&fv),
-        "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
-        "year" => l.year_float_entry(&fv),
+        // Ahead of the kwargs guard: to_currency_kw owns its kwargs (en_NG
+        // kobo=, ...) and declines the ones it does not take.
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
@@ -752,6 +750,10 @@ fn dec_mode(
                 kw,
             )
         }
+        _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
+        "ordinal" => l.ordinal_float_entry(&fv),
+        "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
+        "year" => l.year_float_entry(&fv),
         // Python: getattr(converter, "to_fraction")(number) — TypeError
         // (missing denominator) when the class has the method, AttributeError
         // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
