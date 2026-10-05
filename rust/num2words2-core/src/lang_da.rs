@@ -8,8 +8,10 @@
 //! `merge`, `to_ordinal`, `to_ordinal_num` and `to_year` are overridden.
 //!
 //! DA keeps EUR's long scale but pluralises both suffixes:
-//! `GIGA_SUFFIX = "illiarder"`, `MEGA_SUFFIX = "illioner"` — hence
-//! 10^6 → "millioner" (not "million") and 10^9 → "milliarder". `high` holds
+//! `GIGA_SUFFIX = "illiarder"`, `MEGA_SUFFIX = "illioner"`, so the cards
+//! are "millioner"/"milliarder"; `merge` strips the plural "er" when the
+//! count is exactly one (10^6 → "en million", 2·10^6 → "to millioner";
+//! #163, upstream savoirfairelinux/num2words#688). `high` holds
 //! 100 stems, so `cap = 3 + 6*100 = 603`, the top card is 10^603
 //! ("centilliarder") and `MAXVAL = 1000 * 10^603 = 10^606`.
 //!
@@ -18,7 +20,7 @@
 //! `Num2Word_DA` carries `self.ordflag`, set to `True` by `to_ordinal`,
 //! read by `merge`, and reset to `False` afterwards. It changes `merge`'s
 //! `cnum == 1` arm: with the flag set, a leading "et" is dropped even above
-//! 10^6, so `to_cardinal(10**6)` == "en millioner" but the cardinal computed
+//! 10^6, so `to_cardinal(10**6)` == "en million" but the cardinal computed
 //! *inside* `to_ordinal(10**6)` is just "millioner" → "millionerte".
 //!
 //! Two consequences:
@@ -31,7 +33,7 @@
 //!    so an `OverflowError` from `to_cardinal(v >= 10**606)` leaves
 //!    `ordflag == True` on the shared singleton in `CONVERTER_CLASSES`. Every
 //!    later `to_cardinal` on that instance then silently drops the leading
-//!    "et"/"en" ("millioner" instead of "en millioner"). The Rust port cannot
+//!    "et"/"en" ("millioner" instead of "en million"). The Rust port cannot
 //!    reproduce a poisoned singleton and does not try to; a differential
 //!    harness must not compare Python `to_cardinal` output taken *after* an
 //!    overflowing `to_ordinal` on the same instance.
@@ -53,9 +55,12 @@
 //!    *nothing* is appended, so 123456 == "ethundrede og treogtyvetusind"
 //!    + "firehundrede og seksoghalvtreds" run together:
 //!    "ethundrede og treogtyvetusindfirehundrede og seksoghalvtreds".
-//! 3. **Plural millions.** `MEGA_SUFFIX`/`GIGA_SUFFIX` are plural, so
-//!    10^6 == "en millioner" — grammatically wrong Danish ("en million"),
-//!    kept verbatim.
+//! 3. **Plural millions — fixed (#163).** `MEGA_SUFFIX`/`GIGA_SUFFIX` are
+//!    plural, and Python emits 10^6 == "en millioner". The port strips the
+//!    "er" after "en" ("en million", "en milliard"), as upstream
+//!    savoirfairelinux/num2words#688 does. Ordinals are unchanged: the
+//!    ordflag path never prepends "en", so 10^6 still ordinalises to
+//!    "millionerte".
 //! 4. **Ordinal suffixes double up.** `to_ordinal` first rewrites a trailing
 //!    cardinal via `ords`, *then* appends "te"/"ende" by `value % 100`, with
 //!    no check that a rewrite happened. 30 has no `ords` entry ("tredive"
@@ -329,6 +334,13 @@ fn da_merge(l: (&str, &BigInt), r: (&str, &BigInt), ordflag: bool) -> (String, B
             return (next_text, next_num);
         }
         ctext = "en".to_string();
+        // The scale words are stored plural ("millioner"/"milliarder"); a
+        // count of exactly one takes the singular: "en million" (#163,
+        // upstream savoirfairelinux/num2words#688). Both suffixes end in
+        // ASCII "er", so the byte slice is on a char boundary.
+        if ntext.ends_with("er") {
+            ntext.truncate(ntext.len() - 2);
+        }
     }
 
     let val: BigInt;
