@@ -464,22 +464,19 @@ impl Lang for LangFr {
         }
         let word = self.to_cardinal(value)?;
 
-        // Big-unit ordinals: drop a leading "un ", strip trailing plural "s",
-        // re-pluralize the -ième suffix when the count was > 1.
+        // Big-unit ordinals: drop a leading "un " and the trailing plural "s".
         for &unit in BIG_UNITS.iter() {
             if word == format!("un {}", unit) || word.ends_with(&format!(" {}s", unit)) {
-                let plural = word.ends_with('s');
                 // Python's str.rstrip("s") strips *all* trailing 's'.
                 let rstripped = word.trim_end_matches('s');
                 let stripped = match rstripped.strip_prefix("un ") {
                     Some(rest) => rest,
                     None => rstripped,
                 };
-                return Ok(format!(
-                    "{}ième{}",
-                    stripped,
-                    if plural { "s" } else { "" }
-                ));
+                // The plural "s" of "millions" is an agreement marker and
+                // drops in the ordinal, as for "cents"/"vingts" (#65, #165):
+                // "deux millionième", not "deux millionièmes".
+                return Ok(format!("{}ième", stripped));
             }
             if word == unit {
                 return Ok(format!("{}ième", unit));
@@ -539,7 +536,7 @@ impl Lang for LangFr {
     /// `Num2Word_FR.to_ordinal(float/Decimal)`: `verify_ordinal`, then the
     /// integer path. Whole values ordinalise (5.0 -> "cinquième", 1.0 ->
     /// "premier" via the `value == 1` special case, Decimal("1E+2") ->
-    /// "centième", 1e+16 -> the plural quirk "dix billiardièmes");
+    /// "centième", 1e+16 -> "dix billiardième");
     /// fractional or negative values raise TypeError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let i = self.verify_ordinal_float(value)?;
@@ -596,9 +593,9 @@ impl Lang for LangFr {
     /// demi/tiers/quart for denominators 2/3/4 — "tiers" is invariant in the
     /// plural ("1000000/3" -> "un million tiers"), demi/quart take -s. Every
     /// other denominator is ordinal-as-noun, appending "s" only when the
-    /// numerator isn't 1 *and* the ordinal doesn't already end in 's' (big
-    /// units like "dix millionièmes" arrive pre-pluralised from
-    /// `to_ordinal`). `d == 1` (exactly 1, not -1) or `n == 0`
+    /// numerator isn't 1 *and* the ordinal doesn't already end in 's' (a
+    /// guard only; `to_ordinal` no longer pluralises big units, #165).
+    /// `d == 1` (exactly 1, not -1) or `n == 0`
     /// short-circuits to the signed cardinal before any sign normalisation,
     /// and a zero denominator raises ZeroDivisionError first ("0/0" raises).
     fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {

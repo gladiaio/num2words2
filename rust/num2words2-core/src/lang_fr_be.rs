@@ -55,10 +55,10 @@
 //! 2. `to_ordinal_num(0)` == **"0me"** — `Num2Word_FR.to_ordinal_num` only
 //!    special-cases `value == 1` ("1er"); everything else, including 0, gets
 //!    "me".
-//! 3. Large round values pluralize the *ordinal*: `to_ordinal(10**7)` ==
-//!    "dix millionièmes" and `to_ordinal(10**11)` == "cent milliardièmes",
-//!    because the `_BIG_UNITS` branch re-attaches the `s` it stripped. An
-//!    ordinal in the plural is odd, but it is what ships.
+//! 3. **Fixed (#165).** Python's `_BIG_UNITS` branch re-attaches the `s`
+//!    it stripped, so `to_ordinal(10**7)` == "dix millionièmes". The port
+//!    drops it like the "cents"/"vingts" agreement `s` (#65):
+//!    "dix millionième", "cent milliardième".
 //! 4. `word.endswith("ents")` in the `to_ordinal` fallback is dead code —
 //!    any string ending in "ents" already ends in "ts", so the first
 //!    disjunct always fires first. Kept verbatim.
@@ -498,18 +498,16 @@ impl Lang for LangFrBe {
         let word = self.to_cardinal(value)?;
 
         // Big-unit ordinals: drop a leading "un ", strip trailing 's', append
-        // "ième", then re-pluralize if the count was > 1.
+        // "ième".
         for unit in BIG_UNITS.iter() {
             if word == format!("un {}", unit) || word.ends_with(&format!(" {}s", unit)) {
-                let plural = word.ends_with('s');
                 // Python's rstrip("s") removes ALL trailing 's', not just one.
                 let stripped = word.trim_end_matches('s');
                 let stripped = stripped.strip_prefix("un ").unwrap_or(stripped);
-                return Ok(format!(
-                    "{}ième{}",
-                    stripped,
-                    if plural { "s" } else { "" }
-                ));
+                // The plural "s" of "millions" is an agreement marker and
+                // drops in the ordinal, as for "cents"/"vingts" (#65, #165):
+                // "deux millionième", not "deux millionièmes".
+                return Ok(format!("{}ième", stripped));
             }
             if word == *unit {
                 return Ok(format!("{}ième", unit));
@@ -572,8 +570,8 @@ impl Lang for LangFrBe {
     /// `Num2Word_FR.to_ordinal(float/Decimal)`: `verify_ordinal`, then the
     /// integer path. Whole values ordinalise (5.0 -> "cinquième", 1.0 ->
     /// "premier" via the `value == 1` special case, 21.0 -> the Belgian
-    /// "vingt et unième", Decimal("1E+2") -> "centième", 1e+16 -> the plural
-    /// quirk "dix billiardièmes"); fractional or negative values raise
+    /// "vingt et unième", Decimal("1E+2") -> "centième", 1e+16 -> "dix
+    /// billiardième"); fractional or negative values raise
     /// TypeError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let i = self.verify_ordinal_float(value)?;
@@ -631,8 +629,8 @@ impl Lang for LangFrBe {
     /// "tiers" is invariant in the plural ("1000000/3" -> "un million
     /// tiers"), demi/quart take -s. Every other denominator is
     /// ordinal-as-noun, appending "s" only when the numerator isn't 1 *and*
-    /// the ordinal doesn't already end in 's' (big units like "dix
-    /// millionièmes" arrive pre-pluralised from `to_ordinal`). `d == 1`
+    /// the ordinal doesn't already end in 's' (a guard only;
+    /// `to_ordinal` no longer pluralises big units, #165). `d == 1`
     /// (exactly 1, not -1) or `n == 0` short-circuits to the signed cardinal
     /// before any sign normalisation, and a zero denominator raises
     /// ZeroDivisionError first ("0/0" raises).

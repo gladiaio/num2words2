@@ -56,12 +56,12 @@
 //!    is stripped. Not a word in any French.
 //! 2. `to_ordinal_num(0)` == **"0me"**, `to_ordinal_num(2)` == "2me". The real
 //!    French abbreviation is "2e"/"2ème", never "2me".
-//! 3. **Big-unit ordinals pluralize the suffix, not the noun.**
-//!    `to_ordinal(10**7)` == "dix millionièmes" (plural "-ièmes" on an
-//!    ordinal), and `to_ordinal(10**10)` == "dix milliardièmes". Meanwhile
-//!    `to_ordinal(10**6)` == "millionième" — the leading "un " is dropped for
-//!    the singular but the count word is kept for the plural. Asymmetric and
-//!    almost certainly not intended, but it is what Python emits.
+//! 3. **Big-unit ordinals — plural suffix fixed (#165).** Python emits
+//!    `to_ordinal(10**7)` == "dix millionièmes"; the port drops the
+//!    agreement `s` like "cents"/"vingts" (#65): "dix millionième",
+//!    "dix milliardième". Still reproduced: `to_ordinal(10**6)` ==
+//!    "millionième" — the leading "un " is dropped for one but the count
+//!    word is kept from two up.
 //! 4. `to_ordinal(1000001)` == "un million unième" — the big-unit branch does
 //!    not fire (the cardinal has a tail), so the "un " prefix survives here
 //!    while `to_ordinal(1000000)` strips it.
@@ -546,15 +546,13 @@ impl Lang for LangFrCh {
         // Big-unit ordinals. Checked in _BIG_UNITS order; the first hit wins.
         for unit in BIG_UNITS {
             if word == format!("un {}", unit) || word.ends_with(&format!(" {}s", unit)) {
-                let plural = word.ends_with('s');
                 // Python's str.rstrip("s") strips *every* trailing 's'.
                 let trimmed = word.trim_end_matches('s');
                 let stripped = trimmed.strip_prefix("un ").unwrap_or(trimmed);
-                return Ok(format!(
-                    "{}ième{}",
-                    stripped,
-                    if plural { "s" } else { "" }
-                ));
+                // The plural "s" of "millions" is an agreement marker and
+                // drops in the ordinal, as for "cents"/"vingts" (#65, #165):
+                // "deux millionième", not "deux millionièmes".
+                return Ok(format!("{}ième", stripped));
             }
             if word == unit {
                 return Ok(format!("{}ième", unit));
@@ -618,7 +616,7 @@ impl Lang for LangFrCh {
     /// `verify_ordinal`, then the integer path. Whole values ordinalise
     /// (5.0 -> "cinquième", 1.0 -> "premier" via the `value == 1` special
     /// case, 21.0 -> the Swiss "vingt et unième", Decimal("1E+2") ->
-    /// "centième", 1e+16 -> the plural quirk "dix billiardièmes");
+    /// "centième", 1e+16 -> "dix billiardième");
     /// fractional or negative values raise TypeError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let i = self.verify_ordinal_float(value)?;
@@ -676,8 +674,8 @@ impl Lang for LangFrCh {
     /// "tiers" is invariant in the plural ("1000000/3" -> "un million
     /// tiers"), demi/quart take -s. Every other denominator is
     /// ordinal-as-noun, appending "s" only when the numerator isn't 1 *and*
-    /// the ordinal doesn't already end in 's' (big units like "dix
-    /// millionièmes" arrive pre-pluralised from `to_ordinal`). `d == 1`
+    /// the ordinal doesn't already end in 's' (a guard only;
+    /// `to_ordinal` no longer pluralises big units, #165). `d == 1`
     /// (exactly 1, not -1) or `n == 0` short-circuits to the signed cardinal
     /// before any sign normalisation, and a zero denominator raises
     /// ZeroDivisionError first ("0/0" raises).

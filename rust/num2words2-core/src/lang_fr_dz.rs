@@ -606,21 +606,19 @@ impl Lang for LangFrDz {
         let mut word = self.to_cardinal(value)?;
 
         // Big-unit ordinals: "un million" → "millionième", "dix millions" →
-        // "dix millionièmes". Only exact-`un` or plural-suffix forms qualify;
+        // "dix millionième". Only exact-`un` or plural-suffix forms qualify;
         // "un million un" deliberately does not (see module docs, bug 3).
         for unit in BIG_UNITS {
             if word == format!("un {}", unit) || word.ends_with(&format!(" {}s", unit)) {
-                let plural = word.ends_with('s');
                 // rstrip("s") removes *all* trailing 's', not just one.
                 let mut stripped = word.trim_end_matches('s').to_string();
                 if let Some(rest) = stripped.strip_prefix("un ") {
                     stripped = rest.to_string();
                 }
-                return Ok(format!(
-                    "{}ième{}",
-                    stripped,
-                    if plural { "s" } else { "" }
-                ));
+                // The plural "s" of "millions" is an agreement marker and
+                // drops in the ordinal, as for "cents"/"vingts" (#65, #165):
+                // "deux millionième", not "deux millionièmes".
+                return Ok(format!("{}ième", stripped));
             }
             // Unreachable in practice: a bare unit word never escapes merge
             // without its "un ". Ported for completeness.
@@ -681,8 +679,8 @@ impl Lang for LangFrDz {
     /// `Num2Word_FR.to_ordinal(float/Decimal)` (inherited by FR_DZ):
     /// `verify_ordinal`, then the integer path. Whole values ordinalise
     /// (5.0 -> "cinquième", 1.0 -> "premier" via the `value == 1` special
-    /// case, Decimal("1E+2") -> "centième", 1e+16 -> the plural quirk
-    /// "dix billiardièmes"); fractional or negative values raise TypeError.
+    /// case, Decimal("1E+2") -> "centième", 1e+16 -> "dix
+    /// billiardième"); fractional or negative values raise TypeError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let i = self.verify_ordinal_float(value)?;
         self.to_ordinal(&i)
@@ -739,8 +737,8 @@ impl Lang for LangFrDz {
     /// "tiers" is invariant in the plural ("1000000/3" -> "un million
     /// tiers"), demi/quart take -s. Every other denominator is
     /// ordinal-as-noun, appending "s" only when the numerator isn't 1 *and*
-    /// the ordinal doesn't already end in 's' (big units like "dix
-    /// millionièmes" arrive pre-pluralised from `to_ordinal`). `d == 1`
+    /// the ordinal doesn't already end in 's' (a guard only;
+    /// `to_ordinal` no longer pluralises big units, #165). `d == 1`
     /// (exactly 1, not -1) or `n == 0` short-circuits to the signed cardinal
     /// before any sign normalisation, and a zero denominator raises
     /// ZeroDivisionError first ("0/0" raises).

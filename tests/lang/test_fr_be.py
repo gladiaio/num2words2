@@ -130,10 +130,10 @@ def test_fr_be_corrections_from_upstream_532():
     assert num2words(10 ** 18, lang="fr_BE") == "un trillion"
     assert num2words(10 ** 21, lang="fr_BE") == "un trilliard"
 
-    # Ordinal: drop leading 'un', drop trailing 's' before -ième, and
-    # pluralize -ième when count > 1.
+    # Ordinal: drop leading 'un' and drop trailing 's' before -ième. The
+    # -ième stays singular when count > 1 (num2words2#165).
     assert num2words(1_000_000, lang="fr_BE", to="ordinal") == "millionième"
-    assert num2words(2_000_000, lang="fr_BE", to="ordinal") == "deux millionièmes"
+    assert num2words(2_000_000, lang="fr_BE", to="ordinal") == "deux millionième"
     assert num2words(10 ** 15, lang="fr_BE", to="ordinal") == "billiardième"
 
     # Currency: zéro takes singular for both major and minor unit.
