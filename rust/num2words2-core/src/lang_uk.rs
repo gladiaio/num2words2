@@ -90,7 +90,8 @@
 //!
 //! `to_currency` is overridden for the `isinstance(val, int)` case only; the
 //! float case and `to_cheque` fall through to `Num2Word_Base`. See the
-//! `to_currency` doc comment for the four quirks the int path carries.
+//! `to_currency` doc comment for the quirks the int path carries; its
+//! number/gender agreement now matches the float path (#164).
 //!
 //! ## Fractional cents (out of scope, flagged)
 //!
@@ -1541,28 +1542,25 @@ impl Lang for LangUk {
     ///     return super().to_currency(val, ...)
     /// ```
     ///
-    /// # Quirks reproduced (all interpreter-verified)
+    /// # Fixed: number and gender agreement on the int path (#164)
     ///
-    /// 1. **The int path does not call `pluralize`.** It hard-codes `cr1[0]`
-    ///    for `abs == 1` and `cr1[1]` otherwise, so the third (genitive
-    ///    plural) form is unreachable and the Slavic 5+ rule is skipped:
-    ///    `to_currency(0, "USD")` == "нуль долари" and
-    ///    `to_currency(100, "USD")` == "сто долари" — grammatically wrong
-    ///    Ukrainian ("доларів" is correct), but exactly what Python emits and
-    ///    what the corpus freezes. The float path *does* pluralize properly,
-    ///    hence `to_currency(1234.56, "USD")` == "…долари" vs
-    ///    `to_currency(0.01, "USD")` == "…доларів".
-    /// 2. **The int path calls `to_cardinal`, not `_money_verbose`**, so the
-    ///    feminine-unit table is bypassed and the numeral stays masculine even
-    ///    for a feminine currency: `to_currency(1, "JPY")` == "один єна"
-    ///    (mismatched gender), while `to_currency(1.0, "JPY")` == "одна єна,
-    ///    нуль сен" via `_money_verbose`. Corpus-confirmed on both rows.
-    /// 3. **`minus_str` is `self.negword`, unstripped and unpadded** — unlike
+    /// Python hard-codes `cr1[0]` for `abs == 1` and `cr1[1]` otherwise and
+    /// calls `to_cardinal` instead of `_money_verbose`, so it emits
+    /// "п'ять долари", "нуль долари", "один гривня" and
+    /// "двадцять один гривні". The port instead uses the same `pluralize` +
+    /// `_money_verbose` pair as the float path, so an int always matches the
+    /// unit half of the equivalent float: `to_currency(5, "USD")` ==
+    /// "п'ять доларів", `to_currency(21, "UAH")` == "двадцять одна гривня",
+    /// `to_currency(1, "JPY")` == "одна єна".
+    ///
+    /// # Quirks still reproduced (all interpreter-verified)
+    ///
+    /// 1. **`minus_str` is `self.negword`, unstripped and unpadded** — unlike
     ///    `Num2Word_Base`, which builds `"%s " % self.negword.strip()`. For UK
     ///    `negword` is "мінус" with no surrounding space, so the `" ".join`-ish
     ///    `"%s %s %s"` template plus the trailing `.strip()` yields the same
     ///    result either way. Ported literally regardless.
-    /// 4. **`cents`, `separator` and `adjective` are ignored on the int path.**
+    /// 2. **`cents`, `separator` and `adjective` are ignored on the int path.**
     ///    No cents segment is emitted, so `separator` has nothing to join and
     ///    `adjective` nothing to prefix (`CURRENCY_ADJECTIVES` is empty).
     ///
@@ -1592,20 +1590,12 @@ impl Lang for LangUk {
 
                 let minus_str = if v.is_negative() { NEGWORD } else { "" };
                 let abs_val = v.abs();
-                let money_str = self.to_cardinal(&abs_val)?;
-
-                // Python: `cr1[0] if abs_val == 1 else cr1[1]`, guarded by
-                // `isinstance(cr1, tuple)` / `len(cr1) > 1` fallbacks that can
-                // never fire here — every UK entry is a 3-tuple. The `len > 1`
-                // check is mirrored anyway so a 1-form entry would degrade the
-                // way Python's does rather than panic.
-                let currency_str = if abs_val.is_one() {
-                    &cr1[0]
-                } else if cr1.len() > 1 {
-                    &cr1[1]
-                } else {
-                    &cr1[0]
-                };
+                // #164: Python calls `to_cardinal` and picks `cr1[0]` for 1,
+                // else `cr1[1]`, so "п'ять долари" / "двадцять один гривні".
+                // Reuse the float path's agreement instead: `_money_verbose`
+                // for the numeral's gender and `pluralize` for the noun form.
+                let money_str = self.money_verbose(&abs_val, currency)?;
+                let currency_str = self.pluralize(&abs_val, cr1)?;
 
                 // ("%s %s %s" % (...)).strip() — for a positive value
                 // minus_str is empty, so the template leaves a leading space
