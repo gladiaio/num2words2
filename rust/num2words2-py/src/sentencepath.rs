@@ -5,7 +5,8 @@
 //! from here means "fall back to the Python converter".
 //!
 //! The port mirrors the Python class quirk-for-quirk:
-//!   * extraction runs the same seven passes in the same order, with the
+//!   * extraction runs the same seven passes in the same order (plus the
+//!     two additions described at the end of this header), with the
 //!     same `used_positions` overlap rule (a later regex match that overlaps
 //!     an earlier extraction is dropped whole, and scanning resumes after
 //!     its end — so its tail is never re-matched);
@@ -34,6 +35,12 @@
 //! them (as a currency amount when a `$€£¥` symbol precedes) instead of
 //! letting the later passes split them at the separator into a different
 //! number.
+//!
+//! Also deliberate (#152): English clock times `H:MM` get their own pass
+//! ("10:30" -> "ten thirty", "10:00" -> "ten o'clock") instead of being read
+//! as two numbers around a kept colon, and the English month-first date
+//! pattern takes a 1-2 digit day only, so the year in "1st May 2024" is no
+//! longer read as an ordinal day ("May 2024th").
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -206,7 +213,9 @@ const MONTH_NAMES: &[(&str, &str)] = &[
 const DATE_TEMPLATES: &[(&str, &[(&str, bool)])] = &[
     ("en", &[
         (r"(\d+)(?:st|nd|rd|th)\s+({month})", true),
-        (r"({month})\s+(\d+)", true),
+        // Day is 1-2 digits: "May 2024" is month + year, not "May 2024th"
+        // (#152).
+        (r"({month})\s+(\d{1,2})\b", true),
         (r"(\d+)\s+({month})", true),
     ]),
     ("fr", &[
@@ -262,6 +271,7 @@ struct Res {
     dates: Vec<(&'static str, Vec<DatePat>)>,
     year: Regex,
     currency: Regex,
+    clock: Regex,
 }
 
 impl Res {
@@ -306,6 +316,7 @@ impl Res {
             dates,
             year: re(r"\b(19\d{2}|20\d{2}|2100)\b"),
             currency: re(r"([$€£¥]\s*)(\d+(?:[.,]\d+)?)"),
+            clock: re(r"\b(\d{1,2}):(\d{2})\b"),
         }
     }
 
@@ -387,6 +398,8 @@ enum Typ {
     Year,
     Currency(char),
     Number,
+    /// English clock time `H:MM` as (hour, minute).
+    Time(u32, u32),
 }
 
 struct Ext {
@@ -547,7 +560,8 @@ fn is_part_sep(c: char) -> bool {
     c == '.' || c == ',' || (c != ' ' && is_space_group_sep(c))
 }
 
-/// `SentenceConverter.extract_numbers`, all seven passes in order.
+/// `SentenceConverter.extract_numbers`, all seven passes in order (plus the
+/// grouping and clock-time passes 2b/2c).
 fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     let r = res();
     let n = t.chars.len();
@@ -625,6 +639,31 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                 i = e;
             }
             _ => i += 1,
+        }
+    }
+
+    // 2c. English clock times "10:30" -> "ten thirty" (#152); otherwise the
+    // plain pass reads each side and leaves the colon ("ten:thirty").
+    // "14:30:45" (seconds) and out-of-range values are left alone.
+    if lang == "en" {
+        for m in r.clock.captures_iter(t.s) {
+            let g0 = m.get(0).unwrap();
+            let (s, e) = t.span(g0.start(), g0.end());
+            let h: u32 = m[1].parse().unwrap_or(99);
+            let mi: u32 = m[2].parse().unwrap_or(99);
+            let after_colon = s > 0 && t.chars[s - 1] == ':';
+            let seconds = e + 1 < n && t.chars[e] == ':' && t.chars[e + 1].is_ascii_digit();
+            if h > 23 || mi > 59 || after_colon || seconds || overlap(&used, s, e) {
+                continue;
+            }
+            exts.push(Ext {
+                start: s,
+                end: e,
+                text: g0.as_str().to_string(),
+                val: Val::I(BigInt::from(h)),
+                typ: Typ::Time(h, mi),
+            });
+            mark(&mut used, s, e);
         }
     }
 
@@ -956,6 +995,17 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             ctx.lang()?.to_ordinal(val.i())
         }
         Typ::DateNumber => ctx.lang()?.to_cardinal(val.i()),
+        Typ::Time(h, minute) => {
+            let l = ctx.lang()?;
+            let hour = l.to_cardinal(&BigInt::from(*h))?;
+            Ok(match *minute {
+                0 if (1..=12).contains(h) => format!("{} o'clock", hour),
+                // 24-hour full hours: "thirteen hundred", "zero hundred".
+                0 => format!("{} hundred", hour),
+                m if m < 10 => format!("{} oh {}", hour, l.to_cardinal(&BigInt::from(m))?),
+                m => format!("{} {}", hour, l.to_cardinal(&BigInt::from(m))?),
+            })
+        }
         Typ::Year => {
             let l = ctx.lang()?;
             match l.to_year(val.i()) {
