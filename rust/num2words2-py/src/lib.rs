@@ -13,7 +13,8 @@ use bigdecimal::BigDecimal;
 use num2words2_core::base::{Kwargs, KwVal, Lang};
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
-    has_py_digit, python_decimal_str, python_int_parse, ParsedNumber,
+    comma_groups_thousands, has_py_digit, parse_grouped, python_decimal_str, python_int_parse,
+    Grouped, ParsedNumber,
 };
 use num2words2_core::N2WError;
 use num2words2_core::{CurrencyValue, FloatValue};
@@ -535,25 +536,51 @@ fn from_string_core(
                 N2WError::Value(_)
                     | N2WError::Custom { module: "decimal", class: "InvalidOperation", .. }
             );
-            if catchable {
-                if has_py_digit(s) {
-                    // The dispatcher routes a mixed text+digit string to
-                    // num2words_sentence — now the Rust sentence converter,
-                    // so serve it natively instead of declining. kwargs on
-                    // this path are exotic (the sentence converter takes
-                    // none); defer those rare cases.
-                    if kw.is_empty() {
-                        return match sentencepath::convert(s, lang, to) {
-                            Ok(out) => Ok((0, Some(out))),
-                            Err(N2WError::Fallback(_)) => Ok((1, None)),
-                            Err(e) => Err(map_err(e)),
-                        };
+            // A pure numeric string with thousands separators ("1,000",
+            // "1.000.000", "1 000") is the number it spells; the sentence
+            // converter below would split it at the separator and read a
+            // different number (#151). Ambiguous or malformed grouping
+            // raises instead of guessing.
+            let grouped = if catchable {
+                parse_grouped(s, comma_groups_thousands(lang))
+            } else {
+                Grouped::NotGrouped
+            };
+            match grouped {
+                Grouped::Number { canonical, decimal_comma } => {
+                    match l.str_to_number(&canonical).map_err(map_err)? {
+                        // pt_BR reads a dot-only string as US-style "ponto";
+                        // the canonical form always uses '.', so restore
+                        // "vírgula" when the writer used ','.
+                        ParsedNumber::DecPoint { value, .. } if decimal_comma => {
+                            ParsedNumber::Dec(value)
+                        }
+                        p => p,
                     }
-                    return Ok((1, None));
                 }
-                return Err(map_err(e));
+                Grouped::Invalid(msg) => return Err(map_err(N2WError::Value(msg))),
+                Grouped::NotGrouped => {
+                    if catchable {
+                        if has_py_digit(s) {
+                            // The dispatcher routes a mixed text+digit string to
+                            // num2words_sentence — now the Rust sentence converter,
+                            // so serve it natively instead of declining. kwargs on
+                            // this path are exotic (the sentence converter takes
+                            // none); defer those rare cases.
+                            if kw.is_empty() {
+                                return match sentencepath::convert(s, lang, to) {
+                                    Ok(out) => Ok((0, Some(out))),
+                                    Err(N2WError::Fallback(_)) => Ok((1, None)),
+                                    Err(e) => Err(map_err(e)),
+                                };
+                            }
+                            return Ok((1, None));
+                        }
+                        return Err(map_err(e));
+                    }
+                    return Err(map_err(e));
+                }
             }
-            return Err(map_err(e));
         }
     };
 

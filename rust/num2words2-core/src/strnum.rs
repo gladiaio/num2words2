@@ -211,6 +211,153 @@ pub fn python_decimal_parse(s: &str) -> Result<ParsedNumber> {
         .map_err(|_| invalid())
 }
 
+/// Characters accepted as thousands separators in any language: space,
+/// NBSP, narrow NBSP, thin space, ASCII apostrophe and U+2019 (Swiss style).
+/// None of them can be a decimal mark, so a group built from them is never
+/// ambiguous.
+pub fn is_space_group_sep(c: char) -> bool {
+    matches!(c, ' ' | '\u{00A0}' | '\u{202F}' | '\u{2009}' | '\'' | '\u{2019}')
+}
+
+/// Languages whose decimal mark is '.', so that a single comma followed by
+/// exactly three digits ("1,000") is a thousands separator rather than a
+/// decimal comma. Deliberately minimal: there is no per-language notation
+/// table in the port, and for every language not listed "1,000" is treated
+/// as ambiguous (ValueError) instead of guessed.
+pub fn comma_groups_thousands(lang: &str) -> bool {
+    let base = lang.split(['_', '-']).next().unwrap_or(lang);
+    base.eq_ignore_ascii_case("en")
+}
+
+/// Outcome of [`parse_grouped`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Grouped {
+    /// Not a pure numeric string with grouping/decimal separators — leave it
+    /// to the existing routing (Decimal, sentence converter).
+    NotGrouped,
+    /// The number, as a plain ASCII decimal string (`-1234.5`), plus whether
+    /// the original decimal mark was a comma.
+    Number { canonical: String, decimal_comma: bool },
+    /// A separator-bearing numeric string that cannot be read safely
+    /// (ambiguous or malformed). The message says why.
+    Invalid(String),
+}
+
+/// Recognise a *pure* numeric string written with thousands separators
+/// (`1,000`, `1.000.000`, `1 000`, `1'000`, `1,234.5`, `1.234,5`) — issue #151.
+///
+/// Rules, chosen so the result is never a different number than the one
+/// written:
+///   * space-like separators and apostrophes are always grouping;
+///   * a string with both '.' and ',' uses the last one as decimal mark;
+///   * a '.' or ',' occurring twice or more is a group separator;
+///   * a single ',' or '.' next to space-like grouping is the decimal mark;
+///   * otherwise a single ',' followed by exactly three digits is grouping
+///     only when `comma_groups` (dot-decimal language), else ambiguous;
+///     a single ',' followed by any other digit count is a decimal comma;
+///   * groups must be a 1–3 digit head followed by exact 3-digit groups.
+///
+/// Only ASCII digits are recognised; anything else yields `NotGrouped`.
+pub fn parse_grouped(s: &str, comma_groups: bool) -> Grouped {
+    let t = s.trim();
+    let (neg, body) = match t.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, t.strip_prefix('+').unwrap_or(t)),
+    };
+    if body.is_empty()
+        || !body.starts_with(|c: char| c.is_ascii_digit())
+        || !body.ends_with(|c: char| c.is_ascii_digit())
+        || !body
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == ',' || is_space_group_sep(c))
+    {
+        return Grouped::NotGrouped;
+    }
+    let n_dot = body.matches('.').count();
+    let n_comma = body.matches(',').count();
+    let has_space = body.chars().any(is_space_group_sep);
+    if !has_space && n_dot + n_comma == 0 {
+        return Grouped::NotGrouped;
+    }
+    // A single '.' with nothing else is a plain decimal — Decimal handles
+    // it; never reinterpret it here.
+    if !has_space && n_comma == 0 && n_dot == 1 {
+        return Grouped::NotGrouped;
+    }
+    let bad = |why: &str| Grouped::Invalid(format!("cannot read {:?} as a number: {}", t, why));
+
+    // Pick the decimal mark (if any); every other separator is grouping.
+    let decimal: Option<char> = if n_dot > 0 && n_comma > 0 {
+        let last = body.rfind(['.', ',']).map(|i| body.as_bytes()[i] as char).unwrap();
+        Some(last)
+    } else if n_dot + n_comma == 0 {
+        None
+    } else {
+        let (c, count) = if n_dot > 0 { ('.', n_dot) } else { (',', n_comma) };
+        if count >= 2 {
+            None
+        } else if has_space {
+            Some(c)
+        } else {
+            // Exactly one ',' (a lone '.' returned NotGrouped above).
+            let frac_len = body.len() - body.find(',').unwrap() - 1;
+            if frac_len != 3 {
+                Some(',')
+            } else if comma_groups {
+                None
+            } else {
+                return bad("',' could be a decimal mark or a thousands separator");
+            }
+        }
+    };
+    let (int_part, frac_part) = match decimal {
+        Some(d) => {
+            if body.matches(d).count() != 1 {
+                return bad("more than one decimal mark");
+            }
+            let (i, f) = body.split_once(d).unwrap();
+            (i, Some(f))
+        }
+        None => (body, None),
+    };
+    if let Some(f) = frac_part {
+        if f.is_empty() || !f.chars().all(|c| c.is_ascii_digit()) {
+            return bad("separator after the decimal mark");
+        }
+    }
+    // Group separators: one kind only.
+    let mut gsep: Option<char> = None;
+    for c in int_part.chars().filter(|c| !c.is_ascii_digit()) {
+        match gsep {
+            None => gsep = Some(c),
+            Some(g) if g == c => {}
+            Some(_) => return bad("mixed thousands separators"),
+        }
+    }
+    let mut digits = String::new();
+    if gsep.is_some() {
+        let groups: Vec<&str> = int_part.split(gsep.unwrap()).collect();
+        if groups[0].is_empty() || groups[0].len() > 3 || groups[1..].iter().any(|g| g.len() != 3) {
+            return bad("thousands groups must have exactly three digits");
+        }
+        for g in groups {
+            digits.push_str(g);
+        }
+    } else {
+        digits.push_str(int_part);
+    }
+    let mut canonical = String::new();
+    if neg {
+        canonical.push('-');
+    }
+    canonical.push_str(&digits);
+    if let Some(f) = frac_part {
+        canonical.push('.');
+        canonical.push_str(f);
+    }
+    Grouped::Number { canonical, decimal_comma: decimal == Some(',') }
+}
+
 /// Python's `int(str)` — used by the "n/d" fraction-string branch. Accepts
 /// surrounding whitespace, a sign, PEP-515 underscores and Unicode digits;
 /// no dot, no exponent.
@@ -283,4 +430,43 @@ pub fn python_decimal_str(d: &BigDecimal) -> String {
         format!("{}.{}", &digits[..1], &digits[1..])
     };
     format!("{}{}E{}{}", sign, mantissa, if exp >= 0 { "+" } else { "" }, exp)
+}
+
+#[cfg(test)]
+mod grouped_tests {
+    use super::*;
+
+    fn num(c: &str, dc: bool) -> Grouped {
+        Grouped::Number { canonical: c.into(), decimal_comma: dc }
+    }
+
+    #[test]
+    fn grouping_is_parsed() {
+        assert_eq!(parse_grouped("1,000", true), num("1000", false));
+        assert_eq!(parse_grouped("1,000,000", false), num("1000000", false));
+        assert_eq!(parse_grouped("-12,345", true), num("-12345", false));
+        assert_eq!(parse_grouped("1,234.5", false), num("1234.5", false));
+        assert_eq!(parse_grouped("1.234,5", true), num("1234.5", true));
+        assert_eq!(parse_grouped("1.000.000", false), num("1000000", false));
+        assert_eq!(parse_grouped("1 000", false), num("1000", false));
+        assert_eq!(parse_grouped("1\u{202F}000,25", false), num("1000.25", true));
+        assert_eq!(parse_grouped("1'000'000", false), num("1000000", false));
+        assert_eq!(parse_grouped("1,5", false), num("1.5", true));
+    }
+
+    #[test]
+    fn ambiguous_or_malformed_is_rejected() {
+        for (s, cg) in [("1,000", false), ("1,2,3", true), ("1,0000,000", true),
+                        ("1.2.3", true), ("1,000.000,5", true), ("1 00", false),
+                        ("1 000'000", false)] {
+            assert!(matches!(parse_grouped(s, cg), Grouped::Invalid(_)), "{}", s);
+        }
+    }
+
+    #[test]
+    fn untouched_inputs() {
+        for s in ["1.5", "1000", "abc", "1,000 people", "1e5", "", "-", "1,"] {
+            assert_eq!(parse_grouped(s, true), Grouped::NotGrouped, "{}", s);
+        }
+    }
 }

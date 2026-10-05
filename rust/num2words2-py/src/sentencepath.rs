@@ -27,12 +27,20 @@
 //!
 //! All positions are *character* indices, as in Python. Regex byte spans
 //! are translated through a byte->char map.
+//!
+//! Deliberate departure from the Python original (#151): numbers written
+//! with thousands separators (`1,000,000`, `$1,234.56`, `1.234,5`) are read
+//! as one number: an extra pass right after the temperature passes claims
+//! them (as a currency amount when a `$€£¥` symbol precedes) instead of
+//! letting the later passes split them at the separator into a different
+//! number.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use bigdecimal::num_traits::FromPrimitive;
 use num2words2_core::base::Lang;
+use num2words2_core::strnum::{comma_groups_thousands, is_space_group_sep, parse_grouped, Grouped};
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
 use num_bigint::BigInt;
 use regex::Regex;
@@ -481,6 +489,64 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
     out
 }
 
+/// A number written with thousands separators starting at char `start`
+/// (`1,000,000`, `1.234,56`, `-1 000`; #151). Returns the end of the token and
+/// its value as a plain decimal string. Only tokens that really contain
+/// grouping qualify, with [`parse_grouped`]'s rules (so `1,000` counts only
+/// in dot-decimal languages, and `192.168.1.1` or `1,2,3` never match); the
+/// token must not touch an ASCII letter/digit on either side, like pass 7.
+/// ASCII spaces are not taken as separators in running text ("between
+/// 2 100 and"), only the no-break/thin spaces and apostrophes.
+fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, String)> {
+    let n = chars.len();
+    if start > 0 && chars[start - 1].is_ascii_alphanumeric() {
+        return None;
+    }
+    // Never start in the middle of a separated digit run ("3.14,159").
+    if start > 1 && is_part_sep(chars[start - 1]) && chars[start - 2].is_ascii_digit() {
+        return None;
+    }
+    let mut j = start;
+    if j < n && chars[j] == '-' {
+        j += 1;
+    }
+    if j >= n || !chars[j].is_ascii_digit() {
+        return None;
+    }
+    let is_part = |c: char| c.is_ascii_digit() || is_part_sep(c);
+    let mut end = j;
+    while end < n && is_part(chars[end]) {
+        end += 1;
+    }
+    while end > j && !chars[end - 1].is_ascii_digit() {
+        end -= 1;
+    }
+    if end < n && chars[end].is_ascii_alphanumeric() {
+        return None;
+    }
+    let tok: String = chars[start..end].iter().collect();
+    match parse_grouped(&tok, comma_groups_thousands(lang)) {
+        Grouped::Number { canonical, .. } => {
+            let seps = tok
+                .chars()
+                .filter(|&c| !c.is_ascii_digit() && c != '-')
+                .count();
+            let has_fraction = canonical.contains('.') as usize;
+            if seps > has_fraction {
+                Some((end, canonical))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// A separator [`grouped_token`] reads inside a number in running text.
+fn is_part_sep(c: char) -> bool {
+    c == '.' || c == ',' || (c != ' ' && is_space_group_sep(c))
+}
+
 /// `SentenceConverter.extract_numbers`, all seven passes in order.
 fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     let r = res();
@@ -521,6 +587,44 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                 });
                 mark(&mut used, s, e);
             }
+        }
+    }
+
+    // 2b. Numbers with thousands grouping (#151), claimed before the
+    // ordinal/date/currency/plain passes, which would split them at the
+    // separator ("1.000.000" -> ordinal "1." in de, "1,000" -> "1" and "000").
+    // A currency symbol right before the number makes it a currency amount.
+    let mut i = 0;
+    while i < n {
+        if used[i] || !(t.chars[i].is_ascii_digit() || t.chars[i] == '-') {
+            i += 1;
+            continue;
+        }
+        match grouped_token(&t.chars, i, lang) {
+            Some((e, canonical)) if !overlap(&used, i, e) => {
+                // `[$€£¥]\s*` immediately before the number.
+                let mut k = i;
+                while k > 0 && t.chars[k - 1].is_whitespace() {
+                    k -= 1;
+                }
+                let sym = (k > 0 && !canonical.starts_with('-'))
+                    .then(|| t.chars[k - 1])
+                    .filter(|c| matches!(c, '$' | '€' | '£' | '¥'));
+                let (s, typ) = match sym {
+                    Some(c) if !overlap(&used, k - 1, i) => (k - 1, Typ::Currency(c)),
+                    _ => (i, Typ::Number),
+                };
+                exts.push(Ext {
+                    start: s,
+                    end: e,
+                    text: t.slice(s, e),
+                    val: Val::F(pyfloat(&canonical)?),
+                    typ,
+                });
+                mark(&mut used, s, e);
+                i = e;
+            }
+            _ => i += 1,
         }
     }
 
@@ -1136,7 +1240,11 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         // this through a state leak (str_to_number stashes _pending_pointword
         // for any dot-bearing string and the sentence converter reuses it);
         // the token's own separator is the faithful, stateless equivalent.
-        if ctx.raw == "pt_BR" && matches!(e.typ, Typ::Number) && e.text.contains('.') {
+        // The decimal mark is the last '.'/',' ("1.234,56" is a comma).
+        if ctx.raw == "pt_BR"
+            && matches!(e.typ, Typ::Number)
+            && e.text.chars().rev().find(|&c| c == '.' || c == ',') == Some('.')
+        {
             converted = converted.replace("vírgula", "ponto");
         }
 
