@@ -122,3 +122,27 @@ def test_cs_string_and_float_decimal_consistency():
     assert num2words("1.50", lang="cs") == num2words(1.50, lang="cs") == "jedna čárka pět"
     assert num2words("1.00", lang="cs") == num2words(1.00, lang="cs") == "jedna čárka nula"
     assert num2words("1.123", lang="cs") == num2words(1.123, lang="cs")
+
+
+def test_compound_ordinals_issue_216():
+    # gladiaio/num2words2#216: every component of a compound ordinal is an
+    # ordinal; Python glued "ý" onto the cardinal ("dvacet jednaý").
+    from num2words2 import num2words
+    cases = {
+        0: "nultý",
+        21: "dvacátý první",
+        23: "dvacátý třetí",
+        31: "třicátý první",
+        101: "stý první",
+        121: "stý dvacátý první",
+        200: "dvoustý",
+        345: "třístý čtyřicátý pátý",
+        999: "devítistý devadesátý devátý",
+        1001: "tisící první",
+        2021: "dvoutisící dvacátý první",
+        5000: "pětitisící",
+        10**6: "miliontý",
+        -1: "mínus první",
+    }
+    for n, want in cases.items():
+        assert num2words(n, lang="cs", to="ordinal") == want, n

@@ -46,10 +46,11 @@
 //!    always falsy — so in Python every zero renders as the English "zero".
 //!    This port says the Nynorsk "null": `0 -> "null"`,
 //!    `to_ordinal(0) -> "null-de"`.
-//! 2. **No teens.** The `< 100` branch is a plain tens/ones split with no
-//!    11..19 special case, so 11 is "ti ein" (literally "ten one") instead of
-//!    "elleve", 12 is "ti to", 19 is "ti ni". This propagates upward:
-//!    `12345 -> "ti to tusen tre hundre førti fem"`.
+//! 2. **Teens (fixed, #216).** Python's `< 100` branch was a plain
+//!    tens/ones split with no 11..19 case, so 11 was "ti ein" and 12 "ti to".
+//!    This port uses the Nynorsk teens from [`TEENS`] (elleve, tolv, tretten,
+//!    …, nitten), matching `lang_nb.rs`: `12345 -> "tolv tusen tre hundre
+//!    førti fem"`.
 //! 3. **No "hundre"/"tusen" elision and no compounding.** Norwegian writes
 //!    "hundre" for 100 and compounds ("tjueein"); this module always prefixes
 //!    the multiplier and space-separates every token, so `100 -> "ein hundre"`
@@ -71,7 +72,7 @@
 //!    looks the code up with `CURRENCY_FORMS.get(currency, <first value>)`
 //!    instead of indexing, so anything outside NOK/USD/EUR renders with NOK's
 //!    forms rather than raising: `to_currency(12.34, "JPY")` is
-//!    "ti to kroner tretti fire øre". The inherited `to_cheque` indexes the
+//!    "tolv kroner tretti fire øre". The inherited `to_cheque` indexes the
 //!    same dict and *does* raise for those codes, so the two entry points
 //!    disagree about which currencies exist. Both halves are corpus-pinned.
 //! 8. **Currency precision is hardcoded to two decimals.** `to_currency`
@@ -126,6 +127,11 @@ const ONES: [&str; 10] = [
     "", "ein", "to", "tre", "fire", "fem", "seks", "sju", "åtte", "ni",
 ];
 
+/// 11..=19, which Python lacked (bug 2, fixed in #216).
+const TEENS: [&str; 9] = [
+    "elleve", "tolv", "tretten", "fjorten", "femten", "seksten", "sytten", "atten", "nitten",
+];
+
 /// `self.tens`. Index 0 is `""` and unreachable (the branch requires n >= 10).
 const TENS: [&str; 10] = [
     "", "ti", "tjue", "tretti", "førti", "femti", "seksti", "sytti", "åtti", "nitti",
@@ -169,8 +175,10 @@ fn int_to_word_small(n: u64) -> String {
     debug_assert!(n > 0 && n < FALLBACK_AT);
     if n < 10 {
         ONES[n as usize].to_string()
+    } else if (11..20).contains(&n) {
+        // bug 2 (fixed, #216): Python had no teens and said "ti ein".
+        TEENS[(n - 11) as usize].to_string()
     } else if n < 100 {
-        // bug 2: no teens table, so 11 -> "ti ein".
         let (t, o) = ((n / 10) as usize, (n % 10) as usize);
         if o == 0 {
             TENS[t].to_string()
@@ -584,7 +592,7 @@ impl Lang for LangNn {
     // `CURRENCY_FORMS[currency]` and turns the KeyError into a
     // NotImplementedError. The corpus pins both:
     //
-    //     currency:JPY 12.34 -> "ti to kroner tretti fire øre"
+    //     currency:JPY 12.34 -> "tolv kroner tretti fire øre"
     //     cheque:JPY   1234.56 -> NotImplementedError
     //
     // So `currency_forms` below reports only the three real codes (which is

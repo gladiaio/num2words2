@@ -37,14 +37,14 @@ class Num2WordsBSTest(TestCase):
         self.assertEqual(num2words(9, lang="bs"), "devet")
         self.assertEqual(num2words(10, lang="bs"), "deset")
         self.assertEqual(num2words(11, lang="bs"), "jedanaest")
-        self.assertEqual(num2words(12, lang="bs"), "dvaaest")
-        self.assertEqual(num2words(13, lang="bs"), "triaest")
-        self.assertEqual(num2words(14, lang="bs"), "četiriaest")
-        self.assertEqual(num2words(15, lang="bs"), "petaest")
-        self.assertEqual(num2words(16, lang="bs"), "šestaest")
-        self.assertEqual(num2words(17, lang="bs"), "sedamaest")
-        self.assertEqual(num2words(18, lang="bs"), "osamaest")
-        self.assertEqual(num2words(19, lang="bs"), "devetaest")
+        self.assertEqual(num2words(12, lang="bs"), "dvanaest")
+        self.assertEqual(num2words(13, lang="bs"), "trinaest")
+        self.assertEqual(num2words(14, lang="bs"), "četrnaest")
+        self.assertEqual(num2words(15, lang="bs"), "petnaest")
+        self.assertEqual(num2words(16, lang="bs"), "šesnaest")
+        self.assertEqual(num2words(17, lang="bs"), "sedamnaest")
+        self.assertEqual(num2words(18, lang="bs"), "osamnaest")
+        self.assertEqual(num2words(19, lang="bs"), "devetnaest")
         self.assertEqual(num2words(20, lang="bs"), "dvadeset")
         self.assertEqual(num2words(21, lang="bs"), "dvadeset jedan")
         self.assertEqual(num2words(22, lang="bs"), "dvadeset dva")
@@ -146,7 +146,7 @@ class Num2WordsBSTest(TestCase):
         self.assertEqual(num2words(10001, lang="bs"), "deset hiljada jedan")
         self.assertEqual(num2words(11111, lang="bs"), "jedanaest hiljada sto jedanaest")
         self.assertEqual(
-            num2words(12345, lang="bs"), "dvaaest hiljada tristo četrdeset pet"
+            num2words(12345, lang="bs"), "dvanaest hiljada tristo četrdeset pet"
         )
         self.assertEqual(num2words(20000, lang="bs"), "dvadeset hiljada")
         self.assertEqual(num2words(50000, lang="bs"), "pedeset hiljada")
@@ -190,7 +190,7 @@ class Num2WordsBSTest(TestCase):
         self.assertEqual(num2words(10000000, lang="bs"), "deset miliona")
         self.assertEqual(
             num2words(12345678, lang="bs"),
-            "dvaaest miliona tristo četrdeset pet hiljada šeststo sedamdeset osam",
+            "dvanaest miliona tristo četrdeset pet hiljada šeststo sedamdeset osam",
         )
         self.assertEqual(
             num2words(99999999, lang="bs"),
@@ -276,14 +276,14 @@ class Num2WordsBSTest(TestCase):
         self.assertEqual(num2words(9, lang="bs", ordinal=True), "devet.")
         self.assertEqual(num2words(10, lang="bs", ordinal=True), "deset.")
         self.assertEqual(num2words(11, lang="bs", ordinal=True), "jedanaest.")
-        self.assertEqual(num2words(12, lang="bs", ordinal=True), "dvaaest.")
-        self.assertEqual(num2words(13, lang="bs", ordinal=True), "triaest.")
-        self.assertEqual(num2words(14, lang="bs", ordinal=True), "četiriaest.")
-        self.assertEqual(num2words(15, lang="bs", ordinal=True), "petaest.")
-        self.assertEqual(num2words(16, lang="bs", ordinal=True), "šestaest.")
-        self.assertEqual(num2words(17, lang="bs", ordinal=True), "sedamaest.")
-        self.assertEqual(num2words(18, lang="bs", ordinal=True), "osamaest.")
-        self.assertEqual(num2words(19, lang="bs", ordinal=True), "devetaest.")
+        self.assertEqual(num2words(12, lang="bs", ordinal=True), "dvanaest.")
+        self.assertEqual(num2words(13, lang="bs", ordinal=True), "trinaest.")
+        self.assertEqual(num2words(14, lang="bs", ordinal=True), "četrnaest.")
+        self.assertEqual(num2words(15, lang="bs", ordinal=True), "petnaest.")
+        self.assertEqual(num2words(16, lang="bs", ordinal=True), "šesnaest.")
+        self.assertEqual(num2words(17, lang="bs", ordinal=True), "sedamnaest.")
+        self.assertEqual(num2words(18, lang="bs", ordinal=True), "osamnaest.")
+        self.assertEqual(num2words(19, lang="bs", ordinal=True), "devetnaest.")
         self.assertEqual(num2words(20, lang="bs", ordinal=True), "dvadeset.")
         self.assertEqual(num2words(21, lang="bs", ordinal=True), "dvadeset jedan.")
         self.assertEqual(num2words(22, lang="bs", ordinal=True), "dvadeset dva.")
@@ -407,3 +407,13 @@ class Num2WordsBSTest(TestCase):
         self.assertEqual(num2words(100, lang="bs"), num2words("100", lang="bs"))
         self.assertEqual(num2words(1000, lang="bs"), num2words("1000", lang="bs"))
 
+
+
+def test_teens_issue_216():
+    # gladiaio/num2words2#216: Python built 11-19 as ones + "aest".
+    from num2words2 import num2words
+    want = ["jedanaest", "dvanaest", "trinaest", "četrnaest", "petnaest",
+            "šesnaest", "sedamnaest", "osamnaest", "devetnaest"]
+    assert [num2words(i, lang="bs") for i in range(11, 20)] == want
+    assert num2words(12, lang="bs", to="year") == "dvanaest"
+    assert num2words(112, lang="bs") == "sto dvanaest"

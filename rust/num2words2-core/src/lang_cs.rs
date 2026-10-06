@@ -50,28 +50,26 @@
 //!
 //! # Faithfully reproduced Python bugs
 //!
-//! `to_ordinal` is the interesting one. It carries a hardcoded lookup for
-//! 1..=20, the round tens 30..=90, 100 and 1000. **Everything else** falls
-//! through to `self.to_cardinal(num) + "ý"` — a bare suffix glued onto the
-//! cardinal with no separator, no stem change, and no regard for what the
-//! cardinal actually ends in. The Python comment calls this "a simplified
-//! implementation". The results are not Czech, but they are the spec:
+//! `to_ordinal` was the interesting one. Python carries a hardcoded lookup
+//! for 1..=20, the round tens 30..=90, 100 and 1000, and glues `"ý"` onto
+//! the cardinal for everything else ("dvacet jednaý" for 21, "dvě stěý" for
+//! 200, "nulaý" for 0). Fixed (gladiaio/num2words2#216): every component of
+//! a compound ordinal is now itself an ordinal, as in standard Czech:
 //!
-//! | input      | output                | why it is wrong                    |
-//! |------------|-----------------------|------------------------------------|
-//! | 0          | `nulaý`               | 0 is not in the table              |
-//! | 21         | `dvacet jednaý`       | suffix lands on the *units* word   |
-//! | 200        | `dvě stěý`            | suffix lands after a two-word form |
-//! | 700        | `sedm setý`           | ditto                              |
-//! | 2000       | `dva tisíceý`         | ditto                              |
-//! | 10^6       | `milioný`             | 10^6 is not in the table           |
-//! | 10^7       | `deset milionůý`      | suffix on a genitive plural        |
-//! | 10^21      | `triliardaý`          |                                    |
-//! | -1         | `mínus jednaý`        | negatives are not rejected         |
+//! | input | output                     |
+//! |-------|----------------------------|
+//! | 0     | `nultý`                    |
+//! | 21    | `dvacátý první`            |
+//! | 101   | `stý první`                |
+//! | 200   | `dvoustý`                  |
+//! | 2021  | `dvoutisící dvacátý první` |
+//! | 10^6  | `miliontý`                 |
+//! | -1    | `mínus první`              |
 //!
-//! All nine are corpus-verified. Note the contrast with `lang_PL`: Polish
-//! *crashes* on `to_ordinal(0)` and on every negative, whereas Czech happily
-//! returns a malformed word for both. Do not "fix" these.
+//! Thousands with a multiplier above 9 keep that multiplier as a cardinal
+//! when a lower part follows ("dvanáct tisíc první"). Round values the
+//! tables do not reach (10 000, 2·10^6, …) still take Python's
+//! `to_cardinal(n) + "ý"` fallback; that remains a known gap.
 //!
 //! Two further quirks worth naming:
 //!
@@ -105,7 +103,7 @@ use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{One, Signed, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
 fn key_error(msg: impl Into<String>) -> N2WError {
@@ -151,8 +149,7 @@ const TWENTIES: [&str; 10] = [
 ];
 
 /// `HUNDREDS`, keys 1..=9. Index 0 is absent in Python (guarded by `n3 > 0`).
-/// Several entries are two words ("dvě stě", "pět set"); this matters because
-/// `to_ordinal` suffixes the joined string blindly → "dvě stěý".
+/// Several entries are two words ("dvě stě", "pět set").
 const HUNDREDS: [&str; 10] = [
     "",
     "sto",
@@ -195,7 +192,7 @@ fn thousands_at(i: usize) -> Result<(&'static str, &'static str, &'static str)> 
 }
 
 /// `Num2Word_CS.to_ordinal`'s hardcoded table: 1..=20, round tens, 100, 1000.
-/// Everything else falls through to `to_cardinal(n) + "ý"`.
+/// [`ordinal_below_1000`] composes the rest from it (#216).
 const ORDINALS: [(u16, &str); 29] = [
     (1, "první"),
     (2, "druhý"),
@@ -227,6 +224,43 @@ const ORDINALS: [(u16, &str); 29] = [
     (100, "stý"),
     (1000, "tisící"),
 ];
+
+/// Ordinal hundreds 100..=900 (#216). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "stý", "dvoustý", "třístý", "čtyřstý", "pětistý", "šestistý", "sedmistý", "osmistý",
+    "devítistý",
+];
+
+/// Combining prefix for 2..=9 thousand ("dvoutisící", "pětitisící"). Index
+/// 0 and 1 are unused.
+const MULT_PREFIX: [&str; 10] = [
+    "", "", "dvou", "tří", "čtyř", "pěti", "šesti", "sedmi", "osmi", "devíti",
+];
+
+fn ordinal_table(n: u64) -> Option<&'static str> {
+    ORDINALS.iter().find(|(k, _)| u64::from(*k) == n).map(|(_, w)| *w)
+}
+
+/// Ordinal of `1..=999` with every component ordinal: 21 → "dvacátý první",
+/// 101 → "stý první", 345 → "třístý čtyřicátý pátý" (#216).
+fn ordinal_below_1000(n: u64) -> String {
+    debug_assert!(n > 0 && n < 1000);
+    let mut parts: Vec<&str> = Vec::new();
+    if n >= 100 {
+        parts.push(HUNDREDS_ORD[(n / 100) as usize]);
+    }
+    let r = n % 100;
+    if r != 0 {
+        match ordinal_table(r) {
+            Some(w) => parts.push(w),
+            None => {
+                parts.push(ordinal_table(r / 10 * 10).expect("round tens are tabled"));
+                parts.push(ordinal_table(r % 10).expect("units are tabled"));
+            }
+        }
+    }
+    parts.join(" ")
+}
 
 /// Port of `utils.splitbyx(n, x)` with `format_int=True`, specialised to the
 /// only way CS calls it: `splitbyx(str(n), 3)` where `n` is a **non-negative**
@@ -642,26 +676,56 @@ impl Lang for LangCs {
     /// so the `except (ValueError, TypeError): return str(number)` fallback is
     /// unreachable and is not modelled.
     ///
-    /// The table covers 1..=20, the round tens 30..=90, 100 and 1000. Every
-    /// other input — including 0 and all negatives — takes the
-    /// `to_cardinal(num) + "ý"` path, producing the malformed-but-correct
-    /// outputs documented in the module header ("nulaý", "dvě stěý",
-    /// "mínus jednaý", ...). Reproduced verbatim; see PORTING.md fidelity rules.
+    /// Python's table covers 1..=20, the round tens 30..=90, 100 and 1000
+    /// and glues "ý" onto the cardinal for the rest. Compounds are now built
+    /// component by component (#216); see the module header for the rules
+    /// and the remaining fallback.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        for (k, word) in ORDINALS.iter() {
-            if *value == BigInt::from(*k) {
-                return Ok((*word).to_string());
-            }
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
         }
-        let cardinal = self.to_cardinal(value)?;
-        Ok(cardinal + "ý")
+        let n = match value.to_u64() {
+            Some(n) => n,
+            None => return Ok(self.to_cardinal(value)? + "ý"),
+        };
+        if n == 0 {
+            return Ok("nultý".to_string());
+        }
+        if let Some(w) = ordinal_table(n) {
+            return Ok(w.to_string());
+        }
+        if n < 1000 {
+            return Ok(ordinal_below_1000(n));
+        }
+        let (high, low) = (n / 1000 * 1000, n % 1000);
+        let thousands = n / 1000;
+        let high_ord = match thousands {
+            1 => Some("tisící".to_string()),
+            2..=9 => Some(format!("{}tisící", MULT_PREFIX[thousands as usize])),
+            _ => None,
+        };
+        if low == 0 {
+            return Ok(match (high_ord, n) {
+                (Some(w), _) => w,
+                (None, 1_000_000) => "miliontý".to_string(),
+                (None, 1_000_000_000) => "miliardtý".to_string(),
+                // Known gap: no standard form tabled for this round value.
+                (None, _) => self.to_cardinal(value)? + "ý",
+            });
+        }
+        let head = match high_ord {
+            Some(w) => w,
+            None => self.to_cardinal(&BigInt::from(high))?,
+        };
+        Ok(format!("{} {}", head, ordinal_below_1000(low)))
     }
 
     /// `to_ordinal(float/Decimal)`: Python's first line is `num =
     /// int(number)` — truncation toward zero — so `2.5` → "druhý",
-    /// `-1.5` → "mínus jednaý", `Decimal("1E+2")` → "stý", and the huge
+    /// `-1.5` → "mínus první", `Decimal("1E+2")` → "stý", and the huge
     /// e-form floats that make the *cardinal* path raise ValueError
-    /// (`1e+16`) convert cleanly here ("deset biliardý"). The
+    /// (`1e+16`) convert cleanly here ("deset biliardý", a round value still on the
+    /// cardinal + "ý" fallback). The
     /// `except (ValueError, TypeError)` rescue is unreachable for a
     /// finite float/Decimal; `int(inf)`'s OverflowError and `int(nan)`'s
     /// ValueError are modelled for completeness.
