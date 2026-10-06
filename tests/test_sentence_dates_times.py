@@ -40,6 +40,36 @@ def test_clock_times(text, expected):
     assert ":" not in out
 
 
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # am/pm suffix, glued or spaced, kept as written (#178).
+        ("at 10:30pm", "at ten thirty pm"),
+        ("at 10:30 PM", "at ten thirty PM"),
+        ("at 10:30 p.m. today", "at ten thirty p.m. today"),
+        ("at 9:05am", "at nine oh five am"),
+        ("at 12:00pm", "at twelve pm"),
+        ("at 10:30A.M., then", "at ten thirty A.M., then"),
+    ],
+)
+def test_clock_times_with_am_pm(text, expected):
+    assert num2words_sentence(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # Seconds and 24-hour values with a glued suffix are not claimed.
+        ("at 10:30:15pm", "at ten:thirty:15pm"),
+        ("at 14:30pm", "at fourteen:30pm"),
+        # Not a suffix: a word that merely starts with "pm".
+        ("at 10:30 pmfoo", "at ten thirty pmfoo"),
+    ],
+)
+def test_clock_times_am_pm_left_alone(text, expected):
+    assert num2words_sentence(text) == expected
+
+
 def test_other_languages_dates_unchanged():
     assert num2words_sentence("le 1er mai 2024", lang="fr") == (
         "le premier mai deux mille vingt-quatre")

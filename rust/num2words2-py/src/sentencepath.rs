@@ -38,9 +38,10 @@
 //!
 //! Also deliberate (#152): English clock times `H:MM` get their own pass
 //! ("10:30" -> "ten thirty", "10:00" -> "ten o'clock") instead of being read
-//! as two numbers around a kept colon, and the English month-first date
-//! pattern takes a 1-2 digit day only, so the year in "1st May 2024" is no
-//! longer read as an ordinal day ("May 2024th").
+//! as two numbers around a kept colon; a following am/pm marker, glued or
+//! spaced, is kept as written ("10:30pm" -> "ten thirty pm", #178). The
+//! English month-first date pattern takes a 1-2 digit day only, so the year
+//! in "1st May 2024" is no longer read as an ordinal day ("May 2024th").
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -316,7 +317,9 @@ impl Res {
             dates,
             year: re(r"\b(19\d{2}|20\d{2}|2100)\b"),
             currency: re(r"([$€£¥]\s*)(\d+(?:[.,]\d+)?)"),
-            clock: re(r"\b(\d{1,2}):(\d{2})\b"),
+            // The trailing boundary is checked in code: a glued "pm" (#178)
+            // has no `\b` before it.
+            clock: re(r"\b(\d{1,2}):(\d{2})"),
         }
     }
 
@@ -398,8 +401,9 @@ enum Typ {
     Year,
     Currency(char),
     Number,
-    /// English clock time `H:MM` as (hour, minute).
-    Time(u32, u32),
+    /// English clock time `H:MM` as (hour, minute, am/pm suffix as
+    /// written, e.g. "pm", "PM", "p.m.").
+    Time(u32, u32, Option<String>),
 }
 
 struct Ext {
@@ -560,6 +564,39 @@ fn is_part_sep(c: char) -> bool {
     c == '.' || c == ',' || (c != ' ' && is_space_group_sep(c))
 }
 
+/// An am/pm marker right after a clock time ending at char `at` (#178):
+/// optional whitespace, then `am`/`pm`/`a.m.`/`p.m.` in any case, not
+/// followed by a letter or digit. Returns the end of the marker and the
+/// marker as written.
+fn ampm_suffix(chars: &[char], at: usize) -> Option<(usize, String)> {
+    let n = chars.len();
+    let mut i = at;
+    while i < n && chars[i].is_whitespace() {
+        i += 1;
+    }
+    let start = i;
+    if i >= n || !matches!(chars[i], 'a' | 'A' | 'p' | 'P') {
+        return None;
+    }
+    i += 1;
+    let dotted = i < n && chars[i] == '.';
+    if dotted {
+        i += 1;
+    }
+    if i >= n || !matches!(chars[i], 'm' | 'M') {
+        return None;
+    }
+    i += 1;
+    // "a.m." takes its closing dot; "am." leaves it to the sentence.
+    if dotted && i < n && chars[i] == '.' {
+        i += 1;
+    }
+    if i < n && (chars[i].is_alphanumeric() || chars[i] == '_') {
+        return None;
+    }
+    Some((i, chars[start..i].iter().collect()))
+}
+
 /// `SentenceConverter.extract_numbers`, all seven passes in order (plus the
 /// grouping and clock-time passes 2b/2c).
 fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
@@ -644,24 +681,38 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
 
     // 2c. English clock times "10:30" -> "ten thirty" (#152); otherwise the
     // plain pass reads each side and leaves the colon ("ten:thirty").
-    // "14:30:45" (seconds) and out-of-range values are left alone.
+    // "14:30:45" (seconds) and out-of-range values are left alone. An am/pm
+    // suffix, glued or spaced ("10:30pm", "10:30 p.m."), is claimed with the
+    // time and kept as written (#178); it requires a 1-12 hour.
     if lang == "en" {
         for m in r.clock.captures_iter(t.s) {
             let g0 = m.get(0).unwrap();
-            let (s, e) = t.span(g0.start(), g0.end());
+            let (s, mut e) = t.span(g0.start(), g0.end());
             let h: u32 = m[1].parse().unwrap_or(99);
             let mi: u32 = m[2].parse().unwrap_or(99);
             let after_colon = s > 0 && t.chars[s - 1] == ':';
             let seconds = e + 1 < n && t.chars[e] == ':' && t.chars[e + 1].is_ascii_digit();
+            let suffix = ampm_suffix(&t.chars, e);
+            let is_word = |c: char| c.is_alphanumeric() || c == '_';
+            let suffix = match suffix {
+                Some((se, sfx)) if (1..=12).contains(&h) => {
+                    e = se;
+                    Some(sfx)
+                }
+                // Without a suffix the time must end at a word boundary,
+                // as the old `\b` required.
+                _ if e < n && is_word(t.chars[e]) => continue,
+                _ => None,
+            };
             if h > 23 || mi > 59 || after_colon || seconds || overlap(&used, s, e) {
                 continue;
             }
             exts.push(Ext {
                 start: s,
                 end: e,
-                text: g0.as_str().to_string(),
+                text: t.slice(s, e),
                 val: Val::I(BigInt::from(h)),
-                typ: Typ::Time(h, mi),
+                typ: Typ::Time(h, mi, suffix),
             });
             mark(&mut used, s, e);
         }
@@ -1007,7 +1058,19 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             ctx.lang()?.to_ordinal(val.i())
         }
         Typ::DateNumber => ctx.lang()?.to_cardinal(val.i()),
-        Typ::Time(h, minute) => {
+        Typ::Time(h, minute, Some(sfx)) => {
+            // "10:30pm" -> "ten thirty pm", "10:00 PM" -> "ten PM" (#178).
+            let l = ctx.lang()?;
+            let hour = l.to_cardinal(&BigInt::from(*h))?;
+            Ok(match *minute {
+                0 => format!("{} {}", hour, sfx),
+                m if m < 10 => {
+                    format!("{} oh {} {}", hour, l.to_cardinal(&BigInt::from(m))?, sfx)
+                }
+                m => format!("{} {} {}", hour, l.to_cardinal(&BigInt::from(m))?, sfx),
+            })
+        }
+        Typ::Time(h, minute, None) => {
             let l = ctx.lang()?;
             let hour = l.to_cardinal(&BigInt::from(*h))?;
             Ok(match *minute {
