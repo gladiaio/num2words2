@@ -239,9 +239,9 @@ Command line::
     $ num2words2 10001
     ten thousand and one
     $ num2words2 24,120.10
-    twenty-four thousand, one hundred and twenty point one
+    twenty-four thousand, one hundred and twenty point one zero
     $ num2words2 24,120.10 -l es
-    veinticuatro mil ciento veinte punto uno
+    veinticuatro mil ciento veinte punto uno cero
     $ num2words2 2.14 -l es --to currency
     dos euros con catorce céntimos
 
@@ -249,11 +249,11 @@ In code there's only one function to use::
 
     >>> from num2words2 import num2words
     >>> num2words(42)
-    forty-two
+    'forty-two'
     >>> num2words(42, to='ordinal')
-    forty-second
+    'forty-second'
     >>> num2words(42, lang='fr')
-    quarante-deux
+    'quarante-deux'
 
 Besides the numerical argument, there are two main optional arguments, ``to:`` and ``lang:``
 

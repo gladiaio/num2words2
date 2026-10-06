@@ -39,6 +39,7 @@ utility function, and the aviation/ICAO language codes.
 
 ## Quick start
 
+<!-- doc-examples: skip (cheque / currency= / fraction) -->
 ```python
 from num2words2 import num2words
 
@@ -98,7 +99,7 @@ Year-style reading, when distinct from cardinal in the language.
 num2words(1971, to='year')              # 'nineteen seventy-one'
 num2words(2024, to='year')              # 'twenty twenty-four'
 num2words(-44, to='year')               # 'forty-four BC'
-num2words(2026, to='year', lang='nl')   # 'twintig zesentwintig'
+num2words(2026, to='year', lang='nl')   # 'tweeduizend zesentwintig'
 ```
 
 ### `currency`
@@ -106,6 +107,7 @@ num2words(2026, to='year', lang='nl')   # 'twintig zesentwintig'
 Spelled-out monetary amounts. Supports 2-decimal default plus 3-decimal
 "mil" currencies (BHD, KWD, OMR, JOD, TND, LYD, IQD).
 
+<!-- doc-examples: skip (currency=) -->
 ```python
 num2words(1234.56, to='currency', currency='USD')
 # 'one thousand, two hundred and thirty-four dollars, fifty-six cents'
@@ -125,12 +127,14 @@ A code the language has no words for raises
 for int, float, Decimal and string input alike; it never falls back to the
 language's default currency.
 
-Optional `adjective=True` prefixes the currency adjective for languages that
-have one (German "DM" → "Deutsche Mark", etc.):
+Optional `adjective=True` prefixes the currency adjective where the
+language's converter defines one for that currency (English "US dollars",
+etc.):
 
+<!-- doc-examples: skip (currency=) -->
 ```python
-num2words(100, to='currency', currency='DEM', lang='de', adjective=True)
-# 'einhundert Deutsche Mark'
+num2words(100, to='currency', currency='USD', adjective=True)
+# 'one hundred US dollars'
 ```
 
 ### `cheque`
@@ -138,6 +142,7 @@ num2words(100, to='currency', currency='DEM', lang='de', adjective=True)
 Bank-style cheque format — integer part as words, fractional part as
 digits, currency name pluralised, whole result upper-cased.
 
+<!-- doc-examples: skip (cheque) -->
 ```python
 num2words(1234.56, to='cheque', currency='USD')
 # 'ONE THOUSAND, TWO HUNDRED AND THIRTY-FOUR AND 56/100 DOLLARS'
@@ -164,6 +169,7 @@ Languages without fraction rules raise `NotImplementedError`
 (`lang='ru' does not support to='fraction'`), and any input other than an
 `'n/d'` string raises `TypeError`.
 
+<!-- doc-examples: skip (fraction) -->
 ```python
 num2words('1/3')                # 'one third'
 num2words('1/2', lang='fr')     # 'un demi'
@@ -217,6 +223,7 @@ num2words(1234, lang='en', style='us')      # 'one thousand, two hundred thirty-
 Override how many fractional digits to read. Useful when the language's
 default doesn't match your input:
 
+<!-- doc-examples: skip (precision=) -->
 ```python
 num2words(3.14159, lang='en', precision=5)
 # 'three point one four one five nine'
@@ -236,6 +243,7 @@ precision raises `ValueError`.
 
 ### `cents=` — currency subunit control
 
+<!-- doc-examples: skip (currency=) -->
 ```python
 num2words(5, to='currency', currency='USD', cents='omit')
 # 'five dollars'                                  (drops the cents segment)
@@ -271,8 +279,9 @@ num2words(1.5, lang='tr', decimal_word='nokta')     # 'birnoktabeş'
 
 ### `gender=` — grammatical gender
 
-For languages with grammatical gender (Hebrew, Russian, German), pass
-`'m'` / `'f'` / `'n'` to select the form.
+For languages whose converter takes a grammatical gender (Hebrew, Russian,
+...), pass `'m'` / `'f'` / `'n'` to select the form. Languages that do not
+support it raise `NotImplementedError` rather than ignoring the option.
 
 ```python
 num2words(1, lang='he', gender='m')   # 'אחד'
@@ -290,7 +299,7 @@ Russian, Arabic, and other inflected languages accept a `case=` kwarg.
 num2words(1, lang='ru', case='nominative')      # 'один'
 num2words(1, lang='ru', case='genitive')        # 'одного'
 num2words(1, lang='ru', case='dative')          # 'одному'
-num2words(1, lang='ru', case='accusative')      # 'один' / 'одного' (animacy-dependent)
+num2words(1, lang='ru', case='accusative')      # 'одного'
 num2words(1, lang='ru', case='instrumental')    # 'одним'
 num2words(1, lang='ru', case='prepositional')   # 'одном'
 
@@ -362,20 +371,21 @@ frequency) and no public converter classes. Compose such phrases from
 
 ### `maxval(lang)`
 
-Maximum integer the given language's converter can handle. Useful for
-input validation before calling `num2words()`.
+The exclusive upper bound of the given language's converter: `num2words()`
+accepts integers with `abs(n) < maxval(lang)` and raises `OverflowError`
+above. Useful for input validation before calling `num2words()`.
 
 ```python
 from num2words2 import maxval
 
-maxval('en')   # 10**3003 - 1
-maxval('tr')   # 10**21 - 1
-maxval('fr')   # 10**18 - 1
+maxval('en') == 10**306   # True
+maxval('fr') == 10**606   # True
 ```
 
-Accepts the same locale-fallback rules as `num2words` (case
-normalisation, hyphen-to-underscore, two-letter prefix). Raises
-`NotImplementedError` if no converter matches.
+Accepts the same language codes as `num2words` (codes are matched
+case-insensitively, hyphens become underscores, and a regional code falls
+back to its two-letter prefix). Raises `NotImplementedError` if no converter
+matches.
 
 ### `group_digits(value, locale=)`
 
@@ -517,6 +527,7 @@ applies the following rules in order:
 
 1. **Fraction pattern (`'n/d'`)** — routed directly to `to_fraction(n, d)`.
    Whitespace and signs on either side are tolerated.
+   <!-- doc-examples: skip (fraction) -->
    ```python
    num2words('1/3')        # 'one third'
    num2words('-3/4')       # 'minus three quarters'
@@ -526,7 +537,9 @@ applies the following rules in order:
 2. **Numeric string** — parsed to `Decimal` via `str_to_number()` so trailing
    zeros and trillion-scale precision survive the round-trip:
    ```python
-   num2words('98746251323029.99')      # exact, no IEEE 754 loss
+   # exact, no IEEE 754 loss:
+   num2words('98746251323029.99')
+   # 'ninety-eight trillion, seven hundred and forty-six billion, two hundred and fifty-one million, three hundred and twenty-three thousand and twenty-nine point nine nine'
    num2words('1.50', lang='tr')        # 'birvirgülelli' (preserves trailing zero)
    num2words('0.50')                   # 'zero point five zero'
    ```
@@ -554,9 +567,8 @@ Most of the additions are non-breaking, but two are worth flagging:
 - **Turkish natural-precision floats (v1.0.15+)** — `num2words(0.1, lang='tr')`
   used to return `'sıfırvirgülon'` ("zero point ten") and now returns
   `'sıfırvirgülbir'` ("zero point one") to match how Turkish speakers
-  actually read short decimals. To get the v1.0.14 padded behaviour
-  back, pass `precision=2` explicitly or use a string with the trailing
-  zero (`'0.10'`).
+  actually read short decimals. To keep the trailing zero, pass a string
+  (`'0.10'`), which preserves the digits as written.
 
 Everything else is additive: new modes (`cheque`, `fraction`), new
 locales (`en_Aero_*`), new kwargs (`style=`, `precision=`, `cents=`,

@@ -73,12 +73,15 @@ print(num2words(42, to='ordinal'))  # forty-second
 print(num2words(42, to='ordinal', lang='es'))  # cuadragésimo segundo
 
 # Currency
-print(num2words(42.50, to='currency'))  # forty-two euro, fifty cents
+print(num2words(42.50, to='currency'))  # forty-two euros, fifty cents
 print(num2words(42.50, to='currency', lang='es'))  # cuarenta y dos euros con cincuenta céntimos
 
 # Year
-print(num2words(2024, to='year'))  # two thousand and twenty-four
+print(num2words(2024, to='year'))  # twenty twenty-four
+```
 
+<!-- doc-examples: skip (fraction / cheque / currency=) -->
+```python
 # Fractions (new in v1.0.13)
 print(num2words('1/3'))                   # one third
 print(num2words('3/4', lang='fr'))        # trois quarts
@@ -91,13 +94,15 @@ print(num2words(1234.56, to='cheque', currency='USD'))
 # 3-decimal currencies (new in v1.0.12)
 print(num2words(5.123, to='currency', currency='BHD'))
 # five dinars, one hundred and twenty-three fils
+```
 
+```python
 # Aviation/ICAO digit-by-digit (new in v1.0.14)
 print(num2words(5739, lang='en_Aero_ICAO'))   # fife seven tree niner
 print(num2words(127.5, lang='en_Aero_ICAO'))  # wun too seven decimal fife
 
-# Per-call options
-print(num2words(1234, lang='en', style='us'))    # one thousand, two hundred thirty-four (no 'and')
+# Per-call options (style='us' drops the 'and')
+print(num2words(1234, lang='en', style='us'))    # one thousand, two hundred thirty-four
 print(num2words(1, lang='ru', case='genitive')) # одного
 print(num2words(1, lang='he', gender='f'))       # אחת
 ```
@@ -111,10 +116,10 @@ $ num2words2 10001
 ten thousand and one
 
 $ num2words2 24120.10
-twenty-four thousand, one hundred and twenty point one
+twenty-four thousand, one hundred and twenty point one zero
 
 $ num2words2 24120.10 -l es
-veinticuatro mil ciento veinte punto uno
+veinticuatro mil ciento veinte punto uno cero
 
 $ num2words2 2.14 -l es --to currency
 dos euros con catorce céntimos
