@@ -1230,25 +1230,15 @@ impl Lang for LangDv {
         }
 
         if !frac_part.is_zero() {
-            result.push(self.to_cardinal_float_dec(&frac_part, false)?);
-            // Python appends `cents` — a *word*, defaulting to ލާރި. The trait
-            // hands us a bool, because `base.to_currency`'s `cents=` is a
-            // verbosity flag. The shim sends `kwargs.get("cents", True)`, so
-            // `true` is the only value an ordinary call produces and the
-            // default word is what Python would have used.
-            //
-            // `false` can only mean the caller explicitly passed `cents=False`,
-            // and Python then puts the bool itself into the list and dies in
-            // `" ".join(...)`. Reproduced rather than papered over — but note
-            // it fires only once the cents segment exists at all, which is why
-            // `to_currency(1.0, cents=False)` still returns "އެއް ރުފިޔާ", and why
-            // this sits after frac_part has been rendered and pushed: an
-            // OverflowError from that render happens first in Python too.
-            if !cents {
-                return Err(N2WError::Type(format!(
-                    "sequence item {}: expected str instance, bool found",
-                    result.len() - negative as usize
-                )));
+            // Python appends `cents` — a *word*, defaulting to ލާރި; the trait
+            // hands us `base.to_currency`'s verbosity flag instead. Python's
+            // `cents=False` put the bool itself into the list and died in
+            // `" ".join(...)`; it now gives the laari as digits, like every
+            // other language (#220).
+            if cents {
+                result.push(self.to_cardinal_float_dec(&frac_part, false)?);
+            } else {
+                result.push(format!("{:0>2}", frac_part.to_string()));
             }
             result.push(CENTSWORD.to_string());
         }

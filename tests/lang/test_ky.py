@@ -76,7 +76,8 @@ class TestKY(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "отуз сегиз сом", {"cents": False, "currency": "KGS"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "отуз сегиз сом 40 тыйын", {"cents": False, "currency": "KGS"}),
         ("0", "нөл сом", {"cents": True, "currency": "KGS"}),
         ("1.50", "бир сом элүү тыйын", {"cents": True, "currency": "KGS"}),
         (12.34, "он эки доллар отуз төрт сент", {"currency": "USD"}),

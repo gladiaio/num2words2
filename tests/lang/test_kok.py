@@ -57,7 +57,8 @@ class TestKOK(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "तीस आनी आठ रुपया", {"cents": False, "currency": "INR"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "तीस आनी आठ रुपया 40 पैसो", {"cents": False, "currency": "INR"}),
         ("1.50", "एक रुपया पन्नास पैसो", {"cents": True, "currency": "INR"}),
         (12.34, "धा आनी दोन डॉलर तीस आनी चार सेंट", {"currency": "USD"}),
     ]

@@ -174,17 +174,23 @@ pub fn unknown_currency<L: Lang + ?Sized>(lang: &L, code: &str) -> N2WError {
     ))
 }
 
-/// `to_currency[_kw]` that refuses to answer in the wrong currency (#219).
+/// `to_currency[_kw]` with the options every language must honour the same
+/// way.
 ///
-/// Many languages override `to_currency` wholesale and read only their own
-/// currency, so `currency="GBP"` silently printed the default ("dous euros",
-/// "اثنان ريالان"). A different code must give different words: when the
-/// output for `currency` is identical to the output for the language's
-/// default, the code was ignored and this raises like an unknown code does
-/// in `base.to_currency`. Codes whose forms are genuinely the same as the
-/// default's (two "dollar" currencies) are exempt.
+/// * **`currency=` (#219).** Many languages override `to_currency` wholesale
+///   and read only their own currency, so `currency="GBP"` silently printed
+///   the default ("dous euros", "اثنان ريالان"). A different code must give
+///   different words: when the output for `currency` is identical to the
+///   output for the language's default, the code was ignored and this raises
+///   like an unknown code does in `base.to_currency`. Codes whose forms are
+///   genuinely the same as the default's (two "dollar" currencies) are exempt.
+/// * **`cents=False` (#220)** prints the cents as digits ("two euros, 50
+///   cents"). Languages whose own `to_currency` drops the cents or ignores the
+///   flag get the digits spliced into their verbose reading in place of the
+///   cents numeral; where that numeral cannot be found (an inflected or
+///   counter form), this raises rather than change the amount.
 #[allow(clippy::too_many_arguments)]
-pub fn to_currency_respecting_code<L: Lang + ?Sized>(
+pub fn to_currency_checked<L: Lang + ?Sized>(
     lang: &L,
     val: &CurrencyValue,
     currency: &str,
@@ -193,25 +199,84 @@ pub fn to_currency_respecting_code<L: Lang + ?Sized>(
     adjective: bool,
     kw: &Kwargs,
 ) -> Result<String> {
-    let render = |code: &str| {
+    let render = |code: &str, cents: bool| {
         if kw.is_empty() {
             lang.to_currency(val, code, cents, separator, adjective)
         } else {
             lang.to_currency_kw(val, code, cents, separator, adjective, kw)
         }
     };
-    let out = render(currency)?;
+    let out = render(currency, cents)?;
     let default = lang.default_currency();
     if currency != default && !lang.same_currency(currency, default) {
         let same_forms = match (lang.currency_forms(currency), lang.currency_forms(default)) {
             (Some(a), Some(b)) => a.unit == b.unit && a.subunit == b.subunit,
             _ => false,
         };
-        if !same_forms && matches!(render(default), Ok(d) if d == out) {
+        if !same_forms && matches!(render(default, cents), Ok(d) if d == out) {
             return Err(unknown_currency(lang, currency));
         }
     }
-    Ok(out)
+    if cents {
+        return Ok(out);
+    }
+    terse_cents(lang, val, currency, out, || render(currency, true))
+}
+
+/// The cents-as-digits guarantee behind `cents=False` (see
+/// [`to_currency_checked`]). `out` is the language's own `cents=False` text.
+fn terse_cents<L: Lang + ?Sized>(
+    lang: &L,
+    val: &CurrencyValue,
+    currency: &str,
+    out: String,
+    verbose: impl FnOnce() -> Result<String>,
+) -> Result<String> {
+    let divisor = lang.currency_precision(currency);
+    if divisor <= 1 || !matches!(val, CurrencyValue::Decimal { .. }) {
+        return Ok(out);
+    }
+    // Fractional cents (1.011) keep base's numeric reading of the fraction.
+    if let CurrencyValue::Decimal { value, .. } = val {
+        let scaled = value * BigDecimal::from(divisor);
+        if &scaled - scaled.with_scale(0) != BigDecimal::zero() {
+            return Ok(out);
+        }
+    }
+    let (left, right, _) = parse_currency_parts(val, false, false, divisor);
+    let right = right.as_bigint_and_exponent().0;
+    if right.is_zero() {
+        return Ok(out);
+    }
+    let digits = [default_cents_terse(&right, divisor), right.to_string()];
+    let has_token = |text: &str, tok: &str| {
+        text.match_indices(tok).any(|(i, _)| {
+            let before = text[..i].chars().next_back();
+            let after = text[i + tok.len()..].chars().next();
+            !before.is_some_and(|c| c.is_ascii_digit()) && !after.is_some_and(|c| c.is_ascii_digit())
+        })
+    };
+    if digits.iter().any(|d| has_token(&out, d)) {
+        return Ok(out);
+    }
+    let unsupported = || N2WError::NotImplemented("does not support cents=False".into());
+    let verbose = verbose()?;
+    let word = lang.cents_verbose(&right, currency)?;
+    let pos = verbose.rfind(word.as_str()).ok_or_else(unsupported)?;
+    // The numeral must stand alone (not "five" inside "twenty-five" in a
+    // space-separated script) and follow the whole-unit amount.
+    let joins = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() && (c as u32) < 0x0590 || c == '-');
+    if joins(verbose[..pos].chars().next_back()) || joins(verbose[pos + word.len()..].chars().next()) {
+        return Err(unsupported());
+    }
+    if let Ok(money) = lang.money_verbose(&left, currency) {
+        if let Some(m) = verbose.find(money.as_str()) {
+            if pos < m + money.len() {
+                return Err(unsupported());
+            }
+        }
+    }
+    Ok(format!("{}{}{}", &verbose[..pos], digits[0], &verbose[pos + word.len()..]))
 }
 
 /// Python's `Num2Word_Base.to_currency`.

@@ -521,7 +521,8 @@ class Num2WordsHATest(TestCase):
         )
         self.assertEqual(
             num2words(100.5, lang="ha", to="currency", currency="NGN", cents=False),
-            "naira ɗari",
+            # cents=False keeps the cents, as digits (#220).
+            "naira ɗari da kobo 50",
         )
 
         # An unknown currency raises instead of printing naira (#219).

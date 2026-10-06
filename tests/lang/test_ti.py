@@ -56,7 +56,8 @@ class TestTI(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "ሰላሳ ን ሸሞንተ ብር", {"cents": False, "currency": "ETB"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "ሰላሳ ን ሸሞንተ ብር 40 ሳንቲም", {"cents": False, "currency": "ETB"}),
         ("0", "ባዶ ብር", {"cents": True, "currency": "ETB"}),
         ("1.50", "ሓደ ብር ሓምሳ ሳንቲም", {"cents": True, "currency": "ETB"}),
         (12.34, "ዓሰርተ ን ክልተ ናቕፋ ሰላሳ ን ኣርባዕተ ሳንቲም", {"currency": "ERN"}),

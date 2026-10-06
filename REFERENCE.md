@@ -203,6 +203,10 @@ num2words(1234, lang='en')                  # 'one thousand, two hundred and thi
 num2words(1234, lang='en', style='us')      # 'one thousand, two hundred thirty-four'
 ```
 
+`style='us'` applies to every input type and to `to='currency'` and
+`to='cheque'` too; on a cheque the "AND" before the cents stays
+(`'ONE HUNDRED ONE AND 50/100 EUROS'`).
+
 ### `precision=` — floating-point precision override
 
 Override how many fractional digits to read. Useful when the language's
@@ -231,6 +235,13 @@ num2words(5.99, to='currency', currency='USD', cents='verbose')
 
 The legacy `cents=False` is kept; it means "use digits not words" (same as
 `cents='terse'`). `cents=True` means "use words" (same as `cents='verbose'`).
+Digits are guaranteed in every language: one whose own reading cannot put
+the cents as digits raises `NotImplementedError` (`lang='zh' does not
+support cents=False`) rather than drop them.
+
+`cents='omit'` truncates toward zero, like `int()`, for int, float, Decimal
+and string input alike: `1.99`, `Decimal('1.99')` and `'1.99'` all give
+'one euro'. Any other `cents=` value raises `ValueError`.
 
 ### `spaced=` / `decimal_word=` — Turkish
 

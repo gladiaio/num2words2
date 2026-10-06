@@ -65,7 +65,8 @@ class TestOR(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "ତିରିଶ ଓ ଆଠ ଟଙ୍କା", {"cents": False, "currency": "INR"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "ତିରିଶ ଓ ଆଠ ଟଙ୍କା 40 ପଇସା", {"cents": False, "currency": "INR"}),
         ("0", "ଶୂନ୍ୟ ଟଙ୍କା", {"cents": True, "currency": "INR"}),
         ("1.50", "ଏକ ଟଙ୍କା ପଚାଶ ପଇସା", {"cents": True, "currency": "INR"}),
         (12.34, "ବାର ଡଲାର ତିରିଶ ଓ ଚାରି ସେଣ୍ଟ", {"currency": "USD"}),

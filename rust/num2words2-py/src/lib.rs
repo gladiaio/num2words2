@@ -13,7 +13,7 @@ use bigdecimal::BigDecimal;
 use num2words2_core::base::{
     floatord_error, py_num_str, year_float_error, Kwargs, KwVal, Lang,
 };
-use num2words2_core::currency::to_currency_respecting_code;
+use num2words2_core::currency::to_currency_checked;
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
     has_py_digit, is_malformed_number, number_notation, parse_grouped, python_decimal_str,
@@ -702,7 +702,7 @@ fn from_string_core(
         // A hook the language hasn't ported yet: let the original Python
         // string path handle it rather than guessing.
         Err(N2WError::Fallback(_)) => Ok((1, None)),
-        other => finish(other).map(|v| (0, v)),
+        other => finish(other.map_err(|e| name_lang(lang, e))).map(|v| (0, v)),
     }
 }
 
@@ -725,7 +725,7 @@ fn int_mode(
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
-            to_currency_respecting_code(
+            to_currency_checked(
                 l,
                 &CurrencyValue::Int(n.clone()),
                 currency,
@@ -775,7 +775,7 @@ fn dec_mode(
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
-            to_currency_respecting_code(
+            to_currency_checked(
                 l,
                 &CurrencyValue::Decimal {
                     value: value.clone(),
@@ -812,6 +812,20 @@ fn cheque_core(
     let currency = currency.unwrap_or(l.default_currency());
     let d = BigDecimal::from_str(value).map_err(|e| N2WError::Value(e.to_string()))?;
     opt(l.to_cheque(&d, currency))
+}
+
+/// `style='us'` on a cheque (#220): drop the "AND" inside the amount words
+/// ("ONE HUNDRED ONE AND 50/100"), keeping the one that joins the cents.
+fn cheque_style(out: &str, style: Option<&str>, lang: &str) -> String {
+    if style != Some("us") || !lang.starts_with("en") {
+        return out.to_string();
+    }
+    match out.rfind(" AND ") {
+        Some(i) if out[i..].contains('/') => {
+            format!("{}{}", out[..i].replace(" AND ", " "), &out[i..])
+        }
+        _ => out.replace(" AND ", " "),
+    }
 }
 
 /// The whole-number int modes (`_RUST_TYPES`), shared by `num2words`. Mirrors
@@ -879,7 +893,7 @@ fn currency_core(
     let v = CurrencyValue::parse(value, is_int, has_decimal, is_float)?;
     let adjective = adjective.unwrap_or(l.default_adjective());
     let currency = currency.unwrap_or(l.default_currency());
-    opt(to_currency_respecting_code(l, &v, currency, cents, separator, adjective, kw))
+    opt(to_currency_checked(l, &v, currency, cents, separator, adjective, kw))
 }
 
 // --- Argument classification for the unified `num2words` entry -------------
@@ -933,7 +947,21 @@ fn get_precision(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<u32>> {
 }
 
 /// Classify the `cents=` object and run the core's normalisation + guard.
-fn classify_cents(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<(bool, bool)>> {
+/// A value outside the five accepted ones is a caller error (#220).
+fn classify_cents(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(bool, bool)> {
+    let got = match dict_get(kwargs, "cents")? {
+        Some(v) => v.repr()?.to_string(),
+        None => String::new(),
+    };
+    classify_cents_raw(kwargs)?.ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "cents= must be True, False, 'verbose', 'terse' or 'omit'; got {}",
+            got
+        ))
+    })
+}
+
+fn classify_cents_raw(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<(bool, bool)>> {
     Ok(match dict_get(kwargs, "cents")? {
         None => presentation::normalize_cents(CentsArg::Absent),
         Some(v) => {
@@ -1114,7 +1142,13 @@ fn num2words(
         if !CONVERTER_TYPES.contains(&to_final) {
             return Err(unknown_converter(to_final));
         }
-        let cents = classify_cents(kwargs)?;
+        // cents= only matters for currency; elsewhere an odd value keeps
+        // declining as before.
+        let cents = if to_final == "currency" {
+            Some(classify_cents(kwargs)?)
+        } else {
+            classify_cents_raw(kwargs)?
+        };
         let extras = extras_to_kwargs(
             kwargs,
             &[
@@ -1126,13 +1160,25 @@ fn num2words(
                 "precision",
             ],
         )?;
-        let (cents_bool, kw) = match (cents, extras) {
-            (Some((c, _drop)), Some(kw)) => (c, kw),
+        let (cents_bool, drop_cents, kw) = match (cents, extras) {
+            (Some((c, drop)), Some(kw)) => (c, drop, kw),
             _ => return Err(declined(lang, to_final, kwargs)),
         };
         let currency = get_opt_str(kwargs, "currency")?;
         let separator = get_opt_str(kwargs, "separator")?;
         let adjective = get_opt_bool(kwargs, "adjective")?;
+        // cents='omit' truncates toward zero, as int() does for a float or
+        // a Decimal (#220): "1.99" -> "one euro".
+        let s = if drop_cents && to_final == "currency" {
+            match l.str_to_number(&s) {
+                Ok(ParsedNumber::Dec(d)) | Ok(ParsedNumber::DecPoint { value: d, .. }) => {
+                    d.with_scale_round(0, bigdecimal::RoundingMode::Down).to_string()
+                }
+                _ => s,
+            }
+        } else {
+            s
+        };
         return match from_string_core(
             l,
             lang,
@@ -1241,10 +1287,12 @@ fn num2words(
 
     // currency
     if to == "currency" && (intish || is_float || is_decimal) {
-        if let Some((cents_bool, drop)) = classify_cents(kwargs)? {
-            // cents='omit' on a float truncates to an int so no cents segment
-            // appears (the int path drops cents naturally).
-            let num_obj: Bound<'_, PyAny> = if drop && is_float {
+        {
+            let (cents_bool, drop) = classify_cents(kwargs)?;
+            // cents='omit' on a float or Decimal truncates to an int (toward
+            // zero, Python's int()) so no cents segment appears (the int path
+            // drops cents naturally). #220: Decimal used to keep its cents.
+            let num_obj: Bound<'_, PyAny> = if drop && (is_float || is_decimal) {
                 py.import("builtins")?.getattr("int")?.call1((number,))?
             } else {
                 number.clone()
@@ -1287,13 +1335,15 @@ fn num2words(
                     &kw,
                 ) {
                     Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
-                    Err(e) => Err(map_err(e)),
-                    Ok(out) => Ok(out),
+                    Err(e) => Err(map_err(name_lang(lang, e))),
+                    // style='us' applies to every input type (#220).
+                    Ok(out) => {
+                        Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
+                    }
                 };
             }
             // items None -> fall through
         }
-        // cents guard fail -> fall through
     }
 
     // cheque
@@ -1302,8 +1352,8 @@ fn num2words(
         let currency = get_opt_str(kwargs, "currency")?;
         return match cheque_core(l, &value_str, currency.as_deref()) {
             Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
-            Err(e) => Err(map_err(e)),
-            Ok(out) => Ok(out),
+            Err(e) => Err(map_err(name_lang(lang, e))),
+            Ok(out) => Ok(out.map(|o| cheque_style(&o, style.as_deref(), lang))),
         };
     }
 

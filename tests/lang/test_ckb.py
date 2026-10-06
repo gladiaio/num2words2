@@ -54,7 +54,8 @@ class TestCKB(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "سی و هەشت دینار", {"cents": False, "currency": "IQD"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "سی و هەشت دینار 40 فلس", {"cents": False, "currency": "IQD"}),
         ("1.50", "یەک دینار پەنجا فلس", {"cents": True, "currency": "IQD"}),
         (12.34, "دوانزە دۆلار سی و چوار سەنت", {"currency": "USD"}),
         (12.34, "دوانزە یۆرۆ سی و چوار سەنت", {"currency": "EUR"}),
