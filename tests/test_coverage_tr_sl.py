@@ -90,11 +90,12 @@ class TestTRCoverageExtra(unittest.TestCase):
             num2words(1.234567, lang="tr", precision=2),
             "birvirgülyirmiüç",
         )
-        # TR's float handling rounds rather than floors at the precision
-        # boundary: 0.234567 × 10**4 = 2345.67 → "ikibinüçyüzkırkaltı".
+        # precision= cuts toward zero in every language (#218), as base's
+        # float2tuple does: 0.234567 at 4 places is 2345, where TR used to
+        # round to 2346.
         self.assertEqual(
             num2words(1.234567, lang="tr", precision=4),
-            "birvirgülikibinüçyüzkırkaltı",
+            "birvirgülikibinüçyüzkırkbeş",
         )
 
     def test_kwarg_decimal_word(self):

@@ -14,6 +14,7 @@ use num2words2_core::base::{
     floatord_error, py_num_str, year_float_error, Kwargs, KwVal, Lang,
 };
 use num2words2_core::currency::to_currency_checked;
+use num2words2_core::floatpath::cardinal_with_precision;
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
     has_py_digit, is_malformed_number, number_notation, parse_grouped, python_decimal_str,
@@ -414,6 +415,14 @@ fn to_float_core(
         };
     }
     let r = match to {
+        // precision= reads the value as written, never the f64 (#218).
+        "cardinal" if precision_override.is_some() => {
+            let exact = if decimal_str.is_empty() { repr_str } else { decimal_str };
+            match BigDecimal::from_str(exact) {
+                Ok(d) => cardinal_with_precision(l, &d, precision_override.unwrap(), kw),
+                Err(e) => Err(N2WError::Value(e.to_string())),
+            }
+        }
         "cardinal" => {
             if kw.is_empty() {
                 l.cardinal_float_entry(&v, precision_override)
@@ -945,10 +954,19 @@ fn get_opt_bool(kwargs: Option<&Bound<'_, PyDict>>, key: &str) -> PyResult<Optio
     }
 }
 
-/// `precision` — an `Option<u32>` kwarg.
+/// `precision` — an `Option<u32>` kwarg. A negative value is a caller
+/// error, not an internal conversion failure (#218).
 fn get_precision(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<u32>> {
     match dict_get(kwargs, "precision")? {
-        Some(v) if !v.is_none() => Ok(Some(v.extract::<u32>()?)),
+        Some(v) if !v.is_none() => {
+            let p = v.extract::<i64>()?;
+            u32::try_from(p).map(Some).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "precision= must be a non-negative integer, got {}",
+                    p
+                ))
+            })
+        }
         _ => Ok(None),
     }
 }
@@ -1174,6 +1192,18 @@ fn num2words(
         let currency = get_opt_str(kwargs, "currency")?;
         let separator = get_opt_str(kwargs, "separator")?;
         let adjective = get_opt_bool(kwargs, "adjective")?;
+        // precision= applies to a numeric string like to a float (#218).
+        if let (Some(p), "cardinal") = (get_precision(kwargs)?, to_final) {
+            if let Ok(ParsedNumber::Dec(d)) | Ok(ParsedNumber::DecPoint { value: d, .. }) =
+                l.str_to_number(&s)
+            {
+                return match cardinal_with_precision(l, &d, p, &kw) {
+                    Ok(o) => Ok(Some(presentation::apply_style(&o, style.as_deref(), to_final, lang))),
+                    Err(N2WError::Fallback(_)) => Err(declined(lang, to_final, kwargs)),
+                    Err(e) => Err(map_err(name_lang(lang, e))),
+                };
+            }
+        }
         // cents='omit' truncates toward zero, as int() does for a float or
         // a Decimal (#220): "1.99" -> "one euro".
         let s = if drop_cents && to_final == "currency" {
@@ -1267,7 +1297,7 @@ fn num2words(
                     Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
                 }
                 Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
-                Err(e) => Err(map_err(e)),
+                Err(e) => Err(map_err(name_lang(lang, e))),
             };
         }
         // NaN / ±inf: the same outcome as the strings "NaN" / "inf"; the

@@ -226,6 +226,15 @@ num2words(3.14159, lang='tr', precision=5)
 # 'üçvirgülondörtbinyüzellidokuz'
 ```
 
+The value is read as written (`str(float)`, the `Decimal`, or the numeric
+string), so asking for more digits than a float holds pads with zeros
+instead of printing binary noise, and it is cut to `precision` places toward
+zero (`num2words(1.2345, precision=2)` is 'one point two three'). It applies
+to float, `Decimal` and string input. A language whose decimal reading cannot
+show the requested digits (padding zeros, or any fraction at all) raises
+`NotImplementedError` (`lang='ja' does not support precision=`); a negative
+precision raises `ValueError`.
+
 ### `cents=` — currency subunit control
 
 ```python

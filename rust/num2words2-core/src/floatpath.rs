@@ -140,9 +140,10 @@ pub fn float2tuple(v: &FloatValue) -> (BigInt, BigInt) {
             } else {
                 post.floor()
             };
+            // from_f64, not `as i128`: the cast saturates past 1.7e38.
             (
-                BigInt::from(pre as i128),
-                BigInt::from(out as i128),
+                BigInt::from_f64(pre).unwrap_or_default(),
+                BigInt::from_f64(out).unwrap_or_default(),
             )
         }
     }
@@ -214,6 +215,58 @@ pub fn default_to_cardinal_float_by<L: Lang + ?Sized>(
     }
 
     Ok(out.join(" "))
+}
+
+/// `to_cardinal` with the `precision=` kwarg, for float, Decimal and string
+/// input alike (#218).
+///
+/// `exact` is the value as written — `Decimal(str(float))` for a float, so
+/// no binary noise ever reaches the digits ("0.5" with precision 25 is 0.5
+/// and 24 zeros, not `…0452984832`) and nothing is capped by an integer
+/// cast. It is cut to `precision` places **toward zero** (what base's
+/// float2tuple does: 1.2345 at precision 2 reads "one point two three") and
+/// handed to the language as a Decimal of exactly that scale, so a language
+/// that reads its Decimal's own digits honours the option too.
+///
+/// A language whose decimal reading ignores trailing zeros (ja, cs, ... read
+/// 0.100 like 0.1) cannot pad, and one that drops the fraction (ms, ta)
+/// cannot honour any precision: those raise NotImplementedError naming
+/// `precision=` rather than silently ignore it.
+pub fn cardinal_with_precision<L: Lang + ?Sized>(
+    lang: &L,
+    exact: &BigDecimal,
+    precision: u32,
+    kw: &crate::base::Kwargs,
+) -> Result<String> {
+    let render = |v: &FloatValue, p: u32| {
+        if kw.is_empty() {
+            lang.cardinal_float_entry(v, Some(p))
+        } else {
+            lang.to_cardinal_float_kw(v, Some(p), kw)
+        }
+    };
+    let cut = exact.with_scale_round(precision as i64, bigdecimal::RoundingMode::Down);
+    let out = render(&FloatValue::Decimal { value: cut.clone(), precision }, precision)?;
+    let unsupported = || N2WError::NotImplemented("does not support precision=".into());
+    // A reading that drops the fraction altogether (ms, ta) honours no
+    // precision at all.
+    if !cut.is_integer() {
+        let whole = cut.with_scale_round(0, bigdecimal::RoundingMode::Down);
+        if lang.to_cardinal(&whole.as_bigint_and_exponent().0).is_ok_and(|w| w == out) {
+            return Err(unsupported());
+        }
+    }
+    // Digits actually written (0.100 -> 0.1): padding is only needed past
+    // them, and a whole value reads as an integer whatever the precision.
+    let written = cut.normalized();
+    let own = written.as_bigint_and_exponent().1.max(0) as u32;
+    if precision > own && !written.is_integer() {
+        let plain = render(&FloatValue::Decimal { value: written, precision: own }, own)?;
+        if plain == out {
+            return Err(unsupported());
+        }
+    }
+    Ok(out)
 }
 
 /// "Condition C" float routing — `"." in str(value)` decides. Most
