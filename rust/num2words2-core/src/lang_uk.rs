@@ -49,9 +49,11 @@
 //!    instead. The live code therefore never elides the leading "one" of a
 //!    thousands chunk: `to_cardinal(1000)` == "одна тисяча" (not "тисяча")
 //!    and `to_cardinal(1000000)` == "один мільйон". Corpus-confirmed.
-//! 5. `THOUSANDS[1][1][0]` is "тисячи" — a Russianism; the Ukrainian genitive
-//!    is "тисячі" (which the module does use at `[5][0]`). Preserved as-is.
-//!    Unreachable in this scope: `morphological_case` is always 0 (see below).
+//! 5. Fixed (gladiaio/num2words2#179): Python's `THOUSANDS[1][1][0]` is
+//!    "тисячи" — a Russianism; the Ukrainian genitive singular is "тисячі"
+//!    (which the module itself uses at `[5][0]`). Unreachable while `case=`
+//!    was unsupported; now that it is served, the table carries "тисячі", so
+//!    `to_cardinal(1000, case="genitive")` == "однієї тисячі".
 //! 6. `TWENTIES_ORDINALS[9][1]` is "дев'яности"; the standard form is
 //!    "дев'яноста". Preserved as-is, and it *is* reachable —
 //!    `to_ordinal(90000)` == "дев'яноститисячний".
@@ -75,9 +77,13 @@
 //! * `gender` is served by `to_cardinal_kw` / `to_cardinal_float_kw`
 //!   (gladiaio/num2words2#145); for float/Decimal input it applies to both
 //!   sides of the point, as in Python.
-//! * `case` is not served yet: the trait hooks decline it, so
-//!   `morphological_case` is always 0 (nominative). The full six-form tables
-//!   are transcribed anyway so the data is complete and reviewable.
+//! * `case` is served by the same hooks (gladiaio/num2words2#179) and
+//!   indexes the second axis of every cardinal table. Python resolves it
+//!   first and case-sensitively, so a miss (`case="Genitive"`, `case=3`) is
+//!   `ValueError: <repr> is not in list` before any other check.
+//!
+//! Ordinals and years take no kwargs (`to_ordinal(self, number)`), so their
+//! hooks keep the trait default.
 //!
 //! Integer currency picks the gender per currency (`FEMININE_MONEY` /
 //! `FEMININE_CENTS`) and takes no kwargs.
@@ -450,7 +456,7 @@ static THOUSANDS: [[[&str; 3]; 6]; 11] = [
     // 10^3
     [
         ["тисяча", "тисячі", "тисяч"],
-        ["тисячи", "тисяч", "тисяч"], // "тисячи" sic — see module docs, quirk 5
+        ["тисячі", "тисяч", "тисяч"], // Python: "тисячи" — see module docs, quirk 5
         ["тисячі", "тисячам", "тисячам"],
         ["тисячу", "тисячі", "тисяч"],
         ["тисячею", "тисячами", "тисячами"],
@@ -776,10 +782,53 @@ fn feminine_from_kwarg(kv: Option<&KwVal>) -> bool {
     }
 }
 
+/// The `case=` names, in `morphological_case` index order (the second axis
+/// of every cardinal table).
+const CASES: [&str; 6] = [
+    "nominative",
+    "genitive",
+    "dative",
+    "accusative",
+    "instrumental",
+    "locative",
+];
+
+/// `[...].index(case)` — case-sensitive; a miss is Python's
+/// `ValueError: <repr> is not in list`. An absent key is nominative.
+fn case_from_kwarg(kv: Option<&KwVal>) -> Result<usize> {
+    let kv = match kv {
+        None => return Ok(0),
+        Some(kv) => kv,
+    };
+    if let KwVal::Str(c) = kv {
+        if let Some(i) = CASES.iter().position(|x| x == c) {
+            return Ok(i);
+        }
+    }
+    let repr = match kv {
+        KwVal::Str(c) => format!("'{}'", c),
+        KwVal::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+        KwVal::Int(i) => i.to_string(),
+        KwVal::List(l) => format!(
+            "[{}]",
+            l.iter().map(|x| format!("'{}'", x)).collect::<Vec<_>>().join(", ")
+        ),
+        KwVal::None => "None".to_string(),
+    };
+    Err(value_error(format!("{} is not in list", repr)))
+}
+
 /// The kwargs `Num2Word_UK.to_cardinal(number, **kwargs)` reads. It swallows
 /// any other key silently, but an unknown key still declines to the
 /// dispatcher (like `lang_RU`) rather than guessing.
-const CARDINAL_KWARGS: [&str; 1] = ["gender"];
+const CARDINAL_KWARGS: [&str; 2] = ["case", "gender"];
+
+/// Resolve `(feminine, morphological_case)` in Python's order: `case` is
+/// looked up first, so a bad `case=` raises before anything else.
+fn opts_from_kwargs(kw: &Kwargs) -> Result<(bool, usize)> {
+    let mcase = case_from_kwarg(kw.get("case"))?;
+    Ok((feminine_from_kwarg(kw.get("gender")), mcase))
+}
 
 fn index_error(msg: &str) -> N2WError {
     N2WError::Index(msg.to_string())
@@ -1051,7 +1100,7 @@ impl LangUk {
     /// Port of `Num2Word_UK._int2word`.
     ///
     /// `feminine` comes from the `gender=` kwarg (or the currency's gender);
-    /// `morphological_case` is the `case=` index, always 0 for now.
+    /// `morphological_case` is the `case=` index (0, nominative, by default).
     fn int2word(&self, n: &BigInt, feminine: bool, mcase: usize) -> Result<String> {
         check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
@@ -1274,18 +1323,21 @@ impl Lang for LangUk {
         self.int2word(value, false, 0)
     }
 
-    /// `to_cardinal(number, gender=...)` (gladiaio/num2words2#145). `gender`
-    /// selects `ONES_FEMININE` for the units chunk ("двадцять одна"); the
-    /// thousands chunk is feminine regardless, agreeing with "тисяча".
+    /// `to_cardinal(number, gender=..., case=...)`. `gender`
+    /// (gladiaio/num2words2#145) selects `ONES_FEMININE` for the units chunk
+    /// ("двадцять одна"); the thousands chunk is feminine regardless,
+    /// agreeing with "тисяча". `case` (gladiaio/num2words2#179) indexes the
+    /// second axis of every table ("двадцяти одного" in the genitive).
     fn to_cardinal_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
         if !kw.only(&CARDINAL_KWARGS) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
-        self.int2word(value, feminine_from_kwarg(kw.get("gender")), 0)
+        let (feminine, mcase) = opts_from_kwargs(kw)?;
+        self.int2word(value, feminine, mcase)
     }
 
-    /// `to_cardinal(float/Decimal, gender=...)`: the "." branch applies the
-    /// gender to both sides of the point. `precision=` is ignored, as in
+    /// `to_cardinal(float/Decimal, gender=..., case=...)`: the "." branch
+    /// applies both to each side of the point. `precision=` is ignored, as in
     /// [`cardinal_float_entry`](Self::cardinal_float_entry).
     fn to_cardinal_float_kw(
         &self,
@@ -1296,7 +1348,8 @@ impl Lang for LangUk {
         if !kw.only(&CARDINAL_KWARGS) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
-        self.cardinal_entry_with(value, feminine_from_kwarg(kw.get("gender")), 0)
+        let (feminine, mcase) = opts_from_kwargs(kw)?;
+        self.cardinal_entry_with(value, feminine, mcase)
     }
 
     /// Port of the `"." in n` branch of `Num2Word_UK.to_cardinal`.
@@ -1806,5 +1859,19 @@ mod kwargs_tests {
             LangUk::new().to_cardinal_kw(&BigInt::from(1), &kw(&[("foo", "x")])),
             Err(N2WError::Fallback(_))
         ));
+    }
+
+    /// gladiaio/num2words2#179.
+    #[test]
+    fn case() {
+        assert_eq!(card(1000, &[("case", "genitive")]), "однієї тисячі");
+        assert_eq!(card(21, &[("case", "dative"), ("gender", "f")]), "двадцяти одній");
+        assert_eq!(card(5, &[("case", "instrumental")]), "п'ятьма");
+        assert_eq!(card(5, &[("case", "nominative")]), "п'ять");
+        // Case is resolved first, case-sensitively: ValueError, even past maxval.
+        let e = LangUk::new()
+            .to_cardinal_kw(&pow10_big(40), &kw(&[("case", "Genitive")]))
+            .unwrap_err();
+        assert!(matches!(e, N2WError::Value(ref m) if m == "'Genitive' is not in list"));
     }
 }

@@ -17,8 +17,9 @@
 
 from __future__ import unicode_literals
 
-import unittest
 from unittest import TestCase
+
+import pytest
 
 from num2words2 import num2words
 
@@ -291,8 +292,9 @@ TEST_CASES_CARDINAL_GENITIVE = (
     (894, "восьмиста дев'яноста чотирьох"),
     (900, "дев'ятиста"),
     (999, "дев'ятиста дев'яноста дев'яти"),
-    (1000, "однієї тисячи"),
-    (1001, "однієї тисячи одного"),
+    # gladiaio/num2words2#179: Python had the Russian "тисячи" here.
+    (1000, "однієї тисячі"),
+    (1001, "однієї тисячі одного"),
     (2012, "двох тисяч дванадцяти"),
     (12519, "дванадцяти тисяч п'ятиста дев'ятнадцяти"),
     (12519.85, "дванадцяти тисяч п'ятиста дев'ятнадцяти " "кома вісімдесяти п'яти"),
@@ -318,7 +320,7 @@ TEST_CASES_CARDINAL_GENITIVE = (
         "двох секстильйонів тридцяти дев'яти квінтильйонів двох "
         "квадрильйонів ста п'ятдесяти семи трильйонів ста вісімдесяти "
         "дев'яти мільярдів восьмиста вісімдесяти трьох мільйонів "
-        "дев'ятиста однієї тисячи шестиста сімдесяти шести",
+        "дев'ятиста однієї тисячі шестиста сімдесяти шести",
     ),
     (
         719094234693663034822824384220291,
@@ -2794,52 +2796,40 @@ class Num2WordsUKTest(TestCase):
             word = num2words(test[0], lang="uk", gender="feminine")
             self.assertEqual(word, test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#179
     def test_to_cardinal_nominative(self):
         for test in TEST_CASES_CARDINAL:
             word = num2words(test[0], lang="uk", case="nominative")
             self.assertEqual(word, test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#179
     def test_to_cardinal_genitive(self):
         for test in TEST_CASES_CARDINAL_GENITIVE:
             word = num2words(test[0], lang="uk", case="genitive")
             self.assertEqual(word, test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#179
     def test_to_cardinal_dative(self):
         self.maxDiff = None
         for test in TEST_CASES_CARDINAL_DATIVE:
             word = num2words(test[0], lang="uk", case="dative")
             self.assertEqual(word, test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#179
     def test_to_cardinal_accusative(self):
         self.maxDiff = None
         for test in TEST_CASES_CARDINAL_ACCUSATIVE:
             word = num2words(test[0], lang="uk", case="accusative")
             self.assertEqual(word, test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#179
     def test_to_cardinal_instrumental(self):
         self.maxDiff = None
         for test in TEST_CASES_CARDINAL_INSTRUMENTAL:
             word = num2words(test[0], lang="uk", case="instrumental")
             self.assertEqual(word, test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#179
     def test_to_cardinal_locative(self):
         self.maxDiff = None
         for test in TEST_CASES_CARDINAL_LOCATIVE:
@@ -3492,6 +3482,22 @@ def test_uk_gender_kwarg_variants():
     assert num2words(2002, lang="uk", gender="f") == "дві тисячі дві"
     assert num2words(2000000, lang="uk", gender="f") == "два мільйони"
     assert num2words(-1, lang="uk", gender="f") == "мінус одна"
+
+
+def test_uk_case_kwarg_variants():
+    # gladiaio/num2words2#179: case combines with gender and floats; an
+    # unknown (or differently-capitalised) case is Python's ValueError.
+    from num2words2 import num2words
+    assert num2words(21, lang="uk", case="genitive", gender="f") == (
+        "двадцяти однієї"
+    )
+    assert num2words(2000, lang="uk", case="genitive") == "двох тисяч"
+    assert num2words(1.5, lang="uk", case="instrumental") == (
+        "одним кома п'ятьма"
+    )
+    for bad in ("Genitive", "vocative", 3, None):
+        with pytest.raises(ValueError, match="is not in list"):
+            num2words(1, lang="uk", case=bad)
 
 
 def test_uk_gender_kwarg_float():
