@@ -24,7 +24,7 @@
 //! |-----------------|------------------|----------------------------------------------|
 //! | `to_cardinal`   | SR_LATN → SR     | `cyrl_to_latn(_int2word(int(n), False))`     |
 //! | `to_ordinal`    | SR_LATN → SR     | dict lookup, else cardinal + "и"             |
-//! | `to_ordinal_num`| SR_LATN → *Base* | `cyrl_to_latn(value)` → **AttributeError**   |
+//! | `to_ordinal_num`| SR_LATN → *Base* | `cyrl_to_latn(value)` → **AttributeError** (fixed, #157) |
 //! | `to_year`       | SR_LATN → *Base* | `cyrl_to_latn(self.to_cardinal(value))`      |
 //!
 //! # Faithfully reproduced Python bugs
@@ -32,15 +32,15 @@
 //! This is a port, not a rewrite. All of the following are verified against
 //! the frozen corpus (`bench/corpus.jsonl`, `"lang": "sr_Latn"`):
 //!
-//! 1. **`to_ordinal_num` raises `AttributeError` for every input.** `SR` and
-//!    `SR_LATN` both fail to override it, so it lands on
-//!    `Num2Word_Base.to_ordinal_num`, which returns `value` — an `int`, not a
-//!    `str`. `SR_LATN.to_ordinal_num` then hands that int to `cyrl_to_latn`,
-//!    which immediately calls `s.replace(...)` on it:
-//!    `AttributeError: 'int' object has no attribute 'replace'`. **Every**
-//!    `ordinal_num` row in the corpus is `{"ok": false, "err":
-//!    "AttributeError"}` — there are no successful ones. See
-//!    [`attribute_error`] for how the variant is encoded.
+//! 1. ~~**`to_ordinal_num` raises `AttributeError` for every input.**~~
+//!    Fixed (gladiaio/num2words2#157). `SR` and `SR_LATN` both fail to
+//!    override it, so it lands on `Num2Word_Base.to_ordinal_num`, which
+//!    returns `value` — an `int`, not a `str` — and `SR_LATN.to_ordinal_num`
+//!    then hands it to `cyrl_to_latn`, which calls `s.replace(...)` on it:
+//!    `AttributeError: 'int' object has no attribute 'replace'`, for every
+//!    input. The transliteration of a numeral is the identity, so the port
+//!    returns what `sr` returns: the number itself (`1` → "1", `-1` → "-1",
+//!    `1.5` → "1.5").
 //! 2. **`to_ordinal` just glues "и" onto the cardinal** for anything outside
 //!    its small lookup dict (Python's own comment: "This is a simplified
 //!    implementation"). This produces non-words throughout, and they are the
@@ -193,17 +193,6 @@ fn scale(chunk_len: usize) -> Result<(&'static str, &'static str, &'static str, 
 }
 
 // --- Python exception encoding -------------------------------------------
-
-/// Python raised `AttributeError`, which `base.rs` cannot express: there is no
-/// `N2WError::Attribute` variant. Following the convention set by
-/// `lang_rm_puter.rs` / `lang_rm_sutsilv.rs`, emit `N2WError::Type` carrying a
-/// message that names the real exception type so the integration layer can
-/// remap it.
-///
-/// **The bridge must map this back to `AttributeError`, not `TypeError`.**
-fn attribute_error(msg: &str) -> N2WError {
-    N2WError::Attribute(msg.to_string())
-}
 
 /// Python raised `KeyError` — a missing `SCALE` entry for values >= 10**33
 /// (unreachable since the MAXVAL check, #159).
@@ -765,22 +754,8 @@ impl Lang for LangSrLatn {
         Ok(cyrl_to_latn(&format!("{}{}", cardinal, "и")))
     }
 
-    /// Neither `SR_LATN` nor `SR` overrides `to_ordinal_num`, so it resolves to
-    /// `Num2Word_Base.to_ordinal_num`, which returns `value` **unchanged** — an
-    /// `int`. `SR_LATN.to_ordinal_num` then feeds that int to `cyrl_to_latn`,
-    /// whose first statement is `s.replace("Љ", "Lj")`:
-    ///
-    /// ```text
-    /// AttributeError: 'int' object has no attribute 'replace'
-    /// ```
-    ///
-    /// Unconditional — the corpus has zero successful `ordinal_num` rows for
-    /// this language. Bug 1.
-    fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
-        Err(attribute_error(
-            "'int' object has no attribute 'replace'",
-        ))
-    }
+    // `to_ordinal_num` (int and float/Decimal): the trait defaults, i.e. what
+    // `sr` returns. Python crashed in `cyrl_to_latn` on the non-str (bug 1).
 
     /// `SR_LATN.to_year` → `cyrl_to_latn(Num2Word_Base.to_year(...))`, and
     /// `Base.to_year` is just `self.to_cardinal(value)` — which dispatches back
@@ -864,29 +839,6 @@ impl Lang for LangSrLatn {
         // Dispatches to the SR_LATN to_ordinal override above — table word or
         // Latin cardinal + "и", double-transliterated exactly as Python.
         self.to_ordinal(&num)
-    }
-
-    /// `to_ordinal_num(float/Decimal)` — bug 1, float edition. Base's
-    /// `to_ordinal_num` returns the value **unchanged** (a `float` or a
-    /// `Decimal`), and `SR_LATN.to_ordinal_num` hands it to `cyrl_to_latn`,
-    /// whose first statement is `s.replace("Љ", "Lj")`:
-    ///
-    /// ```text
-    /// AttributeError: 'float' object has no attribute 'replace'
-    /// AttributeError: 'decimal.Decimal' object has no attribute 'replace'
-    /// ```
-    ///
-    /// Unconditional — every `ordinal_num` row in the corpus (int, float and
-    /// Decimal alike) is an AttributeError. Only the message differs by type.
-    fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
-        let type_name = match value {
-            FloatValue::Float { .. } => "float",
-            FloatValue::Decimal { .. } => "decimal.Decimal",
-        };
-        Err(attribute_error(&format!(
-            "'{}' object has no attribute 'replace'",
-            type_name
-        )))
     }
 
     // `year_float_entry` is deliberately NOT overridden: `SR_LATN.to_year` is

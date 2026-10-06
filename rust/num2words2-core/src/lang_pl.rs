@@ -641,15 +641,6 @@ impl LangPl {
     }
 }
 
-/// Python's `int(s)` acceptance for the strings PL's `to_ordinal` splits: an
-/// optional sign followed by ASCII digits. Anything else — a '.' or the 'E'
-/// of a scientific `str(Decimal)` — fails, which the callers turn into the
-/// ValueError `splitbyx`'s `int()` raises.
-fn is_plain_int_str(s: &str) -> bool {
-    let t = s.strip_prefix('-').unwrap_or(s);
-    !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit())
-}
-
 /// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
 /// ends at 10^63, so 10^66 and above raise `OverflowError` instead of
 /// reaching the missing table key.

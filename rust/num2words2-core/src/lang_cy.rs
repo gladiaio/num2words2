@@ -14,7 +14,9 @@
 //!     own class-level `MINUS_PREFIX_WORD = "meinws "` /
 //!     `FLOAT_INFIX_WORD = " pwynt "` and hardcodes `("meinws", None)` into the
 //!     word list, so nothing in the four in-scope modes ever touches the
-//!     missing attributes.
+//!     missing attributes. Base's `to_currency`/`to_fraction` did, and died
+//!     with `AttributeError` on a negative value; the port's `negword` is
+//!     "meinws" (gladiaio/num2words2#157).
 //!
 //! Consequently `cards`/`merge` stay at their trait defaults here, and
 //! `to_cardinal` is overridden outright. The ceiling is CY's own explicit
@@ -143,40 +145,8 @@
 //!
 //! CY inherits `Num2Word_Base.to_fraction`, whose negative branch is
 //! `sign = "%s " % self.negword.strip()` — and the `pass` `__init__` never
-//! created `self.negword`, so **any negative fraction raises AttributeError**
-//! (`-1/2`, `1/-2`; `-3/-4` is positive and renders). The sign is computed
-//! before the numerator/denominator words, so the AttributeError beats the
-//! KeyError/NotImplementedError those would raise. Ported as a local
-//! override rather than the trait default precisely for that raise.
-//!
-//! # Grammatical kwargs
-//!
-//! `to_cardinal(number, informal=False, gender="masc", ordinal=False,
-//! counted=None, raw=False)` and `to_ordinal(number, informal=False,
-//! gender="masc")` are the live signatures ([`Lang::to_cardinal_kw`] /
-//! [`Lang::to_ordinal_kw`]):
-//!
-//! * `informal` is accepted and ignored (its only use site is commented out).
-//! * `gender` only ever matters as the literal comparison `== "fem"` — "f",
-//!   "m", None, 1 all fall to masculine.
-//! * `counted` fills the first `OBJ` below 100 ("un ci ar hugain") and turns
-//!   into the partitive `o <noun>` (soft mutation: "o gi") at 100 and above.
-//!   Zero returns before `counted` is consulted: `to_cardinal(0, counted="ci")`
-//!   is plain "dim".
-//! * `raw=True` returns the word list itself; the corpus stringifies it, so
-//!   [`py_repr_wordlist`] reproduces the Python `repr` of a list of
-//!   `(str, str|None)` tuples byte for byte.
-//! * `ordinal=` never reaches the converter through `num2words` — the
-//!   dispatcher's own `ordinal` parameter shadows it and rewrites `to`
-//!   — so it is deliberately NOT in the kwargs guard.
-//!
-//! `to_year(value, **kwargs)` is Base's and swallows *every* kwarg, so
-//! [`Lang::to_year_kw`] accepts anything and returns the cardinal.
-//! `to_ordinal_num` and `to_currency` take no extra kwargs — the trait
-//! defaults (fall back to Python's TypeError) are already exact.
-//!
-//! # The currency surface
-//!
+//! created `self.negword`, so in Python **any negative fraction raised
+//! AttributeError** (`-1/2`, `1/-2`). Fixed (#157): the sign is "meinws".
 //! `Num2Word_CY` overrides `to_currency`, `_money_verbose` and
 //! `_cents_verbose`; it inherits `pluralize` from `Num2Word_EUR` and
 //! `to_cheque` / `_cents_terse` from `Num2Word_Base` (all four confirmed on the
@@ -184,12 +154,11 @@
 //!
 //! Two consequences of the `pass` __init__ dominate this surface:
 //!
-//! 1. **`self.negword` never exists**, and `Num2Word_Base.to_currency` reaches
-//!    for it — `minus_str = "%s " % self.negword.strip() if is_negative else ""`.
-//!    Python's conditional expression only evaluates the left operand when
-//!    `is_negative` is true, so a *positive* float is fine and a **negative
-//!    float raises `AttributeError`**. See [`N2WError::Attribute`] below and
-//!    module bug 8.
+//! 1. ~~**`self.negword` never exists**~~, and `Num2Word_Base.to_currency`
+//!    reaches for it — `minus_str = "%s " % self.negword.strip() if
+//!    is_negative else ""` — so in Python a **negative float raised
+//!    `AttributeError`**. Fixed (#157): `negword` is "meinws", CY's own
+//!    cardinal minus word, so `-0.5` reads "meinws ...".
 //! 2. **`CURRENCY_PRECISION` is `Num2Word_Base`'s shared `{}`** (verified:
 //!    `Num2Word_CY.CURRENCY_PRECISION is Num2Word_Base.CURRENCY_PRECISION`).
 //!    `Num2Word_EN.__init__` *rebinds* rather than mutates it, so EN's mils
@@ -255,11 +224,10 @@
 //! * `NotImplementedError` → [`N2WError::NotImplemented`]: `to_ordinal(n)` for
 //!   `n > 100`, `to_cardinal(n)` for `abs(n) >= 999 * 10**33`, and a currency
 //!   code outside CY's four on the float/cheque paths.
-//! * `KeyError` → [`N2WError::Key`]: `to_ordinal(n)` for `n < 0` (bug 7).
-//! * `AttributeError` → [`N2WError::Attribute`]: `to_currency(<negative float>)`
-//!   for a *known* code — the missing `self.negword` (bug 8's sibling). A
-//!   negative float with an *unknown* code raises `NotImplementedError` instead,
-//!   because Base looks `CURRENCY_FORMS` up before it touches `negword`.
+//! * `TypeError` → [`N2WError::Type`]: `to_ordinal(n)` for `n < 0` or a
+//!   fractional value (bug 7, fixed in #158; Python raised `KeyError`).
+//! * Python's `AttributeError` for `to_currency(<negative float>)` (the
+//!   missing `self.negword`) is fixed (#157).
 
 use std::sync::OnceLock;
 use crate::base::{
@@ -268,7 +236,7 @@ use crate::base::{
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
-use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
+use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -1226,6 +1194,13 @@ impl Lang for LangCy {
         ","
     }
 
+    /// Never assigned in Python (`pass` `__init__`), so Base's currency and
+    /// fraction paths raised AttributeError on a negative value. CY's own
+    /// cardinal minus word (#157).
+    fn negword(&self) -> &str {
+        "meinws "
+    }
+
     // cards() / maxval() / merge() stay at their trait defaults: Python never
     // builds self.cards for CY (see the module docs on the `pass` __init__),
     // so splitnum/clean/merge are unreachable.
@@ -1412,39 +1387,9 @@ impl Lang for LangCy {
         }
     }
 
-    /// `Num2Word_Base.to_fraction`, restated locally because its negative
-    /// branch reads `self.negword` — which CY's `pass` `__init__` never
-    /// created, so **every negative fraction raises AttributeError**
-    /// (`-1/2`, `1/-2`; `-3/-4` is positive and renders "tri pedwerydds").
-    /// The sign string is built before the numerator/denominator words, so
-    /// the AttributeError beats the KeyError/NotImplementedError that
-    /// `to_ordinal(<big/negative>)` would otherwise raise.
-    fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
-        if denominator.is_zero() {
-            return Err(N2WError::ZeroDivision(
-                "denominator must not be zero".into(),
-            ));
-        }
-        if denominator.is_one() || numerator.is_zero() {
-            return self.to_cardinal(numerator);
-        }
-        let is_negative = numerator.is_negative() ^ denominator.is_negative();
-        if is_negative {
-            // sign = "%s " % self.negword.strip() → missing attribute.
-            return Err(N2WError::Attribute(
-                "'Num2Word_CY' object has no attribute 'negword'".into(),
-            ));
-        }
-        let abs_n = numerator.abs();
-        let abs_d = denominator.abs();
-        let num_word = self.to_cardinal(&abs_n)?;
-        let mut den_word = self.to_ordinal(&abs_d)?;
-        if !abs_n.is_one() {
-            // Base's naive plural: "s" tacked on — "tri pedwerydds".
-            den_word.push('s');
-        }
-        Ok(format!("{} {}", num_word, den_word))
-    }
+    // `to_fraction` is Base's (the trait default). Python's negative branch
+    // read the never-assigned `self.negword` and raised AttributeError; with
+    // `negword` defined it now says "meinws" (#157).
 
     // ---- grammatical kwargs ---------------------------------------------
 
@@ -1721,39 +1666,9 @@ impl Lang for LangCy {
         }
 
         // Floats/Decimals: `super().to_currency(...)` — Num2Word_Base's.
-        //
-        // Base looks CURRENCY_FORMS up *before* it reads `self.negword`, so an
-        // unknown code raises NotImplementedError even when the value is
-        // negative and the AttributeError would otherwise fire. That ordering is
-        // observable — the corpus has `currency:CHF -12.34` as
-        // NotImplementedError but `currency:EUR -12.34` as AttributeError — so
-        // the lookup is repeated here ahead of the sign check.
-        if !self.currency_forms.contains_key(currency) {
-            return Err(N2WError::NotImplemented(format!(
-                "Currency code \"{}\" not implemented for \"{}\"",
-                currency,
-                self.lang_name()
-            )));
-        }
-
-        // `minus_str = "%s " % self.negword.strip() if is_negative else ""`.
-        // CY's `__init__` is a bare `pass`, so `self.negword` was never
-        // assigned and any negative float dies on attribute lookup. Positives
-        // are unharmed: Python evaluates the condition first.
-        //
-        // Base derives `is_negative` from `parse_currency_parts`, i.e. from the
-        // ROUND_HALF_UP-quantized value rather than the input. For CY's fixed
-        // divisor of 100 the two agree on every input — a value can only
-        // quantize to -0.00 from a value that is already -0.0, which
-        // `Decimal.__lt__` reports as non-negative anyway. Checked exhaustively
-        // against the live `parse_currency_parts` over 6020 values, so the raw
-        // sign is used directly instead of re-running the split.
-        if val.is_negative() {
-            return Err(N2WError::Attribute(
-                "'Num2Word_CY' object has no attribute 'negword'".into(),
-            ));
-        }
-
+        // `minus_str = "%s " % self.negword.strip() if is_negative else ""`
+        // raised AttributeError in Python (CY's `pass` `__init__` never set
+        // `negword`); the port's `negword` is "meinws" (#157).
         crate::currency::default_to_currency(self, val, currency, cents, separator, adjective)
     }
 

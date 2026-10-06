@@ -143,14 +143,13 @@
 //!     Likewise `0.01` → "không phẩy một" ("zero point one"). Corpus rows
 //!     `0.5` and `0.01` pin both.
 //!
-//! 15. **`str_to_number` does not exist** — same `object` ancestry, same
-//!     plain attribute-lookup failure as bugs #10/#11. The dispatcher calls
-//!     `converter.str_to_number(number)` for every string input, so *every*
-//!     string raises AttributeError before any parsing happens. The
-//!     dispatcher's `except (decimal.InvalidOperation, ValueError)` around
-//!     that call does not catch AttributeError, so there is no
-//!     digits-present sentence fallback either: "room 5" and "abc" die the
-//!     same way "5" does. All 115 string corpus rows record it.
+//! 15. ~~**`str_to_number` does not exist**~~ — fixed
+//!     (gladiaio/num2words2#157). Same `object` ancestry, same plain
+//!     attribute-lookup failure as bugs #10/#11: the dispatcher calls
+//!     `converter.str_to_number(number)` for every string input, so in
+//!     Python *every* string ("12" included) raised AttributeError. The port
+//!     uses the shared `Decimal(value)` parse every other language has, so
+//!     "12" reads like 12 and "1.5" like `Decimal("1.5")`.
 //!
 //! 16. **`to_fraction` does not exist.** The dispatcher's "n/d"
 //!     string route (`converter.to_fraction(num_int, den_int)`) and the
@@ -163,7 +162,6 @@ use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use std::sync::OnceLock;
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
-use crate::strnum::ParsedNumber;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -244,9 +242,10 @@ fn type_error(msg: impl Into<String>) -> N2WError {
 /// `AttributeError: 'Num2Word_VI' object has no attribute '<name>'`.
 ///
 /// `Num2Word_VI` inherits from `object`, so a missing method is a plain
-/// attribute-lookup failure — not a deliberate `NotImplementedError`. Four
+/// attribute-lookup failure — not a deliberate `NotImplementedError`. Three
 /// call sites reach it: `to_cardinal_float` (bug #10), `to_cheque`
-/// (bug #11), `str_to_number` (bug #15) and `to_fraction` (bug #16).
+/// (bug #11) and `to_fraction` (bug #16). (`str_to_number`, bug #15, is
+/// fixed.)
 fn missing_attr(name: &str) -> N2WError {
     N2WError::Attribute(format!(
         "'Num2Word_VI' object has no attribute '{}'",
@@ -854,18 +853,6 @@ impl Lang for LangVi {
                 self.number_to_text_float(value.is_negative(), magnitude)
             }
         }
-    }
-
-    /// `Num2Word_VI` has no `str_to_number` at all (bug #15).
-    ///
-    /// The dispatcher's `converter.str_to_number(number)` raises on the
-    /// attribute lookup, before the string is even glanced at — so every
-    /// string input is an AttributeError: digits, no digits, whitespace,
-    /// scientific notation, all alike. AttributeError is not in the
-    /// dispatcher's `except (InvalidOperation, ValueError)`, so it
-    /// propagates instead of triggering the sentence fallback.
-    fn str_to_number(&self, _s: &str) -> Result<ParsedNumber> {
-        Err(missing_attr("str_to_number"))
     }
 
     /// `Num2Word_VI` has no `to_fraction` either (bug #16).

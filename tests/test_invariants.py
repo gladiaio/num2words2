@@ -128,11 +128,7 @@ NATIVE_ENGLISH_LOOKALIKES = set()
 # Languages failing each check on main. Fixes remove entries; nothing is
 # ever added. Issue numbers point at the open work.
 ALLOW = {
-    # gladiaio/num2words2#157, #158, #155
-    "exceptions": {
-        "cy", "fa", "lij", "rm", "rm_puter", "rm_surmiran", "rm_sursilv",
-        "rm_sutsilv", "rm_vallader", "sr_Latn", "vi",
-    },
+    "exceptions": set(),
     # gladiaio/num2words2#160
     "hygiene": {
         "ar", "ca", "da", "dk", "dv", "es", "es_CO", "es_CR", "es_GT",
@@ -147,8 +143,7 @@ ALLOW = {
     },
     # gladiaio/num2words2#156 (pt_BR differs on purpose, see #92)
     "parity": {
-        "pt_BR", "rm", "rm_puter", "rm_surmiran", "rm_sursilv", "rm_sutsilv",
-        "rm_vallader", "vi",
+        "pt_BR",
     },
     "maxval": set(),
 }

@@ -91,14 +91,13 @@
 //!    the exception *type* is observable, so parity means reproducing it
 //!    rather than tidying it into an `OverflowError`. See [`index_error`].
 //!
-//! 3. **`to_currency` of a negative value raises `AttributeError`.** Because
-//!    `__init__` skips `super().__init__()`, the `self.negword` that
-//!    `Num2Word_Base.to_currency` formats the minus sign from was never
-//!    assigned — and `negword` appears in no class dict anywhere on the MRO,
-//!    so the lookup simply fails. Every negative currency amount dies with
+//! 3. ~~**`to_currency` of a negative value raises `AttributeError`.**~~
+//!    Fixed (gladiaio/num2words2#157). Because `__init__` skips
+//!    `super().__init__()`, the `self.negword` that `Num2Word_Base.to_currency`
+//!    (and `to_fraction`) format the minus sign from was never assigned, so
+//!    every negative currency amount and negative fraction died with
 //!    `AttributeError: 'Num2Word_FA' object has no attribute 'negword'`. The
-//!    corpus records it for -12.34 under both EUR and USD. See
-//!    [`negword_attribute_error`].
+//!    port uses FA's own cardinal minus word, "منفی", as `negword`.
 //!
 //! # The "سوم" rule
 //!
@@ -123,7 +122,7 @@ use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{One, Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
 /// `farsiOnes`. Index 0 is `""` (Python relies on this: `cardinal3` returns it
@@ -195,15 +194,6 @@ const SEEN: char = 'س';
 /// `OverflowError`.
 fn index_error(msg: &str) -> N2WError {
     N2WError::Index(msg.to_string())
-}
-
-/// Mirrors the *other* crash in lang_FA.py (bug 3): `Num2Word_Base.to_currency`
-/// formats its minus sign from `self.negword`, an attribute `Num2Word_FA` never
-/// has. Verified against the interpreter — `negword` is assigned only in
-/// `Num2Word_Base.__init__`, which FA's `__init__` never chains to, and it
-/// appears in no class dict on the MRO.
-fn negword_attribute_error() -> N2WError {
-    N2WError::Attribute("'Num2Word_FA' object has no attribute 'negword'".to_string())
 }
 
 /// `Num2Word_FA.CURRENCY_FORMS`, verbatim from the class body.
@@ -435,7 +425,7 @@ impl LangFa {
     pub fn new() -> Self {
         // Python's __init__ only sets `self.number = 0`, which nothing in the
         // four in-scope modes ever reads — and it is that same __init__ (never
-        // chaining to super()) that leaves `negword` undefined; see bug 3.
+        // chaining to super()) that left `negword` undefined; see bug 3.
         //
         // CURRENCY_FORMS is immutable class data in Python, so it is built once
         // here rather than per call.
@@ -566,36 +556,6 @@ impl Lang for LangFa {
         Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
     }
 
-    /// `Num2Word_Base.to_fraction` as it actually behaves on
-    /// `Num2Word_FA` — whose `__init__` never chains to Base's, so
-    /// `self.negword` does not exist (bug 3): a **negative** fraction dies on
-    /// the attribute lookup with AttributeError before any words are built.
-    /// Positive fractions keep Base's port, bare "s" plural included
-    /// ("دو پنجمs").
-    fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
-        if denominator.is_zero() {
-            return Err(N2WError::ZeroDivision(
-                "denominator must not be zero".into(),
-            ));
-        }
-        if denominator == &BigInt::one() || numerator.is_zero() {
-            return self.to_cardinal(numerator);
-        }
-        let is_negative = numerator.is_negative() ^ denominator.is_negative();
-        if is_negative {
-            // `"%s " % self.negword.strip()` — the attribute is missing.
-            return Err(negword_attribute_error());
-        }
-        let abs_n = numerator.abs();
-        let abs_d = denominator.abs();
-        let num_word = self.to_cardinal(&abs_n)?;
-        let mut den_word = self.to_ordinal(&abs_d)?;
-        if !abs_n.is_one() {
-            den_word.push('s');
-        }
-        Ok(format!("{} {}", num_word, den_word))
-    }
-
     /// `converter.str_to_number` — Base's `Decimal(value)`. `Decimal("NaN")`
     /// parses fine; FA's `to_cardinal` then dies on the very first comparison
     /// (`number < 0`) with `decimal.InvalidOperation`. The binding otherwise
@@ -711,21 +671,13 @@ impl Lang for LangFa {
     /// ```
     ///
     /// The kwarg defaults are already carried by [`Self::default_currency`] and
-    /// [`Self::default_separator`], so the body would be Base's verbatim — were
-    /// it not for bug 3. Base formats its minus sign from `self.negword`, an
-    /// attribute this class does not have, so **every negative amount raises
-    /// `AttributeError`** instead of returning a string.
+    /// [`Self::default_separator`], so the body is Base's verbatim. Python
+    /// raised `AttributeError` for every negative amount, because Base reads
+    /// the minus sign from `self.negword`, which FA never set (bug 3, fixed in
+    /// #157: "منفی").
     ///
-    /// Ordering is load-bearing and verified against the interpreter: Base
-    /// looks the currency up — raising NotImplementedError on a miss — *before*
-    /// it touches `negword`, on the int branch and the float branch alike. So
-    /// an unknown code beats a negative value: `to_currency(-12.34, "GBP")` is
-    /// NotImplementedError, `to_currency(-12.34, "USD")` is AttributeError.
-    /// Both appear in the corpus.
-    ///
-    /// `to_cardinal` is untouched by any of this — FA's own override inlines
-    /// the literal "منفی " rather than reading the attribute, which is why
-    /// negative *cardinals* work while negative *currency* does not.
+    /// Base looks the currency up — raising NotImplementedError on a miss —
+    /// before anything else, on the int branch and the float branch alike.
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -740,18 +692,6 @@ impl Lang for LangFa {
                 currency,
                 self.lang_name()
             )));
-        }
-
-        // Base takes its `is_negative` from `parse_currency_parts`, which
-        // quantizes before testing the sign. The plain sign test is exact here
-        // anyway: FA never overrides CURRENCY_PRECISION, so the divisor is
-        // always 100, and the quantize runs only when `has_fractional_cents` is
-        // false — i.e. only when the value already has <= 2 decimals and the
-        // quantize is a no-op. It can never flip the sign. Checked at the
-        // boundary: -0.0 is not negative (so it renders "صفر دلار و  صفر سنت"),
-        // while -0.004 is (AttributeError) — both agree with the interpreter.
-        if val.is_negative() {
-            return Err(negword_attribute_error());
         }
 
         crate::currency::default_to_currency(

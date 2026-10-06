@@ -15,30 +15,25 @@
 //! Fixed (gladiaio/num2words2#159): the port raises `OverflowError` ("abs(v)
 //! must be less than 10^65.") and `maxval()` reports 10^65.
 //!
-//! # The empty base class is load-bearing — `to_ordinal_num` and `to_year`
+//! # The empty base class — `to_ordinal_num`, `to_year`, currency, strings
 //!
 //! Because `Num2Word_RM` inherits from `object` rather than `Num2Word_Base`, it
-//! has **no `to_ordinal_num` and no `to_year` at all**. `hasattr(c,
-//! "to_ordinal_num")` and `hasattr(c, "to_year")` are both `False`, so the
-//! dispatcher's `getattr(converter, "to_{}".format(to))` blows up with
-//! `AttributeError` before any conversion runs. The corpus agrees: **all 90
-//! `ordinal_num` rows and all 35 `year` rows are `err: "AttributeError"`** —
-//! there is not one successful row for either mode. (The same emptiness is why
-//! every `currency`/`cheque`/`fraction` row also errors, but those are out of
-//! scope.)
+//! has **no `to_ordinal_num`, `to_year`, `to_currency`, `to_cheque`,
+//! `to_fraction` or `str_to_number` at all**, so in Python every one of those
+//! modes — and every string input — raised `AttributeError` before any
+//! conversion ran, and a `Decimal` crashed in the integer ladder with
+//! `TypeError` (`CARDINAL_WORDS[<Decimal>]`). Fixed
+//! (gladiaio/num2words2#157), shared by the five idiom variants:
 //!
-//! This is *not* the `lang_IT` situation, where `to_ordinal_num` exists and
-//! dies later on a missing `errmsg_negord`. Here the method never existed, so
-//! the failure is unconditional — it fires for `0` and `1` just as it does for
-//! `-1`. Both trait defaults are overridden below to return the error for
-//! **every** input rather than inheriting `base.rs`'s working implementations,
-//! which would otherwise silently invent behaviour Python does not have.
-//!
-//! `base.rs` has no `N2WError::Attribute` variant, so — following the
-//! precedent set by `lang_it.rs` — this is emitted as `N2WError::Type`
-//! carrying a message that names `AttributeError` explicitly, letting the
-//! integration layer remap it. See [`attribute_error`] and the port report's
-//! `concerns`.
+//! * strings go through the shared `Decimal(value)` parse, and a `Decimal`
+//!   reads like the matching int (whole) or float (fractional, from its exact
+//!   digits — [`decimal_words`]);
+//! * `to_year` is the cardinal, as in `Num2Word_Base` (a fractional value is
+//!   a `TypeError`, as in `lang_en`);
+//! * `to_ordinal_num`, `to_currency`, `to_cheque` and fractions raise a
+//!   `NotImplementedError` naming the language and mode ([`unsupported`]):
+//!   neither the module nor its tests attest an ordinal-numeral marker or any
+//!   currency wording, so the port does not invent one.
 //!
 //! # Faithfully reproduced Python quirks
 //!
@@ -89,8 +84,10 @@
 //! cannot disagree here.
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
-use crate::floatpath::FloatValue;
+use crate::base::{
+    check_maxval, pow10_big, strictly_negative, year_float_error, Lang, N2WError, Result,
+};
+use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive};
@@ -263,11 +260,46 @@ fn empty_if_zero(number_to_string: &str) -> &str {
     }
 }
 
-/// Python raised `AttributeError`, which `base.rs` cannot express. See the
-/// module docs: emitted as `N2WError::Type` with a message naming the real
-/// type, so the integration layer can remap it. Mirrors `lang_it.rs`.
-fn attribute_error(msg: &str) -> N2WError {
-    N2WError::Attribute(msg.to_string())
+/// The `NotImplementedError` for a mode the Romansh converters do not
+/// support (#157), shared with the five idiom variants. `what` is e.g.
+/// `"to='currency'"`.
+pub(crate) fn unsupported(lang: &str, what: &str) -> N2WError {
+    N2WError::NotImplemented(format!("lang='{}' does not support {}", lang, what))
+}
+
+/// `to_cardinal(Decimal)` for the Romansh converters (#157): a whole Decimal
+/// reads like the int, a fractional one like the float ([`decimal_words`]).
+pub(crate) fn decimal_cardinal<L: Lang + ?Sized>(
+    lang: &L,
+    value: &FloatValue,
+    minus: &str,
+    infix: &str,
+) -> Result<String> {
+    if let Some(i) = value.as_whole_int() {
+        return lang.to_cardinal(&i);
+    }
+    decimal_words(value, minus, infix, &|n| lang.to_cardinal(n))
+}
+
+/// A fractional `Decimal` read the way `float_to_words` reads a float —
+/// `minus` + cardinal of the integer part + `infix` + one cardinal per
+/// fractional digit — but from the Decimal's exact digits (#157). Shared with
+/// the five idiom variants, which differ only in the words.
+pub(crate) fn decimal_words(
+    value: &FloatValue,
+    minus: &str,
+    infix: &str,
+    cardinal: &dyn Fn(&BigInt) -> Result<String>,
+) -> Result<String> {
+    let (pre, post) = float2tuple(value);
+    let digits = format!("{:0>w$}", post, w = value.precision() as usize);
+    let mut parts = Vec::with_capacity(digits.len());
+    for c in digits.chars() {
+        let d = c.to_digit(10).expect("float2tuple yields decimal digits");
+        parts.push(cardinal(&BigInt::from(d))?);
+    }
+    let sign = if strictly_negative(value) { minus } else { "" };
+    Ok(format!("{}{}{}{}", sign, cardinal(&pre.abs())?, infix, parts.join(" ")))
 }
 
 /// Python raised `ValueError` (`int("")`). Unreachable in practice — see
@@ -546,125 +578,17 @@ impl LangRm {
         Ok(format!("{} comma {}", prefix, parts.join(" ")))
     }
 
-    /// `Num2Word_RM.to_cardinal` for `Decimal` input. Romansh has no Decimal
-    /// branch: `isinstance(number, float)` is `False` for a `Decimal`, so it
-    /// falls through to the integer branches and crashes. Below `10**6` every
-    /// branch bottoms out at `CARDINAL_WORDS[<Decimal>]`, a list indexed by a
-    /// non-int -> `TypeError` (raised for *every* such value, integer-valued or
-    /// not, and before anything is emitted). At or above `10**6`,
-    /// `big_number_to_cardinal` reads `str(number)` and feeds the fractional
-    /// slice to `int()` -> `ValueError`; an all-integer Decimal such as
-    /// `Decimal("1000000")` has no '.', so it succeeds ("in milliun"), while
-    /// `Decimal("1000000.00")` keeps its trailing-zero '.' and errors. All
-    /// reproduced — see the port report's `concerns`.
-    fn decimal_cardinal(&self, value: &BigDecimal, precision: u32) -> Result<String> {
-        if value.is_negative() {
-            // Python: MINUS_PREFIX_WORD + self.to_cardinal(-number).
-            return Ok(format!(
-                "{}{}",
-                MINUS_PREFIX_WORD,
-                self.decimal_cardinal(&value.abs(), precision)?
-            ));
+    /// `to_cardinal(Decimal)`. Romansh has no Decimal branch: in Python
+    /// `isinstance(number, float)` is `False` for a `Decimal`, so it fell
+    /// through to the integer ladder and crashed (`CARDINAL_WORDS[<Decimal>]`
+    /// -> TypeError below 10**6, a ValueError from `int()` on the '.' above).
+    /// Since #157 a whole Decimal reads like the int and a fractional one
+    /// like the float, from its exact digits ([`decimal_words`]).
+    fn decimal_entry(&self, value: &FloatValue) -> Result<String> {
+        if let Some(i) = value.as_whole_int() {
+            return self.cardinal(&i);
         }
-        // number < 10**6: `CARDINAL_WORDS[number]` (a list indexed by a
-        // Decimal) raises TypeError before any output, for every such value.
-        if value < &BigDecimal::from(1_000_000i64) {
-            return Err(N2WError::Type(
-                "list indices must be integers or slices, not decimal.Decimal".to_string(),
-            ));
-        }
-        // gladiaio/num2words2#159: a magnitude past maxval is an OverflowError,
-        // checked before Python's `len(str(number)) >= 66` string guard.
-        check_maxval(&value.with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
-        // number >= 10**6: big_number_to_cardinal(number) over str(number).
-        self.big_number_decimal(value, precision)
-    }
-
-    /// `str(number)` for a non-negative `Decimal`, in Python's plain (non-`E`)
-    /// form — always used here because reachable values are `>= 10**6` with a
-    /// non-positive exponent. Integer digits, then a point and exactly
-    /// `precision` fractional digits, trailing zeros kept: `Decimal("1000000")`
-    /// -> `"1000000"`, `Decimal("1000000.00")` -> `"1000000.00"`.
-    fn decimal_str(&self, value: &BigDecimal, precision: u32) -> String {
-        let (mantissa, _scale) = value.with_scale(precision as i64).as_bigint_and_exponent();
-        let digits = mantissa.abs().to_string();
-        if precision == 0 {
-            return digits;
-        }
-        let p = precision as usize;
-        // Values reaching here are >= 10**6, so the integer part is never
-        // empty; the pad is defensive so the split point is always valid.
-        let padded = if digits.len() <= p {
-            format!("{}{}", "0".repeat(p + 1 - digits.len()), digits)
-        } else {
-            digits
-        };
-        let split = padded.len() - p;
-        format!("{}.{}", &padded[..split], &padded[split..])
-    }
-
-    /// `Num2Word_RM.big_number_to_cardinal` reading `str(number)` for a
-    /// `Decimal`. Same shape as the integer [`LangRm::big_number_to_cardinal`],
-    /// but the digit list can carry a '.', which then reaches `int()` and
-    /// raises `ValueError`. Kept separate so the corpus-verified integer method
-    /// is left untouched.
-    fn big_number_decimal(&self, value: &BigDecimal, precision: u32) -> Result<String> {
-        let s = self.decimal_str(value, precision);
-        let digits: Vec<char> = s.chars().collect();
-        let length = digits.len();
-        // Only reachable below maxval when the fraction digits push str(number)
-        // past 65 characters; magnitudes past maxval were rejected above (#159).
-        if length >= 66 {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
-        let predigits = if length % 3 != 0 { length % 3 } else { 3 };
-        let multiplier: String = digits[..predigits].iter().collect();
-        let exponent: String = digits[predigits..].iter().collect();
-        let mut infix = exponent_length_to_string(exponent.len())?;
-
-        // For a Decimal >= 10**6 the integer part is >= 7 digits, so the
-        // 1..=3-char multiplier is always pure digits and parses cleanly.
-        let prefix = if multiplier == "1" {
-            "in ".to_string()
-        } else {
-            let m = multiplier.parse::<BigInt>().map_err(|_| {
-                value_error(&format!(
-                    "invalid literal for int() with base 10: '{}'",
-                    multiplier
-                ))
-            })?;
-            let p = self.cardinal(&m)?;
-            infix = format!(" {}s", infix);
-            p
-        };
-
-        // set(exponent) != set("0"): true unless exponent is a non-empty
-        // all-'0' run (the integer-valued Decimal case). When a '.' survives in
-        // the exponent slice, int() below is Python's ValueError.
-        let exponent_is_zero = !exponent.is_empty() && exponent.chars().all(|c| c == '0');
-        let postfix = if !exponent_is_zero {
-            let e = exponent.parse::<BigInt>().map_err(|_| {
-                value_error(&format!(
-                    "invalid literal for int() with base 10: '{}'",
-                    exponent
-                ))
-            })?;
-            let p = self.cardinal(&e)?;
-            if exponent.starts_with("000") {
-                infix.push_str(" e ");
-            } else {
-                infix.push(' ');
-            }
-            p
-        } else {
-            String::new()
-        };
-
-        Ok(adapt_milliarda(&format!("{}{}{}", prefix, infix, postfix))
-            .trim()
-            .to_string())
+        decimal_words(value, MINUS_PREFIX_WORD, " comma ", &|n| self.cardinal(n))
     }
 
     /// `Num2Word_RM.to_ordinal` for a `float` argument:
@@ -734,14 +658,10 @@ impl LangRm {
         Ok(format!("{}{}", cardinal, suffix))
     }
 
-    /// `Num2Word_RM.to_ordinal` for a `Decimal` argument. `Decimal % 1` works,
-    /// so a *fractional* Decimal takes the `float_to_words(ordinal=True)`
-    /// branch and renders (reading `str(Decimal)`); a whole-valued one falls
-    /// into the integer branches: `<= 20` dies on `ORDINAL_WORDS[<Decimal>]`
-    /// (TypeError), `> 20` re-enters `to_cardinal(Decimal)` — TypeError below
-    /// `10**6`, str-splitting above (ValueError for `Decimal("1E+20")`, whose
-    /// str is scientific). `Decimal("-0.0") < 0` is False, so it is *not*
-    /// minus-prefixed — it crashes in the table branch like `0.0` does.
+    /// `Num2Word_RM.to_ordinal` for a *fractional* `Decimal` argument (a
+    /// whole one reads like the int, see `ordinal_float_entry`). `Decimal % 1`
+    /// works, so it takes the `float_to_words(ordinal=True)` branch and
+    /// renders, reading `str(Decimal)`.
     fn decimal_ordinal(&self, value: &BigDecimal, precision: u32) -> Result<String> {
         if value.is_negative() {
             return Ok(format!(
@@ -750,40 +670,24 @@ impl LangRm {
                 self.decimal_ordinal(&value.abs(), precision)?
             ));
         }
-        if !value.is_integer() {
-            // float_to_words(number, ordinal=True) over str(Decimal).
-            let pre = value.with_scale(0).as_bigint_and_exponent().0;
-            let prefix = self.ordinal(&pre)?;
-            let s = crate::strnum::python_decimal_str(value);
-            let float_part = match s.split_once('.') {
-                Some((_, frac)) => frac.to_string(),
-                // Scientific repr with no '.' (e.g. Decimal("5E-7")).
-                None => return Err(N2WError::Index("list index out of range".to_string())),
-            };
-            let mut parts = Vec::with_capacity(float_part.len());
-            for c in float_part.chars() {
-                // int(c) — an 'E'/'+' from a scientific repr is ValueError.
-                let d = c.to_digit(10).ok_or_else(|| {
-                    value_error(&format!("invalid literal for int() with base 10: '{}'", c))
-                })?;
-                parts.push(self.cardinal(&BigInt::from(d))?);
-            }
-            return Ok(format!("{} comma {}", prefix, parts.join(" ")));
-        }
-        if value <= &BigDecimal::from(20) {
-            return Err(N2WError::Type(
-                "list indices must be integers or slices, not decimal.Decimal".to_string(),
-            ));
-        }
-        let cardinal = self.decimal_cardinal(value, precision)?;
-        let suffix = if cardinal.chars().last() == Some('a') {
-            "vel"
-        } else if cardinal.ends_with("set") {
-            "tavel"
-        } else {
-            "avel"
+        // float_to_words(number, ordinal=True) over str(Decimal).
+        let pre = value.with_scale(0).as_bigint_and_exponent().0;
+        let prefix = self.ordinal(&pre)?;
+        let s = crate::strnum::python_decimal_str(value);
+        let float_part = match s.split_once('.') {
+            Some((_, frac)) => frac.to_string(),
+            // Scientific repr with no '.' (e.g. Decimal("5E-7")).
+            None => return Err(N2WError::Index("list index out of range".to_string())),
         };
-        Ok(format!("{}{}", cardinal, suffix))
+        let mut parts = Vec::with_capacity(float_part.len());
+        for c in float_part.chars() {
+            // int(c) — an 'E'/'+' from a scientific repr is ValueError.
+            let d = c.to_digit(10).ok_or_else(|| {
+                value_error(&format!("invalid literal for int() with base 10: '{}'", c))
+            })?;
+            parts.push(self.cardinal(&BigInt::from(d))?);
+        }
+        Ok(format!("{} comma {}", prefix, parts.join(" ")))
     }
 }
 
@@ -806,9 +710,9 @@ impl Lang for LangRm {
         maxval_ceiling()
     }
 
-    // Num2Word_RM and its variants define no to_currency / to_cheque
-    // at all, so Python raises AttributeError on attribute lookup —
-    // not the NotImplementedError the trait default would give.
+    // Num2Word_RM defines no to_currency / to_cheque at all (Python raised
+    // AttributeError on the lookup), and there is no Romansh currency
+    // wording to port: a clear NotImplementedError instead (#157).
     fn to_currency(
         &self,
         _val: &crate::currency::CurrencyValue,
@@ -817,17 +721,11 @@ impl Lang for LangRm {
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
-        Err(N2WError::Attribute(format!(
-            "'{}' object has no attribute 'to_currency'",
-            "Num2Word_RM",
-        )))
+        Err(unsupported("rm", "to='currency'"))
     }
 
     fn to_cheque(&self, _val: &bigdecimal::BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(format!(
-            "'{}' object has no attribute 'to_cheque'",
-            "Num2Word_RM",
-        )))
+        Err(unsupported("rm", "to='cheque'"))
     }
 
     // cards/maxval/merge stay at their trait defaults: Python never builds
@@ -843,50 +741,38 @@ impl Lang for LangRm {
         self.ordinal(value)
     }
 
-    /// `Decimal('-0.0')`. A float `-0.0` renders through `float_to_words`
-    /// ("nulla comma nulla"), but a `Decimal('-0.0')` is not a `float`:
-    /// `to_cardinal` falls into the integer ladder and `CARDINAL_WORDS[<Decimal>]`
-    /// raises **TypeError** (`Decimal('-0.0') < 0` is False, so it is not even
-    /// minus-prefixed — it crashes in the `< 20` table branch). BigDecimal
-    /// cannot carry the sign, so this is served here rather than by the
-    /// `Float{-0.0}` demotion. The other modes coincide with that demotion —
-    /// `ordinal` TypeErrors either way, `ordinal_num`/`year` AttributeError —
-    /// so they return `None`.
+    /// `Decimal('-0.0')` is a whole Decimal, so it reads like the int zero
+    /// (#157; Python crashed with TypeError in the `< 20` table branch).
+    /// BigDecimal cannot carry the sign, so this is served here rather than
+    /// by the `Float{-0.0}` demotion, which would read "nulla comma nulla".
     fn neg_zero_decimal(&self, to: &str) -> Option<Result<String>> {
         match to {
-            "cardinal" => Some(Err(N2WError::Type(
-                "list indices must be integers or slices, not decimal.Decimal".to_string(),
-            ))),
+            "cardinal" | "year" => Some(self.cardinal(&BigInt::from(0))),
+            "ordinal" => Some(self.ordinal(&BigInt::from(0))),
             _ => None,
         }
     }
 
-    /// **Does not exist on `Num2Word_RM`.** The class has no base, so the
-    /// dispatcher's `getattr(converter, "to_ordinal_num")` raises
-    /// `AttributeError` for *every* input — the corpus has 90 such rows and
-    /// zero successes. Overriding the trait default (which would return the
-    /// digits) is what keeps that parity.
+    /// Python's class had no `to_ordinal_num` (AttributeError for every
+    /// input), and no ordinal-numeral marker is attested for Romansh in the
+    /// module or its tests, so the port raises a clear NotImplementedError
+    /// rather than inventing one (#157).
     fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
-        Err(attribute_error(
-            "'Num2Word_RM' object has no attribute 'to_ordinal_num'",
-        ))
+        Err(unsupported("rm", "to='ordinal_num'"))
     }
 
-    /// **Does not exist on `Num2Word_RM`.** Same reasoning as
-    /// [`Lang::to_ordinal_num`] above: `AttributeError` for every input, 35
-    /// corpus rows, zero successes. The trait default would have delegated to
-    /// `to_cardinal` and invented a year reading Python does not have.
-    fn to_year(&self, _value: &BigInt) -> Result<String> {
-        Err(attribute_error(
-            "'Num2Word_RM' object has no attribute 'to_year'",
-        ))
+    /// Python's class had no `to_year` (AttributeError for every input).
+    /// `Num2Word_Base.to_year` is the cardinal, which is what the port
+    /// returns (#157).
+    fn to_year(&self, value: &BigInt) -> Result<String> {
+        self.cardinal(value)
     }
 
     /// **`Num2Word_RM` has no `to_cardinal_float`** (no base class), so the
     /// dispatcher hands floats and Decimals straight to `to_cardinal`. This
-    /// override reproduces both arms: a `float` renders through
-    /// `float_to_words` ([`LangRm::float_cardinal`]); a `Decimal` falls into
-    /// the integer branches and crashes ([`LangRm::decimal_cardinal`]).
+    /// override reproduces the float arm ([`LangRm::float_cardinal`]); a
+    /// `Decimal` fell into the integer branches and crashed, and now reads
+    /// like the int or the float ([`LangRm::decimal_entry`], #157).
     ///
     /// `precision_override` (the `precision=` kwarg, issue #580) is ignored:
     /// `num2words` only applies it when `hasattr(converter, "precision")`, and
@@ -899,7 +785,7 @@ impl Lang for LangRm {
     ) -> Result<String> {
         match value {
             FloatValue::Float { value, precision } => self.float_cardinal(*value, *precision),
-            FloatValue::Decimal { value, precision } => self.decimal_cardinal(value, *precision),
+            FloatValue::Decimal { .. } => self.decimal_entry(value),
         }
     }
 
@@ -907,8 +793,8 @@ impl Lang for LangRm {
     /// `isinstance(number, float)`, **not** `int(number) == number`, so a
     /// whole-valued float still renders through `float_to_words`
     /// (`1.0` -> "in comma nulla") and a whole-valued Decimal still crashes
-    /// through the integer ladder (`Decimal("5.0")` -> TypeError). The base
-    /// default's whole-value -> int-path shortcut is exactly wrong here.
+    /// through the integer ladder (`Decimal("5.0")` -> TypeError) in Python;
+    /// it now reads like the int, and a fractional one like the float (#157).
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
@@ -916,7 +802,7 @@ impl Lang for LangRm {
     ) -> Result<String> {
         match value {
             FloatValue::Float { value, precision } => self.float_cardinal(*value, *precision),
-            FloatValue::Decimal { value, precision } => self.decimal_cardinal(value, *precision),
+            FloatValue::Decimal { .. } => self.decimal_entry(value),
         }
     }
 
@@ -925,47 +811,36 @@ impl Lang for LangRm {
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         match value {
             FloatValue::Float { value, precision } => self.float_ordinal(*value, *precision),
+            // A whole Decimal crashed on `ORDINAL_WORDS[<Decimal>]`; it now
+            // reads like the int (#157).
+            FloatValue::Decimal { value: d, .. } if d.is_integer() => {
+                self.ordinal(&d.with_scale(0).as_bigint_and_exponent().0)
+            }
             FloatValue::Decimal { value, precision } => self.decimal_ordinal(value, *precision),
         }
     }
 
-    /// **Does not exist on `Num2Word_RM`** — same AttributeError as the
-    /// integer [`Lang::to_ordinal_num`] override; the float/Decimal entry
-    /// would otherwise echo the repr.
+    /// See [`Lang::to_ordinal_num`] above (#157).
     fn ordinal_num_float_entry(&self, _value: &FloatValue, _repr_str: &str) -> Result<String> {
-        Err(attribute_error(
-            "'Num2Word_RM' object has no attribute 'to_ordinal_num'",
-        ))
+        Err(unsupported("rm", "to='ordinal_num'"))
     }
 
-    /// **Does not exist on `Num2Word_RM`** — same AttributeError as the
-    /// integer [`Lang::to_year`] override.
-    fn year_float_entry(&self, _value: &FloatValue) -> Result<String> {
-        Err(attribute_error(
-            "'Num2Word_RM' object has no attribute 'to_year'",
-        ))
+    /// `to_year(float/Decimal)`: a whole value is the integer year; a
+    /// fractional one is a `TypeError`, as in `lang_en` (#157).
+    fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        match value.as_whole_int() {
+            Some(i) => self.to_year(&i),
+            None => Err(year_float_error(value)),
+        }
     }
 
+    // `str_to_number`: the trait default, the shared `Decimal(value)` parse.
+    // Python's class had none, so every string raised AttributeError (#157).
 
-    /// **Does not exist on `Num2Word_RM`.** The dispatcher does
-    /// `converter.str_to_number(value)` for every string input, and this
-    /// bare class has no such attribute — so *every* `num2words("...")`
-    /// call raises AttributeError before any parsing ("5", "1.5", "abc",
-    /// "Infinity" alike). Corpus: all 78 string rows are AttributeError.
-    fn str_to_number(&self, _s: &str) -> Result<crate::strnum::ParsedNumber> {
-        Err(attribute_error(
-            "'Num2Word_RM' object has no attribute 'str_to_number'",
-        ))
-    }
-
-    /// **Does not exist on `Num2Word_RM`.** `to_fraction` is a
-    /// `Num2Word_Base` method (issue #584) and this class has no base, so
-    /// the attribute lookup fails for every n/d — including `1/0`, where
-    /// Python never reaches the ZeroDivision check. Corpus: all 25
-    /// fraction2 rows are AttributeError.
+    /// Python's class had no `to_fraction` (AttributeError for every n/d).
+    /// Base's generic reading ("<n> <ordinal>s") is not Romansh, so this is a
+    /// clear NotImplementedError instead (#157).
     fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(attribute_error(
-            "'Num2Word_RM' object has no attribute 'to_fraction'",
-        ))
+        Err(unsupported("rm", "fractions"))
     }
 }
