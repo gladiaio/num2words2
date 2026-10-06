@@ -60,12 +60,12 @@
 //!    (most others just append -н/-ан). Kept verbatim, as is `TWENTIES[8]`
 //!    ("ная"/"наян") and `ONES[4]` ("дөрөв"/"дөрвөн", with the vowel dropping
 //!    out of the stem).
-//! 6. **`to_currency` on an `int` ignores the currency entirely.** The method
-//!    opens with `if isinstance(val, int): return self.to_cardinal(val)` — no
-//!    table lookup, no unit word, no `NotImplementedError`. So
-//!    `to_currency(100, "BHD")` is "зуу" (a bare cardinal) even though BHD is
-//!    absent from `CURRENCY_FORMS`, while `to_currency(12.34, "BHD")` raises.
-//!    The corpus pins both halves of that split. See [`LangMn::to_currency`].
+//! 6. **`to_currency` on an `int` ignored the currency entirely (fixed,
+//!    #221).** Python opens with `if isinstance(val, int): return
+//!    self.to_cardinal(val)` — no unit word, no `NotImplementedError`, so
+//!    `to_currency(2)` was a bare "хоёр". The port reads an int like a whole
+//!    float ("хоёр төгрөг") and raises for an unknown code on both paths.
+//!    See [`LangMn::to_currency`].
 //! 7. **The 1/100 divisor is hardcoded, `CURRENCY_PRECISION` is never read.**
 //!    `to_currency` computes `(Decimal(str(val)) * 100) % 1` and calls
 //!    `parse_currency_parts` without a `divisor=`, taking its default of 100.
@@ -1116,12 +1116,15 @@ impl Lang for LangMn {
         separator: Option<&str>,
         adjective: bool,
     ) -> Result<String> {
+        // Python's `if isinstance(val, int): return self.to_cardinal(val)`
+        // dropped the currency noun ("хоёр" for 2). An int takes the same
+        // path as a whole float instead: "хоёр төгрөг" (quirk 6, #221).
+        let int_value;
         let d = match val {
-            // `if isinstance(val, int): return self.to_cardinal(val)` — the
-            // whole method, for an int. The sign is kept (to_cardinal(-5) is
-            // "хасах тав"), `all_suffixed` is not passed, and `currency` is
-            // never looked at. Quirk 6.
-            CurrencyValue::Int(v) => return int2word(v, false),
+            CurrencyValue::Int(v) => {
+                int_value = BigDecimal::from(v.clone());
+                &int_value
+            }
             CurrencyValue::Decimal { value, .. } => value,
         };
 
@@ -1142,9 +1145,7 @@ impl Lang for LangMn {
         let (left, right, is_negative) =
             parse_currency_parts(val, false, has_fractional_cents, DIVISOR);
 
-        // The lookup happens *after* parsing, exactly as in Python. Only
-        // reachable for a float, so an unknown code raises here but not on the
-        // int path above.
+        // The lookup happens *after* parsing, exactly as in Python.
         let forms = self.currency_forms(currency).ok_or_else(|| {
             N2WError::NotImplemented(format!(
                 "Currency code \"{}\" not implemented for \"{}\"",
