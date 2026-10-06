@@ -61,7 +61,9 @@
 //! point zero" that the original produced through `abs(float)` (#225).
 //! The sign is read by the converter itself, so the negative word is the
 //! language's own (pt_BR "menos", ca "menys") rather than a small table
-//! that fell back to English "minus" (#226).
+//! that fell back to English "minus" (#226). With `to="ordinal"` only
+//! non-negative whole numbers become ordinals; decimals and negatives stay
+//! cardinal (pt "3,50" was "terceiro", #231).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -1050,12 +1052,6 @@ fn signed(val: &Val) -> Result<String, N2WError> {
     Ok(if neg { format!("-{}", num) } else { num.to_string() })
 }
 
-/// `num2words(v, to="ordinal", lang=...)` with a float.
-fn ordinal_float(l: &(dyn Lang + Sync), v: f64) -> Result<String, N2WError> {
-    let (_, prec) = py_float_repr(v)?;
-    l.ordinal_float_entry(&FloatValue::Float { value: v, precision: prec })
-}
-
 /// `num2words(v, to="currency", currency=code, lang=...)` with a float:
 /// cents=True, separator/adjective at the language's own defaults.
 fn currency_conv(
@@ -1183,7 +1179,6 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
         }
         Typ::Number => {
             let (neg, num) = split_sign(val)?;
-            let v = val.f();
             let l = ctx.lang()?;
             if neg {
                 // A negative is read like num2words(-7): an integer stays on
@@ -1198,9 +1193,10 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 } else {
                     l.to_cardinal(&n)
                 }
-            } else if ctx.ord_mode {
-                ordinal_float(l, v)
             } else {
+                // Decimals stay cardinal in ordinal mode too: "3,50" has no
+                // ordinal reading (pt used to say "terceiro", it "terzo
+                // virgola cinque", #231).
                 cardinal_str(l, num)
             }
         }

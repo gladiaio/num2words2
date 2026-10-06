@@ -61,3 +61,22 @@ def test_negative_word_from_converter(lang):
 
 def test_negative_temperature_uses_converter_word():
     assert num2words_sentence("-7°C", lang="pt_BR").startswith("Menos sete")
+
+
+# --- #231: to="ordinal" keeps decimals (and negatives) cardinal -----------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("Custa 3,50 euros, 1.234,5 unidades.", "pt",
+         "Custa três vírgula cinco zero euros, mil duzentos e trinta e quatro"
+         " vírgula cinco unidades."),
+        ("Stojí 3,50 Kč.", "cs", "Stojí tři čárka pět Kč."),
+        ("Costa 3,50 euro", "it", "Costa tre virgola cinque zero euro"),
+        ("3,5 x", "ru", "Три целых пять десятых x"),
+        ("It costs 3.50 euros", "en", "It costs three point five zero euros"),
+        ("3 x", "pt", "Terceiro x"),
+    ],
+)
+def test_ordinal_mode_decimals_stay_cardinal(text, lang, expected):
+    assert num2words_sentence(text, lang=lang, to="ordinal") == expected
