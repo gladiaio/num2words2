@@ -171,6 +171,18 @@ class CliTestCase(unittest.TestCase):
         out = self.cli.run_cmd("101", "-t", "ordinal", "--style", "terse").out
         self.assertEqual(out.strip(), "hundred and first")
 
+    def test_cli_errors_option(self):
+        """--errors passes num2words()'s errors= through (#228)."""
+        output = self.cli.run_cmd("50%")
+        self.assertEqual(output.return_code, 1)
+        self.assertIn("cannot convert '50%'", output.err)
+        output = self.cli.run_cmd("50%", "--errors", "raise")
+        self.assertEqual(output.return_code, 1)
+        output = self.cli.run_cmd("50%", "--errors", "ignore")
+        self.assertEqual(output.return_code, 0, output.err)
+        self.assertEqual(output.out.strip(), "50%")
+        self.assertEqual(self.cli.run_cmd("5", "--errors", "nope").return_code, 2)
+
     def test_cli_non_utf8_stdout(self):
         """A cp1252 stdout prints UTF-8 rather than failing (#245)."""
         env = os.environ.copy()

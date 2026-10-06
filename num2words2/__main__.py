@@ -145,6 +145,12 @@ def build_parser():
              "'and'",
     )
     parser.add_argument(
+        "--errors",
+        choices=["raise", "ignore"],
+        help="input with no reading (50%%, v2.0.1): 'raise' an error "
+             "(default) or 'ignore' and print it as written",
+    )
+    parser.add_argument(
         "-v", "--version",
         action="version",
         version="num2words2=={}".format(__version__),
@@ -208,7 +214,7 @@ def main(argv=None):
 
     kwargs = {
         key: getattr(args, key)
-        for key in ("currency", "cents", "adjective", "style")
+        for key in ("currency", "cents", "adjective", "style", "errors")
         if getattr(args, key) is not None
     }
     try:

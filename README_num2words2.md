@@ -130,6 +130,9 @@ two US dollars, fourteen cents
 $ num2words2 -1e3
 minus one thousand
 
+$ num2words2 50% --errors ignore
+50%
+
 # List all supported languages (aliases in parentheses, e.g. "cs (cz)")
 $ num2words2 --list-languages
 
