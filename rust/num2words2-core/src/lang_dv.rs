@@ -107,32 +107,22 @@
 //!
 //! Continuing the quirk list above, all verified against the interpreter:
 //!
-//! 6. **Cents use ROUND_HALF_EVEN and go negative.** `int_part` is
-//!    `value.to_integral_value()` — round to *nearest*, ties to even — not
-//!    floor, and `frac_part` is `(value - int_part) * 100` after the same
-//!    rounding. So 99.99 rounds **up** to 100 and leaves `frac_part == -1`,
-//!    printing `"ސަތޭކަ EUR މައިނަސް އެއް ލާރި"`: "one hundred EUR **minus** one
-//!    laari" (`to_cardinal_float` is what renders that -1). 1234.56 likewise becomes 1235 EUR minus 44
-//!    laari. And 0.5 ties to even, so `int_part` is 0 and it prints "fifty
-//!    laari" with no unit word at all.
+//! 6. **Rounding (fixed, #170).** Python sets `int_part` to
+//!    `value.to_integral_value()` (round half-even) and `frac_part` to the
+//!    remainder times 100, so 1.5 printed "two rufiyaa **minus** fifty laari"
+//!    and 99.99 "one hundred minus one laari". The port rounds `|value|`
+//!    half-up to whole laari (as `base.to_currency` does), splits that into
+//!    rufiyaa and laari, and puts the negword in front once.
 //!
-//! 7. **Either segment vanishes when its part is zero.** Both are guarded by a
-//!    bare truthiness test on a `Decimal`, so 0.01 is `"އެއް ލާރި"` (no unit
-//!    word) and 1.0 is `"އެއް EUR"` (no cents). When both parts round to zero
-//!    but the value itself is non-zero — 0.001, say — `" ".join([])` yields the
-//!    **empty string**.
+//! 7. **Either segment vanishes when its part is zero**, so 0.01 is
+//!    `"އެއް ލާރި"` (no unit word) and 1.0 is `"އެއް EUR"` (no cents). Python
+//!    returned the **empty string** when both parts round to zero (0.001); the
+//!    port says zero units, like `to_currency(0)`.
 //!
-//! 8. **A positive Decimal exponent survives `to_integral_value`, so large
-//!    floats collapse to their coefficient.** `to_integral_value` returns a
-//!    value whose exponent is `>= 0` *unchanged*, and `to_cardinal_float` then
-//!    reads `as_tuple().digits` — the coefficient alone. `str(1e21)` is
-//!    `'1e+21'`, i.e. `Decimal('1E+21')` with digits `(1,)` and exponent 21, so
-//!    `to_currency(1e21)` renders **`"އެއް EUR"`** — "one EUR". The exponent is
-//!    silently dropped. Only the float path can reach this: `Decimal(int)`
-//!    always has exponent 0, which is why the verified integer modes are
-//!    immune. Modelled by keeping the currency path on `BigDecimal` and reading
-//!    its `(coefficient, exponent)` rather than flattening to a `BigInt` — see
-//!    [`LangDv::to_cardinal_float_dec`].
+//! 8. **Large floats (fixed, #170).** Python's `to_integral_value` kept a
+//!    positive exponent and `to_cardinal_float` read only the coefficient, so
+//!    `to_currency(1e21)` was "one EUR". Counting in whole laari expands the
+//!    exponent, so the full amount is read.
 //!
 //! `to_cheque` does not exist on the class at all, so it surfaces as
 //! `AttributeError` from the dispatcher's `getattr`, not as the
@@ -220,8 +210,7 @@
 //! `kw.only` guard.
 //!
 //! `cardinal_from_decimal` stays at its default: DV's `to_currency` never
-//! produces fractional cents, since `frac_part` is always run through
-//! `to_integral_value`.
+//! produces fractional cents, since it counts in whole laari.
 
 use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::CurrencyValue;
@@ -660,13 +649,13 @@ impl LangDv {
 
         // The `exponent < 0` arm of `to_cardinal_float` (the pointword/
         // convert_discrete branch) is unreachable from here: every caller feeds
-        // this a `to_integral_value()` result, which never has a negative
-        // exponent. So only the `convert_int` arm can run.
+        // this an integral value with exponent 0. So only the `convert_int` arm can run.
         let result = self.convert_int(&digits, nominal)?;
 
         if coefficient.is_negative() {
             // " ".join([negword, result]) — stripped, unlike Python (quirk 1,
-            // fixed). This is the path 99.99's frac_part of -1 takes.
+            // fixed). Unreachable from the currency path, which passes
+            // magnitudes only (#170).
             return Ok(format!("{} {}", NEGWORD, result.trim()));
         }
         Ok(result.trim().to_string())
@@ -1209,13 +1198,29 @@ impl Lang for LangDv {
             return Ok(format!("{} {}", self.base_stem(0)?, currency));
         }
 
-        // ROUND_HALF_EVEN, not floor — quirk 6. 99.99 rounds *up* to 100 and
-        // frac_part comes out negative.
-        let int_part = to_integral_value(&decimal_value);
-        let frac_part =
-            to_integral_value(&((&decimal_value - &int_part) * BigDecimal::from(100)));
+        // Python rounds the whole value half-even to an integer and takes the
+        // (possibly negative) remainder as cents, so 1.5 was "two rufiyaa
+        // minus fifty laari" (#170). Instead: round |value| half-up to whole
+        // laari, as `base.to_currency` does, split into rufiyaa and laari, and
+        // put the sign in front once. Working in whole laari also expands a
+        // positive exponent, so 1e21 is no longer read as "one".
+        let negative = decimal_value.is_negative();
+        let total = (decimal_value.abs() * BigDecimal::from(100) + BigDecimal::new(BigInt::from(5), 1))
+            .with_scale(0)
+            .as_bigint_and_exponent()
+            .0;
+        let (int_part, frac_part) = total.div_rem(&BigInt::from(100));
+        if int_part.is_zero() && frac_part.is_zero() {
+            // 0.001 rounds to nothing: say zero, not "".
+            return Ok(format!("{} {}", self.base_stem(0)?, currency));
+        }
+        let int_part = BigDecimal::from(int_part);
+        let frac_part = BigDecimal::from(frac_part);
 
         let mut result: Vec<String> = Vec::new();
+        if negative {
+            result.push(NEGWORD.to_string());
+        }
 
         if !int_part.is_zero() {
             result.push(self.to_cardinal_float_dec(&int_part, false)?);
@@ -1240,13 +1245,12 @@ impl Lang for LangDv {
             if !cents {
                 return Err(N2WError::Type(format!(
                     "sequence item {}: expected str instance, bool found",
-                    result.len()
+                    result.len() - negative as usize
                 )));
             }
             result.push(CENTSWORD.to_string());
         }
 
-        // Both parts zero but the value itself non-zero (0.001) => "" — quirk 7.
         Ok(result.join(" "))
     }
 
@@ -1445,37 +1449,6 @@ fn py_decimal_str_parts(sign_negative: bool, digit_str: &str, exponent: i64) -> 
     format!("{}{}E{}{}", sign, coeff, esign, adjusted.abs())
 }
 
-/// Python's `Decimal.to_integral_value()` — round to an integer using the
-/// context's rounding, which `__init__` leaves at the default ROUND_HALF_EVEN.
-/// (The commented-out `getcontext().rounding = ROUND_FLOOR` never took effect;
-/// were it live, 99.99 would floor to 99 and quirk 6's negative cents could not
-/// arise.)
-///
-/// A value whose exponent is already `>= 0` comes back **untouched**, keeping
-/// its coefficient and exponent — so `Decimal("1E+21")` stays `1E+21` rather
-/// than expanding to 22 digits. That is what quirk 8 rides on.
-fn to_integral_value(d: &BigDecimal) -> BigDecimal {
-    let (coefficient, scale) = d.as_bigint_and_exponent();
-    // scale <= 0 is Python's exponent >= 0.
-    if scale <= 0 {
-        return d.clone();
-    }
-
-    let divisor = pow10(scale as usize);
-    let negative = coefficient.is_negative();
-    let (mut q, r) = coefficient.abs().div_rem(&divisor);
-    // ROUND_HALF_EVEN on the magnitude; the mode is symmetric about zero.
-    let twice = &r * 2;
-    if twice > divisor || (twice == divisor && !q.is_even()) {
-        q += 1;
-    }
-    if negative {
-        q = -q;
-    }
-    // Rounding always lands on exponent 0, matching Python.
-    BigDecimal::new(q, 0)
-}
-
 /// Python's `str(Decimal)` — the spec's *to-scientific-string* — restricted to
 /// the integral values this file can reach it with.
 ///
@@ -1483,7 +1456,7 @@ fn to_integral_value(d: &BigDecimal) -> BigDecimal {
 /// coefficient plainly; a positive exponent switches to scientific notation
 /// keyed on the adjusted exponent, so `Decimal('1.5E+33')` is `"1.5E+33"` and
 /// not `"1500000000000000000000000000000000"`. A negative exponent would need
-/// the third branch, which `to_integral_value` rules out.
+/// the third branch, which integral callers rule out.
 fn py_decimal_str(d: &BigDecimal) -> String {
     let (coefficient, scale) = d.as_bigint_and_exponent();
     let exponent = -scale;

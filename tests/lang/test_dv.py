@@ -106,6 +106,28 @@ class Num2WordsENTest(TestCase):
             "ސަތޭކަމިލިޔަން ރުފިޔާ"
         )
 
+    def test_to_currency_rounding(self):
+        # gladiaio/num2words2#170: the integer part was rounded half-even and
+        # the remainder went negative ("two rufiyaa minus fifty laari").
+        self.assertEqual(num2words(1.5, lang='dv', to='currency'),
+                         'އެއް ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words('1.5', lang='dv', to='currency'),
+                         'އެއް ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words(2.5, lang='dv', to='currency'),
+                         'ދެ ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words(99.99, lang='dv', to='currency'),
+                         'ނުވަދިހަނުވަ ރުފިޔާ ނުވަދިހަނުވަ ލާރި')
+        self.assertEqual(num2words(-1.5, lang='dv', to='currency'),
+                         'މައިނަސް އެއް ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words(-2.25, lang='dv', to='currency'),
+                         'މައިނަސް ދެ ރުފިޔާ ފަންސަވީސް ލާރި')
+        self.assertEqual(num2words(1.999, lang='dv', to='currency'),
+                         'ދެ ރުފިޔާ')
+        self.assertEqual(num2words(0.001, lang='dv', to='currency'),
+                         'ސުން ރުފިޔާ')
+        self.assertNotIn('މައިނަސް',
+                         num2words(1234.56, lang='dv', to='currency'))
+
     def test_to_year(self):
         # issue 141
         # "e2 e2"
