@@ -24,6 +24,9 @@ entry points and the exception types, nothing more.
 """
 from __future__ import unicode_literals
 
+from decimal import Decimal
+from typing import Any, Literal, Optional, Union
+
 from . import _rust as _RUST
 from .grouping import group_digits  # noqa: F401  (re-exported)
 
@@ -66,16 +69,33 @@ CONVERTES_TYPES = [
 ]
 CONVERTER_TYPES = CONVERTES_TYPES  # Alias for compatibility
 
+# The values of CONVERTER_TYPES, for type checkers (#244).
+ConverterType = Literal[
+    "cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque",
+    "fraction",
+]
 
-def num2words(number, ordinal=False, lang="en", to="cardinal", **kwargs):
+
+def num2words(
+    number: Union[int, float, Decimal, str],
+    ordinal: bool = False,
+    lang: str = "en",
+    to: ConverterType = "cardinal",
+    **kwargs: Any,
+) -> str:
     return _RUST.num2words(number, ordinal, lang, to, **kwargs)
 
 
-def num2words_sentence(sentence, lang="en", to="cardinal", **kwargs):
+def num2words_sentence(
+    sentence: str,
+    lang: Optional[str] = "en",
+    to: ConverterType = "cardinal",
+    **kwargs: Any,
+) -> str:
     return _RUST.num2words_sentence(sentence, lang, to, **kwargs)
 
 
-def maxval(lang="en"):
+def maxval(lang: str = "en") -> Optional[int]:
     return _RUST.maxval(lang)
 
 

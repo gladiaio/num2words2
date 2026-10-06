@@ -61,7 +61,7 @@ python-source = "."
 module-name = "num2words2._rust"
 features = ["pyo3/extension-module"]
 strip = true
-include = ["num2words2/py.typed"]
+include = ["num2words2/py.typed", "num2words2/_rust.pyi"]
 
 [tool.isort]
 profile = "black"
