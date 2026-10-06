@@ -363,10 +363,10 @@ fn float_value(value: f64, precision: u32, decimal_str: &str) -> Result<FloatVal
 }
 
 /// Float/Decimal input across all four int modes, kwargs included.
-/// `repr_str` is Python's `str(number)`; unused since the integer modes stop
-/// at the dispatcher (#213/#214), kept for the call signature.
+/// `repr_str` is Python's `str(number)`: the written value precision= reads
+/// when `decimal_str` is empty (#218).
 #[pyfunction]
-#[pyo3(signature = (lang, to, value, precision, decimal_str, _repr_str, precision_override, kwargs))]
+#[pyo3(signature = (lang, to, value, precision, decimal_str, repr_str, precision_override, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn to_float(
     lang: &str,
@@ -374,7 +374,7 @@ fn to_float(
     value: f64,
     precision: u32,
     decimal_str: &str,
-    _repr_str: &str,
+    repr_str: &str,
     precision_override: Option<u32>,
     kwargs: PyKwargs,
 ) -> PyResult<Option<String>> {
@@ -385,6 +385,7 @@ fn to_float(
         value,
         precision,
         decimal_str,
+        repr_str,
         precision_override,
         &kwbag(kwargs),
     )
@@ -400,6 +401,7 @@ fn to_float_core(
     value: f64,
     precision: u32,
     decimal_str: &str,
+    repr_str: &str,
     precision_override: Option<u32>,
     kw: &Kwargs,
 ) -> Result<Option<String>, N2WError> {
@@ -1300,6 +1302,7 @@ fn num2words(
                         value,
                         prec,
                         &decimal_str,
+                        &repr,
                         precision_override,
                         &kw,
                     )
