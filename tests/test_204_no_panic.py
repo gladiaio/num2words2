@@ -3,6 +3,7 @@ the Rust core (`format!` width out of range). pyo3 surfaced it as
 `PanicException`, a `BaseException` that `except Exception` does not catch.
 Any ordinary exception or a string is acceptable; a panic is not."""
 
+import sys
 from decimal import Decimal
 
 import pytest
@@ -10,6 +11,24 @@ import pytest
 from num2words2 import num2words
 
 TINY = Decimal("1E-70000")
+
+
+def _long_fraction(digit, count):
+    """``Decimal("0." + digit * count)``. The pure-Python decimal module
+    (used by CPython builds without ``_decimal``, e.g. the 3.15 CI image)
+    goes through ``int()``, which refuses more than 4300 digits by default,
+    so lift that limit just while building the value."""
+    old = sys.get_int_max_str_digits() if hasattr(sys, "get_int_max_str_digits") else None
+    if old is not None:
+        sys.set_int_max_str_digits(0)
+    try:
+        return Decimal("0." + digit * count)
+    finally:
+        if old is not None:
+            sys.set_int_max_str_digits(old)
+
+
+HA_LONG = _long_fraction("7", 70000)
 
 CASES = [
     (lang, "currency", TINY)
@@ -21,7 +40,7 @@ CASES = [
 ] + [
     # Not a panic but worse: unbounded recursion overflowed the native stack
     # and killed the interpreter. Now OverflowError.
-    ("ha", "cardinal", Decimal("0." + "7" * 70000)),
+    ("ha", "cardinal", HA_LONG),
 ]
 
 
@@ -37,7 +56,7 @@ def test_huge_scale_never_panics(lang, to, value):
 def test_ha_huge_value_is_overflow_error():
     # A 70000-digit fraction no longer recurses: since #205 Hausa reads the
     # fractional digits one by one, so it is words, not an overflow.
-    assert num2words(Decimal("0." + "7" * 70000), lang="ha").startswith(
+    assert num2words(HA_LONG, lang="ha").startswith(
         "sifiri wajen bakwai bakwai")
     with pytest.raises(OverflowError):
         num2words(10**12010, lang="ha")
