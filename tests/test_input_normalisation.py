@@ -137,3 +137,72 @@ def test_negative_ordinal_num_examples():
     with pytest.raises(TypeError, match="negative"):
         num2words(-3, lang="fi", to="ordinal_num")
     assert num2words(-3, lang="hu", to="ordinal_num") == "-3."
+
+
+# ---- #236: numeric types ---------------------------------------------------
+
+MODES = ["cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque"]
+
+
+class _Index(object):
+    def __index__(self):
+        return 5
+
+
+class _Float(object):
+    def __float__(self):
+        return 2.5
+
+
+def test_index_types_are_integers_in_every_mode():
+    import enum
+
+    class E(enum.IntEnum):
+        FIVE = 5
+
+    for to in MODES:
+        want = num2words(5, to=to)
+        assert num2words(E.FIVE, to=to) == want
+        assert num2words(_Index(), to=to) == want
+
+
+def test_float_types_are_floats_in_every_mode():
+    for to in ("cardinal", "currency", "cheque"):
+        assert num2words(_Float(), to=to) == num2words(2.5, to=to)
+    with pytest.raises(TypeError):
+        num2words(_Float(), to="ordinal")
+
+
+def test_numpy_scalars():
+    np = pytest.importorskip("numpy")
+    for to in MODES:
+        assert num2words(np.int64(5), to=to) == num2words(5, to=to)
+        assert _call(np.int8(-3), to=to) == _call(-3, to=to)
+    for to in ("cardinal", "currency"):
+        assert num2words(np.float32(2.5), to=to) == num2words(2.5, to=to)
+        assert num2words(np.float64(2.5), to=to) == num2words(2.5, to=to)
+
+
+@pytest.mark.parametrize("to", MODES + ["fraction"])
+def test_bool_is_rejected_in_every_mode(to):
+    for b in (True, False):
+        with pytest.raises(TypeError, match="bool is not a number"):
+            num2words(b, to=to)
+
+
+@pytest.mark.parametrize("x", [None, [1], object()])
+def test_unsupported_types_raise_type_error(x):
+    with pytest.raises(TypeError):
+        num2words(x)
+
+
+def test_non_finite_values_raise_clear_errors():
+    for x in (float("nan"), Decimal("NaN")):
+        for to in ("currency", "cheque"):
+            with pytest.raises(ValueError, match="cannot convert NaN to"):
+                num2words(x, to=to)
+        assert _call(x) == _call("NaN") == ValueError
+    for x in (float("inf"), float("-inf"), Decimal("Infinity")):
+        with pytest.raises(ValueError, match="cannot convert Infinity to"):
+            num2words(x, to="currency")
+        assert _call(x) == _call("inf")

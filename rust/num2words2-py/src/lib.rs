@@ -1063,19 +1063,40 @@ fn num2words(
     to: &str,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<String>> {
-    // Captured before any normalisation: the core keys off the *arrival* type
-    // (a plain int vs a float/Decimal vs a str), not a post-parse value.
+    // The core keys off the *arrival* type (an int vs a float/Decimal vs a
+    // str), not a post-parse value. Numeric types are normalised first
+    // (gladiaio/num2words2#236): anything with `__index__` (IntEnum, numpy
+    // ints) is an int, anything else with `__float__` (numpy floats) a
+    // float, in every mode. bool is rejected: True is not the number one.
+    if number.is_instance_of::<PyBool>() {
+        return Err(PyTypeError::new_err("bool is not a number"));
+    }
     let is_str = number.is_instance_of::<PyString>();
-    let plain_int = number.is_exact_instance_of::<PyInt>(); // type(number) is int
-    let intish = number.is_instance_of::<PyInt>(); // isinstance(number, int) — incl. bool
-    let is_float = number.is_instance_of::<PyFloat>();
+    let mut is_float = number.is_instance_of::<PyFloat>();
     // Only import `decimal` for objects that could actually be a Decimal.
-    let is_decimal = if is_str || is_float || intish {
+    let is_decimal = if is_str || is_float || number.is_instance_of::<PyInt>() {
         false
     } else {
         let decimal_cls = py.import("decimal")?.getattr("Decimal")?;
         number.is_instance(&decimal_cls)?
     };
+    let normalised: Bound<'_, PyAny> = if is_str || is_decimal {
+        number.clone()
+    } else if is_float || !number.hasattr("__index__")? {
+        if !is_float && !number.hasattr("__float__")? {
+            return Err(PyTypeError::new_err(format!(
+                "expected a number or a numeric string, got {}",
+                number.get_type().name()?
+            )));
+        }
+        is_float = true;
+        PyFloat::new(py, number.extract::<f64>()?).into_any()
+    } else {
+        py.import("operator")?.getattr("index")?.call1((number,))?
+    };
+    let number = &normalised;
+    let plain_int = !is_str && !is_float && !is_decimal; // an int, via __index__
+    let intish = plain_int;
     let plain_num = is_float || is_decimal;
 
     let resolved = presentation::resolve_lang(lang).ok_or_else(|| unknown_lang(lang))?;
@@ -1188,7 +1209,31 @@ fn num2words(
                 Err(e) => Err(map_err(e)),
             };
         }
-        // not finite or items None -> fall through
+        // NaN / ±inf: the same outcome as the strings "NaN" / "inf"; the
+        // language decides (base: ValueError / OverflowError).
+        if !finite {
+            let f = number.extract::<f64>()?;
+            let r = if f.is_nan() {
+                l.nan_result(to)
+            } else {
+                l.inf_result(f < 0.0, to)
+            };
+            return finish(r);
+        }
+        // items None -> fall through
+    }
+
+    // NaN / ±inf has no amount to spell (#236): a clear ValueError rather
+    // than the Rust parser's "invalid digit found in string".
+    if plain_num && (to == "currency" || to == "cheque") {
+        let f = number.extract::<f64>()?;
+        if !f.is_finite() {
+            return Err(PyValueError::new_err(format!(
+                "cannot convert {} to {}",
+                if f.is_nan() { "NaN" } else { "Infinity" },
+                to
+            )));
+        }
     }
 
     // currency
