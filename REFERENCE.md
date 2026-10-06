@@ -536,13 +536,19 @@ These explicit aliases are also registered:
 |---|---|---|
 | `cz` | `cs` | Pre-ISO-639 country code for Czech |
 | `dk` | `da` | Pre-ISO-639 country code for Danish |
-| `cn` | `zh_CN` | Country-code shorthand |
+| `cn`, `zh_CN` | `zh` | Country-code shorthand / Mainland Chinese |
 | `jp` | `ja` | Country-code shorthand |
 | `jw` | `jv` | Old code for Javanese |
+| `kz` | `kk` | Country code for Kazakh |
 | `miz` | `lus` | Old code for Mizo |
 | `nb` | `no` | Norwegian Bokmål → Norwegian |
+| `sr_Cyrl` | `sr` | Serbian's default script |
 | `uz_cyr` | `uz_Cyrl` | Lowercase variant |
 | `en_AERO`, `en_aero_icao`, `en_x_aero_icao` | `en_Aero_ICAO` | Aviation aliases |
+| `en_Aero_US_Navy` | `en_Aero_USN` | Aviation alias |
+
+`num2words2 --list-languages` prints each canonical code with its aliases
+after it, e.g. `cs (cz)`.
 
 Run `num2words2 --list-languages` from the CLI for the live list.
 

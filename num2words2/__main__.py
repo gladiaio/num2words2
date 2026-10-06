@@ -37,6 +37,8 @@ package does not define — the Rust core exposes ``supported_langs()`` instead
 from __future__ import print_function, unicode_literals
 
 import argparse
+import decimal
+import re
 import sys
 
 from . import CONVERTER_TYPES, __version__
@@ -51,12 +53,36 @@ examples:
       veinticuatro mil ciento veinte punto uno
   num2words2 2.14 --lang es --to currency
       dos euros con catorce céntimos
+  num2words2 2.14 --to currency --currency USD
+      two dollars, fourteen cents
+  num2words2 -1e3
+      minus one thousand
 """
+
+# A negative number, including exponent forms argparse would otherwise take
+# for an option ("-1e3", "-.5", "-2.5E-3").
+NEGATIVE_NUMBER = re.compile(r"^-(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
 
 
 def get_languages():
-    """Every language code the compiled core will accept, sorted."""
-    return sorted(_RUST.supported_langs())
+    """Canonical language codes, sorted; aliases are not repeated."""
+    aliases = _RUST.lang_aliases()
+    return sorted(c for c in _RUST.supported_langs() if c not in aliases)
+
+
+def get_language_lines():
+    """``--list-languages`` lines: each canonical code, followed by its
+    aliases in parentheses (``cs (cz)``)."""
+    by_canonical = {}
+    for alias, canonical in _RUST.lang_aliases().items():
+        by_canonical.setdefault(canonical, []).append(alias)
+    lines = []
+    for code in get_languages():
+        aliases = sorted(by_canonical.get(code, []))
+        lines.append(
+            "{} ({})".format(code, ", ".join(aliases)) if aliases else code
+        )
+    return lines
 
 
 def get_converters():
@@ -79,7 +105,8 @@ def build_parser():
     parser.add_argument(
         "-L", "--list-languages",
         action="store_true",
-        help="list every supported language code and exit",
+        help="list every supported language code (aliases in parentheses) "
+             "and exit",
     )
     parser.add_argument(
         "-C", "--list-converters",
@@ -97,6 +124,27 @@ def build_parser():
         help="output converter (default: %(default)s)",
     )
     parser.add_argument(
+        "-c", "--currency",
+        help="ISO 4217 currency code for --to currency/cheque (e.g. USD)",
+    )
+    parser.add_argument(
+        "--cents",
+        choices=["verbose", "terse", "omit"],
+        help="how to render the cents of a currency amount",
+    )
+    parser.add_argument(
+        "--adjective",
+        action="store_true",
+        default=None,
+        help="prefix the currency name with its adjective (e.g. US dollars)",
+    )
+    parser.add_argument(
+        "--style",
+        choices=["terse", "us"],
+        help="presentation style: 'terse' ordinals, 'us' English without "
+             "'and'",
+    )
+    parser.add_argument(
         "-v", "--version",
         action="version",
         version="num2words2=={}".format(__version__),
@@ -104,13 +152,50 @@ def build_parser():
     return parser
 
 
+def parse_args(parser, argv):
+    """``parse_args`` that also takes a negative number such as ``-1e3`` as
+    the positional ``number`` rather than an unknown option."""
+    args, extras = parser.parse_known_args(argv)
+    if extras and args.number is None and NEGATIVE_NUMBER.match(extras[0]):
+        args.number = extras.pop(0)
+    if extras:
+        parser.error("unrecognized arguments: {}".format(" ".join(extras)))
+    return args
+
+
+def error_message(err, args):
+    """One human-readable line for a conversion error, never a Python repr."""
+    if isinstance(err, decimal.InvalidOperation):
+        return "not a number"
+    if isinstance(err, OverflowError):
+        return "number is too large for language {!r}".format(args.lang)
+    if isinstance(err, ZeroDivisionError):
+        return "division by zero"
+    if isinstance(err, TypeError) and args.to == "fraction":
+        return "--to fraction expects a fraction such as 3/4"
+    lines = str(err).strip().splitlines()
+    return lines[0] if lines else type(err).__name__
+
+
+def write_line(text):
+    """Print ``text``; if stdout cannot encode it (a cp1252 console),
+    switch stdout to UTF-8 with replacement instead of failing."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        if not hasattr(sys.stdout, "reconfigure"):
+            raise
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        print(text)
+
+
 def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
 
     if args.list_languages:
-        for lang in get_languages():
-            print(lang)
+        for line in get_language_lines():
+            write_line(line)
         return 0
 
     if args.list_converters:
@@ -121,16 +206,24 @@ def main(argv=None):
     if args.number is None:
         parser.error("the following arguments are required: number")
 
+    kwargs = {
+        key: getattr(args, key)
+        for key in ("currency", "cents", "adjective", "style")
+        if getattr(args, key) is not None
+    }
     try:
-        print(num2words(args.number, lang=args.lang, to=args.to))
+        result = num2words(args.number, lang=args.lang, to=args.to, **kwargs)
     except Exception as err:
         # Keep the offending input in the message — the old script printed it
         # too, and it is the only context a shell user gets.
         print(
-            "num2words2: cannot convert {!r}: {}".format(args.number, err),
+            "num2words2: cannot convert {!r}: {}".format(
+                args.number, error_message(err, args)
+            ),
             file=sys.stderr,
         )
         return 1
+    write_line(result)
     return 0
 
 

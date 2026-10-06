@@ -123,7 +123,13 @@ veinticuatro mil ciento veinte punto uno
 $ num2words2 2.14 -l es --to currency
 dos euros con catorce céntimos
 
-# List all supported languages
+$ num2words2 2.14 --to currency --currency USD --adjective
+two US dollars, fourteen cents
+
+$ num2words2 -1e3
+minus one thousand
+
+# List all supported languages (aliases in parentheses, e.g. "cs (cz)")
 $ num2words2 --list-languages
 
 # List all converters

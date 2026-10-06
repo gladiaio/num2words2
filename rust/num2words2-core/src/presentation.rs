@@ -161,6 +161,14 @@ pub fn normalize_cents(cents: CentsArg) -> Option<(bool, bool)> {
 mod tests {
     use super::*;
 
+    /// Identity of the converter behind a key. Several languages are
+    /// zero-sized types, so the data address alone is not unique; the
+    /// vtable half of the wide pointer tells them apart.
+    fn ptr(k: &str) -> *const dyn crate::base::Lang {
+        let l: &dyn crate::base::Lang = crate::get_lang_by_key(k).unwrap();
+        l as *const dyn crate::base::Lang
+    }
+
     #[test]
     fn resolve_exact_and_hyphen() {
         assert_eq!(resolve_lang("en").as_deref(), Some("en"));
@@ -217,10 +225,26 @@ mod tests {
         for a in &keys {
             for b in &keys {
                 if a.to_lowercase() == b.to_lowercase() {
-                    let pa = crate::get_lang_by_key(a).unwrap() as *const _ as *const ();
-                    let pb = crate::get_lang_by_key(b).unwrap() as *const _ as *const ();
-                    assert_eq!(pa, pb, "{a} vs {b}");
+                    assert_eq!(ptr(a), ptr(b), "{a} vs {b}");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn lang_aliases_cover_every_shared_converter() {
+        let keys = crate::supported_lang_keys();
+        for (alias, canonical) in crate::LANG_ALIASES {
+            assert!(keys.contains(alias) && keys.contains(canonical), "{alias}");
+            assert!(!crate::LANG_ALIASES.iter().any(|(a, _)| a == canonical));
+            assert_eq!(ptr(alias), ptr(canonical), "{alias} -> {canonical}");
+        }
+        // Every key outside the alias list has a converter of its own.
+        let own: Vec<_> =
+            keys.iter().filter(|k| !crate::LANG_ALIASES.iter().any(|(a, _)| a == *k)).collect();
+        for (i, a) in own.iter().enumerate() {
+            for b in &own[i + 1..] {
+                assert_ne!(ptr(a), ptr(b), "{a} and {b} share a converter; list one as an alias");
             }
         }
     }

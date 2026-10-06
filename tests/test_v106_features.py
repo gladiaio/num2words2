@@ -81,7 +81,8 @@ class TestCliEntryPoint(TestCase):
     def test_list_languages(self):
         code, out, _ = self._run(["--list-languages"])
         self.assertEqual(code, 0)
-        langs = out.split()
+        # One canonical code per line, aliases in parentheses after it (#245).
+        langs = [line.split(" ")[0] for line in out.splitlines() if line]
         self.assertIn("en", langs)
         self.assertIn("fr", langs)
         # Sorted, and the full set the core accepts — not a hand-kept list.

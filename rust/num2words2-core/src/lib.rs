@@ -649,6 +649,28 @@ pub fn get_lang_by_key(lang: &str) -> Option<&'static (dyn Lang + Sync)> {
     }
 }
 
+/// Alternative keys and the canonical key they share a converter with, as
+/// `(alias, canonical)`. Every key of a multi-key arm in [`get_lang_by_key`]
+/// other than its canonical one is listed here; the CLI's `--list-languages`
+/// shows these after their canonical code (gladiaio/num2words2#245).
+pub const LANG_ALIASES: &[(&str, &str)] = &[
+    ("cn", "zh"),
+    ("cz", "cs"),
+    ("dk", "da"),
+    ("en_AERO", "en_Aero_ICAO"),
+    ("en_Aero_US_Navy", "en_Aero_USN"),
+    ("en_aero_icao", "en_Aero_ICAO"),
+    ("en_x_aero_icao", "en_Aero_ICAO"),
+    ("jp", "ja"),
+    ("jw", "jv"),
+    ("kz", "kk"),
+    ("miz", "lus"),
+    ("nb", "no"),
+    ("sr_Cyrl", "sr"),
+    ("uz_cyr", "uz_Cyrl"),
+    ("zh_CN", "zh"),
+];
+
 /// Every Python key the core can serve.
 pub fn supported_lang_keys() -> Vec<&'static str> {
     vec!["af", "am", "ar", "as", "az", "ba", "ban", "be", "bg", "bm", "bn", "bo", "br", "bs", "ca", "ce", "ceb", "ckb", "cn", "cnh", "cs", "cy", "cz", "da", "de", "dk", "dv", "el", "en", "en_AERO", "en_Aero_FAA", "en_Aero_ICAO", "en_Aero_NATO", "en_Aero_USN", "en_Aero_US_Army", "en_Aero_US_Navy", "en_IN", "en_NE", "en_NG", "en_NP", "en_aero_icao", "en_x_aero_icao", "eo", "es", "es_CO", "es_CR", "es_GT", "es_HN", "es_NI", "es_VE", "et", "eu", "fa", "ff", "fi", "fil", "fo", "fr", "fr_BE", "fr_CH", "fr_DZ", "gl", "gu", "ha", "haw", "he", "hi", "hmn", "hr", "ht", "hu", "hy", "id", "is", "it", "ja", "jp", "jv", "jw", "ka", "ki", "kk", "km", "kn", "ko", "kok", "ksw", "ku", "ky", "kz", "la", "lb", "lg", "lij", "ln", "lo", "lt", "lus", "lv", "mg", "mi", "miz", "mk", "ml", "mn", "mr", "ms", "mt", "my", "nb", "ne", "nl", "nn", "no", "oc", "om", "or", "pa", "pap", "pl", "pli", "ps", "pt", "pt_BR", "rm", "rm_puter", "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader", "ro", "ru", "rw", "sa", "sd", "si", "sk", "sl", "sn", "so", "sq", "sr", "sr_Cyrl", "sr_Latn", "su", "sv", "sw", "ta", "te", "tet", "tg", "th", "ti", "tk", "tl", "tr", "tt", "uk", "ur", "uz", "uz_Cyrl", "uz_cyr", "vi", "wo", "xh", "yi", "yo", "zh", "zh_CN", "zh_HK", "zh_TW", "zu"]

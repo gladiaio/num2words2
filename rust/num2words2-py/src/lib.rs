@@ -248,6 +248,12 @@ fn supported_langs() -> Vec<&'static str> {
     num2words2_core::supported_lang_keys()
 }
 
+/// `{alias: canonical}` for the keys that share a converter (#245).
+#[pyfunction]
+fn lang_aliases() -> std::collections::HashMap<&'static str, &'static str> {
+    num2words2_core::LANG_ALIASES.iter().copied().collect()
+}
+
 #[pyfunction]
 fn to_cardinal(lang: &str, value: BigInt) -> PyResult<Option<String>> {
     finish(need_lang(lang)?.to_cardinal(&value))
@@ -1553,6 +1559,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     m.add_function(wrap_pyfunction!(supported_langs, m)?)?;
     m.add_function(wrap_pyfunction!(default_currency, m)?)?;
+    m.add_function(wrap_pyfunction!(lang_aliases, m)?)?;
     m.add_function(wrap_pyfunction!(to_cardinal, m)?)?;
     m.add_function(wrap_pyfunction!(to_ordinal, m)?)?;
     m.add_function(wrap_pyfunction!(to_ordinal_num, m)?)?;
