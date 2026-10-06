@@ -344,7 +344,6 @@ fn int_to_word(num_str: &str, leading_zeros: bool) -> Result<String> {
         }
     }
     let mut words: Vec<&'static str> = Vec::new();
-    let mut words: Vec<&'static str> = Vec::new();
     let reversed: Vec<char> = num_str.chars().rev().collect();
 
     for (index, digit) in reversed.iter().enumerate() {
