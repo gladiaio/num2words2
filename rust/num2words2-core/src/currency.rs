@@ -416,6 +416,21 @@ pub fn default_to_cheque<L: Lang + ?Sized>(
     val: &BigDecimal,
     currency: &str,
 ) -> Result<String> {
+    // Cheque convention always takes the plural form.
+    cheque_with_unit(lang, val, currency, |_, forms| {
+        Ok(forms.unit.last().cloned().unwrap_or_default())
+    })
+}
+
+/// [`default_to_cheque`] with the unit word chosen by `unit` from the whole
+/// amount and the currency's forms — for a language whose cheque noun agrees
+/// with the count (is: "EIN … KRÓNA", "TVÆR … KRÓNUR"; #197).
+pub fn cheque_with_unit<L: Lang + ?Sized>(
+    lang: &L,
+    val: &BigDecimal,
+    currency: &str,
+    unit: impl Fn(&BigInt, &CurrencyForms) -> Result<String>,
+) -> Result<String> {
     let forms = lang
         .currency_forms(currency)
         .ok_or_else(|| unknown_currency(lang, currency))?;
@@ -440,8 +455,7 @@ pub fn default_to_cheque<L: Lang + ?Sized>(
     };
 
     let words = lang.money_verbose(&whole, currency)?;
-    // Cheque convention always takes the plural form.
-    let unit = forms.unit.last().cloned().unwrap_or_default();
+    let unit = unit(&whole, forms)?;
     let sign = if is_negative { "MINUS " } else { "" };
     let body = if fraction_str.is_empty() {
         format!("{} {}", words, unit)

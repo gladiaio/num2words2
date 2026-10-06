@@ -435,6 +435,29 @@ class Num2WordsISTest(TestCase):
         # The plain cardinal stays masculine.
         self.assertEqual(num2words(21, lang="is"), "tuttugu og einn")
 
+    def test_cheque_and_adjective_agree_with_the_count(self):
+        # #197: singular after counts ending in 1 but not 11.
+        cheques = [
+            (1.0, "EIN AND 00/100 KRÓNA"),
+            (2.0, "TVÆR AND 00/100 KRÓNUR"),
+            (21.5, "TUTTUGU OG EIN AND 50/100 KRÓNA"),
+            (11.0, "ELLEFU AND 00/100 KRÓNUR"),
+        ]
+        for value, want in cheques:
+            self.assertEqual(num2words(value, lang="is", to="cheque"), want)
+        self.assertEqual(
+            num2words(1.5, lang="is", to="currency", adjective=True),
+            "ein íslensk króna, fimmtíu aurar",
+        )
+        self.assertEqual(
+            num2words(21.0, lang="is", to="currency", adjective=True),
+            "tuttugu og ein íslensk króna, núll aurar",
+        )
+        self.assertEqual(
+            num2words(11.0, lang="is", to="currency", adjective=True),
+            "ellefu íslenskar krónur, núll aurar",
+        )
+
     def test_year(self):
         """Test year conversion."""
         self.assertEqual(num2words(1000, lang="is", to="year"), "eitt þúsund")
