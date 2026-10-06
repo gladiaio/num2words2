@@ -80,18 +80,11 @@ class Num2WordsLIJTest(TestCase):
         )
 
     def test_float_to_ordinal(self):
-        self.assertEqual(
-            num2words(3.1415, lang="lij", ordinal=True),
-            "terso virgola un quattro un çinque",
-        )
-        self.assertEqual(
-            num2words(-5.15, lang="lij", ordinal=True),
-            "meno quinto virgola un çinque",
-        )
-        self.assertEqual(
-            num2words(-0.15, lang="lij", ordinal=True),
-            "meno zero virgola un çinque",
-        )
+        # gladiaio/num2words2#214: a fractional ordinal is a TypeError in
+        # every language (it read "<ordinal> comma <digits>" here).
+        for x in (3.1415, -5.15, -0.15):
+            with self.assertRaises(TypeError):
+                num2words(x, lang="lij", ordinal=True)
 
     def test_0(self):
         self.assertEqual(num2words(0, lang="lij"), "zero")

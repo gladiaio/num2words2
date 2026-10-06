@@ -394,10 +394,11 @@ class TestHINegativeOrdinalNum(TestCase):
     """
 
     def test_ordinal_num_rejects_negative_and_float(self):
-        with self.assertRaises(TypeError):
-            num2words(-1, lang="hi", to="ordinal_num")
-        with self.assertRaises(TypeError):
-            num2words(-21, lang="hi", to="ordinal_num")
+        # gladiaio/num2words2#214: to='ordinal_num' accepts a negative
+        # exactly when to='ordinal' does, and hi's ordinal reads negatives
+        # ("माइनस एकवाँ"), so the numeral takes a minus sign.
+        self.assertEqual(num2words(-1, lang="hi", to="ordinal_num"), "-१ला")
+        self.assertEqual(num2words(-21, lang="hi", to="ordinal_num"), "-२१वाँ")
         with self.assertRaises(TypeError):
             num2words(1.5, lang="hi", to="ordinal_num")
 

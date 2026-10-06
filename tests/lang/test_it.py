@@ -75,16 +75,11 @@ class Num2WordsITTest(TestCase):
         self.assertEqual(num2words(-0.15, lang="it"), "meno zero virgola uno cinque")
 
     def test_float_to_ordinal(self):
-        self.assertEqual(
-            num2words(3.1415, lang="it", ordinal=True),
-            "terzo virgola uno quattro uno cinque",
-        )
-        self.assertEqual(
-            num2words(-5.15, lang="it", ordinal=True), "meno quinto virgola uno cinque"
-        )
-        self.assertEqual(
-            num2words(-0.15, lang="it", ordinal=True), "meno zero virgola uno cinque"
-        )
+        # gladiaio/num2words2#214: a fractional ordinal is a TypeError in
+        # every language (it read "<ordinal> comma <digits>" here).
+        for x in (3.1415, -5.15, -0.15):
+            with self.assertRaises(TypeError):
+                num2words(x, lang="it", ordinal=True)
 
     def test_0(self):
         self.assertEqual(num2words(0, lang="it"), "zero")

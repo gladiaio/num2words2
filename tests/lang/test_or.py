@@ -117,10 +117,12 @@ class TestOR(LangTest, TestCase):
         # The float / Decimal / Infinity / NaN paths of to_ordinal_num are
         # separate entry points from the integer one; all of them must glue
         # the same Odia ମ, never the transliterated "ma".
-        # (An integral float such as 5.0 is routed to the integer path, so a
-        # fractional value is what reaches the float entry point.)
-        self.assertEqual(num2words(5.5, to="ordinal_num", lang="or"), "5.5ମ")
-        self.assertEqual(num2words("3.10", to="ordinal_num", lang="or"), "3.10ମ")
+        # A fractional value is a TypeError since #214; integral floats are
+        # routed to the integer path.
+        with self.assertRaises(TypeError):
+            num2words(5.5, to="ordinal_num", lang="or")
+        with self.assertRaises(TypeError):
+            num2words("3.10", to="ordinal_num", lang="or")
         self.assertEqual(num2words("Infinity", to="ordinal_num", lang="or"), "Infinityମ")
         self.assertEqual(num2words("-Infinity", to="ordinal_num", lang="or"), "-Infinityମ")
         self.assertEqual(num2words("NaN", to="ordinal_num", lang="or"), "NaNମ")

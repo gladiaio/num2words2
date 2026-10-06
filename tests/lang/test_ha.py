@@ -478,10 +478,9 @@ class Num2WordsHATest(TestCase):
         self.assertEqual(num2words(100, lang="ha"), num2words("100", lang="ha"))
         self.assertEqual(num2words(1000, lang="ha"), num2words("1000", lang="ha"))
 
-        # Test invalid ordinal input (float) - Note: Hausa doesn't raise TypeError
-        # The implementation allows floats in ordinal
-        result = num2words(3.14, lang="ha", ordinal=True)
-        self.assertIsNotNone(result)
+        # A fractional ordinal raises TypeError, as in every language (#214).
+        with self.assertRaises(TypeError):
+            num2words(3.14, lang="ha", ordinal=True)
 
 
 

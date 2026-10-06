@@ -65,7 +65,7 @@ def test_fa_lij_negative_int_currency():
     assert num2words(-42, lang="lij", to="currency").startswith("meno ")
 
 
-@pytest.mark.parametrize("x, expected", [(1, "1"), (-1, "-1"), (1.5, "1.5"),
+@pytest.mark.parametrize("x, expected", [(1, "1"), (-1, "-1"),
                                          ("12", "12"), (2.0, "2")])
 def test_sr_latn_ordinal_num_matches_sr(x, expected):
     assert num2words(x, lang="sr_Latn", to="ordinal_num") == expected

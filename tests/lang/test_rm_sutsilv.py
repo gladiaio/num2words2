@@ -50,18 +50,11 @@ class Num2WordsRMSUTSILVTest(TestCase):
         )
 
     def test_float_to_ordinal(self):
-        self.assertEqual(
-            num2words(3.1415, lang="rm_sutsilv", ordinal=True),
-            "tearz coma egn quater egn tschentg"
-        )
-        self.assertEqual(
-            num2words(-5.15, lang="rm_sutsilv", ordinal=True),
-            "minus tschentgavel coma egn tschentg"
-        )
-        self.assertEqual(
-            num2words(-0.15, lang="rm_sutsilv", ordinal=True),
-            "minus nola coma egn tschentg"
-        )
+        # gladiaio/num2words2#214: a fractional ordinal is a TypeError in
+        # every language (it read "<ordinal> comma <digits>" here).
+        for x in (3.1415, -5.15, -0.15):
+            with self.assertRaises(TypeError):
+                num2words(x, lang="rm_sutsilv", ordinal=True)
 
     def test_0(self):
         self.assertEqual(num2words(0, lang="rm_sutsilv"), "nola")

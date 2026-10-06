@@ -522,7 +522,11 @@ class Num2WordsMSTest(TestCase):
     def test_negative_ordinal_raises(self):
         # gladiaio/num2words2#155: Python list indexing wrapped -1 to
         # "kesepuluh" (tenth), -11 to "" and crashed with IndexError below.
-        for n in (-1, -2, -11, -12, -42, -1000, -0.5, -1.5):
+        for n in (-1, -2, -11, -12, -42, -1000):
             with self.assertRaisesRegex(TypeError, "Cannot treat negative"):
+                num2words(n, lang="ms", to="ordinal")
+        # A fractional value is a TypeError whatever its sign (#214).
+        for n in (-0.5, -1.5):
+            with self.assertRaisesRegex(TypeError, "Cannot treat float"):
                 num2words(n, lang="ms", to="ordinal")
         self.assertEqual(num2words(10, lang="ms", to="ordinal"), "kesepuluh")

@@ -10,7 +10,9 @@
 mod sentencepath;
 
 use bigdecimal::BigDecimal;
-use num2words2_core::base::{Kwargs, KwVal, Lang};
+use num2words2_core::base::{
+    floatord_error, py_num_str, year_float_error, Kwargs, KwVal, Lang,
+};
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
     has_py_digit, number_notation, parse_grouped, python_decimal_str, python_int_parse,
@@ -332,11 +334,10 @@ fn is_neg_zero_decimal(decimal_str: &str, value: f64) -> bool {
 }
 
 /// Float/Decimal input across all four int modes, kwargs included.
-/// `repr_str` is Python's `str(number)` — base's to_ordinal_num returns the
-/// value unchanged and the dispatcher str()s it, which Rust cannot recompute
-/// (repr(float) is shortest-round-trip; str(Decimal) has its own spec).
+/// `repr_str` is Python's `str(number)`; unused since the integer modes stop
+/// at the dispatcher (#213/#214), kept for the call signature.
 #[pyfunction]
-#[pyo3(signature = (lang, to, value, precision, decimal_str, repr_str, precision_override, kwargs))]
+#[pyo3(signature = (lang, to, value, precision, decimal_str, _repr_str, precision_override, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn to_float(
     lang: &str,
@@ -344,7 +345,7 @@ fn to_float(
     value: f64,
     precision: u32,
     decimal_str: &str,
-    repr_str: &str,
+    _repr_str: &str,
     precision_override: Option<u32>,
     kwargs: PyKwargs,
 ) -> PyResult<Option<String>> {
@@ -355,7 +356,6 @@ fn to_float(
         value,
         precision,
         decimal_str,
-        repr_str,
         precision_override,
         &kwbag(kwargs),
     )
@@ -371,7 +371,6 @@ fn to_float_core(
     value: f64,
     precision: u32,
     decimal_str: &str,
-    repr_str: &str,
     precision_override: Option<u32>,
     kw: &Kwargs,
 ) -> Result<Option<String>, N2WError> {
@@ -387,9 +386,10 @@ fn to_float_core(
     // integer — 1999.0, Decimal('1999.0') and '1999' read like 1999
     // (gladiaio/num2words2#213); the language never sees the float form.
     if matches!(to, "ordinal" | "ordinal_num" | "year") {
-        if let Some(n) = v.as_whole_int() {
-            return int_int_mode(l, to, &n, kw);
-        }
+        return match v.as_whole_int() {
+            Some(n) => int_int_mode(l, to, &n, kw),
+            None => Err(fraction_error(to, &v)),
+        };
     }
     let r = match to {
         "cardinal" => {
@@ -399,16 +399,22 @@ fn to_float_core(
                 l.to_cardinal_float_kw(&v, precision_override, kw)
             }
         }
-        // year owns its kwargs (zh_TW era=, ...); the hook declines the
-        // ones a language does not take.
-        "year" => l.year_float_kw(&v, kw),
-        // kwargs on the other non-cardinal float modes stay unported.
-        _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        "ordinal" => l.ordinal_float_entry(&v),
-        "ordinal_num" => l.ordinal_num_float_entry(&v, repr_str),
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
+}
+
+/// The one rule for a non-integral value in an integer mode
+/// (gladiaio/num2words2#214): `TypeError`, raised here before the language
+/// is called. Languages used to truncate (cs 2.5 -> "druhý"), glue an
+/// ordinal suffix onto the cardinal float ("daou point pemp-vet") or fall
+/// back to the cardinal.
+fn fraction_error(to: &str, v: &FloatValue) -> N2WError {
+    if to == "year" {
+        year_float_error(v)
+    } else {
+        floatord_error(py_num_str(v))
+    }
 }
 
 #[pyfunction]
@@ -686,7 +692,7 @@ fn int_mode(
     match to {
         "cardinal" => l.to_cardinal_kw(n, kw),
         "ordinal" => l.to_ordinal_kw(n, kw),
-        "ordinal_num" => l.to_ordinal_num_kw(n, kw),
+        "ordinal_num" => ordinal_num_signed(l, n, kw),
         "year" => l.to_year_kw(n, kw),
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
@@ -731,9 +737,10 @@ fn dec_mode(
     let repr = python_decimal_str(value);
     // '1999.0' in an integer mode reads like 1999 (#213).
     if matches!(to, "ordinal" | "ordinal_num" | "year") {
-        if let Some(n) = fv.as_whole_int() {
-            return int_mode(l, to, &n, kw, currency, cents, separator, adjective);
-        }
+        return match fv.as_whole_int() {
+            Some(n) => int_mode(l, to, &n, kw, currency, cents, separator, adjective),
+            None => Err(fraction_error(to, &fv)),
+        };
     }
     match to {
         "cardinal" => {
@@ -762,10 +769,7 @@ fn dec_mode(
                 kw,
             )
         }
-        "year" => l.year_float_kw(&fv, kw),
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        "ordinal" => l.ordinal_float_entry(&fv),
-        "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
         // Python: getattr(converter, "to_fraction")(number) — TypeError
         // (missing denominator) when the class has the method, AttributeError
         // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
@@ -812,14 +816,37 @@ fn int_int_mode(
         "cardinal" => l.to_cardinal_kw(n, kw),
         "ordinal" if kw.is_empty() => l.to_ordinal(n),
         "ordinal" => l.to_ordinal_kw(n, kw),
-        "ordinal_num" if kw.is_empty() => l.to_ordinal_num(n),
-        "ordinal_num" => l.to_ordinal_num_kw(n, kw),
+        "ordinal_num" => ordinal_num_signed(l, n, kw),
         "year" if kw.is_empty() => l.to_year(n),
         "year" => l.to_year_kw(n, kw),
         // int_int_mode is only ever called with `to` in RUST_TYPES.
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
+}
+
+/// `to='ordinal_num'` accepts a negative value exactly when the language's
+/// `to='ordinal'` does (#214). be/et/fi/ja/pl/sv/uk/zh/... raised "Cannot
+/// treat negative num" for the ordinal but returned "-3." / "第-3" for the
+/// numeral, so the ordinal's error wins; ce/hi/hu/sq read -3 as an ordinal
+/// but rejected the numeral, which is then the positive numeral with a
+/// minus sign ("-3.").
+fn ordinal_num_signed(
+    l: &'static (dyn Lang + Sync),
+    n: &BigInt,
+    kw: &Kwargs,
+) -> Result<String, N2WError> {
+    if n.sign() != num_bigint::Sign::Minus {
+        return l.to_ordinal_num_kw(n, kw);
+    }
+    match l.to_ordinal_kw(n, kw) {
+        Err(N2WError::Fallback(_)) => l.to_ordinal_num_kw(n, kw),
+        Err(e) => Err(e),
+        Ok(_) => match l.to_ordinal_num_kw(n, kw) {
+            Err(N2WError::Type(_)) => l.to_ordinal_num_kw(&-n, kw).map(|s| format!("-{}", s)),
+            other => other,
+        },
+    }
 }
 
 /// The currency router, shared by `num2words`. Mirrors the shim's
@@ -1148,7 +1175,6 @@ fn num2words(
                         value,
                         prec,
                         &decimal_str,
-                        &repr,
                         precision_override,
                         &kw,
                     )

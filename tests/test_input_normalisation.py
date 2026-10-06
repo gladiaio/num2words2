@@ -99,3 +99,41 @@ def test_issue_213_examples():
             == num2words(1999, lang="hi", to="ordinal_num"))
     # A whole Decimal no longer keeps its scale: "5th", not "5.00th".
     assert num2words(Decimal("5.00"), to="ordinal_num") == "5th"
+
+
+# ---- #214: non-integral ordinals and years ---------------------------------
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_fraction_is_a_type_error_in_integer_modes(lang):
+    for to in ("ordinal", "ordinal_num", "year"):
+        for x in (2.5, 2.9, -1.5, Decimal("2.5"), "2.5"):
+            assert _call(x, lang=lang, to=to) is TypeError, (x, lang, to)
+        # A whole float is an integer.
+        assert _call(2.0, lang=lang, to=to) == _call(2, lang=lang, to=to)
+
+
+def test_issue_214_examples():
+    for lang in ("cs", "pt_BR", "mn", "br", "bn", "de", "es"):
+        with pytest.raises(TypeError):
+            num2words(2.5, lang=lang, to="ordinal")
+    with pytest.raises(TypeError, match="Cannot treat float 2.5 as ordinal"):
+        num2words(2.5, lang="cs", to="ordinal")
+    with pytest.raises(TypeError, match="expects an integer"):
+        num2words(2024.5, lang="de", to="year")
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_ordinal_and_ordinal_num_agree_on_negatives(lang):
+    for x in (-3, "-3", -3.0):
+        ordinal = _call(x, lang=lang, to="ordinal")
+        numeral = _call(x, lang=lang, to="ordinal_num")
+        if numeral is NotImplementedError:  # rm*: no ordinal_num at all
+            continue
+        assert isinstance(ordinal, type) == isinstance(numeral, type), (
+            lang, x, ordinal, numeral)
+
+
+def test_negative_ordinal_num_examples():
+    with pytest.raises(TypeError, match="negative"):
+        num2words(-3, lang="fi", to="ordinal_num")
+    assert num2words(-3, lang="hu", to="ordinal_num") == "-3."

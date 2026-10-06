@@ -114,12 +114,24 @@ def _maxval_failures(lang):
     return out
 
 
+def _ordinal_fraction_failures(lang):
+    """A non-integral ordinal or year is a TypeError (#214), never a
+    truncated number or a cardinal with a suffix glued on."""
+    out = []
+    for to in ("ordinal", "year"):
+        r, err = _call(2.5, lang, to)
+        if not isinstance(err, TypeError):
+            out.append((to, 2.5, type(err).__name__ if err else r))
+    return out
+
+
 CHECKS = {
     "exceptions": _exception_failures,
     "hygiene": _hygiene_failures,
     "english_words": _english_word_failures,
     "parity": _parity_failures,
     "maxval": _maxval_failures,
+    "ordinal_rejects_fraction": _ordinal_fraction_failures,
 }
 
 # Languages whose own decimal word is spelled "point".
@@ -138,6 +150,7 @@ ALLOW = {
     # pt_BR keeps the string's own notation on purpose, see #92
     "parity": {"pt_BR"},
     "maxval": set(),
+    "ordinal_rejects_fraction": set(),
 }
 
 

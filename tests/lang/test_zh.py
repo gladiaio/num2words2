@@ -133,7 +133,8 @@ class Num2WordsZHTest(TestCase):
         self.assertEqual(n2zh(3, to="ordinal", counter="位"), "第三位")
 
     def test_ordinal_num(self):
-        self.assertEqual(n2zh(1.5, to="ordinal_num"), "第1.5")
+        with self.assertRaises(TypeError):  # #214
+            n2zh(1.5, to="ordinal_num")
         self.assertEqual(n2zh(120, to="ordinal_num"), "第120")
 
     def test_currency(self):

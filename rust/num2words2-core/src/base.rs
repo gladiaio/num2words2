@@ -427,6 +427,11 @@ pub trait Lang {
     // path ("one"); fails -> to_cardinal_float. Languages overriding
     // Python's to_cardinal (ru "пять целых ноль десятых", cs, be, ...) make
     // their own call and override these hooks.
+    //
+    // The ordinal / ordinal_num / year hooks below are no longer reached
+    // from the dispatcher (gladiaio/num2words2#213/#214): it sends an
+    // integral value to the integer modes and raises TypeError for any
+    // other, before the language is called.
 
     /// `to_cardinal(float/Decimal)` — the full entry, whole values included.
     fn cardinal_float_entry(

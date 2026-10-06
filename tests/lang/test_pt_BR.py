@@ -440,10 +440,9 @@ class Num2WordsPT_BRTest(TestCase):
         self.assertEqual(num2words(100, lang="pt-br"), num2words("100", lang="pt-br"))
         self.assertEqual(num2words(1000, lang="pt-br"), num2words("1000", lang="pt-br"))
 
-        # Test invalid ordinal input (float) - Note: PT_BR doesn't raise TypeError
-        # The implementation allows floats in ordinal
-        result = num2words(3.14, lang="pt-br", ordinal=True)
-        self.assertIsNotNone(result)
+        # A fractional ordinal raises TypeError, as in every language (#214).
+        with self.assertRaises(TypeError):
+            num2words(3.14, lang="pt-br", ordinal=True)
 
 
     def test_more_currency_cases(self):

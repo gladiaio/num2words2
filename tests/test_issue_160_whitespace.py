@@ -102,7 +102,8 @@ def test_es_ordinal_zero_with_gender_raises():
 @pytest.mark.parametrize("value", [0.5, -0.5, Decimal("0.1")])
 def test_pt_fraction_truncating_to_zero_raises(value):
     for lang in ("pt", "pt_BR"):
-        with pytest.raises(ValueError):
+        # A TypeError since #214, like every fractional ordinal.
+        with pytest.raises(TypeError):
             num2words(value, lang=lang, to="ordinal")
 
 
