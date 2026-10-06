@@ -64,6 +64,12 @@
 //! that fell back to English "minus" (#226). With `to="ordinal"` only
 //! non-negative whole numbers become ordinals; decimals and negatives stay
 //! cardinal (pt "3,50" was "terceiro", #231).
+//!
+//! Also deliberate (#228): Python's `\d` matched any Unicode digit; here
+//! native decimal digits (Arabic-Indic, Devanagari, fullwidth, …) are mapped
+//! to ASCII before extraction, as `num2words("١٢٣")` does, and every other
+//! numeric character (`m²`, `½`) is plain text — a digit glued to one is left
+//! as written instead of failing the whole call.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -72,7 +78,9 @@ use std::str::FromStr;
 
 use bigdecimal::BigDecimal;
 use num2words2_core::base::Lang;
-use num2words2_core::strnum::{is_space_group_sep, number_notation, parse_grouped, Grouped};
+use num2words2_core::strnum::{
+    is_space_group_sep, number_notation, parse_grouped, unicode_digit, Grouped,
+};
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
 use num_bigint::BigInt;
 use regex::Regex;
@@ -271,7 +279,9 @@ struct Res {
 
 impl Res {
     fn new() -> Res {
-        let re = |p: &str| Regex::new(p).expect("static regex");
+        // `\d` is ASCII-only here: native digits are normalised to ASCII
+        // before extraction (#228), and any other Unicode digit is text.
+        let re = |p: &str| Regex::new(&ascii_digits(p)).expect("static regex");
 
         let temps = TEMP_PATTERNS
             .iter()
@@ -340,6 +350,35 @@ impl Res {
         let n = norm_lang(lang);
         MONTH_NAMES.iter().find(|(k, _)| *k == n).map(|(_, v)| *v)
     }
+}
+
+/// A pattern with every `\d` narrowed to `[0-9]` (the regex crate's `\d` is
+/// Unicode `Nd`).
+fn ascii_digits(p: &str) -> String {
+    p.replace(r"\d", "[0-9]")
+}
+
+/// The text with native decimal digits (Arabic-Indic, Devanagari,
+/// fullwidth, …) mapped to ASCII, the way `num2words("١٢٣")` reads them, and
+/// the Arabic decimal separator `٫` between two digits mapped to '.'. Char
+/// for char, so positions are unchanged (#228).
+fn normalize_digits(text: &str) -> String {
+    let cs: Vec<char> = text.chars().collect();
+    let digit = |c: char| unicode_digit(c).is_some();
+    cs.iter()
+        .enumerate()
+        .map(|(i, &c)| match unicode_digit(c) {
+            Some(d) => char::from(b'0' + d as u8),
+            None if c == '\u{066B}'
+                && i > 0
+                && digit(cs[i - 1])
+                && cs.get(i + 1).is_some_and(|&n| digit(n)) =>
+            {
+                '.'
+            }
+            None => c,
+        })
+        .collect()
 }
 
 fn res() -> &'static Res {
@@ -459,7 +498,7 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < n {
-        if i > 0 && chars[i - 1].is_ascii_alphanumeric() {
+        if i > 0 && (chars[i - 1].is_ascii_alphanumeric() || chars[i - 1].is_numeric()) {
             i += 1;
             continue;
         }
@@ -494,7 +533,10 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
                 end = k;
             }
         }
-        let ahead_ok = |e: usize| e >= n || !chars[e].is_ascii_alphanumeric();
+        // A digit glued to a character it cannot read ("5½", "10²") is
+        // left alone rather than read as "five½" (#228).
+        let ahead_ok =
+            |e: usize| e >= n || !(chars[e].is_ascii_alphanumeric() || chars[e].is_numeric());
         let fin = if ahead_ok(end) {
             Some(end)
         } else if end > int_end {
@@ -567,7 +609,7 @@ fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, Str
     while end > j && !chars[end - 1].is_ascii_digit() {
         end -= 1;
     }
-    if end < n && chars[end].is_ascii_alphanumeric() {
+    if end < n && (chars[end].is_ascii_alphanumeric() || chars[end].is_numeric()) {
         return None;
     }
     let tok: String = chars[start..end].iter().collect();
@@ -890,7 +932,8 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     // active language (registry month list, so it extends with each new lang).
     if let Some(months) = r.months_re(lang) {
         let year_ctx =
-            Regex::new(&format!(r"(?i){}\s+\d+,\s*$", months)).expect("year-ctx regex");
+            Regex::new(&ascii_digits(&format!(r"(?i){}\s+\d+,\s*$", months)))
+                .expect("year-ctx regex");
         for m in r.year.captures_iter(t.s) {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
@@ -1425,16 +1468,12 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         )));
     }
 
-    // Python's \d matches any Unicode decimal digit and float()/int() accept
-    // them; this port only handles ASCII digits — anything else goes back to
-    // the original converter.
-    if text.chars().any(|c| c.is_numeric() && !c.is_ascii_digit()) {
-        return Err(N2WError::NotImplemented(
-            "sentence: non-ascii digits".into(),
-        ));
-    }
-
-    let t = Text::new(text);
+    // Native decimal digits are read like ASCII ones; other numeric
+    // characters ("m²", "½") are left as written (#228). Extraction runs on
+    // the normalised text, replacement splices into the original, so an
+    // unconverted token keeps its own digits.
+    let norm = normalize_digits(text);
+    let t = Text::new(&norm);
     let exts = extract_numbers(&t, lang)?;
     if exts.is_empty() {
         return Ok(text.to_string());
@@ -1448,7 +1487,7 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
     };
 
     // Replace from end to beginning to preserve positions.
-    let mut result: Vec<char> = t.chars.clone();
+    let mut result: Vec<char> = text.chars().collect();
     for e in exts.iter().rev() {
         let mut converted = convert_number(&ctx, &e.val, &e.typ)?;
 

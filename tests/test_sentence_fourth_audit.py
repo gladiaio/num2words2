@@ -99,3 +99,28 @@ def test_ordinal_mode_decimals_stay_cardinal(text, lang, expected):
 )
 def test_hyphen_after_letter_is_not_minus(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #228: unreadable numeric characters no longer fail the whole call ----
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("5 m²", "en", "Five m²"),
+        ("½ cup and 3 eggs", "en", "½ cup and three eggs"),
+        ("5½ x", "en", "5½ x"),
+        ("10² x", "en", "10² x"),
+        ("12٫5", "en", "Twelve point five"),
+        ("١٢٣ x", "ar", num2words("١٢٣", lang="ar") + " x"),
+        ("१२ x", "hi", "बारह x"),
+        ("５個", "ja", "五個"),
+    ],
+)
+def test_non_ascii_digits(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+def test_arabic_decimal_separator_both_entry_points():
+    expected = num2words("12.5", lang="ar")
+    assert num2words_sentence("١٢٫٥", lang="ar") == expected
+    assert num2words("١٢٫٥", lang="ar") == expected
