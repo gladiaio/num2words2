@@ -624,13 +624,10 @@ impl LangDv {
     /// `to_cardinal_float`, for the currency path — where the argument is an
     /// already-integral `Decimal` rather than an `int`.
     ///
-    /// Deliberately *not* folded into [`LangDv::to_cardinal_float`]. That one
-    /// takes a `BigInt`, which flattens a `Decimal` to its full digit
-    /// expansion; the whole point here is that Python does **not** expand —
-    /// `as_tuple()` hands `convert_int` the bare coefficient and the exponent
-    /// is dropped on the floor (quirk 8). `Decimal(int)` always has exponent 0,
-    /// so the two agree on every value the verified integer modes can produce
-    /// and diverge only where Python itself does.
+    /// Python reads `as_tuple()`, i.e. the bare coefficient, and would drop a
+    /// positive exponent (quirk 8). Since #170 the currency path only passes
+    /// whole-laari splits with exponent 0, so the coefficient is the full
+    /// value and this agrees with [`LangDv::to_cardinal_float`].
     fn to_cardinal_float_dec(&self, value: &BigDecimal, nominal: bool) -> Result<String> {
         // sign, digits, exponent = decimal_value.as_tuple()
         let (coefficient, scale) = value.as_bigint_and_exponent();
@@ -638,8 +635,8 @@ impl LangDv {
         let digits = coefficient.abs().to_string();
 
         if self.overflows(&coefficient, exponent) {
-            // Python formats the *Decimal*, so a positive exponent prints in
-            // scientific notation: "abs(1.5E+33) must be less than ...".
+            // Python formats the *Decimal*; with exponent 0 (the only case
+            // since #170) that is the plain digits.
             return Err(N2WError::Overflow(format!(
                 "abs({}) must be less than {}.",
                 py_decimal_str(value),
@@ -648,8 +645,9 @@ impl LangDv {
         }
 
         // The `exponent < 0` arm of `to_cardinal_float` (the pointword/
-        // convert_discrete branch) is unreachable from here: every caller feeds
-        // this an integral value with exponent 0. So only the `convert_int` arm can run.
+        // convert_discrete branch) is unreachable from here: every caller
+        // feeds this an integral value with exponent 0, so only the
+        // `convert_int` arm can run.
         let result = self.convert_int(&digits, nominal)?;
 
         if coefficient.is_negative() {
