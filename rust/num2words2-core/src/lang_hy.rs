@@ -3,7 +3,7 @@
 //! Shape: **engine, with a self-contained wrapper**. `Num2Word_HY` subclasses
 //! `Num2Word_Base` and *does* define `high_numwords`/`mid_numwords`/
 //! `low_numwords` in `setup`, so Python builds `self.cards` and sets
-//! `MAXVAL = 1000 * cards.keys()[0]`. But it also overrides `to_cardinal` with
+//! `MAXVAL = 1000 * cards.keys()[0]` (but see bug 1). It also overrides `to_cardinal` with
 //! a pre-filter that short-circuits 0, 1000, the millions range and the
 //! billions range, delegating everything else to `super().to_cardinal()` (the
 //! `splitnum`/`clean`/`merge` engine) and then post-processing the result.
@@ -25,38 +25,25 @@
 //! are exactly what CPython emits, verified against the interpreter and the
 //! frozen corpus:
 //!
-//! 1. **`set_high_numwords` stores tuples as card words.** `setup` builds
-//!    `high_numwords = [(10**12, "տրիլիոն"), (10**9, "միլիարդ"),
-//!    (10**6, "միլիոն")]` — a list of *pairs* — but `set_high_numwords`
-//!    treats each element as a bare word:
-//!    ```python
-//!    max = 3 + 10 * len(high)          # 33
-//!    for word, n in zip(high, range(max, 3, -10)):   # n = 33, 23, 13
-//!        self.cards[10**n] = word      # word is the TUPLE, not the string
-//!    ```
-//!    So `cards[10**33] = (10**12, "տրիլիոն")`, `cards[10**23] =
-//!    (10**9, "միլիարդ")`, `cards[10**13] = (10**6, "միլիոն")`. Three separate
-//!    errors compound here: the step is -10 instead of -3, the exponents are
-//!    off by ten orders of magnitude (10**13 for "million"), and the value is
-//!    a tuple. `merge` then interpolates the tuple with `"%s %s"`, so its
-//!    `str()` leaks into the output:
-//!    `to_cardinal(10**15)` == "հարյուր (1000000, 'միլիոն')".
-//!    Modelled by storing the tuple's Python `str()` as the card word — see
-//!    [`TUPLE_CARD_E33`] and friends. That substitution is exact for every
-//!    reachable input; the reasoning is spelled out on those constants.
-//!    Consequence: there is **no** card for 10**6, 10**9 or 10**12, so the
-//!    engine's largest usable card below 10**13 is 1000 ("հազար").
+//! 1. ~~**`set_high_numwords` stores tuples as card words.**~~ `setup`
+//!    builds `high_numwords = [(10**12, "տրիլիոն"), (10**9, "միլիարդ"),
+//!    (10**6, "միլիոն")]` — a list of *pairs* — and `set_high_numwords`
+//!    stores each pair as the card word at 10**33, 10**23 and 10**13 (step
+//!    -10, not -3). Python's `merge` then formats the tuple, so
+//!    `to_cardinal(10**13)` == "մեկ (1000000, 'միլիոն')", and MAXVAL comes out
+//!    as 10**36. Fixed (gladiaio/num2words2#215): no high card is built,
+//!    `to_cardinal` reads everything from 10**6 up on the three scale words
+//!    itself, and `maxval` is 10**15 (1000 x տրիլիոն).
 //! 2. **`merge` adds where it should multiply.** Every arm returns
-//!    `cnum + nnum`, so 200 is tracked as 2+100=102 and 10**6 as 2000. The
-//!    numbers are only used for `merge`'s own comparisons, so the *text* still
-//!    comes out right for small values — but it is why 10**12 renders as four
-//!    "հազար" in a row (see bug 3) and why `nnum < cnum` tests behave oddly.
-//! 3. **The "հազար հազար" → "միլիոն" patch.** Because there is no million
-//!    card, the engine renders 10**6 as "հազար հազար" and 10**12 as
-//!    "հազար հազար հազար հազար". `to_cardinal` papers over this with a string
-//!    `.replace()`, which is non-overlapping and left-to-right, so 10**12
-//!    becomes "միլիոն միլիոն" rather than anything sensible. Reproduced
-//!    verbatim; Rust's `str::replace` has identical semantics.
+//!    `cnum + nnum`, so 200 is tracked as 2+100=102. The numbers are only used
+//!    for `merge`'s own comparisons, so the text still comes out right for
+//!    the values below 10**6 the engine now sees.
+//! 3. ~~**The "հազար հազար" → "միլիոն" patch.**~~ With no million card the
+//!    Python engine rendered 10**6 as "հազար հազար", 10**12 as "միլիոն
+//!    միլիոն" after a string `.replace()`, and 1234567890 as "հազար երկու
+//!    հարյուր … հազար …". Fixed with bug 1: the engine never sees 10**6 or
+//!    more. The float/Decimal twins keep the `.replace()` for parity on the
+//!    non-integral values they still hand to the engine.
 //! 4. ~~**`to_ordinal` raises `KeyError` on every negative.**~~ Fixed
 //!    (gladiaio/num2words2#158). `value < 20` and `value < 10` are both true
 //!    for negatives, so Python reached `ORDINAL_ONES[value]` with a missing
@@ -92,29 +79,24 @@
 //!
 //! # `Decimal` is context-bound, not exact
 //!
-//! `to_currency` computes `(Decimal(str(val)) * 100) % 1` under the **default**
-//! decimal context, whose precision is 28. `Decimal.__mod__` raises
-//! `InvalidOperation(DivisionImpossible)` once the integer quotient needs more
-//! than 28 digits, so every `abs(val) >= 1e26` raises — int and float alike,
-//! and *before* the CURRENCY_FORMS lookup, so even an unknown code raises.
-//! Modelled with `N2WError::Custom { module: "decimal", class:
-//! "InvalidOperation" }`; see [`LangHy::to_currency`]. Below that bound the
-//! context never rounds (a value under 1e26 carries at most 26 integer digits,
-//! and `* 100` keeps it inside 28 significant digits), so exact `BigDecimal`
-//! arithmetic is faithful everywhere the raise does not fire.
+//! Python's `to_currency` computes `(Decimal(str(val)) * 100) % 1` under the
+//! default 28-digit decimal context, which raised
+//! `InvalidOperation(DivisionImpossible)` for every `abs(val) >= 1e26`. The
+//! port's arithmetic is exact and the 10^15 ceiling is checked first, so that
+//! raise is gone (gladiaio/num2words2#215).
 //!
 //! # Error variants
 //!
 //! * `to_ordinal(n)` for `n < 0` → `N2WError::Type` (bug 4, fixed).
 //! * `to_ordinal_num(n)` for `n < 0` → `N2WError::Type` (`verify_ordinal`).
-//! * `to_cardinal(n)` for `abs(n) >= 10**36` → `N2WError::Overflow`, from the
-//!   inherited MAXVAL check in `default_to_cardinal`.
+//! * every mode for `abs(n) >= 10**15` → `N2WError::Overflow` (#215; Python's
+//!   MAXVAL was 10**36, see bug 1).
 //! * `to_cheque(v, cur)` for a code outside `CURRENCY_FORMS` →
 //!   `N2WError::NotImplemented`. `to_currency` never raises for that case.
 
 use crate::base::{
-    clean, default_to_cardinal, floatord_error, py_num_str, set_low_numwords, set_mid_numwords,
-    verify_ordinal, Cards, Lang, N2WError, Node, Result,
+    check_maxval, default_to_cardinal, floatord_error, py_num_str, set_low_numwords,
+    set_mid_numwords, verify_ordinal, Cards, Lang, N2WError, Result,
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{default_to_cardinal_float, FloatValue};
@@ -124,32 +106,6 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
-use std::sync::OnceLock;
-
-// ---------------------------------------------------------------------------
-// The tuple card words (bug 1).
-//
-// `cards[10**33]`, `cards[10**23]` and `cards[10**13]` hold Python *tuples*,
-// not strings. Storing each tuple's `str()` here is exact rather than
-// approximate, because a tuple card can only ever reach `merge` through the
-// arms that format it with `"%s"` — which is precisely `str()`:
-//
-//   * A tuple card is always the *right* operand. `splitnum` emits it as
-//     `out[1]` = `(self.cards[elem], elem)`; `out[0]` is either `(cards[1], 1)`
-//     or a recursive `splitnum(div)`. For a tuple to arrive on the *left*, some
-//     `div` would have to be >= 10**13, which needs `value >= 10**13 * 10**23`
-//     = 10**36 = MAXVAL — rejected by the overflow check first.
-//   * The two arms that would raise `TypeError` on a real tuple
-//     (`ctext + " " + ntext` and `ctext + ntext`) both require `nnum < 100`,
-//     and a tuple card's `nnum` is >= 10**13. Unreachable.
-//   * `ctext == "իննսուն"` against a tuple is simply False in Python, and is
-//     equally False against these strings.
-//
-// So every reachable use is `"%s %s" % (ctext, ntext)` → `str(tuple)`.
-// Verified against the corpus: to_cardinal(10**15) == "հարյուր (1000000, 'միլիոն')".
-const TUPLE_CARD_E33: &str = "(1000000000000, 'տրիլիոն')";
-const TUPLE_CARD_E23: &str = "(1000000000, 'միլիարդ')";
-const TUPLE_CARD_E13: &str = "(1000000, 'միլիոն')";
 
 // `merge`'s one word-sensitive comparison: only "իննսուն" (90) takes a space
 // before its unit ("իննսուն ինը" = 99), while every other ten glues
@@ -335,93 +291,6 @@ fn python_repr_scale(v: f64) -> i64 {
     (decpt - ndigits).abs()
 }
 
-/// `repr(v)` for a float, as CPython prints it.
-///
-/// Shortest round-tripping digits, switching to exponent form when
-/// `decpt <= -4 || decpt > 16`, with a trailing ".0" forced on positional
-/// integral values and a 2-digit minimum exponent. Only the `errmsg_toobig`
-/// interpolation needs this; see [`LangHy::super_to_cardinal_f64`].
-///
-/// # Known divergence (last digit, exact ties only)
-///
-/// Rust's `{:e}` and CPython's `repr` are both shortest-round-trip, but they
-/// break an exact tie differently. `844923945304372.2` is the double
-/// 844923945304372.25, sitting exactly between two 16-digit candidates that
-/// both round-trip; CPython rounds the final digit to even ("...372.2"), Rust
-/// rounds away ("...372.3"). Measured at 1 in 4021 random doubles.
-///
-/// This is confined to this function, and this function only ever feeds an
-/// OverflowError *message*. It cannot affect any conversion output:
-/// [`python_repr_scale`] depends on the digit *count*, which ties do not
-/// change, and it matched CPython on 4021/4021 of the same sample. The message
-/// itself is unreachable through `to_currency` (which raises InvalidOperation
-/// at 1e26, far below MAXVAL 1e36).
-fn py_repr_f64(v: f64) -> String {
-    if v.is_nan() {
-        return "nan".to_string();
-    }
-    if v.is_infinite() {
-        return if v < 0.0 { "-inf" } else { "inf" }.to_string();
-    }
-    if v == 0.0 {
-        return if v.is_sign_negative() { "-0.0" } else { "0.0" }.to_string();
-    }
-    let neg = v < 0.0;
-    let s = format!("{:e}", v.abs()); // Rust's shortest round-trip, e.g. "3.45e1"
-    let (mant, exp) = match s.split_once('e') {
-        Some(p) => p,
-        None => return s,
-    };
-    let exp: i64 = exp.parse().unwrap_or(0);
-    let digits: String = mant.chars().filter(|c| c.is_ascii_digit()).collect();
-    let nd = digits.len();
-    let decpt = exp + 1;
-    let body = if decpt <= -4 || decpt > 16 {
-        let mut m = String::new();
-        m.push_str(&digits[..1]);
-        if nd > 1 {
-            m.push('.');
-            m.push_str(&digits[1..]);
-        }
-        format!(
-            "{}e{}{:02}",
-            m,
-            if exp < 0 { "-" } else { "+" },
-            exp.abs()
-        )
-    } else if decpt <= 0 {
-        format!("0.{}{}", "0".repeat((-decpt) as usize), digits)
-    } else if decpt as usize >= nd {
-        format!("{}{}.0", digits, "0".repeat(decpt as usize - nd))
-    } else {
-        format!("{}.{}", &digits[..decpt as usize], &digits[decpt as usize..])
-    };
-    if neg {
-        format!("-{}", body)
-    } else {
-        body
-    }
-}
-
-/// `int > float` as Python evaluates it: **exactly**, with no float cast.
-///
-/// This matters next to `divmod`, which *does* cast: `splitnum` picks its card
-/// with an exact comparison and then divides in binary floating point.
-fn bigint_gt_f64(a: &BigInt, b: f64) -> bool {
-    match BigDecimal::try_from(b) {
-        Ok(bd) => BigDecimal::from(a.clone()) > bd,
-        // b is inf/nan: every finite int is < +inf and > -inf.
-        Err(_) => b < 0.0 || b.is_nan(),
-    }
-}
-
-/// `float(some_int)` as CPython's `PyLong_AsDouble` does it: correctly
-/// rounded. `BigInt`'s Display is exact and Rust's float parser is correctly
-/// rounded, so the round-trip reproduces it.
-fn bigint_to_f64(a: &BigInt) -> f64 {
-    a.to_string().parse::<f64>().unwrap_or(f64::INFINITY)
-}
-
 /// CPython's `float.__mod__` (`float_rem`): C `fmod`, then take the divisor's
 /// sign. Rust's `%` on `f64` is `fmod`, which is exact.
 fn py_float_mod(x: f64, y: f64) -> f64 {
@@ -452,14 +321,6 @@ fn py_float_floordiv(x: f64, y: f64) -> f64 {
     } else {
         (0.0f64).copysign(x / y)
     }
-}
-
-/// `10**28` — the point at which `(Decimal * 100) % 1` exceeds the default
-/// decimal context's 28-digit precision and raises. Built once; see the call
-/// site in [`LangHy::to_currency`].
-fn decimal_prec_limit() -> &'static BigDecimal {
-    static LIMIT: OnceLock<BigDecimal> = OnceLock::new();
-    LIMIT.get_or_init(|| BigDecimal::from(BigInt::from(10).pow(28)))
 }
 
 /// The rebound `cents` local in `Num2Word_HY.to_currency`.
@@ -565,16 +426,12 @@ impl LangHy {
     pub fn new() -> Self {
         let mut cards = Cards::new();
 
-        // Python's `set_high_numwords(high_numwords)`, bug 1:
-        //   max = 3 + 10 * 3 = 33; zip(high, range(33, 3, -10)) → 33, 23, 13.
-        // The card *words* are the tuples themselves; we store their str().
-        let ten = BigInt::from(10u8);
-        cards.insert(ten.pow(33), TUPLE_CARD_E33);
-        cards.insert(ten.pow(23), TUPLE_CARD_E23);
-        cards.insert(ten.pow(13), TUPLE_CARD_E13);
+        // Python's `set_high_numwords(high_numwords)` stored tuples as card
+        // words at 10**33/10**23/10**13 (bug 1). None is built here: every
+        // value from 10**6 up is read by `to_cardinal` itself, so the engine
+        // only ever sees values below 10**6.
 
-        // Python's `mid_numwords`. Note the gap: nothing between 1000 and
-        // 10**13, because bug 1 misplaced every high card.
+        // Python's `mid_numwords`.
         set_mid_numwords(
             &mut cards,
             &[
@@ -618,9 +475,9 @@ impl LangHy {
             ],
         );
 
-        // Python: MAXVAL = 1000 * list(self.cards.keys())[0]. Insertion order
-        // is descending, so keys()[0] is 10**33 → MAXVAL = 10**36.
-        let maxval = cards.highest().cloned().unwrap_or_else(BigInt::zero) * BigInt::from(1000);
+        // Python's MAXVAL was 10**36 (1000 x the misplaced 10**33 tuple card).
+        // The real ceiling is 1000 x the largest scale word, տրիլիոն (#215).
+        let maxval = BigInt::from(10u8).pow(15);
 
         LangHy {
             cards,
@@ -707,101 +564,6 @@ impl LangHy {
         Ok(out.join(" "))
     }
 
-    /// `Num2Word_Base.splitnum` for **float** input.
-    ///
-    /// Python has one method and lets duck typing carry a float through it, so
-    /// the decomposition is done in binary floating point. That is observable
-    /// and cannot be replaced by the exact integer engine: `divmod(value, elem)`
-    /// casts the card to a double, and cards above 2**53 are not exactly
-    /// representable. `10**23` becomes 99999999999999991611392.0, so
-    /// `splitnum(2e23)` divides by *that* and yields a clean `(2.0, 0.0)`,
-    /// whereas exact integer arithmetic on the same double yields a quotient of
-    /// 1 and a 23-digit remainder. Verified against CPython: `to_currency(2e23,
-    /// "KWD")` is "երկու (1000000000, 'միլիարդ')", not the long form.
-    ///
-    /// The leaves still carry the card keys as exact `BigInt`s, because that is
-    /// what Python puts in the tuples — only the division is float-tainted — so
-    /// `base::clean` and [`Lang::merge`] are reused unchanged.
-    fn splitnum_f64(&self, value: f64) -> Option<Vec<Node>> {
-        for (elem, word) in self.cards.iter() {
-            // Python's `if elem > value: continue` — exact, unlike the divmod.
-            if bigint_gt_f64(elem, value) {
-                continue;
-            }
-            let mut out: Vec<Node> = Vec::new();
-            let elem_f = bigint_to_f64(elem);
-            let (div, mod_) = if value == 0.0 {
-                (1.0, 0.0)
-            } else {
-                (
-                    py_float_floordiv(value, elem_f),
-                    py_float_mod(value, elem_f),
-                )
-            };
-
-            if div == 1.0 {
-                let one = BigInt::one();
-                let w = self.cards.get(&one).unwrap_or("").to_string();
-                out.push(Node::Leaf(w, one));
-            } else {
-                if div == value {
-                    // Tally systems; unreachable for HY (no card equals 1
-                    // besides `cards[1]`), ported for shape.
-                    let reps = div.to_string().parse::<usize>().unwrap_or(0);
-                    return Some(vec![Node::Leaf(
-                        word.repeat(reps),
-                        f64_trunc_to_bigint(div * elem_f).ok()?,
-                    )]);
-                }
-                out.push(Node::List(self.splitnum_f64(div)?));
-            }
-
-            out.push(Node::Leaf(word.clone(), elem.clone()));
-
-            if mod_ != 0.0 {
-                out.push(Node::List(self.splitnum_f64(mod_)?));
-            }
-            return Some(out);
-        }
-        None
-    }
-
-    /// `Num2Word_Base.to_cardinal` for a float that passes its
-    /// `assert int(value) == value` — i.e. the integral-float path.
-    ///
-    /// The MAXVAL comparison is exact (int vs float), while the message
-    /// interpolates the float with `%s`, hence [`py_repr_f64`]. Unreachable
-    /// through `to_currency`, which raises InvalidOperation at 1e26 — far below
-    /// MAXVAL (1e36) — but reachable via `cardinal_from_decimal`.
-    fn super_to_cardinal_f64(&self, value: f64) -> Result<String> {
-        let mut out = String::new();
-        let mut v = value;
-        if v < 0.0 {
-            v = v.abs();
-            out = format!("{} ", self.negword().trim());
-        }
-        // Python: `if value >= self.MAXVAL` — i.e. not (MAXVAL > value).
-        if !bigint_gt_f64(self.maxval(), v) {
-            return Err(N2WError::Overflow(format!(
-                "abs({}) must be less than {}.",
-                py_repr_f64(v),
-                self.maxval()
-            )));
-        }
-        let tree = self.splitnum_f64(v).ok_or_else(|| {
-            N2WError::Overflow(format!(
-                "abs({}) must be less than {}.",
-                py_repr_f64(v),
-                self.maxval()
-            ))
-        })?;
-        let words = match clean(self, tree) {
-            Node::Leaf(t, _) => t,
-            Node::List(_) => return Err(N2WError::Type("clean did not reduce".into())),
-        };
-        Ok(self.title(&format!("{}{}", out, words)))
-    }
-
     /// `Num2Word_HY.to_cardinal` for **float** input — the twin of the
     /// `BigInt` [`Lang::to_cardinal`] above.
     ///
@@ -847,8 +609,10 @@ impl LangHy {
         // non-integral input to the float path. An integral float stays on the
         // engine path — but as a *float*, so it goes through the float twin of
         // splitnum rather than the exact integer engine.
+        // Integral floats take the integer reading (#215); Python's float
+        // splitnum met the tuple cards of bug 1 there.
         let mut result = if value == value.trunc() {
-            self.super_to_cardinal_f64(value)?
+            self.to_cardinal(&f64_trunc_to_bigint(value)?)?
         } else {
             self.to_cardinal_float(value)?
         };
@@ -1032,7 +796,18 @@ impl Lang for LangHy {
     }
 
     /// Port of `Num2Word_HY.to_cardinal` — the wrapper around `super()`.
+    ///
+    /// Python only short-circuited the millions range and exact multiples of
+    /// 10**9; everything else above 10**6 went to the engine, which has no
+    /// million/billion/trillion card (bug 1) and so read 1234567890 as
+    /// "հազար երկու հարյուր … հազար …" and 10**13 with a tuple in it. Every
+    /// value from 10**6 up to the 10**15 ceiling is now split on the three
+    /// scale words here (gladiaio/num2words2#215); the engine keeps the rest.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
+        if value.is_negative() {
+            return Ok(format!("{}{}", self.negword(), self.to_cardinal(&-value)?));
+        }
+        check_maxval(value, &self.maxval)?;
         if value.is_zero() {
             return Ok("զրո".to_string());
         }
@@ -1042,49 +817,23 @@ impl Lang for LangHy {
             return Ok("հազար".to_string());
         }
 
-        if value >= &self.million && value < &self.billion {
-            // value is strictly positive here, so `/` and `%` agree with
-            // Python's floor semantics.
-            let millions = value / &self.million;
-            let rest = value % &self.million;
-            let millions_part = if millions.is_one() {
-                "մեկ միլիոն".to_string()
-            } else if millions == self.two {
-                "երկու միլիոն".to_string()
-            } else {
-                format!("{} միլիոն", self.to_cardinal(&millions)?)
-            };
-            if rest.is_zero() {
-                return Ok(millions_part);
+        for (scale, word) in [
+            (&self.trillion, "տրիլիոն"),
+            (&self.billion, "միլիարդ"),
+            (&self.million, "միլիոն"),
+        ] {
+            if value >= scale {
+                let (count, rest) = value.div_rem(scale);
+                let part = format!("{} {}", self.to_cardinal(&count)?, word);
+                if rest.is_zero() {
+                    return Ok(part);
+                }
+                return Ok(format!("{} {}", part, self.to_cardinal(&rest)?));
             }
-            return Ok(format!("{} {}", millions_part, self.to_cardinal(&rest)?));
         }
 
-        // For billions
-        if value == &self.billion {
-            return Ok("մեկ միլիարդ".to_string());
-        } else if value.mod_floor(&self.billion).is_zero() && value < &self.trillion {
-            // Python's `%` and `//` floor toward -inf, so negative multiples of
-            // 10**9 reach here too: -10**9 → prefix -1 → "մինուս մեկ միլիարդ".
-            // `mod_floor`/`div_floor` reproduce that; `%` and `/` would not.
-            let prefix = value.div_floor(&self.billion);
-            if prefix == self.two {
-                return Ok("երկու միլիարդ".to_string());
-            }
-            return Ok(format!("{} միլիարդ", self.to_cardinal(&prefix)?));
-        }
-
-        // For other cases use standard implementation (super()). This is where
-        // the negword and the MAXVAL overflow check live.
-        let mut result = default_to_cardinal(self, value)?;
-
-        // Fix for numbers like X000000 and X000000000 (bug 3). Python's
-        // str.replace is non-overlapping and left-to-right, so
-        // "հազար հազար հազար հազար" → "միլիոն միլիոն". Rust matches.
-        if result.contains("հազար հազար") {
-            result = result.replace("հազար հազար", "միլիոն");
-        }
-        Ok(result)
+        // Below 10**6: the standard implementation (super()).
+        default_to_cardinal(self, value)
     }
 
     /// Port of `Num2Word_HY.to_ordinal`.
@@ -1257,24 +1006,11 @@ impl Lang for LangHy {
         };
         let scaled = &decimal_val * BigDecimal::from(100);
 
-        // `(decimal_val * 100) % 1` runs under the *default* decimal context,
-        // whose precision is 28 — it is not exact arithmetic. `Decimal.__mod__`
-        // raises InvalidOperation(DivisionImpossible) once the integer quotient
-        // needs more than `prec` digits, and here the quotient is the integer
-        // part of `decimal_val * 100`. So every `abs(val) >= 1e26` raises,
-        // int and float alike.
-        //
-        // This fires *before* the CURRENCY_FORMS lookup, so it beats even the
-        // unknown-code branch: `to_currency(1e36, "KWD")` raises rather than
-        // returning a cardinal. `trunc(x) >= 10**28` iff `x >= 10**28` for the
-        // integral bound, so the truncation is skipped.
-        if scaled >= *decimal_prec_limit() {
-            return Err(N2WError::Custom {
-                module: "decimal",
-                class: "InvalidOperation",
-                msg: "[<class 'decimal.DivisionImpossible'>]".to_string(),
-            });
-        }
+        // Python's `(decimal_val * 100) % 1` ran under the 28-digit default
+        // decimal context and raised InvalidOperation from 1e26, far below
+        // its MAXVAL. The arithmetic here is exact, and the ceiling is checked
+        // up front instead, before even the unknown-code branch (#215).
+        check_maxval(&decimal_val.with_scale(0).as_bigint_and_exponent().0, &self.maxval)?;
 
         let has_fractional_cents = (&scaled - scaled.with_scale(0)) != BigDecimal::zero();
 

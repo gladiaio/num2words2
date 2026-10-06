@@ -108,13 +108,12 @@
 //!    `to_cheque`, so Python raised `AttributeError`; the port raises
 //!    NotImplementedError ("does not support to='cheque'", #223).
 //!
-//! 10. **`(Decimal(str(val)) * 100) % 1` raises for `abs(val) >= 1e26`.** The
-//!     `has_fractional_cents` probe runs under the *default* decimal context
-//!     (`prec=28`), and `Decimal.__mod__` raises
-//!     `InvalidOperation(DivisionImpossible)` once the integer quotient needs
-//!     more than 28 digits. It sits *above* the `isinstance(val, int)` split,
-//!     so plain ints raise too: `to_currency(10**26)` raises where
-//!     `to_currency(10**26 - 1)` succeeds. Boundary verified exactly.
+//! 10. ~~**`(Decimal(str(val)) * 100) % 1` raises for `abs(val) >= 1e26`.**~~
+//!     The `has_fractional_cents` probe ran under the *default* decimal
+//!     context (`prec=28`), so `to_currency(10**26)` raised
+//!     `InvalidOperation(DivisionImpossible)` while `to_cardinal(10**26)`
+//!     answered. Fixed (gladiaio/num2words2#215): the probe's result is never
+//!     observable (see below), so the port no longer evaluates it.
 //!
 //! ## The `has_fractional_cents` branch is dead code
 //!
@@ -151,10 +150,6 @@
 //!   `NumberTooLargeError`, but with a **different message** ("Number is too
 //!   large. Max: ..." vs `_is_smaller_than_max_number`'s "Too Large number
 //!   maximum value=...").
-//! * `to_currency` for `1e26 <= abs(val) < MAX_NUMBER` → `decimal`'s
-//!   `InvalidOperation` (bug 10), as `N2WError::Custom { module: "decimal",
-//!   class: "InvalidOperation" }`, following the precedent in `lang_hy.rs`
-//!   which ports the identical Python expression.
 //! * `to_cheque` → `N2WError::NotImplemented` for every input (bug 9).
 //!
 //! # The float/Decimal cardinal path
@@ -434,16 +429,6 @@ fn max_number_decimal() -> &'static BigDecimal {
     MAX.get_or_init(|| BigDecimal::from(max_number_ref().clone()))
 }
 
-/// `10**DECIMAL_PREC` — the point past which `(Decimal(str(val)) * 100) % 1`
-/// needs an integer quotient wider than the default context's precision and
-/// `Decimal.__mod__` raises `InvalidOperation(DivisionImpossible)`.
-///
-/// See module bug 10. Mirrors `lang_hy.rs`, which ports the same expression.
-fn decimal_prec_limit() -> &'static BigDecimal {
-    static LIMIT: OnceLock<BigDecimal> = OnceLock::new();
-    LIMIT.get_or_init(|| BigDecimal::from(BigInt::from(10u8).pow(DECIMAL_PREC as u32)))
-}
-
 /// Python's `raise NumberTooLargeError(f"Number is too large. Max: {MAX_NUMBER}")`
 /// — `to_currency`'s own guard, whose message differs from
 /// `_is_smaller_than_max_number`'s. Same class, so the same `Custom` variant.
@@ -452,18 +437,6 @@ fn number_too_large_currency() -> N2WError {
         module: "num2words2.lang_BN",
         class: "NumberTooLargeError",
         msg: format!("Number is too large. Max: {}", max_number_ref()),
-    }
-}
-
-/// Python's `decimal.InvalidOperation` from `(decimal_val * 100) % 1`.
-///
-/// The message reproduces `str(e)` for the real exception, whose `args` are the
-/// list of raised signal classes: `[<class 'decimal.DivisionImpossible'>]`.
-fn invalid_operation() -> N2WError {
-    N2WError::Custom {
-        module: "decimal",
-        class: "InvalidOperation",
-        msg: "[<class 'decimal.DivisionImpossible'>]".to_string(),
     }
 }
 
@@ -1101,25 +1074,10 @@ impl Lang for LangBn {
             return Err(number_too_large_currency());
         }
 
-        // decimal_val = Decimal(str(val)) — already parsed from `str(val)` by
-        // the shim, so no re-stringification here (see currency.rs).
-        let decimal_val: BigDecimal = match val {
-            CurrencyValue::Int(i) => BigDecimal::from(i.clone()),
-            CurrencyValue::Decimal { value, .. } => value.clone(),
-        };
-
-        // Guard 2: `has_fractional_cents = (decimal_val * 100) % 1 != 0`.
-        //
-        // Only the *raise* is observable — the flag itself selects between two
-        // provably identical branches (see the module docs). The `%` runs under
-        // the default context (prec=28) and raises once the integer quotient of
-        // `decimal_val * 100` needs more than 28 digits. Sign does not affect a
-        // digit count, so the test is on the magnitude. This sits above the
-        // isinstance split, so ints raise here too.
-        let scaled = decimal_val.abs() * BigDecimal::from(100);
-        if scaled >= *decimal_prec_limit() {
-            return Err(invalid_operation());
-        }
+        // Python then evaluated `(Decimal(str(val)) * 100) % 1` for a flag
+        // that selects between two identical branches (see the module docs);
+        // only its 1e26 InvalidOperation was observable, and that is gone
+        // (bug 10, #215).
 
         // `if isinstance(val, int):` — pure ints get no paisa segment at all.
         // Note this is the *type* test, not a whole-number test: 1.0 is a float
