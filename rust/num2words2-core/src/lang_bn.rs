@@ -105,8 +105,8 @@
 //!    than rounds, so `2.675` → 67 paisa, and it clamps everything to 0..=99.
 //!
 //! 9. **`to_cheque` does not exist.** No base class means no inherited
-//!    `to_cheque`, so all 9 cheque rows are `AttributeError`. See
-//!    [`LangBn::to_cheque`].
+//!    `to_cheque`, so Python raised `AttributeError`; the port raises
+//!    NotImplementedError ("does not support to='cheque'", #223).
 //!
 //! 10. **`(Decimal(str(val)) * 100) % 1` raises for `abs(val) >= 1e26`.** The
 //!     `has_fractional_cents` probe runs under the *default* decimal context
@@ -155,7 +155,7 @@
 //!   `InvalidOperation` (bug 10), as `N2WError::Custom { module: "decimal",
 //!   class: "InvalidOperation" }`, following the precedent in `lang_hy.rs`
 //!   which ports the identical Python expression.
-//! * `to_cheque` → `N2WError::Attribute` for every input (bug 9).
+//! * `to_cheque` → `N2WError::NotImplemented` for every input (bug 9).
 //!
 //! # The float/Decimal cardinal path
 //!
@@ -1174,17 +1174,11 @@ impl Lang for LangBn {
         Ok(format!("{}{}", words, dosomik_word))
     }
 
-    /// `Num2Word_BN` has **no** `to_cheque` (module bug 9).
-    ///
-    /// With no base class there is nothing to inherit it from, so Python fails
-    /// on the attribute lookup — before any conversion, and regardless of the
-    /// currency code. Overridden rather than left at the trait default, which
-    /// would consult `currency_forms` and invent a NotImplementedError that
-    /// Python never raises. All 9 corpus cheque rows expect AttributeError.
+    // `Num2Word_BN` had no `to_cheque` (AttributeError).
+    // No cheque rules, so NotImplementedError ("lang='bn' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_BN' object has no attribute 'to_cheque'".to_string(),
-        ))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 
     // cards/maxval/merge: Num2Word_BN has no base class and never defines

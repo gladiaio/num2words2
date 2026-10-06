@@ -1521,22 +1521,21 @@ impl Lang for LangCe {
     /// words = self._money_verbose(whole, currency)   # boom, every time
     /// ```
     ///
-    /// So `to_cheque` is **unconditionally broken** for CE on every currency it
-    /// implements, and the corpus records exactly that split:
-    ///
-    /// ```text
-    /// cheque:EUR/USD/GBP  -> TypeError            (arity, raised here)
-    /// cheque:JPY/KWD/...  -> NotImplementedError  (code lookup, raised first)
-    /// ```
-    ///
-    /// Leaving `to_cheque` at its default reproduces both *and* keeps the raise
-    /// at the call site Python raises from: `default_to_cheque` looks the
-    /// currency up before calling `money_verbose`, matching Base's order.
+    /// So `to_cheque` was **unconditionally broken** for CE (TypeError on every
+    /// currency it implements). CE now overrides `to_cheque` to raise
+    /// NotImplementedError instead (#223), which leaves this hook unreachable.
     ///
     /// `to_currency` never lands here — it calls `cardinal(.., MONEY_CASE)`
     /// directly, which is what `_money_verbose` resolves to under `case="abs"`.
     fn money_verbose(&self, _number: &BigInt, _currency: &str) -> Result<String> {
         Err(N2WError::Type(MONEY_VERBOSE_ARITY_ERR.into()))
+    }
+
+    // Base's cheque recipe needs the two-argument `_money_verbose` CE lacks
+    // (TypeError above). No cheque rules: NotImplementedError
+    // ("lang='ce' does not support to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 
     /// The fractional-cents hook: Python's `self.to_cardinal(float(right))`.

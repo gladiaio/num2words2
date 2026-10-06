@@ -121,9 +121,9 @@
 //!    `to_currency(1e21)` was "one EUR". Counting in whole laari expands the
 //!    exponent, so the full amount is read.
 //!
-//! `to_cheque` does not exist on the class at all, so it surfaces as
-//! `AttributeError` from the dispatcher's `getattr`, not as the
-//! `NotImplementedError` that `default_to_cheque` would produce.
+//! `to_cheque` does not exist on the class at all (Python raised
+//! `AttributeError`); the port raises NotImplementedError ("does not support
+//! to='cheque'", #223).
 //!
 //! # Float/Decimal routing
 //!
@@ -1246,15 +1246,11 @@ impl Lang for LangDv {
         Ok(result.join(" "))
     }
 
-    /// `Num2Word_DV` defines no `to_cheque`, and inherits none — it has no base
-    /// class. The dispatcher's `getattr(converter, "to_cheque")` is what fails,
-    /// before any conversion runs, so this is an `AttributeError` and *not* the
-    /// `NotImplementedError` that `default_to_cheque` would raise on the empty
-    /// forms table. The corpus records `AttributeError` for all nine codes.
+    // `Num2Word_DV` had no `to_cheque` (AttributeError).
+    // No cheque rules, so NotImplementedError ("lang='dv' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_DV' object has no attribute 'to_cheque'".into(),
-        ))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 

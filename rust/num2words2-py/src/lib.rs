@@ -737,6 +737,11 @@ fn int_mode(
         }
         // A plain number string ("5", "1.5") is not a fraction (#217).
         "fraction" => Err(fraction_type_error("a plain number")),
+        // Cheque amounts usually arrive as strings (#223).
+        "cheque" => l.to_cheque(
+            &BigDecimal::from(n.clone()),
+            currency.unwrap_or(l.default_currency()),
+        ),
         other => Err(N2WError::Fallback(other.to_string())),
     }
 }
@@ -793,6 +798,8 @@ fn dec_mode(
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
         // A plain number string ("5", "1.5") is not a fraction (#217).
         "fraction" => Err(fraction_type_error("a plain number")),
+        // Cheque amounts usually arrive as strings (#223).
+        "cheque" => l.to_cheque(value, currency.unwrap_or(l.default_currency())),
         other => Err(N2WError::Fallback(other.to_string())),
     }
 }
@@ -1190,8 +1197,13 @@ fn num2words(
             adjective,
             &kw,
         )? {
-            (0, out) => Ok(out
-                .map(|o| presentation::apply_style(&o, style.as_deref(), to_final, lang))),
+            (0, out) => Ok(out.map(|o| {
+                if to_final == "cheque" {
+                    cheque_style(&o, style.as_deref(), lang)
+                } else {
+                    presentation::apply_style(&o, style.as_deref(), to_final, lang)
+                }
+            })),
             _ => Err(declined(lang, to_final, kwargs)),
         };
     }

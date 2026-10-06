@@ -111,9 +111,9 @@
 //!     decimal places (`12.345`, `1.011`, `2.675`, `0.001`) raises instead of
 //!     converting. See [`LangVi::to_currency`].
 //!
-//! 11. **`to_cheque` does not exist**, so the dispatcher's
-//!     `getattr(converter, "to_cheque")` raises `AttributeError` before any
-//!     conversion runs. All nine `cheque:*` corpus rows record exactly that.
+//! 11. **`to_cheque` does not exist**, so Python raised `AttributeError`. The
+//!     port raises NotImplementedError ("does not support to='cheque'",
+//!     #223).
 //!
 //! 12. **`(decimal_val * 100) % 1` runs *before* the `isinstance(val, int)`
 //!     test, and `Decimal.__mod__` is bounded by the arithmetic context.**
@@ -238,10 +238,9 @@ fn type_error(msg: impl Into<String>) -> N2WError {
 /// `AttributeError: 'Num2Word_VI' object has no attribute '<name>'`.
 ///
 /// `Num2Word_VI` inherits from `object`, so a missing method is a plain
-/// attribute-lookup failure — not a deliberate `NotImplementedError`. Three
-/// call sites reach it: `to_cardinal_float` (bug #10), `to_cheque`
-/// (bug #11). (`str_to_number`, bug #15, is
-/// fixed.)
+/// attribute-lookup failure — not a deliberate `NotImplementedError`. One
+/// call site reaches it: `to_cardinal_float` (bug #10). (`str_to_number`,
+/// bug #15, and `to_cheque`, bug #11, are fixed.)
 fn missing_attr(name: &str) -> N2WError {
     N2WError::Attribute(format!(
         "'Num2Word_VI' object has no attribute '{}'",
@@ -927,14 +926,11 @@ impl Lang for LangVi {
         self.dong(self.number_to_text_decimal(value))
     }
 
-    /// `Num2Word_VI` has no `to_cheque` at all (bug #11).
-    ///
-    /// The dispatcher's `getattr(converter, "to_cheque")` raises on the
-    /// lookup, before the value is even looked at — hence `_val` and
-    /// `_currency` are untouched, and every `cheque:*` corpus row is an
-    /// AttributeError regardless of the code or the amount.
+    // `Num2Word_VI` had no `to_cheque` (AttributeError, bug #11).
+    // No cheque rules, so NotImplementedError ("lang='vi' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(missing_attr("to_cheque"))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 

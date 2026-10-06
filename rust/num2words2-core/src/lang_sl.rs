@@ -993,35 +993,12 @@ impl Lang for LangSl {
         }
     }
 
-    /// `Num2Word_Base.to_cheque` — inherited, and it cannot succeed for SL.
-    ///
-    /// ```python
-    /// try:
-    ///     cr1, _cr2 = self.CURRENCY_FORMS[currency]
-    /// except KeyError:
-    ///     raise NotImplementedError(...)
-    /// ```
-    ///
-    /// Every SL entry is a **3-tuple**, so the unpack raises
-    /// `ValueError: too many values to unpack (expected 2)` — from inside the
-    /// `try`, where only `KeyError` is caught, so it propagates. An unknown
-    /// code raises `KeyError` on the subscript first and converts to
-    /// NotImplementedError as usual. So the implemented codes fail *harder*
-    /// than the unimplemented ones:
-    ///
-    /// ```text
-    /// cheque:EUR 1234.56  ValueError            cheque:GBP 1234.56  NotImplementedError
-    /// cheque:USD 1234.56  ValueError            cheque:JPY 1234.56  NotImplementedError
-    /// ```
-    ///
-    /// Both arms are corpus rows and both are reproduced. `val` is untouched
-    /// because Python never gets far enough to look at it — the unpack is the
-    /// first statement after the subscript.
-    fn to_cheque(&self, _val: &BigDecimal, currency: &str) -> Result<String> {
-        self.lookup_currency(currency)?;
-        Err(N2WError::Value(
-            "too many values to unpack (expected 2)".into(),
-        ))
+    // SL's CURRENCY_FORMS entries carry more than two forms, so Base's
+    // `cr1, _cr2 = ...` unpack raised ValueError for every known code.
+    // No cheque rules, so NotImplementedError ("lang='sl' does not support
+    // to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 
@@ -1105,14 +1082,11 @@ mod tests {
         }
     }
 
-    /// `to_cheque` never succeeds: the implemented codes hit the 3-tuple
-    /// unpack (ValueError), the rest hit the subscript (NotImplementedError).
+    /// SL has no cheque rules (#223): every code raises NotImplementedError,
+    /// where Python crashed with ValueError on the 3-tuple unpack.
     #[test]
     fn corpus_cheque() {
-        for code in ["EUR", "USD"] {
-            assert!(matches!(cheque("1234.56", code), Err(N2WError::Value(_))), "{}", code);
-        }
-        for code in ["GBP", "JPY", "KWD", "BHD", "INR", "CNY", "CHF"] {
+        for code in ["EUR", "USD", "GBP", "JPY", "KWD"] {
             assert!(
                 matches!(cheque("1234.56", code), Err(N2WError::NotImplemented(_))),
                 "{}",

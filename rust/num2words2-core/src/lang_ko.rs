@@ -75,8 +75,9 @@
 //! [`LangKo::to_currency`] for the divergences, which are substantial.
 //!
 //! `to_cheque` is *not* overridden in Python, so `Num2Word_Base.to_cheque`
-//! runs against KO's table — and promptly trips over it. See the `to_cheque`
-//! impl below for the 1-tuple unpack bug.
+//! ran against KO's table and tripped over its 1-tuples (ValueError for the
+//! default KRW). The port raises NotImplementedError ("does not support
+//! to='cheque'", #223).
 //!
 //! `CURRENCY_PRECISION` and `CURRENCY_ADJECTIVES` are both `{}` for KO
 //! (verified against the live interpreter: KO subclasses `Num2Word_Base`
@@ -594,46 +595,11 @@ impl Lang for LangKo {
         ))
     }
 
-    /// `Num2Word_Base.to_cheque` — KO does **not** override it, and it does not
-    /// survive contact with KO's table.
-    ///
-    /// Base opens with a 2-tuple unpack inside a `try`/`except KeyError`:
-    ///
-    /// ```python
-    /// try:
-    ///     cr1, _cr2 = self.CURRENCY_FORMS[currency]
-    /// except KeyError:
-    ///     raise NotImplementedError(...)
-    /// ```
-    ///
-    /// KRW `("원",)` and JPY `("엔",)` are 1-tuples, so the unpack raises
-    /// **ValueError**, which `except KeyError` does not catch — it escapes as
-    /// ValueError, not NotImplementedError. Only USD, the lone 2-tuple, ever
-    /// produces a cheque. The corpus pins this:
-    /// `{"lang": "ko", "to": "cheque:JPY", "arg": "1234.56", "err": "ValueError"}`.
-    ///
-    /// So this override exists purely to reproduce that crash; USD delegates
-    /// straight to the shared Base implementation.
-    ///
-    /// (Base then does `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`.
-    /// KO's `cr1` is a bare `str`, so `unit` is the whole word — `"달러"`, not
-    /// the last *character* `"러"`. `default_to_cheque`'s `unit.last()` over a
-    /// one-element vec lands on the same string.)
-    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
-        let forms = self.currency_forms(currency).ok_or_else(|| {
-            // Base's message — with "code", unlike KO's own to_currency.
-            N2WError::NotImplemented(format!(
-                "Currency code \"{}\" not implemented for \"{}\"",
-                currency,
-                self.lang_name()
-            ))
-        })?;
-        // len(CURRENCY_FORMS[currency]) == 1 -> the unpack cannot fill _cr2.
-        if forms.subunit.is_empty() {
-            return Err(N2WError::Value(
-                "not enough values to unpack (expected 2, got 1)".into(),
-            ));
-        }
-        crate::currency::default_to_cheque(self, val, currency)
+    // KO's KRW/JPY forms are 1-tuples, so Base's unpack raised ValueError for
+    // the default currency; only USD produced a cheque.
+    // No cheque rules, so NotImplementedError ("lang='ko' does not support
+    // to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }

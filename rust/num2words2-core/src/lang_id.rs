@@ -804,18 +804,10 @@ impl Lang for LangId {
         Ok(format!("{}{} rupiah", minus_str, money_str))
     }
 
-    /// `Num2Word_ID` defines **no** `to_cheque` and inherits none — its MRO is
-    /// `[Num2Word_ID, object]`. So `getattr(converter, "to_cheque")` in the
-    /// dispatcher raises before any conversion happens, and every `cheque:*`
-    /// corpus row for `id` records `AttributeError`. The trait default would
-    /// have delegated to `currency::default_to_cheque` and produced a string,
-    /// so this override is required to reproduce the failure rather than
-    /// invent a capability the language does not have.
-    ///
-    /// The message is the interpreter's own, reproduced verbatim.
+    // `Num2Word_ID` had no `to_cheque` (AttributeError).
+    // No cheque rules, so NotImplementedError ("lang='id' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_ID' object has no attribute 'to_cheque'".to_string(),
-        ))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }

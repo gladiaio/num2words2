@@ -150,6 +150,12 @@ num2words(1.234, to='cheque', currency='BHD')   # composes with 3-decimal
 # 'ONE AND 234/1000 DINARS'
 ```
 
+Int, float, `Decimal` and string input are all accepted. The amount and the
+cents fraction are joined by the English "AND" in every language (a
+per-language conjunction is pending a maintainer decision). Languages
+without cheque rules raise `NotImplementedError`
+(`lang='bn' does not support to='cheque'`).
+
 ### `fraction`
 
 Pass `'n/d'` strings to produce a spoken fraction. Idiomatic forms for
