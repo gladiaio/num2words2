@@ -9,6 +9,7 @@ _ConverterType = Literal[
     "cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque",
     "fraction",
 ]
+_ErrorsMode = Literal["raise", "ignore"]
 # A kwarg value as the binder extracts it (``PyKw``); ``None`` is allowed.
 _KwValue = bool | int | str | list[str] | None
 _Kwargs = list[tuple[str, _KwValue]]
@@ -17,6 +18,7 @@ class RustFallback(Exception): ...
 class NumberTooLargeError(OverflowError): ...
 
 def supported_langs() -> list[str]: ...
+def default_currency(lang: str) -> str: ...
 def lang_aliases() -> dict[str, str]: ...
 
 # Low-level per-converter entry points. ``None`` mirrors the core's
@@ -90,18 +92,24 @@ def from_string(
 ) -> tuple[int, str | None]: ...
 
 # The public entry points re-exported by ``num2words2``.
+# ``errors=`` is read from the kwargs by the binder (#228); the defaults
+# differ: "raise" for one number, "ignore" for running text.
 def num2words(
     number: int | float | Decimal | str,
     ordinal: bool = False,
     lang: str = "en",
     to: _ConverterType = "cardinal",
+    *,
+    errors: _ErrorsMode = "raise",
     **kwargs: Any,
-) -> str: ...
+) -> str | None: ...
 def num2words_sentence(
     sentence: str,
     lang: str | None = "en",
     to: str = "cardinal",
-    **_kwargs: Any,
+    *,
+    errors: _ErrorsMode = "ignore",
+    **kwargs: Any,
 ) -> str: ...
 def group_digits(value: int, locale: str, separator: str) -> str: ...
 def maxval(lang: str) -> int | None: ...

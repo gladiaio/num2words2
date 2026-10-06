@@ -35,3 +35,13 @@ def test_public_functions_are_annotated():
 def test_converter_literal_matches_converter_types():
     assert set(typing.get_args(num2words2.ConverterType)) == set(
         num2words2.CONVERTER_TYPES)
+
+
+def test_errors_is_a_typed_keyword_only_option():
+    # #228's errors= on both entry points, with their different defaults.
+    for fn, default in ((num2words2.num2words, "raise"),
+                        (num2words2.num2words_sentence, "ignore")):
+        p = inspect.signature(fn).parameters["errors"]
+        assert p.kind is inspect.Parameter.KEYWORD_ONLY
+        assert p.default == default
+        assert set(typing.get_args(p.annotation)) == {"raise", "ignore"}

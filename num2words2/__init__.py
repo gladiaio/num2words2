@@ -76,23 +76,32 @@ ConverterType = Literal[
 ]
 
 
+# What to do with input that has no reading (#228): raise ValueError naming
+# the token, or return it as written.
+ErrorsMode = Literal["raise", "ignore"]
+
+
 def num2words(
     number: Union[int, float, Decimal, str],
     ordinal: bool = False,
     lang: str = "en",
     to: ConverterType = "cardinal",
+    *,
+    errors: ErrorsMode = "raise",
     **kwargs: Any,
-) -> str:
-    return _RUST.num2words(number, ordinal, lang, to, **kwargs)
+) -> Optional[str]:
+    return _RUST.num2words(number, ordinal, lang, to, errors=errors, **kwargs)
 
 
 def num2words_sentence(
     sentence: str,
     lang: Optional[str] = "en",
     to: ConverterType = "cardinal",
+    *,
+    errors: ErrorsMode = "ignore",
     **kwargs: Any,
 ) -> str:
-    return _RUST.num2words_sentence(sentence, lang, to, **kwargs)
+    return _RUST.num2words_sentence(sentence, lang, to, errors=errors, **kwargs)
 
 
 def maxval(lang: str = "en") -> Optional[int]:
