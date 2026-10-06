@@ -477,6 +477,16 @@ class Num2WordsCYTest(TestCase):
         self.assertEqual(num2words(-0.5, lang="cy"), "meinws dim pwynt pump")
         self.assertEqual(num2words(-1.4, lang="cy"), "meinws un pwynt pedwar")
 
+    def test_currency_negative_word(self):
+        # gladiaio/num2words2#180: the int path said "minws".
+        self.assertEqual(
+            num2words(-5, lang="cy", to="currency"), "meinws pump bunnoedd"
+        )
+        self.assertEqual(num2words(-1, lang="cy", to="currency"), "meinws un bunt")
+        self.assertTrue(
+            num2words(-5.5, lang="cy", to="currency").startswith("meinws ")
+        )
+
     def test_currency_names_each_unit_once(self):
         # gladiaio/num2words2#162
         pound = {"punt", "bunt", "phunt", "bunnoedd", "punnoedd"}

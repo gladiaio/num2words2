@@ -193,10 +193,11 @@
 //!    `currency:JPY` / `currency:KWD` / `currency:CHF` succeeding for `0`, `1`,
 //!    `2`, `100`, `1000000` while every float with the same code raises
 //!    `NotImplementedError`. Reproduced in [`LangCy::to_currency`].
-//! 9. **The int branch says `"minws "`, not `"meinws "`.** CY's own
-//!    `MINUS_PREFIX_WORD` is `"meinws "` and `to_cardinal` hardcodes
-//!    `("meinws", None)`, but `to_currency` spells the negative prefix
-//!    `"minws "`. A typo, kept verbatim: `to_currency(-1)` is `"minws un bunt"`.
+//! 9. **The int branch said `"minws "`, not `"meinws "` (fixed, #180).** CY's
+//!    own `MINUS_PREFIX_WORD` is `"meinws "` and `to_cardinal` hardcodes
+//!    `("meinws", None)`, but Python's `to_currency` spells the negative
+//!    prefix `"minws "` — a typo. The port says `"meinws "` like the cardinal
+//!    and the float path: `to_currency(-1)` is `"meinws un bunt"`.
 //! 10. **The unit words in the int branch are pre-mutated literals.**
 //!     `"bunt"` / `"bunnoedd"` are the soft-mutated forms of `punt`/`punnoedd`,
 //!     hardcoded as strings rather than produced by [`softmutation`] — so the
@@ -1662,8 +1663,9 @@ impl Lang for LangCy {
         let separator = separator.unwrap_or(self.default_separator());
 
         if let CurrencyValue::Int(v) = val {
-            // "minws ", not CY's own MINUS_PREFIX_WORD "meinws " — bug 9.
-            let minus_str = if v.is_negative() { "minws " } else { "" };
+            // Python says "minws " here; the port uses CY's own "meinws ",
+            // like the cardinal and the float path — bug 9 (#180).
+            let minus_str = if v.is_negative() { "meinws " } else { "" };
             let abs_val = v.abs();
             // Raises OverflowError past 999 * 10**33 (#159).
             let money_str = self.to_cardinal(&abs_val)?;
