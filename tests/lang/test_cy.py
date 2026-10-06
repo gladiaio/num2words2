@@ -391,16 +391,19 @@ TEST_CASES_DECIMALS = [
     (123.4567, "cant a thri ar hugain pwynt pedwar pump chwech saith")
 ]
 
+# gladiaio/num2words2#162: each unit is named once, in the counted form
+# ("un punt punt, ceiniog ceiniog" before). The double space after a zero
+# pence amount is #160.
 TEST_CASES_TO_CURRENCY_GBP = (
-    (0.00, "dim punt punnoedd,  ceiniogau"),
-    (0.23, "dim punt punnoedd, tri cheiniog ar hugain ceiniogau"),
-    (2.04, "dwy bunt punnoedd, pedwar ceiniog ceiniogau"),
-    (3.50, "tair punt punnoedd, hanner cant ceiniog ceiniogau"),
-    (2002.15, "dwy fil dwy o bunnoedd punnoedd, pymtheg ceiniog ceiniogau"),
-    (100.01, "cant punt punnoedd, ceiniog ceiniog"),
-    (50.00, "hanner cant punt punnoedd,  ceiniogau"),
-    (51.00, "hanner cant ac un punt punnoedd,  ceiniogau"),
-    (152.50, "cant a hanner a dwy o bunnoedd punnoedd, hanner cant ceiniog ceiniogau"),
+    (0.00, "dim punt,  ceiniogau"),
+    (0.23, "dim punt, tri cheiniog ar hugain"),
+    (2.04, "dwy bunt, pedwar ceiniog"),
+    (3.50, "tair punt, hanner cant ceiniog"),
+    (2002.15, "dwy fil dwy o bunnoedd, pymtheg ceiniog"),
+    (100.01, "cant punt, ceiniog"),
+    (50.00, "hanner cant punt,  ceiniogau"),
+    (51.00, "hanner cant ac un punt,  ceiniogau"),
+    (152.50, "cant a hanner a dwy o bunnoedd, hanner cant ceiniog"),
 )
 
 TEST_CASES_COUNTED = [
@@ -473,3 +476,25 @@ class Num2WordsCYTest(TestCase):
         self.assertEqual(num2words(-0.4, lang="cy"), "meinws dim pwynt pedwar")
         self.assertEqual(num2words(-0.5, lang="cy"), "meinws dim pwynt pump")
         self.assertEqual(num2words(-1.4, lang="cy"), "meinws un pwynt pedwar")
+
+    def test_currency_names_each_unit_once(self):
+        # gladiaio/num2words2#162
+        pound = {"punt", "bunt", "phunt", "bunnoedd", "punnoedd"}
+        pence = {"ceiniog", "geiniog", "cheiniog", "ceiniogau"}
+        for x in [1.5, 2.5, 1.01, 10.10, 152.50, 2002.15]:
+            words = num2words(x, lang="cy", to="currency")
+            words = words.replace(",", "").split()
+            self.assertEqual(sum(w in pound for w in words), 1, x)
+            self.assertEqual(sum(w in pence for w in words), 1, x)
+        self.assertEqual(
+            num2words(1.5, lang="cy", to="currency"),
+            "un punt, hanner cant ceiniog",
+        )
+        self.assertEqual(
+            num2words(1.01, lang="cy", to="currency"), "un punt, ceiniog"
+        )
+        self.assertEqual(
+            num2words(1.5, lang="cy", to="currency", currency="USD",
+                      adjective=True),
+            "un dolar US, hanner cant ceiniog",
+        )

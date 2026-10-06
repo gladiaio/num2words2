@@ -203,20 +203,26 @@
 //!     mutation fires even when nothing precedes it that would trigger one
 //!     (`"dim bunnoedd"` after "dim", which triggers no mutation at all).
 //! 11. **`_cents_verbose(1, ...)` drops the numeral.** The `number > 1` guard
-//!     sends 1 to `m = [(OBJ, None)]`, so `0.01` renders `"... ceiniog ceiniog"`
-//!     — the counted noun and `pluralize`'s singular, with no "un".
+//!     sends 1 to `m = [(OBJ, None)]`, so `0.01` renders `"... ceiniog"` — the
+//!     counted noun alone, with no "un".
 //! 12. **`_money_verbose` always asks `to_cardinal` for the *feminine* form**,
-//!     even for masculine currencies: `2.0 USD` is `"dwy dolar dolar, ..."`.
+//!     even for masculine currencies: `2.0 USD` is `"dwy dolar, ..."`.
 //!     The dead `if currency in CURRENCIES_FEM` guard is commented out in the
 //!     source with the note "always true in this context". `_cents_verbose`, by
 //!     contrast, leaves gender at its masculine default.
-//! 13. **Every float prints the unit twice.** `_money_verbose` already appends
-//!     the currency noun (as `counted=`, or as the `o <plural>` partitive above
-//!     100), and then `Num2Word_Base.to_currency` appends `pluralize(left, cr1)`
-//!     on top: `"deuddeg euro euros"`, `"mil ... o euros euros"`.
+//! 13. ~~**Every float prints the unit twice.**~~ Fixed
+//!     (gladiaio/num2words2#162). `_money_verbose` already appends the
+//!     currency noun (as `counted=`, or as the `o <plural>` partitive above
+//!     100) and `_cents_verbose` the subunit noun, and then
+//!     `Num2Word_Base.to_currency` appended `pluralize(left, cr1)` and
+//!     `pluralize(right, cr2)` on top: `1.5` was "un punt punt, hanner cant
+//!     ceiniog ceiniogau", `1.01` "un punt punt, ceiniog ceiniog". The port
+//!     keeps the counted forms and drops the generic ones, so each unit is
+//!     named once ("un punt, hanner cant ceiniog"). With `adjective=True`
+//!     only the adjective survives from the generic form ("un dolar US").
 //! 14. **Zero cents leave a double space.** `_cents_verbose(0, ...)` returns
 //!     `""`, and Base's `"%s%s %s%s %s %s"` template still emits the spaces
-//!     around it: `1.0` → `"un euro euro,  ceiniogau"` (two spaces after the
+//!     around it: `1.0` → `"un euro,  ceiniogau"` (two spaces after the
 //!     comma). The `has_decimal` guard keeps the segment alive for `1.0`.
 //!
 //! # Error variants
@@ -234,7 +240,7 @@ use crate::base::{
     check_maxval, pow10_big, strictly_negative, verify_ordinal, verify_ordinal_float, Kwargs,
     KwVal, Lang, N2WError, Result,
 };
-use crate::currency::{CurrencyForms, CurrencyValue};
+use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
@@ -1559,8 +1565,9 @@ impl Lang for LangCy {
     /// Python's `Num2Word_CY._money_verbose`.
     ///
     /// Both arms ask `to_cardinal` for the **feminine** form unconditionally
-    /// (module bug 12) and both attach the currency noun themselves, on top of
-    /// the `pluralize(left, cr1)` Base appends afterwards (bug 13):
+    /// (module bug 12) and both attach the currency noun themselves — which is
+    /// why `to_currency` no longer appends Base's `pluralize(left, cr1)` as
+    /// well (bug 13, #162):
     ///
     /// * `number > 100` — the partitive: `... o <plural>`. "o" triggers a soft
     ///   mutation on the noun, so `1234.56 USD` gives "o **dd**olarau".
@@ -1665,11 +1672,89 @@ impl Lang for LangCy {
             return Ok(format!("{}{} {}", minus_str, money_str, currency_str));
         }
 
-        // Floats/Decimals: `super().to_currency(...)` — Num2Word_Base's.
-        // `minus_str = "%s " % self.negword.strip() if is_negative else ""`
-        // raised AttributeError in Python (CY's `pass` `__init__` never set
-        // `negword`); the port's `negword` is "meinws" (#157).
-        crate::currency::default_to_currency(self, val, currency, cents, separator, adjective)
+        // Floats/Decimals: `super().to_currency(...)` — Num2Word_Base's, minus
+        // the generic nouns it appends (module bug 13, #162). Python's
+        // `minus_str = "%s " % self.negword.strip()` raised AttributeError
+        // (CY's `pass` `__init__` never set `negword`); the port's `negword`
+        // is "meinws" (#157).
+        let forms = self.currency_forms.get(currency).ok_or_else(|| {
+            N2WError::NotImplemented(format!(
+                "Currency code \"{}\" not implemented for \"{}\"",
+                currency,
+                self.lang_name()
+            ))
+        })?;
+        let (d, has_decimal, is_float) = match val {
+            CurrencyValue::Decimal { value, has_decimal, is_float } => {
+                (value.clone(), *has_decimal, *is_float)
+            }
+            CurrencyValue::Int(_) => unreachable!("int branch returned above"),
+        };
+        // CY's CURRENCY_PRECISION is Base's empty dict: always 100.
+        let scaled = &d * BigDecimal::from(100);
+        let has_fractional_cents = &scaled - scaled.with_scale(0) != BigDecimal::zero();
+        let (left, right, is_negative) = parse_currency_parts(
+            &CurrencyValue::Decimal { value: d, has_decimal, is_float },
+            false,
+            has_fractional_cents,
+            100,
+        );
+        let minus = if is_negative {
+            format!("{} ", self.negword().trim())
+        } else {
+            String::new()
+        };
+        // `_money_verbose` already names the unit, in the form the counted
+        // numeral calls for ("un punt", "dwy bunt", "... o bunnoedd"). Base
+        // then appended `pluralize(left, cr1)` again — "un punt punt" — so
+        // that second noun is dropped; only `adjective=True`'s adjective is
+        // kept from it ("un dolar US").
+        let mut money = self.money_verbose(&left, currency)?;
+        if adjective {
+            if let Some(adj) = self.currency_adjectives.get(currency) {
+                money = format!("{} {}", money, adj);
+            }
+        }
+        let right_int = right.as_bigint_and_exponent().0;
+        if !has_decimal && right_int.is_zero() {
+            return Ok(format!("{}{}", minus, money));
+        }
+        if has_fractional_cents {
+            // Base reads the cents through the float cardinal and names them
+            // with the plural subunit — once, so nothing to drop here.
+            let sub = forms.subunit.get(1).or_else(|| forms.subunit.first());
+            return Ok(format!(
+                "{}{}{} {} {}",
+                minus,
+                money,
+                separator,
+                self.cardinal_from_decimal(&right)?,
+                sub.map(String::as_str).unwrap_or_default()
+            ));
+        }
+        if cents {
+            let cents_str = self.cents_verbose(&right_int, currency)?;
+            // `_cents_verbose` names the subunit too ("hanner cant ceiniog",
+            // or bare "ceiniog" for 1), so Base's `pluralize(right, cr2)` was a
+            // second noun ("ceiniog ceiniogau"). Zero cents come back empty;
+            // the plural noun then stays the only one (module bug 14).
+            if !cents_str.is_empty() {
+                return Ok(format!("{}{}{} {}", minus, money, separator, cents_str));
+            }
+        }
+        let cents_str = if cents {
+            String::new()
+        } else {
+            self.cents_terse(&right_int, currency)?
+        };
+        Ok(format!(
+            "{}{}{} {} {}",
+            minus,
+            money,
+            separator,
+            cents_str,
+            self.pluralize(&right_int, &forms.subunit)?
+        ))
     }
 
     // cardinal_from_decimal: left at its default — fractional cents are out of
