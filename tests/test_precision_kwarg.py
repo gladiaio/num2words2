@@ -39,8 +39,14 @@ def test_unhonourable_precision_raises():
     with pytest.raises(NotImplementedError, match="lang='ja' does not "
                        "support precision="):
         num2words(0.1, lang="ja", precision=3)
-    with pytest.raises(NotImplementedError, match="precision="):
-        num2words(1.25, lang="ms", precision=1)
+
+
+def test_ms_ta_honour_precision_since_they_read_the_fraction():
+    # ms/ta used to drop the fraction and so raised here; since #206 they
+    # read it digit by digit, which precision= cuts and pads like en.
+    assert num2words(1.25, lang="ms", precision=1) == "satu perpuluhan dua"
+    assert num2words(0.1, lang="ta", precision=3) == \
+        "பூஜ்ஜியம் புள்ளி ஒன்று பூஜ்ஜியம் பூஜ்ஜியம்"
 
 
 @pytest.mark.parametrize("lang", sorted(_rust.supported_langs()))

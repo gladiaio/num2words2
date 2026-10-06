@@ -229,8 +229,8 @@ pub fn default_to_cardinal_float_by<L: Lang + ?Sized>(
 /// that reads its Decimal's own digits honours the option too.
 ///
 /// A language whose decimal reading ignores trailing zeros (ja, cs, ... read
-/// 0.100 like 0.1) cannot pad, and one that drops the fraction (ms, ta)
-/// cannot honour any precision: those raise NotImplementedError naming
+/// 0.100 like 0.1) cannot pad, and one that drops the fraction (ms and ta
+/// did before #206) cannot honour any precision: those raise NotImplementedError naming
 /// `precision=` rather than silently ignore it.
 pub fn cardinal_with_precision<L: Lang + ?Sized>(
     lang: &L,
@@ -248,8 +248,8 @@ pub fn cardinal_with_precision<L: Lang + ?Sized>(
     let cut = exact.with_scale_round(precision as i64, bigdecimal::RoundingMode::Down);
     let out = render(&FloatValue::Decimal { value: cut.clone(), precision }, precision)?;
     let unsupported = || N2WError::NotImplemented("does not support precision=".into());
-    // A reading that drops the fraction altogether (ms, ta) honours no
-    // precision at all.
+    // A reading that drops the fraction altogether (ms and ta before #206)
+    // honours no precision at all.
     if !cut.is_integer() {
         let whole = cut.with_scale_round(0, bigdecimal::RoundingMode::Down);
         if lang.to_cardinal(&whole.as_bigint_and_exponent().0).is_ok_and(|w| w == out) {
