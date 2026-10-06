@@ -17,8 +17,6 @@
 
 from unittest import TestCase
 
-import pytest
-
 from num2words2 import num2words
 
 
@@ -326,17 +324,41 @@ class Num2WordsLATest(TestCase):
         self.assertEqual(num2words(500, lang="la", ordinal=True), "quīngentēsimus")
         self.assertEqual(num2words(1000, lang="la", ordinal=True), "mīllēsimus")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="la compound ordinals (21st, 101st, 10000th, ...) fall back to the "
-        "cardinal words; found while fixing gladiaio/num2words2#167",
-    )
     def test_ordinal_compound(self):
-        """Compound ordinals must not be the cardinal words."""
+        """Compound ordinals combine ordinal parts (gladiaio/num2words2#181)."""
         for n in (21, 22, 25, 101, 1001, 10000):
             self.assertNotEqual(
                 num2words(n, lang="la", ordinal=True), num2words(n, lang="la")
             )
+        cases = {
+            21: "vīcēsimus prīmus",
+            22: "vīcēsimus secundus",
+            25: "vīcēsimus quīntus",
+            101: "centēsimus prīmus",
+            118: "centēsimus duodēvīcēsimus",
+            121: "centēsimus vīcēsimus prīmus",
+            1001: "mīllēsimus prīmus",
+            2000: "bis mīllēsimus",
+            2021: "bis mīllēsimus vīcēsimus prīmus",
+            10000: "deciēs mīllēsimus",
+            100000: "centiēs mīllēsimus",
+            1000000: "deciēs centiēs mīllēsimus",
+        }
+        for n, expected in cases.items():
+            self.assertEqual(num2words(n, lang="la", ordinal=True), expected)
+        # Every part agrees in gender and case.
+        self.assertEqual(
+            num2words(21, lang="la", to="ordinal", gender="f", case="gen"),
+            "vīcēsimae prīmae",
+        )
+        self.assertEqual(
+            num2words(2000, lang="la", to="ordinal", gender="n", case="abl",
+                      macrons=False),
+            "bis millesimo",
+        )
+        self.assertEqual(num2words(21, lang="la", to="ordinal_num"), "XXI")
+        with self.assertRaises(OverflowError):
+            num2words(10**6 + 1, lang="la", ordinal=True)
 
     def test_currency(self):
         """Test currency conversion."""
