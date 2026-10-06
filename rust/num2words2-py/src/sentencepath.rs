@@ -99,6 +99,10 @@
 //! turned -a), and the prefix forms keep their prefix word: ja `第1位` ->
 //! `第一位`, ko `제1회` -> `제일회`, vi `thứ 2` -> `thứ hai` (`thứ nhất`,
 //! `thứ tư`).
+//!
+//! Also deliberate (#235): a number after `.` is capitalised only when the
+//! dot ends a sentence — not when it is the first character (`.5`) or ends
+//! a listed abbreviation (`approx.`, `ca.`, `No.`, `e.g.`, `z.B.`, …).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -1672,6 +1676,43 @@ fn leading_number(text: &str) -> Option<String> {
     Some(cs[..j].iter().collect())
 }
 
+/// Abbreviations whose dot does not end a sentence (#235), lowercased,
+/// inner dots removed ("e.g." -> "eg", "z.B." -> "zb").
+const ABBREVIATIONS: &[&str] = &[
+    "approx", "appr", "ca", "cca", "no", "nos", "nr", "num", "vs", "eg", "ie", "cf",
+    "fig", "vol", "ch", "chap", "sec", "p", "pp", "dr", "mr", "mrs", "ms", "st",
+    "prof", "jr", "sr", "tel",
+    "zb", "bzw", "ggf", "usw", "inkl", "zzgl", "vgl", "evtl", "s", "abs", "env", "aprox",
+    "pág", "pag", "núm", "nº", "blz", "str", "ок", "стр", "см",
+];
+
+/// Whether the text before a number ends a sentence, so the number is
+/// capitalised: `!`/`?`, or a `.` that is neither the very first character
+/// (".5") nor the dot of an abbreviation ("approx. 5", "No. 5", #235).
+fn ends_sentence(bt: &str) -> bool {
+    match bt.chars().last() {
+        Some('!') | Some('?') => true,
+        Some('.') => {
+            let head = bt[..bt.len() - 1].trim_end();
+            if head.is_empty() {
+                return false;
+            }
+            let word: String = head
+                .chars()
+                .rev()
+                .take_while(|c| c.is_alphabetic() || *c == '.' || *c == 'º')
+                .filter(|c| *c != '.')
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<String>()
+                .to_lowercase();
+            !ABBREVIATIONS.contains(&word.as_str())
+        }
+        _ => false,
+    }
+}
+
 /// `num2words`' language-key resolution (full key, "-"->"_", "xx_YY"
 /// candidate, first part, first two chars).
 fn resolve_num2words_lang(lang: &str) -> Option<&'static (dyn Lang + Sync)> {
@@ -1879,8 +1920,7 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
             true
         } else {
             let before = t.slice(0, e.start);
-            let bt = before.trim_end();
-            matches!(bt.chars().last(), Some('.') | Some('!') | Some('?'))
+            ends_sentence(before.trim_end())
         };
         if needs_cap && !converted.is_empty() {
             converted = capitalize_first(&converted);

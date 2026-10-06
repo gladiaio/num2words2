@@ -244,3 +244,23 @@ def test_native_ordinal_notations(text, lang, expected):
 )
 def test_de_ordinal_date_strong_ending(text, expected):
     assert num2words_sentence(text, lang="de") == expected
+
+
+# --- #235: no capital after an abbreviation or a leading dot --------------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("approx. 5 kg", "en", "approx. five kg"),
+        ("ca. 5 Leute", "de", "ca. fünf Leute"),
+        ("z.B. 5 Leute", "de", "z.B. fünf Leute"),
+        ("No. 5", "en", "No. five"),
+        ("e.g. 5 apples", "en", "e.g. five apples"),
+        (".5", "en", ".five"),
+        # Real sentence ends still capitalise.
+        ("I have cats. 5 dogs", "en", "I have cats. Five dogs"),
+        ("Done! 5 more", "en", "Done! Five more"),
+    ],
+)
+def test_capitalisation_after_dot(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
