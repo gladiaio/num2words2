@@ -150,3 +150,22 @@ def test_arabic_decimal_separator_both_entry_points():
 )
 def test_ranges_and_sequences(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #233: thousands grouped with a plain space ---------------------------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("10 000 personnes", "fr", "Dix mille personnes"),
+        ("il y a 3 000", "fr", "il y a trois mille"),
+        ("10 000 человек", "ru", "Десять тысяч человек"),
+        ("10 000 lidí", "cs", "Deset tisíc lidí"),
+        ("1 234,5 x", "pl", "Tysiąc dwieście trzydzieści cztery przecinek pięć x"),
+        # Not exact three-digit groups, or not a space-grouping language.
+        ("En 2023 100 personnes", "fr", "En deux mille vingt-trois cent personnes"),
+        ("between 2 100 and", "en", "between two one hundred and"),
+    ],
+)
+def test_space_grouped_thousands(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected

@@ -37,6 +37,9 @@
 //! number. A lone `1,000` or `1.000` counts as grouping per the language's
 //! notation (`strnum::number_notation`, #177): `1,000` in en/zh/ja/hi…,
 //! `1.000` in de/es/it/pt… (de "1.000 Leute" is no longer the ordinal "1.").
+//! Languages that group with spaces (fr, ru, pl, cs, sv, …) also accept a
+//! plain ASCII space before exactly three digits: fr "10 000 personnes" is
+//! "dix mille", not "dix zéro" (#233).
 //!
 //! Also deliberate (#152): English clock times `H:MM` get their own pass
 //! ("10:30" -> "ten thirty", "10:00" -> "ten o'clock") instead of being read
@@ -87,7 +90,8 @@ use std::str::FromStr;
 use bigdecimal::BigDecimal;
 use num2words2_core::base::Lang;
 use num2words2_core::strnum::{
-    is_space_group_sep, number_notation, parse_grouped, unicode_digit, Grouped,
+    groups_with_spaces, is_space_group_sep, number_notation, parse_grouped, unicode_digit,
+    Grouped,
 };
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
 use num_bigint::BigInt;
@@ -590,8 +594,10 @@ fn is_word_letter(c: char) -> bool {
 /// a dot not followed by exactly three digits is left to the later passes:
 /// de "1. Mai" is an ordinal, de "1.5" is kept as written, #183); the
 /// token must not touch an ASCII letter/digit on either side, like pass 7.
-/// ASCII spaces are not taken as separators in running text ("between
-/// 2 100 and"), only the no-break/thin spaces and apostrophes.
+/// ASCII spaces are taken as separators in running text only for the
+/// languages that group with spaces ([`groups_with_spaces`], #233: fr
+/// "10 000 personnes"), and only before exactly three digits; elsewhere
+/// ("between 2 100 and") only the no-break/thin spaces and apostrophes.
 fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, String)> {
     let n = chars.len();
     if start > 0 && chars[start - 1].is_ascii_alphanumeric() {
@@ -613,8 +619,19 @@ fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, Str
         return None;
     }
     let is_part = |c: char| c.is_ascii_digit() || is_part_sep(c);
+    let spaces = groups_with_spaces(lang);
+    // " 000" followed by a non-digit: a space-grouped thousands group.
+    let space_group = |k: usize| {
+        spaces
+            && chars[k] == ' '
+            && k > 0
+            && chars[k - 1].is_ascii_digit()
+            && k + 3 < n
+            && chars[k + 1..k + 4].iter().all(|c| c.is_ascii_digit())
+            && (k + 4 >= n || !chars[k + 4].is_ascii_digit())
+    };
     let mut end = j;
-    while end < n && is_part(chars[end]) {
+    while end < n && (is_part(chars[end]) || space_group(end)) {
         end += 1;
     }
     while end > j && !chars[end - 1].is_ascii_digit() {

@@ -257,6 +257,19 @@ pub fn number_notation(lang: &str) -> Notation {
     }
 }
 
+/// Whether a language groups thousands with a space (`10 000`, `1 234,5`):
+/// fr, ru, uk, pl, cs, sk, sv, nb/nn/no, fi, et, lt, lv, bg, hu. Typed text
+/// uses a plain ASCII space as often as a no-break one, so the sentence
+/// converter accepts it as grouping for these languages only (#233).
+pub fn groups_with_spaces(lang: &str) -> bool {
+    let key = lang.to_ascii_lowercase().replace('-', "_");
+    matches!(
+        key.split('_').next().unwrap_or(""),
+        "fr" | "ru" | "uk" | "pl" | "cs" | "sk" | "sv" | "nb" | "nn" | "no" | "fi" | "et"
+            | "lt" | "lv" | "bg" | "hu"
+    )
+}
+
 /// Outcome of [`parse_grouped`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Grouped {
