@@ -1697,7 +1697,7 @@ impl Lang for LangCy {
             // like the float path does (#201): the numeral's own mutation on
             // the singular noun, "un bunt", "dwy bunt", "tair punt", and the
             // partitive above 100, "cant ac un o bunnoedd".
-            if self.currency_forms.get(currency).is_none() {
+            if !self.currency_forms.contains_key(currency) {
                 return Err(crate::currency::unknown_currency(self, currency));
             }
             let money_str = self.money_verbose(&abs_val, currency)?;
