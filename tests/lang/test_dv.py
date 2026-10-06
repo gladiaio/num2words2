@@ -15,6 +15,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 # MA 02110-1301 USA
 
+from decimal import Decimal
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -149,3 +150,22 @@ class Num2WordsENTest(TestCase):
                          'ސާޅީސްހަތަރެއް ބީ.ސީ')
         self.assertEqual(num2words(-66000000, lang='dv', to='year'),
                          'ފަސްދޮޅަސްހަމިލިޔަން ބީ.ސީ')
+
+    def test_scientific_float_reads_full_value(self):
+        # issue 190: a float whose repr is '1e+21' was read as its mantissa.
+        self.assertEqual(num2words(1e21, lang='dv'),
+                         num2words(10**21, lang='dv'))
+        self.assertEqual(num2words(1e21, lang='dv'), 'އެއްސެކްސްޓިލިޔަން')
+        self.assertEqual(num2words(1e16, lang='dv'),
+                         num2words(10**16, lang='dv'))
+        self.assertEqual(num2words(1.5e20, lang='dv'),
+                         num2words(150 * 10**18, lang='dv'))
+        self.assertEqual(num2words(Decimal('1E+2'), lang='dv'),
+                         num2words(100, lang='dv'))
+        self.assertEqual(num2words(1e21, lang='dv', to='ordinal'),
+                         num2words(10**21, lang='dv', to='ordinal'))
+        # 1e-7 keeps its leading zeros after the point
+        self.assertEqual(num2words(1e-7, lang='dv'),
+                         'ސުމެއް ޕޮއިންޓް ' + 'ސުމެއް ' * 6 + 'އެކެއް')
+        with self.assertRaises(OverflowError):
+            num2words(1e33, lang='dv')

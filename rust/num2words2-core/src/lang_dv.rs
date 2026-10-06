@@ -138,11 +138,14 @@
 //! ordinal/year entries follow the class's own methods. More reproduced
 //! quirks, all corpus-verified:
 //!
-//! 9.  **`str(float)`'s scientific regime collapses to the coefficient.**
-//!     `str(1e16)` is `'1e+16'`, so `Decimal(str(1e16))` has digits `(1,)`
-//!     and exponent 16 — and `convert_int` only ever sees the digit tuple, so
-//!     `to_cardinal(1e16)` is `އެކެއް` ("one"). Same for `Decimal('1E+2')` ->
-//!     "one". Reconstructed in [`py_float_dec_tuple`] from Rust's
+//! 9.  **`str(float)`'s scientific regime collapsed to the coefficient
+//!     (fixed, #190).** `str(1e16)` is `'1e+16'`, so `Decimal(str(1e16))` has
+//!     digits `(1,)` and exponent 16, and Python's `convert_int` only ever
+//!     saw the digit tuple: `to_cardinal(1e16)` and `to_cardinal(1e21)` were
+//!     `އެކެއް` ("one"), as was `Decimal('1E+2')`. The port expands a
+//!     positive exponent into trailing zeros, so the full value is read and
+//!     anything from 10^33 up raises `OverflowError`. The tuple itself is
+//!     still reconstructed in [`py_float_dec_tuple`] from Rust's
 //!     shortest-round-trip digits (`{:e}`), which match `repr(float)`'s
 //!     digits by uniqueness of the shortest representation; the regime
 //!     boundary (scientific iff adjusted exponent >= 16 or < -4) is
@@ -765,7 +768,12 @@ impl LangDv {
             // the non-negative path below launders it (quirk 1).
             format!("{} {} {}", int_part, self.pointword(), frac_part)
         } else {
-            self.convert_int(digit_str, nominal)?
+            // Python fed `convert_int` the coefficient alone, so a positive
+            // exponent was dropped: 1e21 (`Decimal('1E+21')`, digits `(1,)`)
+            // read "one" (quirk 9). Expand it into the full digit string.
+            let mut full = digit_str.to_string();
+            full.push_str(&"0".repeat(exponent as usize));
+            self.convert_int(&full, nominal)?
         };
 
         if sign_negative {
@@ -1004,8 +1012,8 @@ impl Lang for LangDv {
 
     /// `to_cardinal(float/Decimal)` — the full entry, whole values included.
     /// DV has no whole-value routing: `Decimal(str(5.0))` keeps its `.0`, so
-    /// even integral floats run the pointword grammar (quirk 10), and a
-    /// scientific repr collapses to its coefficient (quirk 9).
+    /// even integral floats run the pointword grammar (quirk 10), while a
+    /// scientific repr reads as the whole number it is (quirk 9, #190).
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
@@ -1294,7 +1302,7 @@ fn shortest_digits(f: f64) -> (String, i64) {
 /// the Decimal *different* tuples:
 ///
 ///   * scientific: the coefficient is the bare digits (`'1e+16'` -> `(1,)`,
-///     exponent 16) — quirk 9's collapse-to-coefficient;
+///     exponent 16) — quirk 9; the body expands the exponent (#190);
 ///   * fixed-point, integral value: repr appends ".0", so the coefficient
 ///     gains the padding zeros plus one more and the exponent is -1
 ///     (`'1000.0'` -> `(1,0,0,0,0)`, exponent -1) — quirk 10;
@@ -1608,8 +1616,8 @@ mod float_tests {
         let l = LangDv::new();
         let fv = |v: f64| FloatValue::Float { value: v, precision: 1 };
 
-        // cardinal: no whole-value fast path (quirk 10) + scientific collapse
-        // (quirk 9) + zero integer part (quirk 11, fixed in #158).
+        // cardinal: no whole-value fast path (quirk 10) + scientific reprs
+        // (quirk 9, fixed in #190) + zero integer part (quirk 11, fixed in #158).
         assert_eq!(
             l.cardinal_float_entry(&fv(5.0), None).unwrap(),
             "ފަހެއް ޕޮއިންޓް ސުމެއް"
@@ -1622,8 +1630,16 @@ mod float_tests {
             l.cardinal_float_entry(&fv(-1000.0), None).unwrap(),
             "މައިނަސް އެއްހާސް ޕޮއިންޓް ސުމެއް"
         );
-        assert_eq!(l.cardinal_float_entry(&fv(1e16), None).unwrap(), "އެކެއް");
-        assert_eq!(l.cardinal_float_entry(&fv(1e20), None).unwrap(), "އެކެއް");
+        // Scientific reprs read the full value, not the coefficient (#190).
+        let ten = |e: u32| BigInt::from(10).pow(e);
+        assert_eq!(
+            l.cardinal_float_entry(&fv(1e16), None).unwrap(),
+            l.to_cardinal(&ten(16)).unwrap()
+        );
+        assert_eq!(
+            l.cardinal_float_entry(&fv(1e20), None).unwrap(),
+            l.to_cardinal(&ten(20)).unwrap()
+        );
         assert_eq!(
             l.cardinal_float_entry(&fv(0.0), None).unwrap(),
             "ސުމެއް ޕޮއިންޓް ސުމެއް"
@@ -1638,7 +1654,10 @@ mod float_tests {
             l.ordinal_float_entry(&fv(1.0)).unwrap(),
             "އެކެއް ޕޮއިންޓް ސުން ވަނަ"
         );
-        assert_eq!(l.ordinal_float_entry(&fv(1e16)).unwrap(), "އެއް ވަނަ");
+        assert_eq!(
+            l.ordinal_float_entry(&fv(1e16)).unwrap(),
+            l.to_ordinal(&ten(16)).unwrap()
+        );
         assert!(matches!(l.ordinal_float_entry(&fv(2.5)), Err(N2WError::Type(_))));
         assert!(matches!(l.ordinal_float_entry(&fv(-1.5)), Err(N2WError::Type(_))));
         assert!(matches!(l.ordinal_float_entry(&fv(-1.0)), Err(N2WError::Type(_))));
@@ -1666,7 +1685,10 @@ mod float_tests {
             l.year_float_entry(&fv(1234.0)).unwrap(),
             "ބާރަ ޕޮއިންޓް ސުމެއް ސަތޭކަ ތިރީސްހަތަރެއް ޕޮއިންޓް ސުމެއް"
         );
-        assert_eq!(l.year_float_entry(&fv(1e16)).unwrap(), "އެކެއް");
+        assert_eq!(
+            l.year_float_entry(&fv(1e16)).unwrap(),
+            l.to_cardinal(&ten(16)).unwrap()
+        );
         assert_eq!(
             l.year_float_entry(&fv(-0.0)).unwrap(),
             "މައިނަސް ސުމެއް ޕޮއިންޓް ސުމެއް"
@@ -1681,8 +1703,16 @@ mod float_tests {
             precision: 0,
         };
 
-        assert_eq!(l.cardinal_float_entry(&dv("1E+2"), None).unwrap(), "އެކެއް");
-        assert_eq!(l.cardinal_float_entry(&dv("1E+20"), None).unwrap(), "އެކެއް");
+        // A positive exponent is expanded, not dropped (#190).
+        let ten = |e: u32| BigInt::from(10).pow(e);
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+2"), None).unwrap(),
+            l.to_cardinal(&ten(2)).unwrap()
+        );
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+20"), None).unwrap(),
+            l.to_cardinal(&ten(20)).unwrap()
+        );
         assert_eq!(l.ordinal_float_entry(&dv("0")).unwrap(), "ސުން ވަނަ");
         assert_eq!(l.ordinal_float_entry(&dv("5")).unwrap(), "ފަސް ވަނަ");
         assert_eq!(l.ordinal_float_entry(&dv("100")).unwrap(), "ސަތޭކަ ވަނަ");
@@ -1690,13 +1720,19 @@ mod float_tests {
             l.ordinal_float_entry(&dv("5.00")).unwrap(),
             "ފަހެއް ޕޮއިންޓް ސުން ސުން ވަނަ"
         );
-        assert_eq!(l.ordinal_float_entry(&dv("1E+2")).unwrap(), "އެއް ވަނަ");
+        assert_eq!(
+            l.ordinal_float_entry(&dv("1E+2")).unwrap(),
+            l.to_ordinal(&ten(2)).unwrap()
+        );
         assert!(matches!(l.ordinal_float_entry(&dv("-3.0")), Err(N2WError::Type(_))));
         assert_eq!(
             l.year_float_entry(&dv("-3.0")).unwrap(),
             "ތިނެއް ޕޮއިންޓް ސުމެއް ބީ.ސީ"
         );
-        assert_eq!(l.year_float_entry(&dv("1E+2")).unwrap(), "އެކެއް");
+        assert_eq!(
+            l.year_float_entry(&dv("1E+2")).unwrap(),
+            l.to_year(&ten(2)).unwrap()
+        );
         assert_eq!(
             l.year_float_entry(&dv("12345.000")).unwrap(),
             "ބާރަހާސް ތިންސަތޭކަ ސާޅީސްފަހެއް ޕޮއިންޓް ސުމެއް ސުމެއް ސުމެއް"
