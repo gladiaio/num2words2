@@ -490,7 +490,7 @@ impl LangHa {
             });
             // `post` padded back to `precision` digits keeps its leading
             // zeros (#205); `fraction_words` drops the trailing ones.
-            let digits = format!("{:0>width$}", post.to_string(), width = precision as usize);
+            let digits = crate::strnum::zero_pad_left(&post.to_string(), precision as usize);
             Ok(format!(
                 "{} {} {}",
                 self.to_cardinal(&pre)?,

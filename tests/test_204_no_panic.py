@@ -35,8 +35,10 @@ def test_huge_scale_never_panics(lang, to, value):
 
 
 def test_ha_huge_value_is_overflow_error():
-    with pytest.raises(OverflowError):
-        num2words(Decimal("0." + "7" * 70000), lang="ha")
+    # A 70000-digit fraction no longer recurses: since #205 Hausa reads the
+    # fractional digits one by one, so it is words, not an overflow.
+    assert num2words(Decimal("0." + "7" * 70000), lang="ha").startswith(
+        "sifiri wajen bakwai bakwai")
     with pytest.raises(OverflowError):
         num2words(10**12010, lang="ha")
     assert num2words(10**12, lang="ha") == "tiriliyan"
