@@ -805,7 +805,6 @@ impl Lang for LangHa {
 #[cfg(test)]
 mod float_tests {
     use super::*;
-    use crate::base::N2WError;
     use crate::floatpath::FloatValue;
     use std::str::FromStr;
 
