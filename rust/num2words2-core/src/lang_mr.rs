@@ -47,10 +47,11 @@
 //!    `to_ordinal(-21)` == "ऋण एकवीसवा", `to_ordinal(-1000)` ==
 //!    "ऋण एक हजारवा". `Num2Word_Base.verify_ordinal` (which would raise
 //!    `TypeError` on a negative) is never called.
-//! 6. **`to_ordinal_num` mixes numeral systems.** 1..4 return Devanagari
-//!    digits ("१ला", "२रा", "३रा", "४था"); everything else falls through to
-//!    `str(number) + "वा"`, which is ASCII — hence "5वा", "10वा", "0वा" and
-//!    even "-1वा". Also 2 and 3 share the suffix "रा".
+//! 6. **`to_ordinal_num` mixed numeral systems (fixed, #224).** Python gave
+//!    Devanagari digits for 1..4 ("१ला", "२रा", "३रा", "४था") and ASCII
+//!    `str(number) + "वा"` for everything else ("5वा", "10वा", "-1वा"). The
+//!    port writes ASCII digits throughout, the script of every other number:
+//!    "1ला", "2रा", "3रा", "4था". 2 and 3 share the suffix "रा".
 //! 7. **`to_year` ignores its `longval` parameter** and just prefixes the
 //!    cardinal, so there is no two-digit-pair year reading: 1905 is
 //!    "सन एक हजार नऊशे पाच", not "nineteen oh five". `to_year(0)` is
@@ -687,25 +688,24 @@ impl Lang for LangMr {
     }
 
     /// `to_ordinal_num(float/Decimal)`. Same numeric `==` on 1..=4, so 1.0 →
-    /// "१ला", 2.0 → "२रा", 3.0 → "३रा", `Decimal("4.00")` → "४था"; everything
-    /// else is `str(number) + "वा"` (oddity 6's numeral-system mix, now with
-    /// a decimal point in it). `repr_str` is the binding's Python
+    /// "1ला", 2.0 → "2रा", 3.0 → "3रा", `Decimal("4.00")` → "4था"; everything
+    /// else is `str(number) + "वा"` (oddity 6). `repr_str` is the binding's Python
     /// `str(value)`, exactly the string Python concatenates — `str()` never
     /// raises, so 5.0 keeps its tail ("5.0वा") and exponent forms pass
     /// through unharmed: "1e+16वा", "1E+2वा", "-0.0वा".
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
         if let Some(i) = value.as_whole_int() {
             if i == bi(1) {
-                return Ok("१ला".to_string());
+                return Ok("1ला".to_string());
             }
             if i == bi(2) {
-                return Ok("२रा".to_string());
+                return Ok("2रा".to_string());
             }
             if i == bi(3) {
-                return Ok("३रा".to_string());
+                return Ok("3रा".to_string());
             }
             if i == bi(4) {
-                return Ok("४था".to_string());
+                return Ok("4था".to_string());
             }
         }
         Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
@@ -864,20 +864,21 @@ impl Lang for LangMr {
 
     /// Port of `Num2Word_MR.to_ordinal_num`.
     ///
-    /// Devanagari digits for 1..=4, ASCII `str(number)` for everything else
-    /// (including negatives: `to_ordinal_num(-1)` == "-1वा"). See oddity 6.
+    /// ASCII digits throughout — irregular suffixes for 1..=4, `str(number) +
+    /// "वा"` for everything else (including negatives: `to_ordinal_num(-1)` ==
+    /// "-1वा"). See oddity 6.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         if value == &bi(1) {
-            return Ok("१ला".to_string());
+            return Ok("1ला".to_string());
         }
         if value == &bi(2) {
-            return Ok("२रा".to_string());
+            return Ok("2रा".to_string());
         }
         if value == &bi(3) {
-            return Ok("३रा".to_string());
+            return Ok("3रा".to_string());
         }
         if value == &bi(4) {
-            return Ok("४था".to_string());
+            return Ok("4था".to_string());
         }
         Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }

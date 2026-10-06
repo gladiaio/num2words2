@@ -35,16 +35,12 @@
 //! 3. **`to_ordinal` never calls `verify_ordinal`**, so negatives sail
 //!    through and stack the two prefixes: `to_ordinal(-1)` == "na ban ɗaya".
 //!    `to_ordinal(0)` == "na sifiri" (no crash, unlike Polish).
-//! 4. **`to_ordinal_num` uses English suffixes on floored Python modulo.**
-//!    The comment in the Python says this is deliberate ("English-style
-//!    ordinal suffixes as commonly used in Hausa contexts"), but the
-//!    interaction with Python's floored `%` on negatives is not: `-7 % 10`
-//!    is `3` in Python (not `-7`), so `to_ordinal_num(-7)` == "-7rd", and
-//!    `-999 % 10 == 1` gives "-999st". See [`ordinal_suffix`].
-//! 5. **The teen guard is `10 <= value % 100 <= 20`**, one wider on each end
-//!    than the usual `11..=13`. Benign for positives (10/14..20 all end in a
-//!    digit that would take "th" anyway) but it re-shuffles negatives:
-//!    `-88 % 100 == 12` → "-88th" rather than "-88nd".
+//! 4. **`to_ordinal_num` used English suffixes ("2nd") (fixed, #224).** The
+//!    Python called them "English-style ordinal suffixes as commonly used in
+//!    Hausa contexts", while `to_ordinal` reads "na biyu". Without a settled
+//!    Hausa numeric form the port raises NotImplementedError ("does not
+//!    support to='ordinal_num'") rather than print English.
+//! 5. (Former quirk on the English suffixes' teen guard, gone with them.)
 //! 6. **Dead code kept for fidelity.** Inside the `>= 1000` loop the
 //!    `scale_value == 100` arm is unreachable (anything under 1000 already
 //!    returned above, and 1000 is itself a `SCALE` key so the loop always
@@ -468,91 +464,6 @@ impl Default for LangHa {
     }
 }
 
-/// The suffix half of `Num2Word_HA.to_ordinal_num`.
-///
-/// Both `%` operations are Python's **floored** modulo, which is why this uses
-/// `mod_floor` and not Rust's truncating `%`. For `value = -7` Python computes
-/// `-7 % 100 == 93` and `-7 % 10 == 3`, yielding "rd" — Rust's `%` would give
-/// `-7` and fall through to "th". The corpus pins "-7rd", so floored it is.
-fn ordinal_suffix(value: &BigInt) -> &'static str {
-    let hundred = BigInt::from(100u8);
-    let ten = BigInt::from(10u8);
-
-    let mod100 = value.mod_floor(&hundred);
-    // Python: `if 10 <= value % 100 <= 20` — inclusive on 20 (see module docs).
-    if mod100 >= BigInt::from(10u8) && mod100 <= BigInt::from(20u8) {
-        return "th";
-    }
-
-    let last_digit = value.mod_floor(&ten);
-    if last_digit == BigInt::one() {
-        "st"
-    } else if last_digit == BigInt::from(2u8) {
-        "nd"
-    } else if last_digit == BigInt::from(3u8) {
-        "rd"
-    } else {
-        "th"
-    }
-}
-
-/// Python's `Decimal % int` — remainder truncated toward zero, sign of the
-/// dividend (`Decimal('-17') % 10 == Decimal('-7')`), unlike int/float `%`
-/// which floor (sign of the divisor). `to_ordinal_num` computes its suffix
-/// off these semantics when the dispatcher hands it a Decimal.
-fn decimal_trunc_mod(value: &BigDecimal, modulus: i64) -> BigDecimal {
-    let m = BigDecimal::from(modulus);
-    let q = (value / &m).with_scale(0); // truncation toward zero
-    value - q * m
-}
-
-/// Python's `float % int` — floored, sign of the (positive) divisor:
-/// `-1.0 % 10 == 9.0`. `rem_euclid` agrees for a positive modulus.
-fn float_floor_mod(value: f64, modulus: f64) -> f64 {
-    value.rem_euclid(modulus)
-}
-
-/// `Num2Word_HA.to_ordinal_num`'s suffix chain, evaluated on the numeric
-/// value exactly as Python does (`10 <= value % 100 <= 20`, then
-/// `value % 10 == 1/2/3`). Fractional values simply fail the equality
-/// tests and fall through to "th" ("1.5th"), as in the original.
-fn ordinal_suffix_float(v: &FloatValue) -> &'static str {
-    match v {
-        FloatValue::Float { value, .. } => {
-            let mod100 = float_floor_mod(*value, 100.0);
-            if (10.0..=20.0).contains(&mod100) {
-                return "th";
-            }
-            let last = float_floor_mod(*value, 10.0);
-            if last == 1.0 {
-                "st"
-            } else if last == 2.0 {
-                "nd"
-            } else if last == 3.0 {
-                "rd"
-            } else {
-                "th"
-            }
-        }
-        FloatValue::Decimal { value, .. } => {
-            let mod100 = decimal_trunc_mod(value, 100);
-            if mod100 >= BigDecimal::from(10) && mod100 <= BigDecimal::from(20) {
-                return "th";
-            }
-            let last = decimal_trunc_mod(value, 10);
-            if last == BigDecimal::from(1) {
-                "st"
-            } else if last == BigDecimal::from(2) {
-                "nd"
-            } else if last == BigDecimal::from(3) {
-                "rd"
-            } else {
-                "th"
-            }
-        }
-    }
-}
-
 impl Lang for LangHa {
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
@@ -596,9 +507,11 @@ impl Lang for LangHa {
         Ok(format!("na {}", self.to_cardinal(value)?))
     }
 
-    /// Port of `Num2Word_HA.to_ordinal_num`: `str(value) + suffix`.
-    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", value, ordinal_suffix(value)))
+    /// `to_ordinal_num`: Python appended English suffixes ("2nd") although
+    /// the ordinal is "na biyu". Hausa's written numeric ordinal is not
+    /// settled here, so it raises rather than guess (quirk 4, #224).
+    fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
+        Err(crate::lang_rm::unsupported("ha", "to='ordinal_num'"))
     }
 
     /// Port of `Num2Word_HA.to_year`, a bare delegation to `to_cardinal`.
@@ -619,12 +532,9 @@ impl Lang for LangHa {
         Ok(format!("na {}", self.cardinal_float_entry(value, None)?))
     }
 
-    /// `to_ordinal_num(float/Decimal)`: English-style suffix computed on the
-    /// numeric value (Decimal `%` truncates, float `%` floors — see the
-    /// helpers), appended to Python's `str(value)`: "42.0nd", "-17th",
-    /// "1.5th", "1E+2th".
-    fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}{}", repr_str, ordinal_suffix_float(value)))
+    /// `to_ordinal_num(float/Decimal)`: unsupported, like the integer path.
+    fn ordinal_num_float_entry(&self, _value: &FloatValue, _repr_str: &str) -> Result<String> {
+        Err(crate::lang_rm::unsupported("ha", "to='ordinal_num'"))
     }
 
     /// `str_to_number` stays Base's `Decimal(value)`, but HA's `to_cardinal`

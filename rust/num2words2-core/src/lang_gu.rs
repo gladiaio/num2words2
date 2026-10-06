@@ -30,12 +30,13 @@
 //!    compounds: `21` == "વીસ એક" ("twenty one"), not "એકવીસ"; `42` ==
 //!    "ચાલીસ બે"; `99` == "નેવું નવ". Only 10–19 use real single words.
 //!    Corpus-confirmed for 21/42/99/999.
-//! 2. **`to_ordinal_num` mixes numeral systems.** Cases 1/2/3 return Gujarati
-//!    digits ("૧લો", "૨જો", "૩જો") but the fallback is `str(number) + "મો"`,
-//!    i.e. **ASCII** digits — `to_ordinal_num(5)` == "5મો", not "૫મો", and
-//!    `to_ordinal_num(0)` == "0મો". Corpus-confirmed.
-//! 3. **`to_ordinal_num` has no case for 3's neighbours.** `3` maps to "૩જો",
-//!    the same suffix Python gives `2` ("૨જો"); there is no "૩ત્રીજો"-style
+//! 2. **`to_ordinal_num` mixed numeral systems (fixed, #224).** Python gave
+//!    Gujarati digits for 1/2/3 ("૧લો", "૨જો", "૩જો") but `str(number) + "મો"`,
+//!    i.e. ASCII digits, for everything else ("5મો"). The port writes ASCII
+//!    digits throughout, the script the module uses for every other number:
+//!    "1લો", "2જો", "3જો", "4મો".
+//! 3. **`to_ordinal_num` has no case for 3's neighbours.** `3` maps to "3જો",
+//!    the same suffix Python gives `2` ("2જો"); there is no "૩ત્રીજો"-style
 //!    form. Kept verbatim.
 //! 4. **Negative ordinals are not special-cased.** `to_ordinal(-1)` does not
 //!    hit the `number == 1` arm, so it falls through to `cardinal + "મો"` ==
@@ -213,9 +214,9 @@ const ORD_6: &str = "છઠ્ઠો";
 const ORD_SUFFIX: &str = "મો";
 
 /// `to_ordinal_num`'s irregular forms — Gujarati digits, unlike the fallback.
-const ORD_NUM_1: &str = "૧લો";
-const ORD_NUM_2: &str = "૨જો";
-const ORD_NUM_3: &str = "૩જો";
+const ORD_NUM_1: &str = "1લો";
+const ORD_NUM_2: &str = "2જો";
+const ORD_NUM_3: &str = "3જો";
 
 /// `to_year`'s era prefixes. Both carry Python's trailing space.
 const YEAR_BC: &str = "ઈસવીસન પૂર્વે ";
@@ -789,8 +790,8 @@ impl Lang for LangGu {
 
     /// Port of `Num2Word_GU.to_ordinal_num`.
     ///
-    /// The fallback is `str(number) + "મો"` — **ASCII** digits, unlike the
-    /// Gujarati-digit forms for 1/2/3. `BigInt::to_string()` matches Python's
+    /// The fallback is `str(number) + "મો"` — ASCII digits, like the irregular
+    /// forms for 1/2/3 (#224). `BigInt::to_string()` matches Python's
     /// `str(int)` exactly (no separators, `-` prefix for negatives).
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         if value == &BigInt::from(1) {
@@ -864,7 +865,7 @@ impl Lang for LangGu {
     }
 
     /// `to_ordinal_num(float/Decimal)` — numeric equality again for the three
-    /// Gujarati-digit irregulars, everything else `str(number) + "મો"` with
+    /// irregulars, everything else `str(number) + "મો"` with
     /// the repr verbatim: "4.0મો", "-0.0મો", "1e+16મો", "5.00મો".
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
         for (k, word) in [(1, ORD_NUM_1), (2, ORD_NUM_2), (3, ORD_NUM_3)] {

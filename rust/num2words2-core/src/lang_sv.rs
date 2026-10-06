@@ -36,11 +36,11 @@
 //!    the same branches), so cardinals are unaffected — but the numeric field
 //!    of the tree is genuinely wrong and is reproduced as such.
 //!
-//! 4. **`to_ordinal_num` skips `verify_ordinal`.** Negatives are accepted and
-//!    formatted off the decimal string: `to_ordinal_num(-1)` → "-1:a",
-//!    `to_ordinal_num(-42)` → "-42:a". Its last two branches are also
-//!    identical (both append ":e"), so the final `else` is dead — kept here
-//!    for structural fidelity.
+//! 4. **`to_ordinal_num` skips `verify_ordinal`.** Negatives are accepted:
+//!    `to_ordinal_num(-1)` → "-1:a", `to_ordinal_num(-42)` → "-42:a". Python
+//!    exempted only 11 and 12 from ":a", so 111 was "111:a" though the
+//!    ordinal is "etthundraelfte"; the suffix now follows the last two digits
+//!    (#224, see [`sv_ordinal_num_suffix`]).
 //!
 //! 5. **SV's `to_currency` double-spaced the minus on the int path (fixed,
 //!    #160).** Python builds `"%s %s %s" % (minus_str, money, unit)` with the
@@ -96,7 +96,7 @@ use crate::floatpath::{default_to_cardinal_float, FloatValue};
 use crate::strnum::python_decimal_str;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, One, Signed, Zero};
+use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
 /// Port of `Num2Word_EUR.gen_high_numwords`.
@@ -434,6 +434,18 @@ fn sv_py_num_str(value: &FloatValue) -> String {
     }
 }
 
+/// The `:a`/`:e` of a Swedish numeric ordinal: ":a" after first/second
+/// (första/andra: last two digits ending in 1 or 2, but not 11/12, which
+/// read "elfte"/"tolfte"), ":e" otherwise (#224). 111 is "111:e".
+fn sv_ordinal_num_suffix(value: &BigInt) -> &'static str {
+    let last_two = (value.abs() % BigInt::from(100)).to_u32().unwrap_or(0);
+    if matches!(last_two % 10, 1 | 2) && !matches!(last_two, 11 | 12) {
+        ":a"
+    } else {
+        ":e"
+    }
+}
+
 impl Lang for LangSv {
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
@@ -543,22 +555,7 @@ impl Lang for LangSv {
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         // No verify_ordinal call here — negatives pass straight through.
-        let s = value.to_string();
-        let one = BigInt::one();
-        let two = BigInt::from(2);
-        let eleven = BigInt::from(11);
-        let twelve = BigInt::from(12);
-
-        if value == &one || value == &two {
-            Ok(format!("{}:a", s))
-        } else if (s.ends_with('1') || s.ends_with('2')) && value != &eleven && value != &twelve {
-            Ok(format!("{}:a", s))
-        } else if s.ends_with(|c: char| matches!(c, '3'..='9' | '0')) {
-            Ok(format!("{}:e", s))
-        } else {
-            // Unreachable in Python too: identical to the branch above.
-            Ok(format!("{}:e", s))
-        }
+        Ok(format!("{}{}", value, sv_ordinal_num_suffix(value)))
     }
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
@@ -612,22 +609,9 @@ impl Lang for LangSv {
     /// "1.0"/"2.0" take ":a" (== 1/2), "42.0" takes ":e" (ends "0"), and
     /// "1E+2" takes ":a" (ends "2").
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        let one = BigInt::one();
-        let two = BigInt::from(2);
-        let eleven = BigInt::from(11);
-        let twelve = BigInt::from(12);
-        let whole = value.as_whole_int();
-        let eq = |n: &BigInt| whole.as_ref() == Some(n);
-
-        if eq(&one) || eq(&two) {
-            Ok(format!("{}:a", repr_str))
-        } else if (repr_str.ends_with('1') || repr_str.ends_with('2'))
-            && !eq(&eleven)
-            && !eq(&twelve)
-        {
-            Ok(format!("{}:a", repr_str))
-        } else {
-            Ok(format!("{}:e", repr_str))
+        match value.as_whole_int() {
+            Some(i) => Ok(format!("{}{}", repr_str, sv_ordinal_num_suffix(&i))),
+            None => Ok(format!("{}:e", repr_str)),
         }
     }
 

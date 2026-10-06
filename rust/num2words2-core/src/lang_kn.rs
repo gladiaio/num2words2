@@ -82,11 +82,10 @@
 //!    of "koti", yielding "...kota-ne" instead of "...koti-ne". Same for every
 //!    crore value. Wrong-looking, but it is the spec.
 //!
-//! 3. **`to_ordinal_num` prepends the digits to the full ordinal *words***:
-//!    `"%s%s" % (value, self.to_ordinal(value))`, so `to_ordinal_num(100)` is
-//!    the numeral "100" glued directly onto the entire spelled-out ordinal with
-//!    no separator. Most languages return a short suffix here (EN gives
-//!    "100th"); KN does not.
+//! 3. **`to_ordinal_num` prepended the digits to the full ordinal *words*
+//!    (fixed, #224)**: Python's `"%s%s" % (value, self.to_ordinal(value))`
+//!    gave "1ಒಂದನೇ". The port writes the numeral plus the ordinal suffix
+//!    `to_ordinal` uses: "1ನೇ", "100ನೇ".
 //!
 //! 4. **Typos and inconsistent spacing in `low_numwords`, kept verbatim.** The
 //!    30s are especially ragged: 36/37/38 are missing the second "ta" that every
@@ -571,17 +570,12 @@ impl Lang for LangKn {
         Ok(format!("{}{}", stem, ORDINAL_SUFFIX))
     }
 
-    /// Port of `Num2Word_KN.to_ordinal_num`.
-    ///
-    /// `"%s%s" % (value, self.to_ordinal(value))` -- the numeral glued to the
-    /// *entire* ordinal phrase with no separator (quirk 3).
-    ///
-    /// `verify_ordinal` runs here *and* again inside `to_ordinal`, exactly as in
-    /// Python; the duplicate check is harmless and observationally identical
-    /// (same TypeError, same message).
+    /// `to_ordinal_num`: the numeral plus the ordinal suffix `to_ordinal`
+    /// uses, "1ನೇ", "100ನೇ" (quirk 3, fixed). Negatives raise like
+    /// `to_ordinal`.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
-        Ok(format!("{}{}", value, self.to_ordinal(value)?))
+        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
 
     // to_year: KN does not override Num2Word_Base.to_year, which delegates to
@@ -599,14 +593,11 @@ impl Lang for LangKn {
         self.to_ordinal(&i)
     }
 
-    /// `to_ordinal_num(float/Decimal)` — the same gate, then
-    /// `"%s%s" % (value, self.to_ordinal(value))`: the repr glued to the
-    /// *entire* ordinal phrase ("5.0ಐದನೇ"). `to_ordinal` runs for real, so a
-    /// whole value past MAXVAL ("1E+20") raises OverflowError here, unlike
-    /// suffix-only languages.
+    /// `to_ordinal_num(float/Decimal)` — the same gate, then the repr plus
+    /// the ordinal suffix ("5.0ನೇ"), like the integer path.
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        let i = verify_ordinal_float(value, repr_str)?;
-        Ok(format!("{}{}", repr_str, self.to_ordinal(&i)?))
+        verify_ordinal_float(value, repr_str)?;
+        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
     }
 
     // ---- currency --------------------------------------------------------

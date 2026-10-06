@@ -1192,6 +1192,19 @@ fn num2words(
         let currency = get_opt_str(kwargs, "currency")?;
         let separator = get_opt_str(kwargs, "separator")?;
         let adjective = get_opt_bool(kwargs, "adjective")?;
+        // "NaN"/"inf" have no numeric ordinal; some languages echoed the token
+        // ("NaN", "Infinity-তম"), others raised InvalidOperation (#224).
+        if to_final == "ordinal_num"
+            && matches!(
+                num2words2_core::strnum::python_decimal_parse(&s),
+                Ok(ParsedNumber::Inf { .. }) | Ok(ParsedNumber::NaN)
+            )
+        {
+            return Err(PyValueError::new_err(format!(
+                "to='ordinal_num' needs a finite number, got {:?}",
+                s.trim()
+            )));
+        }
         // precision= applies to a numeric string like to a float (#218).
         if let (Some(p), "cardinal") = (get_precision(kwargs)?, to_final) {
             if let Ok(ParsedNumber::Dec(d)) | Ok(ParsedNumber::DecPoint { value: d, .. }) =
