@@ -38,12 +38,11 @@
 //! exactly what Python emits, verified against the interpreter and against the
 //! frozen corpus:
 //!
-//! 1. **`to_cardinal(0)` == `"zero"`** — the English word, in an otherwise
-//!    all-Sindhi table. `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is the
-//!    empty string (a falsy placeholder so that `ones[n]` indexes by digit).
-//!    The conditional therefore always takes the `"zero"` branch — the guard is
-//!    dead. Modelled by [`ZERO`].
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** Python's `_int_to_word` opens
+//!    with `return self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is
+//!    the empty string (a falsy placeholder so that `ones[n]` indexes by
+//!    digit), so Python always answered with the English "zero". This port
+//!    says the Sindhi ٻڙي instead: `to_cardinal(0)` == "ٻڙي". See [`ZERO`].
 //! 2. **No teens.** Sindhi has distinct words for 11-19, but the `< 100` branch
 //!    unconditionally composes `tens[n // 10] + " " + ones[n % 10]`. So 11 is
 //!    "ڏهه هڪ" — literally "ten one" — 13 is "ڏهه ٽي", and 19 is "ڏهه نو". This
@@ -59,8 +58,9 @@
 //!    genuine Sindhi grouping (lakh/crore) is not used at all — the code groups
 //!    in Western thousands/millions. Hence 10^6 == "هڪ لک" ("one lakh") and
 //!    123456789 == "هڪ سو ويهه ٽي لک ..." ("one hundred twenty three lakh ...").
-//! 5. **`negword` is the English "minus "**, not a Sindhi word, and it is
-//!    *prepended* to right-to-left script: `to_cardinal(-1)` == "minus هڪ".
+//! 5. **`negword`** is the English "minus " in Python; this port uses منفي
+//!    (#154): `to_cardinal(-1)` == "منفي هڪ". The decimal word is still the
+//!    English "point" (see [`POINTWORD`]) — the Sindhi term is not confirmed.
 //! 6. Orthographic inconsistency in the tables, kept byte-exact: `ones[1]`
 //!    ("هڪ") spells its kaf with U+06AA ARABIC LETTER SWASH KAF, while `million`
 //!    ("لک") uses U+06A9 ARABIC LETTER KEHEH. These are distinct codepoints that
@@ -156,11 +156,11 @@ use std::collections::HashMap;
 
 /// `_int_to_word`'s zero case. Python evaluates
 /// `self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is `""` (falsy),
-/// so this English literal is what a Sindhi zero actually returns. See bug 1.
-const ZERO: &str = "zero";
+/// so Python returns the English literal; this port says ٻڙي. See bug 1.
+const ZERO: &str = "\u{067B}\u{0699}\u{064A}"; // ٻڙي
 
-/// `self.negword`. English, and prepended to RTL output. See bug 5.
-const NEGWORD: &str = "minus ";
+/// `self.negword`. English "minus " in Python; منفي here. See bug 5.
+const NEGWORD: &str = "\u{0645}\u{0646}\u{0641}\u{064A} "; // منفي
 
 /// `self.ones`. Index 0 is the empty placeholder that makes bug 1 possible;
 /// it is never emitted, because every call site either guards on a nonzero
@@ -205,8 +205,9 @@ const MILLION: &str = "\u{0644}\u{06A9}";
 const ORDINAL_SUFFIX: &str = "-\u{0648}";
 
 /// `self.pointword` — the word between the integer and fractional parts on the
-/// float path. Plain ASCII "point", not a Sindhi word (matching the tables'
-/// other English intrusions, cf. bugs 1 and 5).
+/// float path. Still the English "point": the Sindhi decimal word needs a
+/// native-speaker check (gladiaio/num2words2#154), so it is left as is.
+
 const POINTWORD: &str = "point";
 
 /// The 10^9 ceiling past which `_int_to_word` gives up and returns digits.
@@ -330,7 +331,7 @@ fn int_to_word(number: &BigInt) -> String {
 /// in [`int_to_word`], and each recursion here is guarded by Python's
 /// `if remainder:` / a nonzero quotient. Were it called with 0 it would return
 /// `ONES[0]` (`""`) rather than [`ZERO`] — the guard is what keeps bug 1's
-/// English "zero" confined to the top-level entry point.
+/// zero word confined to the top-level entry point.
 fn bounded_to_word(number: u64) -> String {
     if number < 10 {
         return ONES[number as usize].to_string();
@@ -396,7 +397,7 @@ impl Lang for LangSd {
     /// `to_ordinal(float/Decimal)` — Python's `to_ordinal` is
     /// `to_cardinal(number) + "-و"` for *any* input (no
     /// `verify_ordinal`), so the float path is the float cardinal put through
-    /// the same literal transformation: `5.0` -> "پنج point zero-و".
+    /// the same literal transformation: `5.0` -> "پنج point ٻڙي-و".
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -462,7 +463,7 @@ impl Lang for LangSd {
     /// The trailing `.strip()` is preserved, though it is a no-op in practice:
     /// `_int_to_word` never returns a value with outer whitespace, and it never
     /// returns `""` (zero yields [`ZERO`]), so there is no case where the
-    /// `"minus "` prefix is left dangling with a space to trim.
+    /// negword prefix is left dangling with a space to trim.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         let (prefix, magnitude) = if value.is_negative() {
             (NEGWORD, value.abs())
@@ -475,7 +476,7 @@ impl Lang for LangSd {
     }
 
     /// Python's `to_ordinal`: the cardinal with `"-و"` glued on. There is no
-    /// per-value inflection — every ordinal, including "zero-و" and the
+    /// per-value inflection — every ordinal, including "ٻڙي-و" and the
     /// digits-fallback "1000000000-و", takes the same suffix.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
@@ -490,7 +491,7 @@ impl Lang for LangSd {
     /// Python's `to_year`: delegates straight to `to_cardinal`, discarding the
     /// `longval` flag. No era suffix, no two-digit pairing — 1999 is read as
     /// the plain cardinal "one thousand nine hundred ninety nine", and negative
-    /// years just get the "minus " prefix rather than a BC marker.
+    /// years just get the negword prefix rather than a BC marker.
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -524,7 +525,7 @@ impl Lang for LangSd {
     /// all: `2.675` -> `674.9999999999998` rescued to `675`, and the leading
     /// zeros of `0.01` -> `"01"`. `int(left)` is `pre.abs()` — SD peels the sign
     /// off the *string* first, so `left` never carries a minus, and the
-    /// "minus " prefix is added separately (bug 5: English word, prepended to
+    /// negword prefix is added separately (bug 5, prepended to
     /// RTL text). The same `float2tuple` serves the Decimal arm, so `cardinal_dec`
     /// rows come out right too: `1.10` keeps its trailing zero (`post` = 10 padded
     /// to `"10"`), and `98746251323029.99` overflows `int_to_word` into bug 3's
@@ -556,7 +557,7 @@ impl Lang for LangSd {
     /// # The negative-zero hole (Decimal only)
     ///
     /// `str(Decimal("-0.0")) == "-0.0"` keeps the sign, so Python answers
-    /// "minus zero point zero"; a `BigDecimal` has no signed zero (its `BigInt`
+    /// "منفي ٻڙي point ٻڙي"; a `BigDecimal` has no signed zero (its `BigInt`
     /// mantissa normalises `-0` to `0`), and the discriminating string is not
     /// carried across the `FloatValue::Decimal` boundary, so this arm drops the
     /// negword. Out of this file's remit — same boundary hole `lang_pa` flags.
@@ -621,7 +622,7 @@ impl Lang for LangSd {
             let padding = "0".repeat(precision.saturating_sub(post_str.len()));
             for ch in format!("{}{}", padding, post_str).chars().take(precision) {
                 // Each char is one ASCII digit; `self._int_to_word(int(digit))`
-                // maps 0 -> "zero" (bug 1) and 1..=9 -> ONES[d].
+                // maps 0 -> [`ZERO`] (bug 1) and 1..=9 -> ONES[d].
                 let d = ch.to_digit(10).unwrap_or(0);
                 ret.push_str(&int_to_word(&BigInt::from(d)));
                 ret.push(' ');
@@ -629,8 +630,8 @@ impl Lang for LangSd {
         }
 
         // `return ret.strip()` — drops the trailing digit space. (It would also
-        // trim a dangling "minus " space, but no reachable path leaves one:
-        // int_to_word never returns "" — zero yields "zero".)
+        // trim a dangling negword space, but no reachable path leaves one:
+        // int_to_word never returns "" — zero yields [`ZERO`].)
         Ok(ret.trim().to_string())
     }
 
@@ -764,7 +765,7 @@ impl Lang for LangSd {
 
         let one = BigInt::one();
         // `cr1[1] if left != 1 else cr1[0]` — note 0 takes the plural, hence
-        // the corpus's "zero euros".
+        // the corpus's "ٻڙي euros".
         let unit = if left != one {
             &forms.unit[1]
         } else {
@@ -790,7 +791,7 @@ impl Lang for LangSd {
             result.push_str(subunit);
         }
 
-        // `result = self.negword + result` — "minus " (English, prepended to
+        // `result = self.negword + result` — the negword (prepended to
         // RTL text; see bug 5).
         if is_negative {
             result.insert_str(0, NEGWORD);
@@ -832,38 +833,38 @@ mod float_tests {
     #[test]
     fn corpus_float_rows() {
         // Every `"lang":"sd","to":"cardinal"` row with a dot in `arg`.
-        assert_eq!(flt(0.0, 1), "zero point zero");
-        assert_eq!(flt(0.5, 1), "zero point پنج");
-        assert_eq!(flt(1.0, 1), "هڪ point zero");
+        assert_eq!(flt(0.0, 1), "ٻڙي point ٻڙي");
+        assert_eq!(flt(0.5, 1), "ٻڙي point پنج");
+        assert_eq!(flt(1.0, 1), "هڪ point ٻڙي");
         assert_eq!(flt(1.5, 1), "هڪ point پنج");
         assert_eq!(flt(2.25, 2), "ٻه point ٻه پنج");
         assert_eq!(flt(3.14, 2), "ٽي point هڪ چار");
-        assert_eq!(flt(0.01, 2), "zero point zero هڪ");
-        assert_eq!(flt(0.1, 1), "zero point هڪ");
-        assert_eq!(flt(0.99, 2), "zero point نو نو");
-        assert_eq!(flt(1.01, 2), "هڪ point zero هڪ");
+        assert_eq!(flt(0.01, 2), "ٻڙي point ٻڙي هڪ");
+        assert_eq!(flt(0.1, 1), "ٻڙي point هڪ");
+        assert_eq!(flt(0.99, 2), "ٻڙي point نو نو");
+        assert_eq!(flt(1.01, 2), "هڪ point ٻڙي هڪ");
         assert_eq!(flt(12.34, 2), "ڏهه ٻه point ٽي چار");
         assert_eq!(flt(99.99, 2), "نوي نو point نو نو");
         assert_eq!(flt(100.5, 1), "هڪ سو point پنج");
         assert_eq!(flt(1234.56, 2), "هڪ هزار ٻه سو ٽيهه چار point پنج ڇهه");
-        assert_eq!(flt(-0.5, 1), "minus zero point پنج");
-        assert_eq!(flt(-1.5, 1), "minus هڪ point پنج");
-        assert_eq!(flt(-12.34, 2), "minus ڏهه ٻه point ٽي چار");
-        assert_eq!(flt(1.005, 3), "هڪ point zero zero پنج");
+        assert_eq!(flt(-0.5, 1), "منفي ٻڙي point پنج");
+        assert_eq!(flt(-1.5, 1), "منفي هڪ point پنج");
+        assert_eq!(flt(-12.34, 2), "منفي ڏهه ٻه point ٽي چار");
+        assert_eq!(flt(1.005, 3), "هڪ point ٻڙي ٻڙي پنج");
         assert_eq!(flt(2.675, 3), "ٻه point ڇهه ست پنج"); // f64 artefact -> 675
         // extra live-interpreter checks
-        assert_eq!(flt(2.0, 1), "ٻه point zero");
+        assert_eq!(flt(2.0, 1), "ٻه point ٻڙي");
         assert_eq!(flt(1000000.5, 1), "هڪ لک point پنج");
     }
 
     #[test]
     fn corpus_decimal_rows() {
         // Every `"lang":"sd","to":"cardinal_dec"` row.
-        assert_eq!(dec("0.01", 2), "zero point zero هڪ");
-        assert_eq!(dec("1.10", 2), "هڪ point هڪ zero"); // trailing zero kept
+        assert_eq!(dec("0.01", 2), "ٻڙي point ٻڙي هڪ");
+        assert_eq!(dec("1.10", 2), "هڪ point هڪ ٻڙي"); // trailing zero kept
         assert_eq!(dec("12.345", 3), "ڏهه ٻه point ٽي چار پنج");
         assert_eq!(dec("98746251323029.99", 2), "98746251323029 point نو نو"); // bug 3 fallback
-        assert_eq!(dec("0.001", 3), "zero point zero zero هڪ");
+        assert_eq!(dec("0.001", 3), "ٻڙي point ٻڙي ٻڙي هڪ");
     }
 
     #[test]
@@ -882,7 +883,7 @@ mod float_tests {
     fn float_negative_zero_keeps_negword() {
         // str(-0.0) == "-0.0" -> Python prepends the negword; is_sign_negative
         // recovers it where `< 0.0` would not.
-        assert_eq!(flt(-0.0, 1), "minus zero point zero");
+        assert_eq!(flt(-0.0, 1), "منفي ٻڙي point ٻڙي");
     }
 
     #[test]

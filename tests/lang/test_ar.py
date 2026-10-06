@@ -101,8 +101,8 @@ class TestAR(LangTest, TestCase):
         (12.03, "اثنا عشر ، ثلاث"),
         (12.34, "اثنا عشر ، أربع وثلاثون"),
         # From test_negative_decimals
-        (-0.4, "سالب ، أربعون"),
-        (-0.5, "سالب ، خمسون"),
+        (-0.4, "سالب صفر ، أربعون"),  # #175: zero integer part spelled
+        (-0.5, "سالب صفر ، خمسون"),
         (-1.4, "سالب واحد ، أربعون"),
     ]
 
@@ -248,3 +248,24 @@ class TestARNegativeOrdinal(TestCase):
         self.assertEqual(num2words(12.0, lang="ar", to="ordinal"), "الثاني عشر")
         # -0.0 is not negative; it verifies as 0.
         self.assertEqual(num2words(-0.0, lang="ar", to="ordinal"), "صفر")
+
+
+class TestArZeroIntegerPart(TestCase):
+    """gladiaio/num2words2#175: a zero integer part is spelled, not dropped."""
+
+    def test_cardinal(self):
+        self.assertEqual(num2words(0.5, lang="ar"), "صفر ، خمسون")
+        self.assertEqual(num2words("0.5", lang="ar"), "صفر ، خمسون")
+        self.assertEqual(num2words(0.05, lang="ar"), "صفر ، خمس")
+        self.assertEqual(num2words(0, lang="ar"), "صفر")
+        # Same shape as a non-zero integer part.
+        self.assertEqual(num2words(1.5, lang="ar"), "واحد ، خمسون")
+
+    def test_currency(self):
+        self.assertEqual(num2words(0, lang="ar", to="currency"), "صفر ريال")
+        self.assertEqual(
+            num2words(0, lang="ar", to="currency", currency="EGP"), "صفر جنيه"
+        )
+        self.assertEqual(
+            num2words(0.5, lang="ar", to="currency"), "صفر ريال وخمسون هللة"
+        )

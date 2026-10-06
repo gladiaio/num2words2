@@ -50,8 +50,8 @@ Repository = "https://github.com/gladiaio/num2words2.git"
 # models (~140MB); pass `--no-default-features` for the slim (~2MB) wheel with
 # `num2words_sentence(lang=None)` auto-detection disabled.
 [project.scripts]
-# maturin reads this; setup.py's `scripts=["bin/num2words2"]` is never seen by
-# the wheel build, which is why the documented CLI did not exist once
+# maturin reads this. The old setup.py `scripts=["bin/num2words2"]` was never
+# seen by the wheel build, which is why the documented CLI did not exist once
 # installed. See num2words2/__main__.py.
 num2words2 = "num2words2.__main__:main"
 
@@ -66,7 +66,6 @@ include = ["num2words2/py.typed"]
 [tool.isort]
 profile = "black"
 line_length = 88
-skip = ["num2words2/_version.py"]
 multi_line_output = 3
 include_trailing_comma = true
 force_grid_wrap = 0
@@ -88,6 +87,5 @@ exclude = '''
   | buck-out
   | build
   | dist
-  | num2words2/_version.py
 )/
 '''

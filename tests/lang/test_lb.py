@@ -25,7 +25,7 @@ class Num2WordsLBTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="lb"), "zero")
+        self.assertEqual(num2words(0, lang="lb"), "null")
         self.assertEqual(num2words(1, lang="lb"), "eent")
         self.assertEqual(num2words(2, lang="lb"), "zwou")
         self.assertEqual(num2words(3, lang="lb"), "dräi")
@@ -249,31 +249,31 @@ class Num2WordsLBTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="lb"), "zero point eent")
-        self.assertEqual(num2words(0.5, lang="lb"), "zero point fënnef")
-        self.assertEqual(num2words(0.9, lang="lb"), "zero point néng")
-        self.assertEqual(num2words(1.1, lang="lb"), "eent point eent")
-        self.assertEqual(num2words(1.5, lang="lb"), "eent point fënnef")
-        self.assertEqual(num2words(2.5, lang="lb"), "zwou point fënnef")
-        self.assertEqual(num2words(3.14, lang="lb"), "dräi point eent véier")
-        self.assertEqual(num2words(10.5, lang="lb"), "zéng point fënnef")
-        self.assertEqual(num2words(11.11, lang="lb"), "zéng eent point eent eent")
-        self.assertEqual(num2words(20.2, lang="lb"), "zwanzeg point zwou")
-        self.assertEqual(num2words(99.99, lang="lb"), "nongzeg néng point néng néng")
-        self.assertEqual(num2words(100.01, lang="lb"), "eent honnert point zero eent")
-        self.assertEqual(num2words(100.5, lang="lb"), "eent honnert point fënnef")
+        self.assertEqual(num2words(0.1, lang="lb"), "null Komma eent")
+        self.assertEqual(num2words(0.5, lang="lb"), "null Komma fënnef")
+        self.assertEqual(num2words(0.9, lang="lb"), "null Komma néng")
+        self.assertEqual(num2words(1.1, lang="lb"), "eent Komma eent")
+        self.assertEqual(num2words(1.5, lang="lb"), "eent Komma fënnef")
+        self.assertEqual(num2words(2.5, lang="lb"), "zwou Komma fënnef")
+        self.assertEqual(num2words(3.14, lang="lb"), "dräi Komma eent véier")
+        self.assertEqual(num2words(10.5, lang="lb"), "zéng Komma fënnef")
+        self.assertEqual(num2words(11.11, lang="lb"), "zéng eent Komma eent eent")
+        self.assertEqual(num2words(20.2, lang="lb"), "zwanzeg Komma zwou")
+        self.assertEqual(num2words(99.99, lang="lb"), "nongzeg néng Komma néng néng")
+        self.assertEqual(num2words(100.01, lang="lb"), "eent honnert Komma null eent")
+        self.assertEqual(num2words(100.5, lang="lb"), "eent honnert Komma fënnef")
         self.assertEqual(
-            num2words(123.45, lang="lb"), "eent honnert zwanzeg dräi point véier fënnef"
+            num2words(123.45, lang="lb"), "eent honnert zwanzeg dräi Komma véier fënnef"
         )
-        self.assertEqual(num2words(1000.5, lang="lb"), "eent dausend point fënnef")
+        self.assertEqual(num2words(1000.5, lang="lb"), "eent dausend Komma fënnef")
         self.assertEqual(
             num2words(1234.56, lang="lb"),
-            "eent dausend zwou honnert drësseg véier point fënnef sechs",
+            "eent dausend zwou honnert drësseg véier Komma fënnef sechs",
         )
-        self.assertEqual(num2words(10000.01, lang="lb"), "zéng dausend point zero eent")
-        self.assertEqual(num2words(-0.5, lang="lb"), "minus zero point fënnef")
-        self.assertEqual(num2words(-1.5, lang="lb"), "minus eent point fënnef")
-        self.assertEqual(num2words(-10.5, lang="lb"), "minus zéng point fënnef")
+        self.assertEqual(num2words(10000.01, lang="lb"), "zéng dausend Komma null eent")
+        self.assertEqual(num2words(-0.5, lang="lb"), "minus null Komma fënnef")
+        self.assertEqual(num2words(-1.5, lang="lb"), "minus eent Komma fënnef")
+        self.assertEqual(num2words(-10.5, lang="lb"), "minus zéng Komma fënnef")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -322,15 +322,15 @@ class Num2WordsLBTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="lb", to="currency", currency="EUR"), "zero euro"
+            num2words(0, lang="lb", to="currency", currency="EUR"), "null euro"
         )
         self.assertEqual(
             num2words(0.01, lang="lb", to="currency", currency="EUR"),
-            "zero euro eent cent",
+            "null euro eent cent",
         )
         self.assertEqual(
             num2words(0.5, lang="lb", to="currency", currency="EUR"),
-            "zero euro fofzeg cents",
+            "null euro fofzeg cents",
         )
         self.assertEqual(
             num2words(1, lang="lb", to="currency", currency="EUR"), "eent euro"
@@ -340,15 +340,15 @@ class Num2WordsLBTest(TestCase):
             "eent euro fofzeg cents",
         )
         self.assertEqual(
-            num2words(0, lang="lb", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="lb", to="currency", currency="USD"), "null dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="lb", to="currency", currency="USD"),
-            "zero dollars eent cent",
+            "null dollars eent cent",
         )
         self.assertEqual(
             num2words(0.5, lang="lb", to="currency", currency="USD"),
-            "zero dollars fofzeg cents",
+            "null dollars fofzeg cents",
         )
         self.assertEqual(
             num2words(1, lang="lb", to="currency", currency="USD"), "eent dollar"
@@ -399,7 +399,7 @@ class Num2WordsLBTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="lb"), "zero")
+        self.assertEqual(num2words("0", lang="lb"), "null")
         self.assertEqual(num2words("1", lang="lb"), "eent")
         self.assertEqual(num2words("10", lang="lb"), "zéng")
         self.assertEqual(num2words("100", lang="lb"), "eent honnert")
@@ -411,7 +411,7 @@ class Num2WordsLBTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="lb"), "zero")
+        self.assertEqual(num2words(0, lang="lb"), "null")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="lb"), num2words("100", lang="lb"))

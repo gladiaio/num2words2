@@ -33,9 +33,10 @@
 //!   only the trailing EXTS sweep needed porting (see
 //!   [`LangPt::to_cardinal_float`]).
 //! * `to_ordinal(float/Decimal)` — **`value = int(value)` truncates toward
-//!   zero before `verify_ordinal`**, so `to_ordinal(2.5)` == "segundo",
-//!   `to_ordinal(0.5)` == "", `to_ordinal(-0.0)` == "" and `to_ordinal(-1.5)`
-//!   raises the *negative* TypeError, never the float one.
+//!   zero before `verify_ordinal`**, so `to_ordinal(2.5)` == "segundo" and
+//!   `to_ordinal(-1.5)` raises the *negative* TypeError, never the float one.
+//!   `to_ordinal(0.5)` and `to_ordinal(-0.0)` truncate to 0, which Python
+//!   renders as "" and the port rejects with ValueError (#160).
 //! * `to_ordinal_num(float/Decimal)` — `verify_ordinal` on the **raw** value:
 //!   fractional -> TypeError (`errmsg_floatord`), numerically negative ->
 //!   TypeError (`errmsg_negord`). `-0.0` passes both checks
@@ -75,16 +76,17 @@
 //!    "quadrigentésimo" (standard PT is "quadringentésimo") and `ords[2][7]`
 //!    is "septigentésimo" (standard is "septingentésimo"). The frozen corpus
 //!    confirms both (`ordinal(700)` == "septigentésimo").
-//! 4. **`to_ordinal(0)` returns the empty string** — every digit maps through
-//!    `ords[idx % 3][0]` == `""`, and the join/strip collapses to "".
+//! 4. **`to_ordinal(0)` returned the empty string** in Python — every digit
+//!    maps through `ords[idx % 3][0]` == `""`. The port raises ValueError
+//!    instead: Portuguese has no ordinal for zero (#160).
 //! 5. **`to_ordinal` drops a leading "primeiro "** whenever the value is not
 //!    exactly 1 (`result[9:]`), to avoid "primeiro milésimo". This is why
 //!    `ordinal(1000)` == "milésimo" but `ordinal(2000)` == "segundo milésimo".
-//! 6. **`to_ordinal` raises `KeyError` for values with ≥ 19 digits**, because
-//!    `thousand_separators` stops at key 15; `idx == 18` misses. Note the
-//!    lookup happens *before* the `char != "0"` guard, so even a bare 10^18
-//!    raises. Mapped to [`N2WError::Key`] — see the corpus rows for 10^18
-//!    and 10^21.
+//! 6. **`to_ordinal` raised `KeyError` for values with ≥ 19 digits
+//!    (fixed, #173)**, because `thousand_separators` stops at key 15. The
+//!    port extends the table along the cardinal's long scale ("trilionésimo"
+//!    10^18 … "nonilionésimo" 10^54) and raises `OverflowError` at `MAXVAL`
+//!    (10^57), like the cardinal.
 //!
 //! # Cross-call mutable state: `to_currency` leaks `self.negword`
 //!
@@ -151,7 +153,8 @@
 //! cardinal/ordinal/ordinal_num/year on integer input.
 
 use crate::base::{
-    default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result,
+    check_maxval, default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError,
+    Result,
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{default_to_cardinal_float, FloatValue};
@@ -352,7 +355,10 @@ fn insert_de(mut result: String, unit: &str) -> String {
     result
 }
 
-/// `self.thousand_separators`. Missing keys are a `KeyError` in Python.
+/// `self.thousand_separators`. Python stops at 15 (a `KeyError` from 10^18,
+/// #173); the port follows the cardinal's long scale up to the 10^54 card,
+/// one "-ilionésimo" per "-ilião" stem, so every value below `MAXVAL`
+/// (10^57) has an ordinal.
 fn thousand_separator(idx: usize) -> Option<&'static str> {
     match idx {
         3 => Some("milésimo"),
@@ -360,6 +366,19 @@ fn thousand_separator(idx: usize) -> Option<&'static str> {
         9 => Some("milésimo milionésimo"),
         12 => Some("bilionésimo"),
         15 => Some("milésimo bilionésimo"),
+        18 => Some("trilionésimo"),
+        21 => Some("milésimo trilionésimo"),
+        24 => Some("quatrilionésimo"),
+        27 => Some("milésimo quatrilionésimo"),
+        30 => Some("quintilionésimo"),
+        33 => Some("milésimo quintilionésimo"),
+        36 => Some("sextilionésimo"),
+        39 => Some("milésimo sextilionésimo"),
+        42 => Some("septilionésimo"),
+        45 => Some("milésimo septilionésimo"),
+        48 => Some("octilionésimo"),
+        51 => Some("milésimo octilionésimo"),
+        54 => Some("nonilionésimo"),
         _ => None,
     }
 }
@@ -787,6 +806,13 @@ impl Lang for LangPt {
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
+        // Portuguese has no ordinal for zero; Python returns "" here (#160).
+        if value.is_zero() {
+            return Err(N2WError::Value("Cannot treat 0 as ordinal.".into()));
+        }
+
+        // The scale table ends at the 10^54 card, like the cardinal (#173).
+        check_maxval(value, &self.maxval)?;
 
         // Python reassigns `value = str(value)` and later compares it to "1".
         let value_str = value.to_string();
@@ -795,9 +821,8 @@ impl Lang for LangPt {
 
         for (idx, ch) in value_str.chars().rev().enumerate() {
             if idx != 0 && idx % 3 == 0 {
-                // `self.thousand_separators[idx]` — KeyError past 15. This
-                // runs before the `char != "0"` guard below, so 10^18 raises
-                // even though its digit here is a 1.
+                // `self.thousand_separators[idx]`. Covers every idx below
+                // MAXVAL (checked above), so the `None` arm is unreachable.
                 thousand_sep = match thousand_separator(idx) {
                     Some(s) => s,
                     None => return Err(N2WError::Key(format!("{}", idx))),
@@ -855,10 +880,9 @@ impl Lang for LangPt {
     ///
     /// The first statement is `value = int(value)` — truncation toward zero —
     /// and `verify_ordinal` runs on the *truncated* int. So `2.5` ->
-    /// "segundo", `0.5` -> "", `-0.0` -> "", and `-1.5` raises the
-    /// negative-num TypeError (never the float one). Values of 10^18 and up
-    /// still hit the `thousand_separators` KeyError (module docs, item 6):
-    /// `to_ordinal(1e+20)` raises KeyError.
+    /// "segundo", `0.5` / `-0.0` -> ValueError (zero, #160), and `-1.5` raises the
+    /// negative-num TypeError (never the float one). Values of `MAXVAL`
+    /// (10^57) and up raise OverflowError (module docs, item 6).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.to_ordinal(&float_trunc_int(value)?)
     }
@@ -910,8 +934,8 @@ impl Lang for LangPt {
     ///     end in "s" (Base appends unconditionally);
     ///   * `abs_n == 1` short-circuits the numerator to the literal "um".
     /// `denominator == 1` / `numerator == 0` return the *signed* cardinal,
-    /// before any of that. `self.to_ordinal(abs_d)` can still raise (KeyError
-    /// at 10^18+), which propagates exactly as in Python.
+    /// before any of that. `self.to_ordinal(abs_d)` can still raise
+    /// (OverflowError at `MAXVAL`; Python's KeyError at 10^18+ is #173).
     fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
         if denominator.is_zero() {
             return Err(N2WError::ZeroDivision(

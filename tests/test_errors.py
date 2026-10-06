@@ -30,3 +30,22 @@ class Num2WordsErrorsTest(TestCase):
     def test_types_NotImplementedError(self):
         with self.assertRaises(NotImplementedError):
             num2words(100, lang="en", to="babidibibidiboo!")
+
+    def test_unknown_lang_message_names_the_code(self):
+        with self.assertRaisesRegex(NotImplementedError, "'unknown_lang'"):
+            num2words(100, lang="unknown_lang")
+
+    def test_unknown_converter_message_lists_choices(self):
+        with self.assertRaisesRegex(NotImplementedError, "babidi.*cardinal"):
+            num2words(100, lang="en", to="babidibibidiboo!")
+
+    def test_declined_kwarg_is_named(self):
+        with self.assertRaisesRegex(NotImplementedError, "frobnicate="):
+            num2words(1, lang="en", frobnicate=True)
+
+    def test_number_too_large_is_an_overflow_error(self):
+        from num2words2 import NumberTooLargeError
+
+        self.assertTrue(issubclass(NumberTooLargeError, OverflowError))
+        with self.assertRaises(OverflowError):
+            num2words(10**700, lang="bn")

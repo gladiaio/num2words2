@@ -207,7 +207,8 @@ class Num2WordsLIJTest(TestCase):
         )
 
     def test_too_big(self):
-        with self.assertRaises(NotImplementedError):
+        # gladiaio/num2words2#159: OverflowError, not NotImplementedError.
+        with self.assertRaises(OverflowError):
             num2words(10**39, lang="lij")
 
     def test_nth_1_to_99(self):
@@ -413,3 +414,19 @@ class Num2WordsLIJTest(TestCase):
     def test_unk_currency(self):
         with self.assertRaises(NotImplementedError):
             num2words(1, lang="lij", to="currency", currency="XTS")
+
+    def test_currency_int_is_units_not_cents(self):
+        # gladiaio/num2words2#161: an int was read as a count of cents
+        # (42 -> "zero euro e quarantedoî citti").
+        for x in (42, 42.0, "42"):
+            self.assertEqual(
+                num2words(x, lang="lij", to="currency"),
+                "quarantedoî euro e zero citti",
+            )
+        self.assertEqual(
+            num2words(1, lang="lij", to="currency"), "un euro e zero citti"
+        )
+        self.assertEqual(
+            num2words(100, lang="lij", to="currency", currency="USD"),
+            "çento dòllai e zero citti",
+        )

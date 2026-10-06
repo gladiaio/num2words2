@@ -7,10 +7,10 @@
 //! Shape: **self-contained**. `Num2Word_SR_LATN` subclasses `Num2Word_SR`,
 //! which subclasses `Num2Word_Base` but defines no `high_numwords` /
 //! `mid_numwords` / `low_numwords`. Python therefore never builds
-//! `self.cards` and never sets `MAXVAL`, so `cards`/`maxval`/`merge` stay at
-//! their trait defaults here and there is **no overflow check**. The only
-//! ceiling is the `SCALE` table (10**33 and up raises `KeyError` — see
-//! [`scale`]).
+//! `self.cards` and never sets `MAXVAL`, so `cards`/`merge` stay at their
+//! trait defaults here. The `SCALE` table ends at 10**30; Python raised
+//! `KeyError` from 10**33 up. Fixed (gladiaio/num2words2#159): `maxval()` is
+//! 10**33 and larger values raise `OverflowError` up front (see [`scale`]).
 //!
 //! `Num2Word_SR_LATN` itself is a pure transliteration wrapper: every method
 //! calls `super()` and pipes the Cyrillic result through `cyrl_to_latn`. All
@@ -24,7 +24,7 @@
 //! |-----------------|------------------|----------------------------------------------|
 //! | `to_cardinal`   | SR_LATN → SR     | `cyrl_to_latn(_int2word(int(n), False))`     |
 //! | `to_ordinal`    | SR_LATN → SR     | dict lookup, else cardinal + "и"             |
-//! | `to_ordinal_num`| SR_LATN → *Base* | `cyrl_to_latn(value)` → **AttributeError**   |
+//! | `to_ordinal_num`| SR_LATN → *Base* | `cyrl_to_latn(value)` → **AttributeError** (fixed, #157) |
 //! | `to_year`       | SR_LATN → *Base* | `cyrl_to_latn(self.to_cardinal(value))`      |
 //!
 //! # Faithfully reproduced Python bugs
@@ -32,15 +32,15 @@
 //! This is a port, not a rewrite. All of the following are verified against
 //! the frozen corpus (`bench/corpus.jsonl`, `"lang": "sr_Latn"`):
 //!
-//! 1. **`to_ordinal_num` raises `AttributeError` for every input.** `SR` and
-//!    `SR_LATN` both fail to override it, so it lands on
-//!    `Num2Word_Base.to_ordinal_num`, which returns `value` — an `int`, not a
-//!    `str`. `SR_LATN.to_ordinal_num` then hands that int to `cyrl_to_latn`,
-//!    which immediately calls `s.replace(...)` on it:
-//!    `AttributeError: 'int' object has no attribute 'replace'`. **Every**
-//!    `ordinal_num` row in the corpus is `{"ok": false, "err":
-//!    "AttributeError"}` — there are no successful ones. See
-//!    [`attribute_error`] for how the variant is encoded.
+//! 1. ~~**`to_ordinal_num` raises `AttributeError` for every input.**~~
+//!    Fixed (gladiaio/num2words2#157). `SR` and `SR_LATN` both fail to
+//!    override it, so it lands on `Num2Word_Base.to_ordinal_num`, which
+//!    returns `value` — an `int`, not a `str` — and `SR_LATN.to_ordinal_num`
+//!    then hands it to `cyrl_to_latn`, which calls `s.replace(...)` on it:
+//!    `AttributeError: 'int' object has no attribute 'replace'`, for every
+//!    input. The transliteration of a numeral is the identity, so the port
+//!    returns what `sr` returns: the number itself (`1` → "1", `-1` → "-1",
+//!    `1.5` → "1.5").
 //! 2. **`to_ordinal` just glues "и" onto the cardinal** for anything outside
 //!    its small lookup dict (Python's own comment: "This is a simplified
 //!    implementation"). This produces non-words throughout, and they are the
@@ -64,18 +64,22 @@
 //!    (no replacement value contains a Cyrillic codepoint, so nothing
 //!    cascades) and converts the trailing "и" → "i". Mirrored exactly in
 //!    [`LangSrLatn::to_ordinal`] rather than short-circuited.
-//! 6. **`to_currency` ignores the currency code entirely for `int` input.**
-//!    `Num2Word_SR.to_currency` intercepts `isinstance(val, int)` before
-//!    delegating to Base and hardcodes "динар"/"динара", so *every* code —
-//!    including ones with no `CURRENCY_FORMS` entry — renders as dinars and
-//!    nothing raises. `cents`, `separator` and `adjective` are dropped on that
-//!    path too. The corpus pins all of it: `currency:JPY 100` → "sto dinara",
-//!    `currency:CHF 1` → "jedan dinar". Only the *float* path reaches
-//!    `Num2Word_Base.to_currency` and can raise `NotImplementedError`, which is
-//!    why every code has successful int rows and NotImplementedError float rows.
-//! 7. **`to_cheque` prints a stringified `bool` where the currency name
-//!    belongs.** See [`build_currency_forms`] — this is the reason the forms
-//!    table carries a fourth `"True"`/`"False"` element.
+//! 6. **`to_currency` ignored the currency code for `int` input (fixed,
+//!    #176).** `Num2Word_SR.to_currency` intercepts `isinstance(val, int)`
+//!    before delegating to Base and hardcodes "динар"/"динара", so in Python
+//!    *every* code — including ones with no `CURRENCY_FORMS` entry — rendered
+//!    as dinars (`currency:JPY 100` → "sto dinara"). The port looks the code
+//!    up: EUR says "jedan evro", an unknown code raises `NotImplementedError`
+//!    like the float path. `cents`, `separator` and `adjective` are still
+//!    dropped on the int path.
+//! 7. **`to_cheque` printed a stringified `bool` where the currency name
+//!    belongs (fixed, #176).** See [`build_currency_forms`]; the port now
+//!    takes the "many" form: "DVANAEST AND 50/100 EVRA".
+//! 8. **Feminine units took a masculine numeral (fixed, #188).** Base's
+//!    `_money_verbose` and SR's int shortcut both call `to_cardinal` with
+//!    `feminine=False`, so 21 RUB was "dvadeset jedan rublja". The port reads
+//!    the unit's gender flag like `_cents_verbose` reads the subunit's:
+//!    "dvadeset jedna rublja", "dve rublje" (see `lang_sr`'s quirk 10).
 //!
 //! # Not a bug, but load-bearing: the four-element currency tuples
 //!
@@ -93,10 +97,12 @@
 //! "digraphs" are digraphs on the *output* side ("Lj"). A plain per-char map
 //! is therefore exactly equivalent — see [`cyrl_to_latn`].
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
+use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
@@ -171,8 +177,8 @@ const HUNDREDS: [&str; 10] = [
 ///
 /// Python's `SCALE` is a dict with keys 0..=10, i.e. it tops out at 10**30
 /// ("квинтилион"). A chunk index of 11 or more — any value >= 10**33 —
-/// raises `KeyError`, which is the *only* ceiling this language has (there is
-/// no `MAXVAL`, so no `OverflowError`). Serbian uses the long scale, hence
+/// raised `KeyError` in Python; `int2word` now rejects those values with
+/// `OverflowError` first (#159), so that arm is unreachable. Serbian uses the long scale, hence
 /// милијарда at 10**9 rather than a short-scale "billion".
 fn scale(chunk_len: usize) -> Result<(&'static str, &'static str, &'static str, bool)> {
     Ok(match chunk_len {
@@ -193,18 +199,8 @@ fn scale(chunk_len: usize) -> Result<(&'static str, &'static str, &'static str, 
 
 // --- Python exception encoding -------------------------------------------
 
-/// Python raised `AttributeError`, which `base.rs` cannot express: there is no
-/// `N2WError::Attribute` variant. Following the convention set by
-/// `lang_rm_puter.rs` / `lang_rm_sutsilv.rs`, emit `N2WError::Type` carrying a
-/// message that names the real exception type so the integration layer can
-/// remap it.
-///
-/// **The bridge must map this back to `AttributeError`, not `TypeError`.**
-fn attribute_error(msg: &str) -> N2WError {
-    N2WError::Attribute(msg.to_string())
-}
-
-/// Python raised `KeyError` — a missing `SCALE` entry for values >= 10**33.
+/// Python raised `KeyError` — a missing `SCALE` entry for values >= 10**33
+/// (unreachable since the MAXVAL check, #159).
 fn key_error(msg: &str) -> N2WError {
     N2WError::Key(msg.to_string())
 }
@@ -366,6 +362,7 @@ fn pluralize(number: u32, forms: (&'static str, &'static str, &'static str, bool
 
 /// `Num2Word_SR._int2word`. Returns **Cyrillic**; the caller transliterates.
 fn int2word(number: &BigInt, feminine: bool) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     if number.is_negative() {
         // Python: " ".join([self.negword, self._int2word(abs(number))]).
         // Note the dropped `feminine` argument — reproduced verbatim (bug 4).
@@ -398,8 +395,9 @@ fn int2word(number: &BigInt, feminine: bool) -> Result<String> {
             // Skip 'један' for thousands (1000, 1001, etc.)
             if !(chunk_len > 0 && *chunk == 1) {
                 // SCALE is indexed here *before* the `chunk != 0` guard below,
-                // so a >= 10**33 chunk whose skip-condition misses raises
-                // KeyError at this line in Python. Order preserved.
+                // so a >= 10**33 chunk whose skip-condition misses raised
+                // KeyError at this line in Python. Order preserved; the MAXVAL
+                // check (#159) keeps such chunks from reaching it.
                 let is_feminine = feminine || scale(chunk_len)?.3;
                 words.push(if is_feminine {
                     ONES[digit_right].1
@@ -651,23 +649,10 @@ fn cyrl_to_latn(s: &str) -> String {
 ///    cent" (masculine).
 /// 2. `Num2Word_Base.to_cheque` does
 ///    `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, meaning that for a
-///    4-tuple it picks the **bool** instead of the plural noun and interpolates
-///    it: `"%s AND %s %s" % (words, "56/100", False)`, then `.upper()`. The
-///    corpus pins the result verbatim:
-///
-///    ```text
-///    cheque:EUR 1234.56 -> "HILJADA DVESTA TRIDESET ČETIRI AND 56/100 FALSE"
-///    cheque:RUB -2.00   -> "MINUS DVA AND 00/100 TRUE"
-///    ```
-///
-///    RUB yielding "TRUE" where EUR yields "FALSE" is what proves the slot is
-///    read positionally, not by type. Storing `"False"`/`"True"` puts the right
-///    string where `currency::default_to_cheque`'s `forms.unit.last()` looks,
-///    so `to_cheque` needs no override at all.
-///
-/// **Truncating these to three forms would compile, pass a reading, and
-/// silently emit "... AND 56/100 EVRA" — a corpus failure.** `pluralize` only
-/// ever indexes 0..=2, so the fourth element never leaks into the plural path.
+///    4-tuple Python picks the **bool** instead of the plural noun:
+///    "HILJADA DVESTA TRIDESET ČETIRI AND 56/100 FALSE". Fixed (#176): the
+///    shared `lang_sr::sr_to_cheque` reads the "many" form at index 2, so the
+///    cheque ends in "EVRA". The fourth element only feeds `cents_verbose`.
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert(
@@ -715,7 +700,19 @@ impl Default for LangSrLatn {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangSrLatn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     fn negword(&self) -> &str {
         NEGWORD
     }
@@ -749,22 +746,8 @@ impl Lang for LangSrLatn {
         Ok(cyrl_to_latn(&format!("{}{}", cardinal, "и")))
     }
 
-    /// Neither `SR_LATN` nor `SR` overrides `to_ordinal_num`, so it resolves to
-    /// `Num2Word_Base.to_ordinal_num`, which returns `value` **unchanged** — an
-    /// `int`. `SR_LATN.to_ordinal_num` then feeds that int to `cyrl_to_latn`,
-    /// whose first statement is `s.replace("Љ", "Lj")`:
-    ///
-    /// ```text
-    /// AttributeError: 'int' object has no attribute 'replace'
-    /// ```
-    ///
-    /// Unconditional — the corpus has zero successful `ordinal_num` rows for
-    /// this language. Bug 1.
-    fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
-        Err(attribute_error(
-            "'int' object has no attribute 'replace'",
-        ))
-    }
+    // `to_ordinal_num` (int and float/Decimal): the trait defaults, i.e. what
+    // `sr` returns. Python crashed in `cyrl_to_latn` on the non-str (bug 1).
 
     /// `SR_LATN.to_year` → `cyrl_to_latn(Num2Word_Base.to_year(...))`, and
     /// `Base.to_year` is just `self.to_cardinal(value)` — which dispatches back
@@ -850,29 +833,6 @@ impl Lang for LangSrLatn {
         self.to_ordinal(&num)
     }
 
-    /// `to_ordinal_num(float/Decimal)` — bug 1, float edition. Base's
-    /// `to_ordinal_num` returns the value **unchanged** (a `float` or a
-    /// `Decimal`), and `SR_LATN.to_ordinal_num` hands it to `cyrl_to_latn`,
-    /// whose first statement is `s.replace("Љ", "Lj")`:
-    ///
-    /// ```text
-    /// AttributeError: 'float' object has no attribute 'replace'
-    /// AttributeError: 'decimal.Decimal' object has no attribute 'replace'
-    /// ```
-    ///
-    /// Unconditional — every `ordinal_num` row in the corpus (int, float and
-    /// Decimal alike) is an AttributeError. Only the message differs by type.
-    fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
-        let type_name = match value {
-            FloatValue::Float { .. } => "float",
-            FloatValue::Decimal { .. } => "decimal.Decimal",
-        };
-        Err(attribute_error(&format!(
-            "'{}' object has no attribute 'replace'",
-            type_name
-        )))
-    }
-
     // `year_float_entry` is deliberately NOT overridden: `SR_LATN.to_year` is
     // `cyrl_to_latn(Base.to_year(...))` == `cyrl_to_latn(self.to_cardinal(...))`,
     // and the trait default routes through the overridden
@@ -934,8 +894,7 @@ impl Lang for LangSrLatn {
     // is already mirrored by the trait defaults, so it is deliberately absent
     // here:
     //
-    // * `_money_verbose` → `self.to_cardinal(number)`, which dispatches to the
-    //   SR_LATN override and so already returns Latin.
+    // * `_money_verbose` is overridden below (bug 8, #188), not inherited.
     // * `_cents_terse`   → `CURRENCY_PRECISION.get(currency, 100)` is 100 for
     //   every code, so the default's `"%02d"` width is right.
     // * `CURRENCY_PRECISION` is `{}` (never rebound), so `currency_precision`
@@ -946,8 +905,8 @@ impl Lang for LangSrLatn {
     // * `CURRENCY_ADJECTIVES` is `{}`, so `currency_adjective` stays `None` and
     //   `adjective=True` is a no-op — matching `if adjective and currency in
     //   self.CURRENCY_ADJECTIVES`.
-    // * `to_cheque` is Base's; see `build_currency_forms` for why the default
-    //   reproduces its bool-instead-of-noun bug without an override.
+    // * `to_cheque` is Base's except for the unit word (bug 7, #176): it goes
+    //   through the shared `lang_sr::sr_to_cheque`.
 
     /// `self.__class__.__name__` for the NotImplementedError message. The
     /// raise sites live in `base.py` and `lang_SR.py`, but the *instance* is a
@@ -979,6 +938,12 @@ impl Lang for LangSrLatn {
 
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
+    }
+
+    /// `Num2Word_Base.to_cheque` with the "many" form as the unit word instead
+    /// of the gender flag (bug 7, #176). The cardinal already arrives Latin.
+    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
+        crate::lang_sr::sr_to_cheque(self, val, currency)
     }
 
     /// `Num2Word_SR.pluralize(number, forms)` — the Slavic one / few / many
@@ -1028,6 +993,20 @@ impl Lang for LangSrLatn {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// Base's `_money_verbose` (`self.to_cardinal(number)`, Latin), with the
+    /// units word agreeing with the unit's gender flag `[0][-1]` (bug 8,
+    /// #188): "dvadeset jedna rublja". Cheques read it too.
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = int2word(number, false)?;
+        let feminine = self
+            .currency_forms
+            .get(currency)
+            .and_then(|f| f.unit.last())
+            .map_or(false, |flag| flag.as_str() == "True");
+        let words = if feminine { crate::lang_sr::feminine_last(&words) } else { words };
+        Ok(cyrl_to_latn(&words))
+    }
+
     /// `Num2Word_SR._cents_verbose`:
     /// `self._int2word(number, self.CURRENCY_FORMS[currency][1][-1])`.
     ///
@@ -1069,6 +1048,15 @@ impl Lang for LangSrLatn {
         let separator = separator.unwrap_or(self.default_separator());
 
         if let CurrencyValue::Int(v) = val {
+            // Python never looked the code up here (bug 6, #176); the port
+            // does, so an unknown code raises like the float path.
+            let forms = self.currency_forms.get(currency).ok_or_else(|| {
+                N2WError::NotImplemented(format!(
+                    "Currency code \"{}\" not implemented for \"{}\"",
+                    currency,
+                    self.lang_name()
+                ))
+            })?;
             // parse_currency_parts(val, is_int_with_cents=False) reduces to
             // `(abs(val), 0, val < 0)` — the divisor is never consulted.
             let is_negative = v.is_negative();
@@ -1087,25 +1075,13 @@ impl Lang for LangSrLatn {
             // non-negative, so `_int2word` never prepends its own "минус".
             // A `left >= 10**33` still raises KeyError from `scale`, exactly as
             // Python does: the int arm has no ceiling of its own.
-            words.push(self.to_cardinal(&left)?);
+            // Python: always masculine; the port agrees with the unit (bug 8).
+            words.push(self.money_verbose(&left, currency)?);
 
-            // Python's `elif 2 <= left % 10 <= 4 and not (12 <= left % 100 <= 14)`
-            // and its `else` both append "динара", so the elif is dead and the
-            // whole cascade collapses to this. Note 11 -> "динара" (the
-            // `% 100 != 11` guard) but 21 -> "динар".
-            let one_dinar = left.mod_floor(&BigInt::from(10)).is_one()
-                && left.mod_floor(&BigInt::from(100)) != BigInt::from(11);
-            let unit = if one_dinar {
-                "динар"
-            } else {
-                "динара"
-            };
-            words.push(unit.to_string());
+            words.push(Lang::pluralize(self, &left, &forms.unit)?);
 
-            // `currency`, `cents`, `separator` and `adjective` are all dropped
-            // on this path — an unknown code raises nothing and still says
-            // dinars. Bug 6.
-            let _ = (currency, cents, separator, adjective);
+            // `cents`, `separator` and `adjective` are dropped on this path.
+            let _ = (cents, separator, adjective);
             return Ok(cyrl_to_latn(&words.join(" ")));
         }
 

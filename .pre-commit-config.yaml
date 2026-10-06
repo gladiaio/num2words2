@@ -12,7 +12,7 @@ repos:
     rev: 5.13.2
     hooks:
       - id: isort
-        args: ["--profile=black", "--line-length=88", "--skip=num2words2/_version.py"]
+        args: ["--profile=black", "--line-length=88"]
 
   - repo: https://github.com/PyCQA/autoflake
     rev: v2.2.1
@@ -37,7 +37,6 @@ repos:
     hooks:
       - id: flake8
         args: [
-          "--exclude=num2words2/_version.py",
           "--extend-ignore=E501,E203,W503",
           "--per-file-ignores=tests/*:E501,W293,W292",
           "--max-line-length=88"

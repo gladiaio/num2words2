@@ -186,15 +186,15 @@ class Num2WordsDATest(TestCase):
 
     def test_cardinal_large(self):
         """Test large cardinal numbers (millions and billions)."""
-        self.assertEqual(num2words(1000000, lang="da"), "en millioner")
-        self.assertEqual(num2words(1000001, lang="da"), "en millioner et")
+        self.assertEqual(num2words(1000000, lang="da"), "en million")
+        self.assertEqual(num2words(1000001, lang="da"), "en million et")
         self.assertEqual(
             num2words(1111111, lang="da"),
-            "en millioner ethundrede og ellevetusindethundrede og elleve",
+            "en million ethundrede og ellevetusindethundrede og elleve",
         )
         self.assertEqual(
             num2words(1234567, lang="da"),
-            "en millioner tohundrede og fireogtredivetusindfemhundrede og syvogtreds",
+            "en million tohundrede og fireogtredivetusindfemhundrede og syvogtreds",
         )
         self.assertEqual(num2words(2000000, lang="da"), "to millioner")
         self.assertEqual(num2words(5000000, lang="da"), "fem millioner")
@@ -220,10 +220,10 @@ class Num2WordsDATest(TestCase):
             num2words(999999999, lang="da"),
             "nihundrede og nioghalvfems millioner nihundrede og nioghalvfemstusindnihundrede og nioghalvfems",
         )
-        self.assertEqual(num2words(1000000000, lang="da"), "en milliarder")
+        self.assertEqual(num2words(1000000000, lang="da"), "en milliard")
         self.assertEqual(
             num2words(1234567890, lang="da"),
-            "en milliarder tohundrede og fireogtredive millioner femhundrede og syvogtredstusindottehundrede og halvfems",
+            "en milliard tohundrede og fireogtredive millioner femhundrede og syvogtredstusindottehundrede og halvfems",
         )
         self.assertEqual(
             num2words(9999999999, lang="da"),
@@ -253,7 +253,7 @@ class Num2WordsDATest(TestCase):
         self.assertEqual(num2words(-1001, lang="da"), "minus ettusinde og et")
         self.assertEqual(num2words(-10000, lang="da"), "minus ti tusind")
         self.assertEqual(num2words(-100000, lang="da"), "minus ethundrede tusind")
-        self.assertEqual(num2words(-1000000, lang="da"), "minus en millioner")
+        self.assertEqual(num2words(-1000000, lang="da"), "minus en million")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
@@ -476,7 +476,7 @@ class Num2WordsDATest(TestCase):
         self.assertEqual(num2words("1000", lang="da"), "ettusind")
         self.assertEqual(num2words("10000", lang="da"), "ti tusind")
         self.assertEqual(num2words("100000", lang="da"), "ethundrede tusind")
-        self.assertEqual(num2words("1000000", lang="da"), "en millioner")
+        self.assertEqual(num2words("1000000", lang="da"), "en million")
 
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
@@ -487,3 +487,69 @@ class Num2WordsDATest(TestCase):
         self.assertEqual(num2words(100, lang="da"), num2words("100", lang="da"))
         self.assertEqual(num2words(1000, lang="da"), num2words("1000", lang="da"))
 
+
+    def test_singular_scale_after_en(self):
+        """gladiaio/num2words2#163: "en" takes the singular scale word."""
+        for lang in ("da", "dk"):
+            self.assertEqual(num2words(10**6, lang=lang), "en million")
+            self.assertEqual(num2words(10**9, lang=lang), "en milliard")
+            self.assertEqual(num2words(10**12, lang=lang), "en billion")
+            self.assertEqual(num2words(10**15, lang=lang), "en billiard")
+            self.assertEqual(
+                num2words(1829794, lang=lang),
+                "en million ottehundrede og niogtyvetusindsyvhundrede og "
+                "fireoghalvfems",
+            )
+            self.assertEqual(
+                num2words(10**9 + 10**6, lang=lang), "en milliard en million"
+            )
+            # Plural from two up.
+            self.assertEqual(num2words(2 * 10**6, lang=lang), "to millioner")
+            self.assertEqual(num2words(3 * 10**9, lang=lang), "tre milliarder")
+            self.assertEqual(
+                num2words(10**6, lang=lang, to="currency", currency="DKK"),
+                "en million kroner",
+            )
+
+    def test_ordinal_scale_words_singular(self):
+        """gladiaio/num2words2#172: ordinals build on the singular scale word."""
+        for lang in ("da", "dk"):
+            self.assertEqual(num2words(10**6, lang=lang, to="ordinal"), "millionte")
+            self.assertEqual(num2words(10**9, lang=lang, to="ordinal"), "milliardte")
+            self.assertEqual(num2words(10**12, lang=lang, to="ordinal"), "billionte")
+            self.assertEqual(num2words(10**15, lang=lang, to="ordinal"), "billiardte")
+            self.assertEqual(
+                num2words(2 * 10**6, lang=lang, to="ordinal"), "to millionte"
+            )
+            self.assertEqual(
+                num2words(3 * 10**9, lang=lang, to="ordinal"), "tre milliardte"
+            )
+            self.assertEqual(num2words(10**6, lang=lang, to="ordinal_num"), "1000000te")
+
+    def test_ordinal_compound_above_million(self):
+        """gladiaio/num2words2#184: compounds keep the cardinal's count.
+
+        Only the last word is ordinalised; the leading part is the cardinal
+        (Python emitted "millioner første" for 10**6 + 1).
+        """
+        cases = {
+            10**6 + 1: "en million første",
+            10**6 + 21: "en million enogtyvende",
+            2 * 10**6 + 3: "to millioner tredje",
+            10**9 + 1: "en milliard første",
+            10**9 + 10**6: "en milliard en millionte",
+            10**9 + 10**6 + 1: "en milliard en million første",
+            10**6 + 1000: "en million ettusindte",
+            10**6 + 1001: "en million ettusinde og første",
+            10**12 + 1: "en billion første",
+        }
+        for lang in ("da", "dk"):
+            for value, expected in cases.items():
+                self.assertEqual(
+                    num2words(value, lang=lang, to="ordinal"), expected
+                )
+            # The words before the ordinalised one match the cardinal's.
+            for value in cases:
+                card = num2words(value, lang=lang).split(" ")
+                ordw = num2words(value, lang=lang, to="ordinal").split(" ")
+                self.assertEqual(ordw[:-1], card[:-1])

@@ -314,8 +314,9 @@ class Num2WordsSKTest(TestCase):
 
     def test_currency(self):
         """Test currency conversion."""
+        # Int zero takes the genitive plural like the float path (#187).
         self.assertEqual(
-            num2words(0, lang="sk", to="currency", currency="EUR"), "nula eurá"
+            num2words(0, lang="sk", to="currency", currency="EUR"), "nula eur"
         )
         self.assertEqual(
             num2words(0.01, lang="sk", to="currency", currency="EUR"),
@@ -333,7 +334,7 @@ class Num2WordsSKTest(TestCase):
             "jeden euro, päťdesiat centov",
         )
         self.assertEqual(
-            num2words(0, lang="sk", to="currency", currency="CZK"), "nula koruny"
+            num2words(0, lang="sk", to="currency", currency="CZK"), "nula korún"
         )
         self.assertEqual(
             num2words(0.01, lang="sk", to="currency", currency="CZK"),
@@ -351,7 +352,7 @@ class Num2WordsSKTest(TestCase):
             "jeden koruna, päťdesiat halierov",
         )
         self.assertEqual(
-            num2words(0, lang="sk", to="currency", currency="USD"), "nula doláre"
+            num2words(0, lang="sk", to="currency", currency="USD"), "nula dolárov"
         )
         self.assertEqual(
             num2words(0.01, lang="sk", to="currency", currency="USD"),
@@ -416,3 +417,24 @@ class Num2WordsSKTest(TestCase):
         self.assertEqual(num2words(100, lang="sk"), num2words("100", lang="sk"))
         self.assertEqual(num2words(1000, lang="sk"), num2words("1000", lang="sk"))
 
+    def test_currency_int_plural_matches_float(self):
+        # gladiaio/num2words2#187: the int path used the 2-4 form for 5+.
+        self.assertEqual(num2words(5, lang="sk", to="currency"), "päť eur")
+        self.assertEqual(
+            num2words(5.0, lang="sk", to="currency"), "päť eur, nula centov"
+        )
+        self.assertEqual(num2words(2, lang="sk", to="currency"), "dva eurá")
+        self.assertEqual(num2words(1, lang="sk", to="currency"), "jeden euro")
+        self.assertEqual(num2words(-1, lang="sk", to="currency"), "mínus jeden euro")
+        self.assertEqual(
+            num2words(100, lang="sk", to="currency", currency="USD"),
+            "sto dolárov",
+        )
+        self.assertEqual(
+            num2words(3, lang="sk", to="currency", currency="CZK"), "tri koruny"
+        )
+        for n in (0, 1, 2, 4, 5, 11, 21, 100):
+            self.assertEqual(
+                num2words(n, lang="sk", to="currency"),
+                num2words(float(n), lang="sk", to="currency").split(",")[0],
+            )

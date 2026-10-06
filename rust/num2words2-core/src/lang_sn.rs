@@ -123,9 +123,9 @@
 //! (no `_pending_ordinal`-style handshake), so the stateless Rust path is a
 //! faithful substitute and the Python dispatcher needs no special casing.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{floatord_error, py_num_str, year_float_error, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -506,24 +506,6 @@ impl LangSn {
     }
 }
 
-/// The dict key as Python would repr it in the KeyError — `KeyError: 0.5` /
-/// `KeyError: Decimal('1.5')`. Only the exception *type* is corpus-checked,
-/// so a close rendering of the value suffices.
-fn sn_key_repr(value: &FloatValue) -> String {
-    match value {
-        FloatValue::Float { value, precision } => {
-            if value.is_finite() {
-                format!("{:.*}", *precision as usize, value)
-            } else {
-                format!("{}", value)
-            }
-        }
-        FloatValue::Decimal { value, .. } => {
-            format!("Decimal('{}')", crate::strnum::python_decimal_str(value))
-        }
-    }
-}
-
 impl Lang for LangSn {
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
@@ -629,19 +611,14 @@ impl Lang for LangSn {
     ///   (the only ones the corpus and any float literal reach).
     ///
     /// * **Decimal** — a `Decimal` is *neither* `str` nor `float`, so SN's
-    ///   `to_cardinal` never calls `to_cardinal_float` for it. It calls
-    ///   `_int_to_sn_word(Decimal)`, which raises `KeyError` on the first
-    ///   fractional dict lookup, and the method's blanket
-    ///   `except Exception: return self._int_to_sn_word(int(number))` retries
-    ///   with the value truncated toward zero. Net result: just the
-    ///   integer-part cardinal, **no pointword, no fractional digits**. Hence
-    ///   `Decimal("0.01") -> "zero"` and `Decimal("-2.5") -> "minus piri"`,
-    ///   both verified against the interpreter, and both distinct from what the
-    ///   base float path (which every other language inherits) would emit for
-    ///   the same Decimal. `precision_override` never reaches SN's Python code
-    ///   (its `to_cardinal`/`to_cardinal_float` take no `precision=` kwarg) and
-    ///   `str(number)`/`int(number)` do not consult `self.precision`, so it is
-    ///   ignored on both arms.
+    ///   Python `to_cardinal` never called `to_cardinal_float` for it: the
+    ///   `except` retry truncated it to `_int_to_sn_word(int(number))`, so
+    ///   `Decimal("1.5")` — and the string "1.5" — was "motsi"
+    ///   (gladiaio/num2words2#156). A fractional Decimal now reads like the
+    ///   float, from its exact digits; a whole one keeps the integer reading
+    ///   (`Decimal("5.00")` -> "shanu"). `precision_override` never reaches
+    ///   SN's Python code (its `to_cardinal`/`to_cardinal_float` take no
+    ///   `precision=` kwarg), so it is ignored on both arms.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -653,6 +630,20 @@ impl Lang for LangSn {
             // division truncates toward zero — exactly `int(Decimal)`, sign and
             // all (`int(Decimal("-2.5")) == -2`). The sign, if any, is emitted
             // by `int_to_sn_word` itself (it prepends the raw "minus ").
+            FloatValue::Decimal { value: d, precision } if !d.is_integer() => {
+                // Python truncated here (#156); read it like the float arm.
+                let (pre, post) = float2tuple(value);
+                let sign = if d.is_negative() { format!("{} ", NEGWORD) } else { String::new() };
+                let mut result = int_to_sn_word(&pre.abs());
+                result.push(' ');
+                result.push_str(self.pointword());
+                for ch in format!("{:0>w$}", post, w = *precision as usize).chars() {
+                    let d = ch.to_digit(10).expect("float2tuple yields decimal digits");
+                    result.push(' ');
+                    result.push_str(ONES[d as usize]);
+                }
+                Ok(format!("{}{}", sign, result))
+            }
             FloatValue::Decimal { value, .. } => {
                 let int_part = value.with_scale(0).as_bigint_and_exponent().0;
                 Ok(int_to_sn_word(&int_part))
@@ -728,9 +719,8 @@ impl Lang for LangSn {
     /// shortcut: a whole-valued *float* still renders through
     /// `to_cardinal_float` and speaks its ".0" tail — `5.0` -> "shanu poindi
     /// zero", `-0.0` -> "zero poindi zero" (numeric `< 0`, so no negword) —
-    /// while a Decimal (whole or not) truncates through
-    /// `_int_to_sn_word(int(n))`'s except-retry: `Decimal("5.00")` ->
-    /// "shanu". Both arms already live in `to_cardinal_float`; this override
+    /// while a whole Decimal reads through `_int_to_sn_word(int(n))`:
+    /// `Decimal("5.00")` -> "shanu". Both arms already live in `to_cardinal_float`; this override
     /// only removes the whole-value shortcut in front of them.
     fn cardinal_float_entry(
         &self,
@@ -782,12 +772,13 @@ impl Lang for LangSn {
     /// Integral values (float or Decimal) sail through the dict lookups by
     /// hash equality and give exactly the integer result — `5.0` ->
     /// "wechishanu", `-0.0` -> "wezero", `12345.000` -> "weuru gumi nepiri…".
-    /// A fractional value misses its first dict lookup and raises
-    /// **KeyError**, uncaught (`0.5`, `2.5`, `Decimal("1.5")` …).
+    /// A fractional value missed its first dict lookup and raised an
+    /// uncaught **KeyError** in Python (`0.5`, `Decimal("1.5")` …); the port
+    /// raises Base's `errmsg_floatord` `TypeError` (gladiaio/num2words2#158).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         match value.as_whole_int() {
             Some(i) => self.to_ordinal(&i),
-            None => Err(N2WError::Key(sn_key_repr(value))),
+            None => Err(floatord_error(py_num_str(value))),
         }
     }
 
@@ -799,12 +790,12 @@ impl Lang for LangSn {
 
     /// `to_year(float/Decimal)` — `_int_to_sn_word(number)` with the raw
     /// value and no try/except: integral values equal the integer year
-    /// (`5.0` -> "shanu"), fractional ones raise **KeyError** exactly like
-    /// the ordinal path (`0.5`, `-1.5`, `3.25` …).
+    /// (`5.0` -> "shanu"); fractional ones raised **KeyError** in Python and
+    /// now raise a `TypeError` in en's `to='year'` wording (#158).
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         match value.as_whole_int() {
             Some(i) => self.to_year(&i),
-            None => Err(N2WError::Key(sn_key_repr(value))),
+            None => Err(year_float_error(value)),
         }
     }
 

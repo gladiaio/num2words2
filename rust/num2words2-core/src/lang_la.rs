@@ -7,7 +7,12 @@
 //! (`ūnus`, `trēs`, strippable with `macrons=False`), true ordinals with a Roman
 //! `to_ordinal_num` (`4` → "IV"), and BC years ("ante Chrīstum"). See
 //! [`la_to_cardinal_pos`] / [`la_ordinal_int`]. `MAXVAL` is 10^18; larger values
-//! raise `OverflowError`.
+//! raise `OverflowError`. PR #657 only knew the simple ordinals and returned
+//! the *cardinal* for every compound (21 → "vīgintī ūnus"); fixed (#181):
+//! compounds below 10^6 are built from ordinal parts ("vīcēsimus prīmus",
+//! "centēsimus prīmus", "bis mīllēsimus", "deciēs mīllēsimus"), and other
+//! ordinals from 10^6 up (only 10^6 itself is in the table) raise
+//! `OverflowError`. See [`la_ordinal_compound`].
 //!
 //! The **currency** path is deliberately NOT from PR #657 — that module ships
 //! no `CURRENCY_FORMS` and would raise NotImplementedError. It keeps the fork's
@@ -106,6 +111,9 @@
 //! table means no `OverflowError`, no dict lookups means no `KeyError`, every
 //! list index is provably bounded (see [`digit`]), and no `int()` ever sees a
 //! stray `"-"`. Every integer-mode corpus row is `ok: true`.
+//!
+//! (The PR #657 number words do raise: `OverflowError` for cardinals ≥ 10^18
+//! and for ordinals past 10^6, #181; `TypeError` for negative ordinals.)
 //!
 //! The currency surface adds exactly two:
 //!   * `NotImplemented` — `to_cheque` on any code outside {EUR, USD}, raised by
@@ -525,6 +533,90 @@ fn la_ordinal_low(n: u32) -> Option<&'static str> {
     Some(s)
 }
 
+/// Numeral adverbs ("n times"), Allen & Greenough §138, in the module's
+/// "-iēs" spelling (as in "deciēs centiēs mīllēsimus"). Index 1..=19, then
+/// the tens and hundreds below.
+const ADVERB_LOW: [&str; 20] = [
+    "", "semel", "bis", "ter", "quater", "quīnquiēs", "sexiēs", "septiēs",
+    "octiēs", "noviēs", "deciēs", "ūndeciēs", "duodeciēs", "terdeciēs",
+    "quaterdeciēs", "quīndeciēs", "sēdeciēs", "septiēs deciēs", "duodēvīciēs",
+    "ūndēvīciēs",
+];
+const ADVERB_TENS: [&str; 10] = [
+    "", "", "vīciēs", "trīciēs", "quadrāgiēs", "quīnquāgiēs", "sexāgiēs",
+    "septuāgiēs", "octōgiēs", "nōnāgiēs",
+];
+const ADVERB_HUNDREDS: [&str; 10] = [
+    "", "centiēs", "ducentiēs", "trecentiēs", "quadringentiēs", "quīngentiēs",
+    "sescentiēs", "septingentiēs", "octingentiēs", "nōngentiēs",
+];
+
+/// Numeral adverb for 1..=999, largest part first ("vīciēs semel", one of
+/// the orders A&G §138 gives for 21).
+fn la_adverb(n: u32) -> String {
+    let (h, rest) = (n / 100, n % 100);
+    let mut parts: Vec<&str> = Vec::new();
+    if h != 0 {
+        parts.push(ADVERB_HUNDREDS[h as usize]);
+    }
+    if rest != 0 && rest <= 19 {
+        parts.push(ADVERB_LOW[rest as usize]);
+    } else if rest != 0 {
+        parts.push(ADVERB_TENS[(rest / 10) as usize]);
+        if rest % 10 != 0 {
+            parts.push(ADVERB_LOW[(rest % 10) as usize]);
+        }
+    }
+    parts.join(" ")
+}
+
+/// Compound ordinal (masc.nom.sg.) for 1..=999: every part is an ordinal,
+/// largest first — "vīcēsimus prīmus" (21), "centēsimus prīmus" (101),
+/// as in A&G §133. The subtractive 18/19 come from the table.
+fn la_ordinal_under_1000(n: u32) -> String {
+    if let Some(stem) = la_ordinal_low(n) {
+        return stem.to_string();
+    }
+    let (h, rest) = (n / 100 * 100, n % 100);
+    let mut parts: Vec<&str> = Vec::new();
+    if h != 0 {
+        parts.push(la_ordinal_low(h).expect("hundreds are in the table"));
+    }
+    if rest != 0 {
+        if let Some(stem) = la_ordinal_low(rest) {
+            parts.push(stem);
+        } else {
+            parts.push(la_ordinal_low(rest / 10 * 10).expect("tens are in the table"));
+            parts.push(la_ordinal_low(rest % 10).expect("units are in the table"));
+        }
+    }
+    parts.join(" ")
+}
+
+/// Compound ordinal (masc.nom.sg.) for 1..1_000_000. Thousands take the
+/// numeral adverb: "bis mīllēsimus" (2000), "deciēs mīllēsimus" (10000),
+/// "centiēs mīllēsimus" (100000), then the ordinal of the remainder:
+/// "mīllēsimus prīmus" (1001). `None` past the table's 10^6.
+fn la_ordinal_compound(n: u32) -> Option<String> {
+    if let Some(stem) = la_ordinal_low(n) {
+        return Some(stem.to_string());
+    }
+    if n >= 1_000_000 {
+        return None;
+    }
+    let (k, r) = (n / 1000, n % 1000);
+    let mut parts: Vec<String> = Vec::new();
+    if k == 1 {
+        parts.push("mīllēsimus".to_string());
+    } else if k > 1 {
+        parts.push(format!("{} mīllēsimus", la_adverb(k)));
+    }
+    if r != 0 {
+        parts.push(la_ordinal_under_1000(r));
+    }
+    Some(parts.join(" "))
+}
+
 /// `_decline_us_um_adj(stem, gender, case)` — 1st/2nd-decl. adjective from its
 /// masc.nom.sg. citation form to any other slot. Compound stems (space) get
 /// each word inflected.
@@ -626,14 +718,23 @@ fn la_ordinal_int(value: &BigInt, gender: &str, case: &str, macrons: bool) -> Re
             value
         )));
     }
-    if let Some(v) = value.to_u32() {
-        if let Some(stem) = la_ordinal_low(v) {
-            let (g, c) = la_normalize_grammar(gender, case)?;
-            return Ok(apply_macrons(&la_decline_adj(stem, g, c), macrons));
-        }
+    // Latin has no ordinal zero; PR #657's cardinal fallback ("nullus") stays.
+    if value.is_zero() {
+        return la_cardinal_int(value, gender, case, macrons);
     }
-    // Compound / out-of-table ordinals fall back to the cardinal form.
-    la_cardinal_int(value, gender, case, macrons)
+    if let Some(stem) = value.to_u32().and_then(la_ordinal_compound) {
+        let (g, c) = la_normalize_grammar(gender, case)?;
+        return Ok(apply_macrons(&la_decline_adj(&stem, g, c), macrons));
+    }
+    // PR #657 fell back to the cardinal for every compound (#181). Below a
+    // million the compound ordinal is built above; past it the classical
+    // forms ("vīciēs centiēs mīllēsimus") are not generated, so say so
+    // instead of returning the cardinal.
+    let (_, _) = la_normalize_grammar(gender, case)?;
+    Err(N2WError::Overflow(format!(
+        "abs({}) must be at most 1000000 for to='ordinal' in la.",
+        value
+    )))
 }
 
 /// `to_ordinal_num(value)` — Roman numeral. verify_ordinal first.
@@ -981,7 +1082,8 @@ impl Lang for LangLa {
         la_cardinal_int(value, g, c, m)
     }
 
-    /// PR #657 `to_ordinal` — declined; compound values fall back to cardinal.
+    /// PR #657 `to_ordinal` — declined; compounds below 10^6 are built from
+    /// ordinal parts (#181), larger values raise OverflowError.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         la_ordinal_int(value, "m", "nom", true)
     }

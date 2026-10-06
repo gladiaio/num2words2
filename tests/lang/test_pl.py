@@ -116,8 +116,14 @@ class Num2WordsPLTest(TestCase):
         self.assertEqual(num2words(1000000, lang="pl", to="ordinal"), "milionowy")
 
     def test_to_ordinal_error(self):
-        with self.assertRaises(NotImplementedError):
+        # gladiaio/num2words2#155: a fractional ordinal raised an empty
+        # NotImplementedError, and every negative a ValueError about int("-").
+        with self.assertRaises(TypeError):
             num2words(1.5, lang="pl", to="ordinal")
+        for n in (-1, -11, -42, -1.0, -0.5):
+            with self.assertRaisesRegex(TypeError, "Cannot treat"):
+                num2words(n, lang="pl", to="ordinal")
+        self.assertEqual(num2words(2.0, lang="pl", to="ordinal"), "drugi")
 
     def test_currency(self):
         self.assertEqual(
@@ -166,3 +172,21 @@ class Num2WordsPLTest(TestCase):
         self.assertEqual(
             num2words(-10.25, lang="pl"), "minus dziesięć przecinek dwa pięć"
         )
+
+    def test_ordinal_scale_words_past_miliard(self):
+        # gladiaio/num2words2#174: KeyError('4') from 10**12.
+        self.assertEqual(num2words(10**12, lang="pl", to="ordinal"), "bilionowy")
+        self.assertEqual(
+            num2words(2 * 10**12, lang="pl", to="ordinal"), "dwubilionowy"
+        )
+        self.assertEqual(num2words(10**15, lang="pl", to="ordinal"), "biliardowy")
+        self.assertEqual(num2words(10**18, lang="pl", to="ordinal"), "trylionowy")
+        self.assertEqual(
+            num2words(10**24, lang="pl", to="ordinal"), "kwadrylionowy"
+        )
+        self.assertEqual(num2words(10**63, lang="pl", to="ordinal"), "decyliardowy")
+        self.assertEqual(
+            num2words(10**12 + 10**9, lang="pl", to="ordinal"), "bilion miliardowy"
+        )
+        with self.assertRaises(OverflowError):
+            num2words(10**66, lang="pl", to="ordinal")

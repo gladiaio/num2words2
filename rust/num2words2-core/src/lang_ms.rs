@@ -43,11 +43,13 @@
 //!
 //! # More faithfully reproduced Python bugs (currency)
 //!
-//! 6. **`parse_currency_parts(n)` is called bare**, so `is_int_with_cents`
-//!    keeps its `True` default and an `int` is read as *minor* units:
-//!    `to_currency(100, "EUR")` is "satu euro" — one euro, not a hundred — and
-//!    `to_currency(1, "EUR")` is "kosong euro satu sen". The corpus pins all of
-//!    `0`, `1`, `2`, `100` and `1000000` ("sepuluh ribu euro").
+//! 6. ~~**`parse_currency_parts(n)` is called bare**~~, so in Python
+//!    `is_int_with_cents` kept its `True` default and an `int` was read as
+//!    *minor* units: `to_currency(42)` was "kosong ringgit empat puluh dua
+//!    sen" while `42.0` said "empat puluh dua ringgit" — the old upstream
+//!    convention savoirfairelinux/num2words#426 removed everywhere else.
+//!    Fixed (gladiaio/num2words2#171, as #161 for LIJ): an `int` is a count of
+//!    units, so `100` is "seratus euro" and int, float and str agree.
 //! 7. **There is no `has_decimal` guard.** The cents segment is gated on
 //!    `right > 0` alone, so a whole float prints no subunit: `1.0` is "satu
 //!    euro" where `Num2Word_Base` would append a zero-cents segment.
@@ -88,22 +90,14 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly what
 //! Python emits, and each is pinned by a `bench/corpus.jsonl` row:
 //!
-//! 1. **`to_ordinal` of a small negative silently returns a *positive* ordinal**,
-//!    via Python's negative list indexing. `_int_to_ordinal` guards with
-//!    `if n <= 10: return self.ordinals[n]`, and that test is true for every
-//!    negative `n`, so `ordinals[-1]` wraps to the last element:
-//!      * `to_ordinal(-1)` == `"kesepuluh"`  (`ordinals[-1]`, i.e. index 10)
-//!      * `to_ordinal(-7)` == `"keempat"`   (`ordinals[-7]`, i.e. index 4)
-//!      * `to_ordinal(-11)` == `""`         (`ordinals[-11]`, i.e. index 0 — the
-//!        empty-string filler; untested by the corpus but follows from the same
-//!        rule)
-//!    Modelled by [`ordinal_at`], which reproduces the wrap explicitly.
-//! 2. **`to_ordinal(n)` for `n <= -12` raises `IndexError`** — the wrap runs off
-//!    the front of the 11-element list. The `except BaseException` in
-//!    `to_ordinal` does *not* rescue this: its handler re-calls
-//!    `self._int_to_ordinal(int(n))` with the same value, which raises the same
-//!    `IndexError` a second time, this time uncaught. Corpus: `-21`, `-42`,
-//!    `-100`, `-999`, `-1000`, `-1000000` all → `IndexError`.
+//! 1. ~~**`to_ordinal` of a negative silently returns a *positive* ordinal**~~
+//!    Fixed (gladiaio/num2words2#155). `_int_to_ordinal` guards with
+//!    `if n <= 10: return self.ordinals[n]`, which is true for every negative
+//!    `n`, so Python wrapped around (`to_ordinal(-1)` == "kesepuluh",
+//!    `to_ordinal(-11)` == "") and raised `IndexError` from `-12` down. The
+//!    port raises Base's `errmsg_negord` `TypeError` for every negative, like
+//!    most languages, on the int and the truncating float path alike.
+//! 2. (merged into 1.)
 //! 3. **`to_ordinal_num` does no sign handling**: it is literally
 //!    `"ke-" + str(n)`, so `to_ordinal_num(-1)` == `"ke--1"` (double hyphen).
 //! 4. **`to_year`'s three branches are identical** — the `n < 1000` /
@@ -116,8 +110,7 @@
 //!
 //! # Error variants
 //!
-//! Only `IndexError` is reachable in scope, mapping to `N2WError::Index`. See
-//! bug 2 above and [`ordinal_at`]. `to_cardinal`/`to_ordinal_num`/`to_year`
+//! Negative ordinals raise `TypeError` (bug 1). `to_cardinal`/`to_ordinal_num`/`to_year`
 //! cannot fail for integer input: every table index `_int_to_word` computes is
 //! provably in range (see the safety notes on [`int_to_word`]), so the
 //! `except BaseException` fallbacks in the Python `to_cardinal` /
@@ -129,7 +122,9 @@
 //! handshake as in `lang_ES`). Every method is a pure function of its argument,
 //! so the stateless Rust path is faithful.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{
+    negord_error, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result,
+};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -244,27 +239,12 @@ fn index_error(i: &BigInt) -> N2WError {
     N2WError::Index(format!("list index out of range (ordinals[{}])", i))
 }
 
-/// Python's `self.ordinals[n]`, **including negative-index wraparound**.
-///
-/// Python resolves a negative index `n` as `len + n` and raises `IndexError`
-/// only once that is still negative. Reproducing the wrap rather than
-/// rejecting negatives outright is what makes `to_ordinal(-1)` == "kesepuluh"
-/// and `to_ordinal(-21)` == `IndexError`. See bugs 1 and 2 in the module docs.
-///
-/// Callers only reach this with `n <= 10`, so the `n >= len` overflow arm that
-/// Python would also check is unreachable — but it is handled anyway rather
-/// than being an unchecked assumption.
+/// Python's `self.ordinals[n]`. `int_to_ordinal` rejects negatives first
+/// (#155), so callers only reach this with `0 <= n <= 10`.
 fn ordinal_at(n: &BigInt) -> Result<&'static str> {
-    let len = BigInt::from(ORDINALS.len());
-    let resolved = if n.is_negative() { &len + n } else { n.clone() };
-    if resolved.is_negative() || resolved >= len {
-        return Err(index_error(n));
-    }
-    // Safe: 0 <= resolved < 11.
-    let i = resolved
-        .to_usize()
-        .ok_or_else(|| index_error(n))?;
-    ORDINALS.get(i).copied().ok_or_else(|| index_error(n))
+    n.to_usize()
+        .and_then(|i| ORDINALS.get(i).copied())
+        .ok_or_else(|| index_error(n))
 }
 
 /// Python's `_int_to_word`. `n` must be non-negative (`_int_to_cardinal` strips
@@ -493,7 +473,9 @@ fn int_to_ordinal(n: &BigInt) -> Result<String> {
     if n.is_zero() {
         return Ok(ZERO_WORD.to_string());
     }
-    // `n <= 10` is true for every negative too — that is bug 1/2.
+    // `n <= 10` is true for every negative too, which wrapped around in
+    // Python (bug 1, #155): reject negatives like Base's verify_ordinal.
+    verify_ordinal(n)?;
     if *n <= BigInt::from(10) {
         return ordinal_at(n).map(|s| s.to_string());
     }
@@ -572,10 +554,12 @@ impl Lang for LangMs {
     /// `except BaseException` then retries as `_int_to_ordinal(int(n))`. The
     /// only non-raising first passes (whole teens like `11.0`, whole scale
     /// counts like `1e6`) produce the identical words the retry would — so the
-    /// observable result is *always* `_int_to_ordinal(int(n))`, truncation,
-    /// negative-index wraparound and all (`-1.0` → "kesepuluh",
-    /// `-21.0` → IndexError).
+    /// observable result is `_int_to_ordinal(int(n))`, truncation and all.
+    /// Negatives (`-0.5` included) raise `errmsg_negord` (bug 1, #155).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        if strictly_negative(value) {
+            return Err(negord_error(py_num_str(value)));
+        }
         int_to_ordinal(&trunc_toward_zero(value)?)
     }
 
@@ -712,7 +696,7 @@ impl Lang for LangMs {
         // integer quotient would need 29+ digits — signals InvalidOperation.
         // The handler swallows it and MS returns the bare number:
         //
-        //     to_currency(10**26 - 1, "MYR") == "sembilan ratus sembilan ..."
+        //     to_currency(10**26 - 1, "MYR") == "sembilan puluh sembilan ..."
         //     to_currency(10**26,     "MYR") == "100000000000000000000000000 MYR"
         //
         // The threshold is exact for ints: below it `n * 100` needs at most 28
@@ -779,12 +763,13 @@ impl Lang for LangMs {
         };
 
         // Python calls `parse_currency_parts(n)` bare, so every default in
-        // currency.py stands: is_int_with_cents=True (bug 6 — this is what
-        // makes int 100 one euro), keep_precision=False (bug 9), divisor=100
-        // (bug 11). Note `keep_precision` is False even when
-        // has_fractional_cents is True — MS computes that flag for its own
-        // branch below and never forwards it, unlike Num2Word_Base.
-        let (left, right, is_negative) = parse_currency_parts(val, true, false, 100);
+        // currency.py stands except is_int_with_cents: Python's True read an
+        // int as cents (bug 6, #171); it is a count of units here, like 42.0.
+        // keep_precision=False (bug 9), divisor=100 (bug 11). Note
+        // `keep_precision` is False even when has_fractional_cents is True —
+        // MS computes that flag for its own branch below and never forwards
+        // it, unlike Num2Word_Base.
+        let (left, right, is_negative) = parse_currency_parts(val, false, false, 100);
 
         let forms = self.currency_forms.get(currency).ok_or_else(|| {
             N2WError::NotImplemented(format!(
@@ -934,21 +919,12 @@ mod tests {
         assert_eq!(ord("1000000").unwrap(), "ke-satu juta");
     }
 
-    /// Bug 1: negative list indexing wraps to a positive ordinal.
+    /// Bug 1 (fixed, #155): negatives used to wrap to a positive ordinal
+    /// or raise IndexError; they now raise Base's `errmsg_negord` TypeError.
     #[test]
-    fn negative_ordinals_wrap() {
-        assert_eq!(ord("-1").unwrap(), "kesepuluh");
-        assert_eq!(ord("-7").unwrap(), "keempat");
-        // ordinals[-11] is the index-0 empty-string filler.
-        assert_eq!(ord("-11").unwrap(), "");
-    }
-
-    /// Bug 2: past the wrap, Python raises IndexError (twice — the bare
-    /// `except` re-raises).
-    #[test]
-    fn negative_ordinals_index_error() {
-        for v in ["-12", "-21", "-42", "-100", "-999", "-1000", "-1000000"] {
-            assert!(matches!(ord(v), Err(N2WError::Index(_))), "{v}");
+    fn negative_ordinals_raise_type_error() {
+        for v in ["-1", "-7", "-11", "-12", "-21", "-42", "-1000000"] {
+            assert!(matches!(ord(v), Err(N2WError::Type(_))), "{v}");
         }
     }
 
@@ -978,55 +954,56 @@ mod tests {
 
     // ---- currency -------------------------------------------------------
 
-    /// Frozen-corpus rows, verbatim — all 36 that MS's table serves.
+    /// Frozen-corpus rows — all 36 that MS's table serves; int rows corrected
+    /// for #171.
     #[test]
     fn corpus_currency() {
-        // Bugs 6 and 7 are both visible here: int 100 is *one* euro, and the
-        // float 1.0 prints no cents.
+        // Bug 7 is visible here: the float 1.0 prints no cents. Int rows are
+        // corrected for bug 6 (#171): an int is units, not cents.
         for (arg, want) in [
             ("0", "kosong euro"),
-            ("1", "kosong euro satu sen"),
-            ("2", "kosong euro dua sen"),
-            ("100", "satu euro"),
+            ("1", "satu euro"),
+            ("2", "dua euro"),
+            ("100", "seratus euro"),
             ("12.34", "dua belas euro tiga puluh empat sen"),
             ("0.01", "kosong euro satu sen"),
             ("1.0", "satu euro"),
             ("99.99", "sembilan puluh sembilan euro sembilan puluh sembilan sen"),
             ("1234.56", "seribu dua ratus tiga puluh empat euro lima puluh enam sen"),
             ("-12.34", "negatif dua belas euro tiga puluh empat sen"),
-            ("1000000", "sepuluh ribu euro"),
+            ("1000000", "satu juta euro"),
             ("0.5", "kosong euro lima puluh sen"),
         ] {
             assert_eq!(cur(arg, "EUR").unwrap(), want, "EUR {}", arg);
         }
         for (arg, want) in [
             ("0", "kosong dolar"),
-            ("1", "kosong dolar satu sen"),
-            ("2", "kosong dolar dua sen"),
-            ("100", "satu dolar"),
+            ("1", "satu dolar"),
+            ("2", "dua dolar"),
+            ("100", "seratus dolar"),
             ("12.34", "dua belas dolar tiga puluh empat sen"),
             ("0.01", "kosong dolar satu sen"),
             ("1.0", "satu dolar"),
             ("99.99", "sembilan puluh sembilan dolar sembilan puluh sembilan sen"),
             ("1234.56", "seribu dua ratus tiga puluh empat dolar lima puluh enam sen"),
             ("-12.34", "negatif dua belas dolar tiga puluh empat sen"),
-            ("1000000", "sepuluh ribu dolar"),
+            ("1000000", "satu juta dolar"),
             ("0.5", "kosong dolar lima puluh sen"),
         ] {
             assert_eq!(cur(arg, "USD").unwrap(), want, "USD {}", arg);
         }
         for (arg, want) in [
             ("0", "kosong paun"),
-            ("1", "kosong paun satu peni"),
-            ("2", "kosong paun dua peni"),
-            ("100", "satu paun"),
+            ("1", "satu paun"),
+            ("2", "dua paun"),
+            ("100", "seratus paun"),
             ("12.34", "dua belas paun tiga puluh empat peni"),
             ("0.01", "kosong paun satu peni"),
             ("1.0", "satu paun"),
             ("99.99", "sembilan puluh sembilan paun sembilan puluh sembilan peni"),
             ("1234.56", "seribu dua ratus tiga puluh empat paun lima puluh enam peni"),
             ("-12.34", "negatif dua belas paun tiga puluh empat peni"),
-            ("1000000", "sepuluh ribu paun"),
+            ("1000000", "satu juta paun"),
             ("0.5", "kosong paun lima puluh peni"),
         ] {
             assert_eq!(cur(arg, "GBP").unwrap(), want, "GBP {}", arg);
@@ -1058,14 +1035,13 @@ mod tests {
         }
     }
 
-    /// Bug 6: an int is minor units, so the sign rides on `left`/`right` split
-    /// out of `divmod(abs(n), 100)`.
+    /// Negative ints are units (bug 6 fixed, #171); the sign is said once.
     #[test]
     fn currency_negative_ints() {
-        assert_eq!(cur("-1", "MYR").unwrap(), "negatif kosong ringgit satu sen");
-        assert_eq!(cur("-100", "MYR").unwrap(), "negatif satu ringgit");
-        assert_eq!(cur("-101", "MYR").unwrap(), "negatif satu ringgit satu sen");
-        assert_eq!(cur("-1000000", "MYR").unwrap(), "negatif sepuluh ribu ringgit");
+        assert_eq!(cur("-1", "MYR").unwrap(), "negatif satu ringgit");
+        assert_eq!(cur("-100", "MYR").unwrap(), "negatif seratus ringgit");
+        assert_eq!(cur("-101", "MYR").unwrap(), "negatif seratus satu ringgit");
+        assert_eq!(cur("-1000000", "MYR").unwrap(), "negatif satu juta ringgit");
     }
 
     /// Bug 9: the fractional-cents branch always says "kosong".
@@ -1109,7 +1085,7 @@ mod tests {
     #[test]
     fn currency_decimal_context_limit_on_ints() {
         // 10**26 - 1: still inside the context, so still words.
-        assert!(cur("99999999999999999999999999", "MYR").unwrap().starts_with("sembilan ratus"));
+        assert!(cur("99999999999999999999999999", "MYR").unwrap().starts_with("sembilan puluh"));
         assert_eq!(
             cur("100000000000000000000000000", "MYR").unwrap(),
             "100000000000000000000000000 MYR"

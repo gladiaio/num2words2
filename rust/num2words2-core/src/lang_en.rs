@@ -17,10 +17,12 @@
 //! - `to_year`'s issue-#67 guard: non-integer *floats* raise TypeError, but
 //!   Decimals of any scale skip the `isinstance(val, float)` check and are
 //!   silently truncated by `int(val)` (Decimal("1.5") -> year 1);
+//! - `to_year`'s `suffix=`/`longval=` kwargs (`suffix="BCE"` replaces the
+//!   default "BC" for negatives and is appended to positives too);
 //! - `Num2Word_EN.to_fraction`'s idiomatic "half/halves" and
 //!   "quarter/quarters" forms for denominators 2 and 4 (issue #584).
 
-use crate::base::{set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
+use crate::base::{set_low_numwords, set_mid_numwords, Cards, KwVal, Kwargs, Lang, N2WError, Result};
 use crate::currency::CurrencyForms;
 use crate::floatpath::FloatValue;
 use num_bigint::BigInt;
@@ -408,6 +410,45 @@ impl LangEn {
             ))),
         }
     }
+
+    /// Body of `Num2Word_EN.to_year`: the caller's (truthy) suffix wins,
+    /// negatives default to "BC" otherwise.
+    fn year_with_suffix(&self, value: &BigInt, suffix: Option<&str>) -> Result<String> {
+        let mut val = value.clone();
+        let mut suffix = suffix;
+        if val.sign() == num_bigint::Sign::Minus {
+            val = -val;
+            if suffix.is_none() {
+                suffix = Some("BC");
+            }
+        }
+        let hundred = BigInt::from(100);
+        let high = &val / &hundred;
+        let low = &val % &hundred;
+
+        // 00XX, X00X, or beyond 9999 fall back to plain cardinal.
+        let ten = BigInt::from(10);
+        let valtext = if high.is_zero()
+            || (( &high % &ten).is_zero() && low < ten)
+            || high >= hundred
+        {
+            self.to_cardinal(&val)?
+        } else {
+            let hightext = self.to_cardinal(&high)?;
+            let lowtext = if low.is_zero() {
+                "hundred".to_string()
+            } else if low < ten {
+                format!("oh-{}", self.to_cardinal(&low)?)
+            } else {
+                self.to_cardinal(&low)?
+            };
+            format!("{} {}", hightext, lowtext)
+        };
+        Ok(match suffix {
+            Some(s) => format!("{} {}", valtext, s),
+            None => valtext,
+        })
+    }
 }
 
 impl Lang for LangEn {
@@ -624,37 +665,26 @@ impl Lang for LangEn {
     }
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        let mut val = value.clone();
-        let mut suffix: Option<&str> = None;
-        if val.sign() == num_bigint::Sign::Minus {
-            val = -val;
-            suffix = Some("BC");
-        }
-        let hundred = BigInt::from(100);
-        let high = &val / &hundred;
-        let low = &val % &hundred;
+        self.year_with_suffix(value, None)
+    }
 
-        // 00XX, X00X, or beyond 9999 fall back to plain cardinal.
-        let ten = BigInt::from(10);
-        let valtext = if high.is_zero()
-            || (( &high % &ten).is_zero() && low < ten)
-            || high >= hundred
-        {
-            self.to_cardinal(&val)?
-        } else {
-            let hightext = self.to_cardinal(&high)?;
-            let lowtext = if low.is_zero() {
-                "hundred".to_string()
-            } else if low < ten {
-                format!("oh-{}", self.to_cardinal(&low)?)
-            } else {
-                self.to_cardinal(&low)?
-            };
-            format!("{} {}", hightext, lowtext)
+    /// `Num2Word_EN.to_year(val, suffix=None, longval=True)` with the
+    /// caller's kwargs. `longval` is accepted and ignored — the EN body
+    /// never reads it. `suffix` is tested truthily twice: a falsy suffix
+    /// lets negatives default to "BC", and is never appended, so
+    /// `suffix=""` behaves like `suffix=None`. Non-str suffix values are
+    /// declined rather than guessing at Python's `str()` interpolation.
+    fn to_year_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
+        if !kw.only(&["suffix", "longval"]) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        let suffix = match kw.get("suffix") {
+            None | Some(KwVal::None) => None,
+            Some(KwVal::Str(s)) if s.is_empty() => None,
+            Some(KwVal::Str(s)) => Some(s.as_str()),
+            _ => return Err(N2WError::Fallback("kwargs".into())),
         };
-        Ok(match suffix {
-            Some(s) => format!("{} {}", valtext, s),
-            None => valtext,
-        })
+        self.year_with_suffix(value, suffix)
     }
 }
+

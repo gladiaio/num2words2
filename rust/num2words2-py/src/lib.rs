@@ -13,7 +13,8 @@ use bigdecimal::BigDecimal;
 use num2words2_core::base::{Kwargs, KwVal, Lang};
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
-    has_py_digit, python_decimal_str, python_int_parse, ParsedNumber,
+    has_py_digit, number_notation, parse_grouped, python_decimal_str, python_int_parse,
+    Grouped, ParsedNumber,
 };
 use num2words2_core::N2WError;
 use num2words2_core::{CurrencyValue, FloatValue};
@@ -39,10 +40,54 @@ const CONVERTER_TYPES: [&str; 7] = [
     "fraction",
 ];
 
-/// The empty-message `NotImplementedError` the old Python shim raised
-/// (`raise NotImplementedError()`), reproduced exactly.
-fn not_implemented() -> PyErr {
-    PyNotImplementedError::new_err("")
+/// `NotImplementedError` for an input the core does not handle. The old
+/// Python shim raised it with an empty message; keep the type (callers catch
+/// it) but say what was declined so the error is actionable.
+fn not_implemented(msg: String) -> PyErr {
+    PyNotImplementedError::new_err(msg)
+}
+
+fn unknown_lang(lang: &str) -> PyErr {
+    not_implemented(format!(
+        "Language '{}' is not supported; run `num2words2 --list-languages` \
+         for the supported codes",
+        lang
+    ))
+}
+
+fn unknown_converter(to: &str) -> PyErr {
+    not_implemented(format!(
+        "to='{}' is not supported; expected one of: {}",
+        to,
+        CONVERTER_TYPES.join(", ")
+    ))
+}
+
+/// The core declined this (lang, to, input, kwargs) combination. Name the
+/// keyword arguments, which are the usual cause.
+fn declined(lang: &str, to: &str, kwargs: Option<&Bound<'_, PyDict>>) -> PyErr {
+    let keys: Vec<String> = kwargs
+        .map(|d| {
+            d.keys()
+                .iter()
+                .filter_map(|k| k.extract::<String>().ok())
+                .map(|k| format!("{}=", k))
+                .collect()
+        })
+        .unwrap_or_default();
+    if keys.is_empty() {
+        not_implemented(format!(
+            "lang='{}', to='{}' is not implemented for this input",
+            lang, to
+        ))
+    } else {
+        not_implemented(format!(
+            "lang='{}', to='{}' does not support {} for this input",
+            lang,
+            to,
+            keys.join(", ")
+        ))
+    }
 }
 
 // The Rust-core-declines signal. NOT a NotImplementedError subclass: the
@@ -57,7 +102,9 @@ pyo3::create_exception!(_rust, RustFallback, pyo3::exceptions::PyException);
 // raise keeps its exception type (`except NumberTooLargeError` / a
 // `type(e).__name__` check) instead of degrading to ModuleNotFoundError when
 // the Custom arm tries to import the deleted module.
-pyo3::create_exception!(_rust, NumberTooLargeError, pyo3::exceptions::PyException);
+// Subclasses OverflowError so `except OverflowError` catches "too large" from
+// every language, bn included.
+pyo3::create_exception!(_rust, NumberTooLargeError, pyo3::exceptions::PyOverflowError);
 
 fn map_err(e: N2WError) -> PyErr {
     match e {
@@ -113,7 +160,7 @@ fn get_lang(lang: &str) -> Option<&'static (dyn Lang + Sync)> {
 }
 
 fn need_lang(lang: &str) -> PyResult<&'static (dyn Lang + Sync)> {
-    get_lang(lang).ok_or_else(|| PyNotImplementedError::new_err(lang.to_string()))
+    get_lang(lang).ok_or_else(|| unknown_lang(lang))
 }
 
 /// A kwarg value as the shim passes it. Bool must precede Int: Python bools
@@ -344,7 +391,10 @@ fn to_float_core(
                 l.to_cardinal_float_kw(&v, precision_override, kw)
             }
         }
-        // kwargs on the non-cardinal float modes stay on the Python side.
+        // year owns its kwargs (zh_TW era=, ...); the hook declines the
+        // ones a language does not take.
+        "year" => l.year_float_kw(&v, kw),
+        // kwargs on the other non-cardinal float modes stay unported.
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
         "ordinal" => l.ordinal_float_entry(&v),
         // PR savoirfairelinux/num2words#666: an integer-valued float (1.0,
@@ -360,7 +410,6 @@ fn to_float_core(
             (true, Some(n)) => l.to_ordinal_num(&n),
             _ => l.ordinal_num_float_entry(&v, repr_str),
         },
-        "year" => l.year_float_entry(&v),
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
@@ -489,25 +538,53 @@ fn from_string_core(
                 N2WError::Value(_)
                     | N2WError::Custom { module: "decimal", class: "InvalidOperation", .. }
             );
-            if catchable {
-                if has_py_digit(s) {
-                    // The dispatcher routes a mixed text+digit string to
-                    // num2words_sentence — now the Rust sentence converter,
-                    // so serve it natively instead of declining. kwargs on
-                    // this path are exotic (the sentence converter takes
-                    // none); defer those rare cases.
-                    if kw.is_empty() {
-                        return match sentencepath::convert(s, lang, to) {
-                            Ok(out) => Ok((0, Some(out))),
-                            Err(N2WError::Fallback(_)) => Ok((1, None)),
-                            Err(e) => Err(map_err(e)),
-                        };
+            // A pure numeric string with thousands separators ("1,000",
+            // "1.000.000", "1 000") is the number it spells; the sentence
+            // converter below would split it at the separator and read a
+            // different number (#151). Whether a lone "1,000" is grouping
+            // depends on the language's notation (#177; "1.000" never gets
+            // here: it is a valid Decimal). Ambiguous or malformed grouping
+            // raises instead of guessing.
+            let grouped = if catchable {
+                parse_grouped(s, number_notation(lang))
+            } else {
+                Grouped::NotGrouped
+            };
+            match grouped {
+                Grouped::Number { canonical, decimal_comma } => {
+                    match l.str_to_number(&canonical).map_err(map_err)? {
+                        // pt_BR reads a dot-only string as US-style "ponto";
+                        // the canonical form always uses '.', so restore
+                        // "vírgula" when the writer used ','.
+                        ParsedNumber::DecPoint { value, .. } if decimal_comma => {
+                            ParsedNumber::Dec(value)
+                        }
+                        p => p,
                     }
-                    return Ok((1, None));
                 }
-                return Err(map_err(e));
+                Grouped::Invalid(msg) => return Err(map_err(N2WError::Value(msg))),
+                Grouped::NotGrouped => {
+                    if catchable {
+                        if has_py_digit(s) {
+                            // The dispatcher routes a mixed text+digit string to
+                            // num2words_sentence — now the Rust sentence converter,
+                            // so serve it natively instead of declining. kwargs on
+                            // this path are exotic (the sentence converter takes
+                            // none); defer those rare cases.
+                            if kw.is_empty() {
+                                return match sentencepath::convert(s, lang, to) {
+                                    Ok(out) => Ok((0, Some(out))),
+                                    Err(N2WError::Fallback(_)) => Ok((1, None)),
+                                    Err(e) => Err(map_err(e)),
+                                };
+                            }
+                            return Ok((1, None));
+                        }
+                        return Err(map_err(e));
+                    }
+                    return Err(map_err(e));
+                }
             }
-            return Err(map_err(e));
         }
     };
 
@@ -658,10 +735,8 @@ fn dec_mode(
                 l.to_cardinal_float_kw(&fv, None, kw)
             }
         }
-        _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        "ordinal" => l.ordinal_float_entry(&fv),
-        "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
-        "year" => l.year_float_entry(&fv),
+        // Ahead of the kwargs guard: to_currency_kw owns its kwargs (en_NG
+        // kobo=, ...) and declines the ones it does not take.
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
@@ -679,6 +754,10 @@ fn dec_mode(
                 kw,
             )
         }
+        "year" => l.year_float_kw(&fv, kw),
+        _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
+        "ordinal" => l.ordinal_float_entry(&fv),
+        "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
         // Python: getattr(converter, "to_fraction")(number) — TypeError
         // (missing denominator) when the class has the method, AttributeError
         // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
@@ -935,7 +1014,7 @@ fn num2words(
     };
     let plain_num = is_float || is_decimal;
 
-    let resolved = presentation::resolve_lang(lang).ok_or_else(not_implemented)?;
+    let resolved = presentation::resolve_lang(lang).ok_or_else(|| unknown_lang(lang))?;
     let lang = resolved.as_str();
     let l = need_lang(lang)?;
     let style = get_style(kwargs)?;
@@ -945,7 +1024,7 @@ fn num2words(
         let s: String = number.extract()?;
         let to_final = if ordinal { "ordinal" } else { to };
         if !CONVERTER_TYPES.contains(&to_final) {
-            return Err(not_implemented());
+            return Err(unknown_converter(to_final));
         }
         let cents = classify_cents(kwargs)?;
         let extras = extras_to_kwargs(
@@ -961,7 +1040,7 @@ fn num2words(
         )?;
         let (cents_bool, kw) = match (cents, extras) {
             (Some((c, _drop)), Some(kw)) => (c, kw),
-            _ => return Err(not_implemented()),
+            _ => return Err(declined(lang, to_final, kwargs)),
         };
         let currency = get_opt_str(kwargs, "currency")?;
         let separator = get_opt_str(kwargs, "separator")?;
@@ -979,14 +1058,14 @@ fn num2words(
         )? {
             (0, out) => Ok(out
                 .map(|o| presentation::apply_style(&o, style.as_deref(), to_final, lang))),
-            _ => Err(not_implemented()),
+            _ => Err(declined(lang, to_final, kwargs)),
         };
     }
 
     // ---- non-string input.
     let to = if ordinal { "ordinal" } else { to };
     if !CONVERTER_TYPES.contains(&to) {
-        return Err(not_implemented());
+        return Err(unknown_converter(to));
     }
 
     // integer modes with a plain int
@@ -997,7 +1076,7 @@ fn num2words(
                 Ok(out) => {
                     Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
                 }
-                Err(N2WError::Fallback(_)) => Err(not_implemented()),
+                Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
                 Err(e) => Err(map_err(e)),
             };
         }
@@ -1041,7 +1120,7 @@ fn num2words(
                 Ok(out) => {
                     Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
                 }
-                Err(N2WError::Fallback(_)) => Err(not_implemented()),
+                Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
                 Err(e) => Err(map_err(e)),
             };
         }
@@ -1088,7 +1167,7 @@ fn num2words(
                     adjective,
                     &kw,
                 ) {
-                    Err(N2WError::Fallback(_)) => Err(not_implemented()),
+                    Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
                     Err(e) => Err(map_err(e)),
                     Ok(out) => Ok(out),
                 };
@@ -1103,7 +1182,7 @@ fn num2words(
         let value_str = pystr(number)?;
         let currency = get_opt_str(kwargs, "currency")?;
         return match cheque_core(l, &value_str, currency.as_deref()) {
-            Err(N2WError::Fallback(_)) => Err(not_implemented()),
+            Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
             Err(e) => Err(map_err(e)),
             Ok(out) => Ok(out),
         };
@@ -1114,7 +1193,7 @@ fn num2words(
         return Err(map_err(fraction_probe(l)));
     }
 
-    Err(not_implemented())
+    Err(declined(lang, to, kwargs))
 }
 
 /// `num2words_sentence` — dispatches on `lang=None` (auto-detect) vs a fixed

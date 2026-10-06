@@ -4,9 +4,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `SCALE` table (see below),
-//! which raises `KeyError` rather than `OverflowError`.
+//! `cards`/`merge` stay at their trait defaults here. The `SCALE` table ends
+//! at 10^30; `maxval()` is 10^33 and larger values raise `OverflowError`
+//! (gladiaio/num2words2#159, see below).
 //!
 //! `setup()` sets `negword = "minus"` and `pointword = "zarez"`; everything
 //! else stays at the `Num2Word_Base.__init__` defaults (notably
@@ -47,7 +47,7 @@
 //!     to exponent form at 1e16), `str(Decimal("1E+2"))` is "1E+2". Both are
 //!     corpus-pinned as ValueError for cardinal and year. This is HR's de
 //!     facto float ceiling, and it is a *ValueError*, unlike the int path's
-//!     `SCALE` `KeyError`.
+//!     10^33 `OverflowError`.
 //!   * `str(-0.0)` is "-0.0", so **negative zero renders the negword**:
 //!     "minus nula zarez nula nula" (corpus-pinned for float and Decimal
 //!     alike; the binding smuggles `Decimal("-0.0")` in as an f64 `-0.0`
@@ -116,23 +116,23 @@
 //!    `ONES[6]` + "o" would spell. That is genuinely the Croatian word; noted
 //!    only because it makes 675 read "šesto sedamdeset pet".
 //!
-//! # The SCALE ceiling — a `KeyError`, not an `OverflowError`
+//! # The SCALE ceiling — now an `OverflowError` (#159)
 //!
 //! `SCALE` is keyed 0..=10, i.e. chunk indices up to 1000^10 == 10^30
 //! ("kvintilijun"). `_int2word` indexes it with the chunk index for **every**
 //! non-zero chunk, so a value needing a 12th chunk — that is, any
-//! `abs(n) >= 10**33` — raises `KeyError` with the missing chunk index as the
-//! key. This is Croatian's de facto (and rather abrupt) MAXVAL.
+//! `abs(n) >= 10**33` — raised `KeyError` in Python with the missing chunk
+//! index as the key.
 //!
 //! The leading chunk of a Python `int` is never zero, so the guard
 //! `if chunk_len > 0 and chunk != 0` never spares it: the crash is
-//! unconditional above the ceiling. Verified against the interpreter:
-//!   * `to_cardinal(10**33 - 1)` → "devetsto devedeset devet kvintilijuna …" (ok)
-//!   * `to_cardinal(10**33)`     → `KeyError: 11`
-//!   * `to_cardinal(10**36)`     → `KeyError: 12`
-//! [`scale`] returns `None` past the table and each call site converts that to
-//! [`N2WError::Key`] carrying the same key, matching both the type and the
-//! payload.
+//! unconditional above the ceiling. Fixed (gladiaio/num2words2#159):
+//! `maxval()` is 10^33 and `_int2word` raises `OverflowError` for
+//! `abs(n) >= 10**33` before any lookup, so `to_cardinal(10**33 - 1)` is
+//! "devetsto devedeset devet kvintilijuna …" and `to_cardinal(10**33)` is an
+//! `OverflowError`. [`scale`] still returns `None` past the table and the call
+//! sites map that to [`N2WError::Key`], but that arm is unreachable from the
+//! public entry points.
 //!
 //! # Currency
 //!
@@ -143,7 +143,8 @@
 //! pins for GBP/JPY/KWD/BHD/INR/CNY/CHF.
 //!
 //! It overrides `to_currency` and `_cents_verbose`; `to_cheque`,
-//! `_money_verbose` and `_cents_terse` stay `Num2Word_Base`'s. It defines
+//! `_money_verbose` and `_cents_terse` stay `Num2Word_Base`'s (the port fixes
+//! `to_cheque`'s unit word, quirk 6). It defines
 //! neither `CURRENCY_ADJECTIVES` nor `CURRENCY_PRECISION`, so both remain
 //! Base's empty dicts and [`Lang::currency_precision`] keeps its default 100
 //! for every code.
@@ -153,16 +154,17 @@
 //!
 //! # Faithfully reproduced Python oddities (currency)
 //!
-//! 6. **`to_cheque` prints the gender flag as the currency name.**
-//!    `Num2Word_Base.to_cheque` does `cr1, _cr2 = self.CURRENCY_FORMS[currency]`
-//!    then `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, intending "the
+//! 6. **`to_cheque` printed the gender flag as the currency name (fixed,
+//!    #189).** `Num2Word_Base.to_cheque` does
+//!    `cr1, _cr2 = self.CURRENCY_FORMS[currency]` then
+//!    `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, intending "the
 //!    plural form". HR's `cr1` is a **4-tuple**, so `cr1[-1]` is the trailing
 //!    `bool`, which `"%s"` renders as `False`/`True` and `.upper()` then
-//!    shouts. The corpus pins it:
-//!    `to_cheque(1234.56, "EUR")` ==
-//!    "TISUĆA DVJESTO TRIDESET ČETIRI AND 56/100 FALSE". HRK, whose flag is
-//!    `True`, would end in "TRUE". Reproduced through the *unmodified*
-//!    [`crate::currency::default_to_cheque`].
+//!    shouts: `to_cheque(12.5, "EUR")` == "DVANAEST AND 50/100 FALSE" (HRK:
+//!    "TRUE"). Same bug as `sr` (#176); [`LangHr::to_cheque`] goes through the
+//!    shared `lang_sr::sr_to_cheque`, which takes the "many" form:
+//!    "DVANAEST AND 50/100 EURA". "AND"/"MINUS" stay English, as in every
+//!    other language's cheque format.
 //! 7. **`to_currency` accepts `adjective=` and then ignores it.** The parameter
 //!    is in HR's signature but its body never reads it — unlike
 //!    `Num2Word_Base.to_currency`, which would apply `prefix_currency`. So
@@ -230,7 +232,8 @@
 //!
 //! # Verification
 //!
-//! All 117 `hr` currency + cheque corpus rows match byte for byte. Beyond the
+//! All 117 `hr` currency + cheque corpus rows match byte for byte (cheque
+//! rows bar the unit word, quirk 6). Beyond the
 //! corpus, ~20k differential cases were run against the live interpreter —
 //! every code (including **HRK**, which the corpus never exercises, and unknown
 //! codes), `cents=True`/`False`, `separator` omitted/`""`/`" i"`/`","`, `int` /
@@ -246,7 +249,8 @@
 //! kwargs swallow, `int("Infinity")`'s exact ValueError text, and
 //! `to_currency(0.6535)`'s digit-by-digit "šezdeset pet zarez tri pet centi".
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -344,7 +348,8 @@ const SCALE: [(&str, &str, &str, bool); 11] = [
 
 /// Python's `SCALE[idx]`. `None` models the `KeyError` the dict raises past
 /// key 10; callers turn it into [`N2WError::Key`] with `idx` as the key, which
-/// is what CPython puts in the exception (`KeyError: 11`).
+/// is what CPython puts in the exception (`KeyError: 11`). Unreachable from
+/// the public entry points since the 10^33 MAXVAL check (#159).
 fn scale(idx: usize) -> Option<&'static (&'static str, &'static str, &'static str, bool)> {
     SCALE.get(idx)
 }
@@ -511,14 +516,12 @@ fn pluralize<'a>(number: &BigInt, forms: &'a (&'a str, &'a str, &'a str, bool)) 
 /// * `Num2Word_Base.to_cheque` reads `cr1[-1]` believing it is the plural unit
 ///   name and interpolates it into a `"%s"` — module-doc quirk 6. Python
 ///   renders the bool as the text `False`/`True`, which `.upper()` shouts.
+///   The port's [`LangHr::to_cheque`] reads the "many" form instead (#189).
 ///
-/// `CurrencyForms` stores `Vec<String>`, so keeping the flag as the exact text
-/// Python's `"%s"` produces reproduces the cheque bug through the *unmodified*
-/// [`crate::currency::default_to_cheque`] (which takes `forms.unit.last()`),
-/// while [`LangHr::cents_verbose`] recovers the boolean by comparing against
-/// `"True"`. Storing a real `bool` would need a parallel table *and* a
-/// `to_cheque` override to reprint it — more code, same bytes. This mirrors
-/// what `lang_sr.rs` does with the identical Python shape.
+/// `CurrencyForms` stores `Vec<String>`, so the flag is kept as the exact text
+/// Python's `"%s"` produces, and [`LangHr::cents_verbose`] recovers the
+/// boolean by comparing against `"True"`. This mirrors what `lang_sr.rs` does
+/// with the identical Python shape.
 ///
 /// The arity is load-bearing beyond that: [`LangHr::pluralize`] indexes 0..=2,
 /// so dropping the third form would silently change output.
@@ -747,6 +750,7 @@ impl LangHr {
 
     /// Port of `Num2Word_HR._int2word`.
     fn int2word(&self, number: &BigInt, feminine: bool) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_negative() {
             // Python: " ".join([self.negword, self._int2word(abs(number))])
             //
@@ -931,7 +935,19 @@ impl LangHr {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangHr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -1144,8 +1160,9 @@ impl Lang for LangHr {
     //
     // HR overrides `to_currency` and `_cents_verbose`, and supplies its own
     // `CURRENCY_FORMS` + `pluralize`. Everything else on the currency path —
-    // `to_cheque`, `_money_verbose`, `_cents_terse` — is `Num2Word_Base`'s, and
-    // the trait defaults already mirror those, so they are left alone.
+    // `_money_verbose`, `_cents_terse` — is `Num2Word_Base`'s, and the trait
+    // defaults already mirror those, so they are left alone. `to_cheque` is
+    // Base's too, except for the unit word (quirk 6, #189).
     // `CURRENCY_ADJECTIVES` and `CURRENCY_PRECISION` are Base's empty dicts, so
     // `currency_adjective` (None) and `currency_precision` (100) are correct as
     // inherited.
@@ -1156,6 +1173,12 @@ impl Lang for LangHr {
 
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
+    }
+
+    /// `Num2Word_Base.to_cheque` with the "many" form as the unit word instead
+    /// of the gender flag (quirk 6, #189), via the helper `sr` shares.
+    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
+        crate::lang_sr::sr_to_cheque(self, val, currency)
     }
 
     /// Port of `Num2Word_HR.pluralize` over a `CURRENCY_FORMS` entry.

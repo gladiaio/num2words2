@@ -50,7 +50,8 @@
 //!    `to_ordinal(2000)` == "dosmilésimo", `to_ordinal(99999)` ==
 //!    "noventa y nuevemilésimo noningentésimo nonagésimo noveno", and
 //!    `to_ordinal(123456)` == "ciento veintitrésmilésimo ...". Preserved.
-//! 3. **`to_ordinal(0)` returns the empty string** (`value == 0` → `text = ""`).
+//! 3. **`to_ordinal(0)` returned the empty string** in Python (`value == 0` →
+//!    `text = ""`); the public entry points raise ValueError instead (#160).
 //! 4. **`replace("oo", "o")` is applied to the whole string at every recursion
 //!    level**, not just the intended "decimooctavo" → "decimoctavo" junction.
 //! 5. **`to_ordinal` above 1e18 silently degrades to a cardinal**: the final
@@ -609,7 +610,8 @@ impl LangEsVe {
         self.verify_ordinal(value)?;
 
         let text: String = if value.is_zero() {
-            // Bug 3: to_ordinal(0) == "".
+            // Bug 3: only reachable from the recursion; the public entry
+            // points reject 0 first.
             String::new()
         } else if value <= &BigInt::from(10) {
             let v = value.to_u64().expect("0 < value <= 10");
@@ -748,13 +750,10 @@ impl LangEsVe {
             // OverflowError from a huge value beats the "un" substitution.
             let money_str = self.to_cardinal(&abs_val)?;
 
-            // NB: `self.negword`, **not** `self.negword.strip()` — unlike every
-            // other minus site in the library. "menos " keeps its trailing
-            // space and the "%s %s %s" format then adds another, so a negative
-            // int renders "menos  cinco euros" with a double space. `.strip()`
-            // only trims the ends, so the doubled space survives. Verified
-            // against CPython; preserved deliberately.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // Python uses `self.negword` raw here, so "menos " plus the
+            // "%s %s %s" format's own space gave "menos  cinco euros".
+            // Stripped like every other minus site (#160).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
 
             // `cr1[0]` / `cr1[1]`: unguarded in Python too. Every one of the
             // 172 entries in the table is arity 2, so neither can be missing.
@@ -1057,6 +1056,7 @@ impl Lang for LangEsVe {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         // Python's default gender is "m".
         self.to_ordinal_gender(value, 'm')
     }
@@ -1082,7 +1082,8 @@ impl Lang for LangEsVe {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -1125,6 +1126,7 @@ impl Lang for LangEsVe {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         let gender = if kw.str("gender") == Some("f") { 'f' } else { 'm' };
         self.to_ordinal_gender(value, gender)
     }

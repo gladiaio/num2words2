@@ -4,10 +4,10 @@
 //! Shape: **self-contained**. `Num2Word_SK` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
-//! outright and drives `_int2word` over 3-digit chunks. `cards`/`maxval`/
-//! `merge` therefore stay at their trait defaults, and there is **no overflow
-//! check**: the only ceiling is the `THOUSANDS` table, which raises `KeyError`
-//! rather than `OverflowError` (see bug 4 below).
+//! outright and drives `_int2word` over 3-digit chunks. `cards`/`merge`
+//! therefore stay at their trait defaults. The `THOUSANDS` table ends at
+//! 10^30; `maxval()` is 10^33 and larger values raise `OverflowError` (see
+//! bug 4 below).
 //!
 //! Inherited from `Num2Word_Base` (SK does not override either, so the trait
 //! defaults are exactly right):
@@ -44,15 +44,17 @@
 //!    than its last digit, so 123 selects form 2: `123456789` ==
 //!    "sto dvadsať tri **miliónov** …" where Slovak wants "milióny".
 //! 4. **`THOUSANDS` stops at key 10 (10^30).** A chunk index of 11 or more —
-//!    i.e. any value >= 10^33 — is a `KeyError`, which is Slovak's de facto
-//!    (and rather abrupt) MAXVAL. Modelled by [`LangSk::thousands_at`].
+//!    i.e. any value >= 10^33 — was a `KeyError` in Python. Fixed
+//!    (gladiaio/num2words2#159): `_int2word` raises `OverflowError` for
+//!    `abs(n) >= 10**33` first, so [`LangSk::thousands_at`] never misses.
 //! 5. **Typo in `THOUSANDS[10]`**: the plural form is "kvintillióny" with a
 //!    doubled `l`, while the singular "kvintilión" and genitive
 //!    "kvintiliónov" both have one. Kept verbatim.
-//! 6. **`to_currency`'s int path mis-pluralizes every count except 1.** It
-//!    picks `cr1[0]`/`cr1[1]` by hand instead of calling `self.pluralize`, so
-//!    0, 5+ and the teens all take the paucal (2-4) form where `pluralize`
-//!    would pick the genitive `cr1[2]`. See [`LangSk::to_currency`].
+//! 6. **`to_currency`'s int path mis-pluralized every count except 1 (fixed,
+//!    #187).** Python picks `cr1[0]`/`cr1[1]` by hand instead of calling
+//!    `self.pluralize`, so 0, 5+ and the teens all took the paucal (2-4) form
+//!    — "päť eurá" — while the float path said "päť eur". The port uses
+//!    `pluralize` on both paths. See [`LangSk::to_currency`].
 //! 7. **`to_currency` has no gender agreement.** The count comes from
 //!    `to_cardinal`, which only ever emits the masculine "jeden"/"dva", so a
 //!    feminine unit reads wrong: `1 CZK` is "jeden koruna" (Slovak wants
@@ -112,10 +114,9 @@
 //!
 //! # Error variants
 //!
-//! `KeyError` (bug 4) is reachable via [`key_error`]. It is a Python crash
-//! rather than a deliberate raise, but the exception *type* is observable and
-//! callers may catch it, so parity means reproducing it rather than tidying it
-//! into an `OverflowError`. [`value_error`] models `int()` on a non-numeric
+//! `KeyError` (bug 4) is modelled by [`key_error`], but since #159 the MAXVAL
+//! check makes it unreachable from the public entry points: too-large values
+//! are an `OverflowError`. [`value_error`] models `int()` on a non-numeric
 //! token: on the integer path the sign is stripped before the digit helpers, so
 //! it never fires there, but the float path ([`LangSk::to_cardinal_float`])
 //! *does* reach it — a repr/str with no "." (scientific notation, `inf`, `nan`)
@@ -128,12 +129,13 @@
 //!     `currency::default_to_currency`/`default_to_cheque` off
 //!     [`Lang::currency_forms`] returning `None`. Message verified byte for
 //!     byte: `Currency code "GBP" not implemented for "Num2Word_SK"`.
-//!   * `KeyError` again — bug 4 is reachable *through* `to_currency`, since the
-//!     int path calls `to_cardinal`: `to_currency(10**33, "EUR")` is
-//!     `KeyError: 11` in Python, not an OverflowError. `to_currency(10**30)` is
-//!     fine ("kvintilión eurá").
+//!   * `OverflowError` — bug 4 is reachable *through* `to_currency`, since the
+//!     int path calls `to_cardinal`: `to_currency(10**33, "EUR")` was
+//!     `KeyError: 11` in Python and is now an OverflowError (#159).
+//!     `to_currency(10**30)` is fine ("kvintilión eur").
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -396,8 +398,8 @@ fn plural_form_index(n: &BigInt) -> usize {
 /// `Num2Word_EUR.CURRENCY_FORMS`. Confirmed against the live interpreter.
 ///
 /// All six tuples carry three forms — nominative singular / paucal (2-4) /
-/// genitive plural — and the arity is load-bearing: `pluralize` indexes 0/1/2,
-/// `to_cheque` takes `cr1[-1]`, and `to_currency`'s int path takes `cr1[1]`.
+/// genitive plural — and the arity is load-bearing: `pluralize` indexes 0/1/2
+/// and `to_cheque` takes `cr1[-1]`.
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     const CENTS: [&str; 3] = ["cent", "centy", "centov"];
 
@@ -568,7 +570,8 @@ impl LangSk {
         }
     }
 
-    /// `THOUSANDS[i]`, raising `KeyError` past 10 — see bug 4.
+    /// `THOUSANDS[i]`, raising `KeyError` past 10 — unreachable since the
+    /// MAXVAL check (bug 4, #159).
     fn thousands_at(&self, i: usize) -> Result<&'static [&'static str; 3]> {
         if (1..=10).contains(&i) {
             Ok(&THOUSANDS[i])
@@ -602,6 +605,7 @@ impl LangSk {
     /// Port of `Num2Word_SK._int2word`. Only ever called with a non-negative
     /// `n` — `to_cardinal` removes the sign before delegating here.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO.to_string());
         }
@@ -656,7 +660,19 @@ impl LangSk {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangSk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -966,8 +982,8 @@ impl Lang for LangSk {
     /// that is unreachable — but it is mapped to `Index` rather than panicking
     /// so the exception type survives if the table ever changes.
     ///
-    /// Reached only from `Num2Word_Base.to_currency`'s float path; SK's own int
-    /// path pointedly does *not* call this (see [`LangSk::to_currency`]).
+    /// Python only reached this from `Num2Word_Base.to_currency`'s float path;
+    /// the port's int path uses it too (bug 6, #187).
     fn pluralize(&self, n: &BigInt, forms: &[String]) -> Result<String> {
         forms
             .get(plural_form_index(n))
@@ -982,7 +998,7 @@ impl Lang for LangSk {
     /// The split is why `currency:EUR` of `1` is "jeden euro" (no cents) while
     /// `1.0` is "jeden euro, nula centov".
     ///
-    /// # The int path's plural bug, reproduced (bug 6)
+    /// # The int path's plural bug (bug 6, fixed in #187)
     ///
     /// Python picks the currency word by hand here instead of calling
     /// `self.pluralize`:
@@ -994,22 +1010,17 @@ impl Lang for LangSk {
     ///     currency_str = cr1[1] if len(cr1) > 1 else cr1[0]
     /// ```
     ///
-    /// So *every* count other than 1 takes `cr1[1]`, the paucal (2-4) form,
-    /// including 0, 5+ and the teens — where `pluralize` would correctly pick
-    /// the genitive `cr1[2]`. The corpus locks the wrong answers in:
-    /// `currency:USD` of `0` is "nula doláre", of `100` is "sto doláre", of
-    /// `1000000` is "milión doláre" — all should be "dolárov", and the float
-    /// path one line below *does* say "dolárov" for the same magnitudes ("nula
-    /// dolárov, päťdesiat centov" at 0.5). EUR shows it just as plainly:
-    /// "nula eurá" (int 0) against "nula eur" (float 0.5). Do not "fix" this
-    /// into a `pluralize` call.
+    /// So every count other than 1 took `cr1[1]`, the paucal (2-4) form,
+    /// including 0, 5+ and the teens: `5` was "päť eurá" and `100 USD` "sto
+    /// doláre", while the float path said "päť eur, nula centov". The port
+    /// calls [`Lang::pluralize`] like the float path, so `5` is "päť eur"
+    /// and `0` "nula eur".
     ///
     /// `abs(val)` is taken before the comparison, so `-1` is singular too:
     /// "mínus jeden euro".
     ///
     /// Bug 4 reaches through here: `to_cardinal` is called unguarded, so
-    /// `to_currency(10**33, "EUR")` propagates `KeyError: 11` rather than
-    /// raising OverflowError or rendering.
+    /// `to_currency(10**33, "EUR")` propagates its MAXVAL OverflowError (#159).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1033,12 +1044,9 @@ impl Lang for LangSk {
                 let abs_val = v.abs();
                 let money_str = self.to_cardinal(&abs_val)?;
 
-                let currency_str = if abs_val.is_one() {
-                    forms.unit.first().cloned()
-                } else {
-                    forms.unit.get(1).or_else(|| forms.unit.first()).cloned()
-                }
-                .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
+                // `self.pluralize`, as the float path does — Python's
+                // hand-picked `cr1[1]` gave "päť eurá" (bug 6, #187).
+                let currency_str = Lang::pluralize(self, &abs_val, &forms.unit)?;
 
                 // Python: ("%s %s %s" % (minus_str, money_str, currency_str))
                 //             .strip()

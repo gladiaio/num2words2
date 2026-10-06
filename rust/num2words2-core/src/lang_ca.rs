@@ -51,15 +51,16 @@
 //!      `ords` → **KeyError**. This is why `to_ordinal(10^18 - 1)` raises.
 //!    [`log1000_trunc`] reproduces the float computation rather than taking an
 //!    exact integer logarithm, precisely so these windows survive.
-//! 5. **`to_ordinal(0)` returns the empty string** (not "zero"-ish), because
-//!    the first arm sets `text = ""` and the function ends with `.strip()`.
-//!    `to_ordinal(200)` == "dos-cents" (no ordinal suffix at all) for the same
+//! 5. **`to_ordinal(0)` returns the empty string** in Python, because the
+//!    first arm sets `text = ""` and the function ends with `.strip()`. The
+//!    public `to_ordinal` raises ValueError for 0 instead (#160); the inner
+//!    recursion keeps the `""`. `to_ordinal(200)` == "dos-cents" (no ordinal suffix at all) for the same
 //!    reason: the trailing `to_ordinal(0)` contributes nothing and `.strip()`
 //!    eats the space.
 //! 6. `to_ordinal(1234567890)` raises `KeyError` — it reaches
 //!    `to_ordinal(90)`, which is bug 1.
-//! 7. **Negative integer currency amounts get a double space**, and
-//!    `adjective=True` is ignored for ints but honoured for floats — CA's
+//! 7. **Negative integer currency amounts got a double space** (fixed,
+//!    #160), and `adjective=True` is ignored for ints but honoured for floats — CA's
 //!    `to_currency` handles ints itself and delegates floats to the base
 //!    class, and the two arms disagree. See [`LangCa::to_currency`].
 //! 8. **`CURRENCY_FORMS` typos are load-bearing output**: `SLL` is
@@ -915,6 +916,12 @@ impl Lang for LangCa {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        // Catalan has no ordinal for zero; Python returns "" (bug 5, #160).
+        if value.is_zero() {
+            return Err(N2WError::Value(
+                "El número 0 no pot ser tractat com un ordinal.".into(),
+            ));
+        }
         self.to_ordinal_inner(value, 0)
     }
 
@@ -923,7 +930,7 @@ impl Lang for LangCa {
     /// TypeError; a whole non-negative one then runs the same arithmetic the
     /// integer path does (dict lookups hash `5.0` like `5`, `//`/`%` agree on
     /// whole floats), so the entry delegates to the integer ordinal —
-    /// `5.0` → "cinquè", `0.0` → "" (bug 5), `1e20` → "cent triliononè".
+    /// `5.0` → "cinquè", `0.0` → ValueError (bug 5), `1e20` → "cent triliononè".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let i = self.verify_ordinal_float(value)?;
         self.to_ordinal(&i)
@@ -1195,15 +1202,11 @@ impl Lang for LangCa {
     /// `Num2Word_Base.to_currency` via `super()`. The two paths are not
     /// consistent with each other, and the differences are observable:
     ///
-    /// 1. **Negative ints render a double space.** The int arm builds
-    ///    `("%s %s %s" % (minus_str, money_str, currency_str)).strip()` with
-    ///    `minus_str = self.negword` — and `negword` is `"menys "`, *already*
-    ///    carrying a trailing space, which the format string's own space then
-    ///    doubles. `.strip()` only trims the ends, so the pair survives in the
-    ///    middle: `to_currency(-5, "USD")` == "menys␣␣cinc dòlars". The float
-    ///    arm uses base's `"%s " % self.negword.strip()` and gets it right:
-    ///    `to_currency(-12.34, "EUR")` == "menys␣dotze euros amb …".
-    ///    Both verified against the interpreter.
+    /// 1. **Negative ints rendered a double space (fixed, #160).** Python's
+    ///    int arm uses `minus_str = self.negword` (`"menys "`, trailing space
+    ///    included) in `"%s %s %s"`, so `to_currency(-5, "USD")` was
+    ///    "menys␣␣cinc dòlars". The port strips negword like the float arm:
+    ///    "menys␣cinc dòlars".
     /// 2. **`adjective=True` is silently ignored for ints.** The int arm never
     ///    consults `CURRENCY_ADJECTIVES`, so `to_currency(100, "USD",
     ///    adjective=True)` == "cent dòlars" while the float `100.0` gives
@@ -1245,7 +1248,7 @@ impl Lang for LangCa {
             };
             let cr1 = &forms.unit;
 
-            let minus_str = if v.is_negative() { NEGWORD } else { "" };
+            let minus_str = if v.is_negative() { NEGWORD.trim() } else { "" };
             let abs_val = v.abs();
             let money_str = self.to_cardinal(&abs_val)?;
 
@@ -1257,8 +1260,7 @@ impl Lang for LangCa {
                 &cr1[0]
             };
 
-            // Python: ("%s %s %s" % (...)).strip(). The interior double space
-            // on negatives is bug 1 above — trim() must not collapse it.
+            // Python: ("%s %s %s" % (...)).strip().
             return Ok(format!("{} {} {}", minus_str, money_str, currency_str)
                 .trim()
                 .to_string());

@@ -652,6 +652,19 @@ impl LangEs {
     }
 }
 
+/// Spanish has no ordinal for zero: the ported arithmetic renders it as ""
+/// (Python's `to_ordinal(0)` really returns the empty string). Every
+/// ES-family `to_ordinal` entry point raises this instead (#160).
+/// `to_ordinal_num(0)` == "0º" is unaffected.
+pub(crate) fn es_reject_zero_ordinal(value: &BigInt) -> Result<()> {
+    if value.is_zero() {
+        return Err(N2WError::Value(
+            "El número 0 no puede ser tratado como un ordinal.".into(),
+        ));
+    }
+    Ok(())
+}
+
 impl Lang for LangEs {
 
     fn str_to_number(&self, s: &str) -> crate::base::Result<crate::strnum::ParsedNumber> {
@@ -763,6 +776,7 @@ impl Lang for LangEs {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         self.to_ordinal_gender(value, "m")
     }
 
@@ -782,7 +796,8 @@ impl Lang for LangEs {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -825,6 +840,7 @@ impl Lang for LangEs {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         let gender = if kw.str("gender") == Some("f") { "f" } else { "m" };
         self.to_ordinal_gender(value, gender)
     }
@@ -971,11 +987,10 @@ impl Lang for LangEs {
             // Only the float path below applies it.
             let _ = adjective;
 
-            // `negword` is used raw, *not* `.strip()`ed as everywhere else, so
-            // its trailing space collides with the format string's: -1 EUR is
-            // "menos  un euro" with two spaces. `.strip()` only trims the ends,
-            // so the doubled space survives. Reproduced verbatim.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // Python uses `negword` raw here, so its trailing space collided
+            // with the format string's ("menos  un euro"). Stripped like every
+            // other minus site so the output has single spaces (#160).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
 
             // Python computes to_cardinal(abs_val) first and discards it when

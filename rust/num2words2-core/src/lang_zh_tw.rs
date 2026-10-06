@@ -72,8 +72,8 @@
 //!   unguarded: `to_ordinal_num(-1)` == "第-1" (corpus-confirmed).
 //! * `to_ordinal` *does* call `verify_ordinal` → `TypeError` on negatives.
 //! * `to_year`'s ROC-era branch (`民國…年`) is gated on the `era=True`
-//!   keyword, which the Rust trait cannot express; the default `era=False`
-//!   path (`Num2Word_ZH.to_year`) is what is ported. See `concerns`.
+//!   keyword, served by `to_year_kw` (integers) and `year_float_kw`
+//!   (float/Decimal: non-integral values raise the float-year TypeError).
 //!
 //! # The currency surface
 //!
@@ -1646,6 +1646,24 @@ impl Lang for LangZhTw {
             value,
             counter
         ))
+    }
+
+    /// `to_year(float/Decimal, era=..., reading=..., prefer=...)`: both the
+    /// era branch's own `value == int(value)` guard and the inherited ZH one
+    /// raise the same TypeError for a non-integral value ("Cannot treat
+    /// float 2020.1 as year."); a whole value continues into the integer
+    /// `to_year_kw`.
+    fn year_float_kw(&self, value: &FloatValue, kw: &Kwargs) -> Result<String> {
+        if kw.is_empty() {
+            return self.year_float_entry(value);
+        }
+        if !kw.only(&["era", "reading", "prefer"]) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        match value.as_whole_int() {
+            Some(i) => self.to_year_kw(&i, kw),
+            None => self.year_float_entry(value),
+        }
     }
 
     /// `Num2Word_ZH_TW.to_year` with `era`/`reading`/`prefer` live.

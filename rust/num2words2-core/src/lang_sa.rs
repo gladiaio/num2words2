@@ -54,14 +54,16 @@
 //!    the way up (corpus pins 10^21 → `"1000000000000000000000"`), which is why
 //!    the value must stay a `BigInt`: it is unbounded on this path. See
 //!    [`LangSa::int_to_word`].
-//! 2. **Zero is the English word `"zero"`.** `self.ones[0]` is `""`, so
-//!    `return self.ones[0] if self.ones[0] else "zero"` always takes the
-//!    falsy branch. There is no Sanskrit zero in the table.
-//! 3. **The negative word is the English `"minus "`**, and it is *not*
-//!    stripped by `to_cardinal` the way `Num2Word_Base` does it (base uses
-//!    `"%s " % self.negword.strip()`; SA just concatenates `self.negword`).
-//!    The trailing space in `"minus "` is what separates it from the number,
-//!    so `to_cardinal(-1)` == `"minus एकम्"`.
+//! 2. **Zero, minus and the decimal word (fixed, gladiaio/num2words2#154).**
+//!    Python's `self.ones[0]` is `""`, so
+//!    `return self.ones[0] if self.ones[0] else "zero"` always answered with
+//!    the English "zero", and `negword`/`pointword` were the English
+//!    `"minus "`/`"point"`. This port uses शून्यम् (neuter nominative, like
+//!    एकम्), ऋण and दशमलव, the words the Nepali/Marathi/Hindi modules use.
+//! 3. **The negative word is *not* stripped** by `to_cardinal` the way
+//!    `Num2Word_Base` does it (base uses `"%s " % self.negword.strip()`; SA
+//!    just concatenates `self.negword`). The trailing space in `"ऋण "` is
+//!    what separates it from the number, so `to_cardinal(-1)` == `"ऋण एकम्"`.
 //! 4. **Teens are compounds, not distinct words.** `tens[1]` is "दश" (ten) and
 //!    11 renders as `"दश एकम्"` (ten one), because the `number < 100` branch
 //!    has no teen special-case. Likewise 21 == `"विंशति एकम्"`.
@@ -71,14 +73,14 @@
 //!    (10^6), but the word is built on the Indian scale. Kept verbatim.
 //! 7. **`to_ordinal` does not call `verify_ordinal`**, so negatives and zero
 //!    are accepted rather than raising `TypeError`: `to_ordinal(0)` ==
-//!    `"zero-मः"`, `to_ordinal(-1)` == `"minus एकम्-मः"`. The suffix is glued
+//!    `"शून्यम्-मः"`, `to_ordinal(-1)` == `"ऋण एकम्-मः"`. The suffix is glued
 //!    to the *whole* cardinal with no space, so it lands on the last word.
 //! 8. **`to_ordinal_num` ignores the language entirely** and returns
 //!    `str(number) + "."` — `"-1."` for -1. Note this is the raw input, so the
 //!    minus sign survives.
 //! 9. **`to_year` ignores its `longval` parameter** and is a bare alias for
-//!    `to_cardinal`, so negative years get `"minus "` rather than an era
-//!    suffix: `to_year(-44)` == `"minus चत्वारिंशत् चत्वारि"`.
+//!    `to_cardinal`, so negative years get `"ऋण "` rather than an era
+//!    suffix: `to_year(-44)` == `"ऋण चत्वारिंशत् चत्वारि"`.
 //!
 //! 10. **`to_currency` reads the cents off the decimal *string*, not the
 //!     number.** It does `str(val).split(".")` and then
@@ -150,11 +152,16 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-/// `self.negword`. Note the trailing space — it is load-bearing (quirk 3).
-const NEGWORD: &str = "minus ";
+/// `self.negword`, in Sanskrit (Python: English `"minus "`, #154). Note the
+/// trailing space — it is load-bearing (quirk 3).
+const NEGWORD: &str = "ऋण ";
+
+/// `self.pointword`, in Sanskrit (Python: English `"point"`, #154).
+const POINTWORD: &str = "दशमलव";
 
 /// Emitted for 0 because `self.ones[0]` is the empty string (quirk 2).
-const ZERO_WORD: &str = "zero";
+/// Python says the English "zero"; this port the Sanskrit शून्यम्.
+const ZERO_WORD: &str = "शून्यम्";
 
 /// `self.ones`, keys 0..=9. Index 0 is `""` in Python and never reached as a
 /// word: the `number == 0` guard fires first, and the hundreds branch only
@@ -268,7 +275,7 @@ impl LangSa {
     /// takes `abs` before it stringifies. Nothing ever hands this a negative.
     fn int_to_word(&self, number: &BigInt) -> String {
         // Python: `self.ones[0] if self.ones[0] else "zero"` — ones[0] is ""
-        // (falsy), so this is unconditionally "zero".
+        // (falsy), so this is unconditionally the zero word.
         if number.is_zero() {
             return ZERO_WORD.to_string();
         }
@@ -478,7 +485,7 @@ impl Lang for LangSa {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
 
     /// Port of `Num2Word_SA.to_cardinal`, integer path only.
@@ -521,7 +528,7 @@ impl Lang for LangSa {
     /// Port of `Num2Word_SA.to_year`: a bare alias for `to_cardinal`.
     ///
     /// The `longval=True` parameter is accepted and ignored, and there is no
-    /// BC/era handling — negative years just get "minus " (quirk 9).
+    /// BC/era handling — negative years just get "ऋण " (quirk 9).
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -558,7 +565,7 @@ impl Lang for LangSa {
     ///   nothing there (`num2words(2.675, lang="sa", precision=1)` still emits
     ///   all three fractional digits). `precision_override` is dropped to match.
     /// * **A `Decimal`'s scale is load-bearing.** `str(Decimal("1.10"))` keeps
-    ///   its trailing zero, so `1.10` renders as `"एकम् point एकम् zero"`, not
+    ///   its trailing zero, so `1.10` renders as `"एकम् दशमलव एकम् शून्यम्"`, not
     ///   `"... एकम्"`. The fractional digits are rebuilt from the mantissa and
     ///   the scale, never from a normalised value.
     ///
@@ -580,10 +587,10 @@ impl Lang for LangSa {
     ///
     /// The float arm keeps `-0.0` negative — `str(-0.0) == "-0.0"` starts with
     /// `"-"`, and `f64::is_sign_negative()` reports it — so `-0.0` renders as
-    /// `"minus zero point zero"`, matching Python. The `Decimal` arm cannot:
+    /// `"ऋण शून्यम् दशमलव शून्यम्"`, matching Python. The `Decimal` arm cannot:
     /// the py binding parses `str(Decimal("-0.0"))` into a `BigDecimal` whose
     /// mantissa is a plain `BigInt` with no negative zero, so `is_negative()`
-    /// returns `false` and the `"minus "` is dropped. Recovering it would need
+    /// returns `false` and the `"ऋण "` is dropped. Recovering it would need
     /// the original `str(value)`, which the boundary has already discarded —
     /// the same information-loss class as the scientific-notation gap above,
     /// and equally out of scope for this file.
@@ -607,7 +614,7 @@ impl Lang for LangSa {
             None => (n_full, false),
         };
 
-        // `ret = self.negword` ("minus ", trailing space intact — quirk 3) or "".
+        // `ret = self.negword` ("ऋण ", trailing space intact — quirk 3) or "".
         let mut ret = String::new();
         if neg {
             ret.push_str(NEGWORD);
@@ -638,8 +645,8 @@ impl Lang for LangSa {
 
     /// `to_cardinal(float/Decimal)` — the FULL entry. Python routes *every*
     /// float/Decimal through the `str(number)` algorithm, so a whole value
-    /// keeps its visible point: `5.0` -> "पञ्च point zero", `-0.0` ->
-    /// "minus zero point zero", `Decimal("5.00")` -> "पञ्च point zero zero".
+    /// keeps its visible point: `5.0` -> "पञ्च दशमलव शून्यम्", `-0.0` ->
+    /// "ऋण शून्यम् दशमलव शून्यम्", `Decimal("5.00")` -> "पञ्च दशमलव शून्यम् शून्यम्".
     /// The base default's whole-value integer shortcut must not fire here.
     fn cardinal_float_entry(
         &self,
@@ -790,9 +797,9 @@ impl Lang for LangSa {
     ///
     /// | value | Python `str` | Python result | here |
     /// |---|---|---|---|
-    /// | `1e-05` | `"1e-05"` | `ValueError` | `"zero euros"` |
-    /// | `1e-06` | `"1e-06"` | `ValueError` | `"zero euros"` |
-    /// | `1.5e-05` | `"1.5e-05"` | `ValueError` | `"zero euros"` |
+    /// | `1e-05` | `"1e-05"` | `ValueError` | `"शून्यम् euros"` |
+    /// | `1e-06` | `"1e-06"` | `ValueError` | `"शून्यम् euros"` |
+    /// | `1.5e-05` | `"1.5e-05"` | `ValueError` | `"शून्यम् euros"` |
     /// | `12345678901234567.0` | `"1.2345678901234568e+16"` | `"एकम् euro विंशति त्रीणि cents"` | `"12345678901234568 euros"` |
     ///
     /// That last row is not a rounding difference, it is Python splitting
@@ -803,7 +810,7 @@ impl Lang for LangSa {
     /// This is **not repairable in this file**, and not by reimplementing
     /// CPython's repr thresholds either: `1e-05` (a float) and
     /// `Decimal("0.00001")` parse to the *same* `BigDecimal`, yet Python
-    /// raises `ValueError` for the first and returns `"zero euros"` for the
+    /// raises `ValueError` for the first and returns `"शून्यम् euros"` for the
     /// second — `str(float)` and `str(Decimal)` use different rules. One
     /// `BigDecimal`, two correct answers: the information needed to choose has
     /// already been destroyed at the boundary. Closing this would mean
@@ -913,7 +920,8 @@ impl Lang for LangSa {
         }
 
         // `self.negword + result` — raw, keeping the trailing space of
-        // "minus ". Base would strip it and re-add one; SA does not (quirk 3).
+        // "ऋण ". Base would strip it and re-add one; SA does not (quirk 3).
+
         if is_negative {
             result = format!("{}{}", NEGWORD, result);
         }

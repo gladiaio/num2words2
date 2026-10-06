@@ -25,7 +25,7 @@ class Num2WordsTTTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="tt"), "zero")
+        self.assertEqual(num2words(0, lang="tt"), "нуль")
         self.assertEqual(num2words(1, lang="tt"), "бер")
         self.assertEqual(num2words(2, lang="tt"), "ике")
         self.assertEqual(num2words(3, lang="tt"), "өч")
@@ -199,50 +199,50 @@ class Num2WordsTTTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="tt"), "minus бер")
-        self.assertEqual(num2words(-2, lang="tt"), "minus ике")
-        self.assertEqual(num2words(-5, lang="tt"), "minus биш")
-        self.assertEqual(num2words(-10, lang="tt"), "minus ун")
-        self.assertEqual(num2words(-11, lang="tt"), "minus ун бер")
-        self.assertEqual(num2words(-20, lang="tt"), "minus егерме")
-        self.assertEqual(num2words(-50, lang="tt"), "minus илле")
-        self.assertEqual(num2words(-99, lang="tt"), "minus туксан тугыз")
-        self.assertEqual(num2words(-100, lang="tt"), "minus бер йөз")
-        self.assertEqual(num2words(-101, lang="tt"), "minus бер йөз бер")
-        self.assertEqual(num2words(-200, lang="tt"), "minus ике йөз")
-        self.assertEqual(num2words(-999, lang="tt"), "minus тугыз йөз туксан тугыз")
-        self.assertEqual(num2words(-1000, lang="tt"), "minus бер мең")
-        self.assertEqual(num2words(-1001, lang="tt"), "minus бер мең бер")
-        self.assertEqual(num2words(-10000, lang="tt"), "minus ун мең")
-        self.assertEqual(num2words(-100000, lang="tt"), "minus бер йөз мең")
-        self.assertEqual(num2words(-1000000, lang="tt"), "minus бер миллион")
+        self.assertEqual(num2words(-1, lang="tt"), "минус бер")
+        self.assertEqual(num2words(-2, lang="tt"), "минус ике")
+        self.assertEqual(num2words(-5, lang="tt"), "минус биш")
+        self.assertEqual(num2words(-10, lang="tt"), "минус ун")
+        self.assertEqual(num2words(-11, lang="tt"), "минус ун бер")
+        self.assertEqual(num2words(-20, lang="tt"), "минус егерме")
+        self.assertEqual(num2words(-50, lang="tt"), "минус илле")
+        self.assertEqual(num2words(-99, lang="tt"), "минус туксан тугыз")
+        self.assertEqual(num2words(-100, lang="tt"), "минус бер йөз")
+        self.assertEqual(num2words(-101, lang="tt"), "минус бер йөз бер")
+        self.assertEqual(num2words(-200, lang="tt"), "минус ике йөз")
+        self.assertEqual(num2words(-999, lang="tt"), "минус тугыз йөз туксан тугыз")
+        self.assertEqual(num2words(-1000, lang="tt"), "минус бер мең")
+        self.assertEqual(num2words(-1001, lang="tt"), "минус бер мең бер")
+        self.assertEqual(num2words(-10000, lang="tt"), "минус ун мең")
+        self.assertEqual(num2words(-100000, lang="tt"), "минус бер йөз мең")
+        self.assertEqual(num2words(-1000000, lang="tt"), "минус бер миллион")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="tt"), "zero point бер")
-        self.assertEqual(num2words(0.5, lang="tt"), "zero point биш")
-        self.assertEqual(num2words(0.9, lang="tt"), "zero point тугыз")
-        self.assertEqual(num2words(1.1, lang="tt"), "бер point бер")
-        self.assertEqual(num2words(1.5, lang="tt"), "бер point биш")
-        self.assertEqual(num2words(2.5, lang="tt"), "ике point биш")
-        self.assertEqual(num2words(3.14, lang="tt"), "өч point бер дүрт")
-        self.assertEqual(num2words(10.5, lang="tt"), "ун point биш")
-        self.assertEqual(num2words(11.11, lang="tt"), "ун бер point бер бер")
-        self.assertEqual(num2words(20.2, lang="tt"), "егерме point ике")
-        self.assertEqual(num2words(99.99, lang="tt"), "туксан тугыз point тугыз тугыз")
-        self.assertEqual(num2words(100.01, lang="tt"), "бер йөз point zero бер")
-        self.assertEqual(num2words(100.5, lang="tt"), "бер йөз point биш")
+        self.assertEqual(num2words(0.1, lang="tt"), "нуль өтер бер")
+        self.assertEqual(num2words(0.5, lang="tt"), "нуль өтер биш")
+        self.assertEqual(num2words(0.9, lang="tt"), "нуль өтер тугыз")
+        self.assertEqual(num2words(1.1, lang="tt"), "бер өтер бер")
+        self.assertEqual(num2words(1.5, lang="tt"), "бер өтер биш")
+        self.assertEqual(num2words(2.5, lang="tt"), "ике өтер биш")
+        self.assertEqual(num2words(3.14, lang="tt"), "өч өтер бер дүрт")
+        self.assertEqual(num2words(10.5, lang="tt"), "ун өтер биш")
+        self.assertEqual(num2words(11.11, lang="tt"), "ун бер өтер бер бер")
+        self.assertEqual(num2words(20.2, lang="tt"), "егерме өтер ике")
+        self.assertEqual(num2words(99.99, lang="tt"), "туксан тугыз өтер тугыз тугыз")
+        self.assertEqual(num2words(100.01, lang="tt"), "бер йөз өтер нуль бер")
+        self.assertEqual(num2words(100.5, lang="tt"), "бер йөз өтер биш")
         self.assertEqual(
-            num2words(123.45, lang="tt"), "бер йөз егерме өч point дүрт биш"
+            num2words(123.45, lang="tt"), "бер йөз егерме өч өтер дүрт биш"
         )
-        self.assertEqual(num2words(1000.5, lang="tt"), "бер мең point биш")
+        self.assertEqual(num2words(1000.5, lang="tt"), "бер мең өтер биш")
         self.assertEqual(
-            num2words(1234.56, lang="tt"), "бер мең ике йөз утыз дүрт point биш алты"
+            num2words(1234.56, lang="tt"), "бер мең ике йөз утыз дүрт өтер биш алты"
         )
-        self.assertEqual(num2words(10000.01, lang="tt"), "ун мең point zero бер")
-        self.assertEqual(num2words(-0.5, lang="tt"), "minus zero point биш")
-        self.assertEqual(num2words(-1.5, lang="tt"), "minus бер point биш")
-        self.assertEqual(num2words(-10.5, lang="tt"), "minus ун point биш")
+        self.assertEqual(num2words(10000.01, lang="tt"), "ун мең өтер нуль бер")
+        self.assertEqual(num2words(-0.5, lang="tt"), "минус нуль өтер биш")
+        self.assertEqual(num2words(-1.5, lang="tt"), "минус бер өтер биш")
+        self.assertEqual(num2words(-10.5, lang="tt"), "минус ун өтер биш")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -287,15 +287,15 @@ class Num2WordsTTTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="RUB"), "zero сум"
+            num2words(0, lang="tt", to="currency", currency="RUB"), "нуль сум"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="RUB"),
-            "zero сум бер тиен",
+            "нуль сум бер тиен",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="RUB"),
-            "zero сум илле тиен",
+            "нуль сум илле тиен",
         )
         self.assertEqual(
             num2words(1, lang="tt", to="currency", currency="RUB"), "бер сум"
@@ -305,15 +305,15 @@ class Num2WordsTTTest(TestCase):
             "бер сум илле тиен",
         )
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="tt", to="currency", currency="USD"), "нуль dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="USD"),
-            "zero dollars бер cent",
+            "нуль dollars бер cent",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="USD"),
-            "zero dollars илле cents",
+            "нуль dollars илле cents",
         )
         self.assertEqual(
             num2words(1, lang="tt", to="currency", currency="USD"), "бер dollar"
@@ -323,15 +323,15 @@ class Num2WordsTTTest(TestCase):
             "бер dollar илле cents",
         )
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="tt", to="currency", currency="EUR"), "нуль euros"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="EUR"),
-            "zero euros бер cent",
+            "нуль euros бер cent",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="EUR"),
-            "zero euros илле cents",
+            "нуль euros илле cents",
         )
         self.assertEqual(
             num2words(1, lang="tt", to="currency", currency="EUR"), "бер euro"
@@ -368,7 +368,7 @@ class Num2WordsTTTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="tt"), "zero")
+        self.assertEqual(num2words("0", lang="tt"), "нуль")
         self.assertEqual(num2words("1", lang="tt"), "бер")
         self.assertEqual(num2words("10", lang="tt"), "ун")
         self.assertEqual(num2words("100", lang="tt"), "бер йөз")
@@ -380,7 +380,7 @@ class Num2WordsTTTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="tt"), "zero")
+        self.assertEqual(num2words(0, lang="tt"), "нуль")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tt"), num2words("100", lang="tt"))

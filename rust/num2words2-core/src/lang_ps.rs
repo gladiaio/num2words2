@@ -36,14 +36,15 @@
 //!    branches recurse through the same routine: `12345` → "لس دوه زره درې سل
 //!    څلوېښت پنځه" ("ten two thousand three hundred forty five"), and `10^7`
 //!    → "لس میلیون". Do not "fix" this into یوولس — the corpus says otherwise.
-//! 2. **`zero` is an English word in a Pashto table.** `_int_to_word(0)` reads
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""`,
-//!    which is falsy, so the conditional *always* takes the `"zero"` branch —
-//!    the `self.ones[0]` arm is unreachable dead code. Pashto صفر is never
-//!    emitted. Corpus: `0` → "zero", and `to_ordinal(0)` → "zero-م".
-//! 3. **`negword` is English too**: `"minus "`, not منفي. Corpus: `-42` →
-//!    "minus څلوېښت دوه". Note it carries a *trailing space* (unlike most
-//!    modules), and PS concatenates it directly rather than via
+//! 2. **Zero, minus and the decimal word (fixed, gladiaio/num2words2#154).**
+//!    Python's `_int_to_word(0)` reads
+//!    `return self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is `""`,
+//!    so Python always said the English "zero"; its `negword` is `"minus "`
+//!    and its `pointword` `"point"`. This port uses the Pashto صفر, منفي and
+//!    اعشاریه (the Perso-Arabic decimal word Pashto shares with Dari/Urdu):
+//!    `0` → "صفر", `to_ordinal(0)` → "صفر-م", `1.5` → "یو اعشاریه پنځه".
+//! 3. **`negword` carries a trailing space**: `-42` → "منفي څلوېښت دوه".
+//!    Unlike most modules, PS concatenates it directly rather than via
 //!    `base.default_to_cardinal` (which would `.trim()` it and re-add one
 //!    space). Same result here, but the mechanism differs — see [`NEGWORD`].
 //! 4. **Digits fall out for anything ≥ 10^9.** The `_int_to_word` cascade stops
@@ -115,7 +116,7 @@
 //!    the fractional *text*: `1.999` → "99", not 100-and-carry. And
 //!    `.ljust(2, "0")` pads a short fraction on the **right**, so `0.5` → "50"
 //!    cents, correctly, while `0.001` → "00" → 0 → the cents segment vanishes.
-//!    Corpus: `0.5` → "zero euros پنځوس cents".
+//!    Corpus: `0.5` → "صفر euros پنځوس cents".
 //! 9. **`to_currency` and `to_cheque` disagree about unknown codes.**
 //!    `to_currency("GBP")` happily prints afghanis (bug 6), but `to_cheque`
 //!    is `Num2Word_Base`'s, which *subscripts* `self.CURRENCY_FORMS[currency]`
@@ -147,8 +148,8 @@
 //! |---|---|---|---|
 //! | `1e16` (float) | `"1e+16"` | `ValueError` | "10000000000000000 euros" |
 //! | `Decimal("1E+2")` | `"1E+2"` | `ValueError` | "یو سل euros" |
-//! | `1e-05` (float) | `"1e-05"` | `ValueError` | "zero euros" |
-//! | `Decimal("0.00001")` | `"0.00001"` | "zero euros" | "zero euros" ✓ |
+//! | `1e-05` (float) | `"1e-05"` | `ValueError` | "صفر euros" |
+//! | `Decimal("0.00001")` | `"0.00001"` | "صفر euros" | "صفر euros" ✓ |
 //!
 //! The positive-exponent half *is* recoverable here (`scale < 0` happens only
 //! for e-notation input), but the negative-exponent half is not: `"1e-05"` and
@@ -175,16 +176,17 @@ use std::collections::HashMap;
 /// `self.negword`. Keeps the trailing space of the Python attribute: PS builds
 /// its output as `self.negword + word` with no separator of its own, so the
 /// space is load-bearing rather than cosmetic.
-const NEGWORD: &str = "minus ";
+/// Python has the English `"minus "`; Pashto منفي here (#154).
+const NEGWORD: &str = "منفي ";
 
-/// `self.pointword`. Only reachable through the float path (`"." in n`), which
-/// is out of scope; declared to mirror the attribute.
-const POINTWORD: &str = "point";
+/// `self.pointword`, used by the float path (`"." in n`). Python has the
+/// English `"point"`; Pashto اعشاریه here (#154).
+const POINTWORD: &str = "اعشاریه";
 
 /// The zero word. Python writes `self.ones[0] if self.ones[0] else "zero"`,
-/// but `ones[0]` is `""` (falsy), so this English literal is the only value
-/// that branch can ever produce. See module bug #2.
-const ZERO_WORD: &str = "zero";
+/// but `ones[0]` is `""` (falsy), so Python always produced the English
+/// literal. This port says the Pashto صفر instead. See module bug #2.
+const ZERO_WORD: &str = "صفر";
 
 /// `self.ones`. Index 0 is `""` and is never emitted: the `number == 0` guard
 /// intercepts it first, and the hundreds branch only ever indexes 1..=9.
@@ -393,10 +395,10 @@ impl LangPs {
         //
         // Dead code on every path, integer and currency alike: `to_cardinal`
         // strips the sign from the decimal string before calling in,
-        // `to_currency` pre-`abs()`es and prepends "minus " itself, and each
+        // `to_currency` pre-`abs()`es and prepends "منفي " itself, and each
         // recursive call passes a quotient or remainder of an already-positive
         // value. Ported anyway so the cascade matches Python arm for arm; note
-        // it would yield a doubled "minus " if it ever were reached through
+        // it would yield a doubled "منفي " if it ever were reached through
         // `to_cardinal`.
         if number.is_negative() {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
@@ -606,8 +608,9 @@ impl Lang for LangPs {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
+
 
     /// Python's `to_cardinal`.
     ///
@@ -633,7 +636,7 @@ impl Lang for LangPs {
     }
 
     /// `return cardinal + "-م"`. No sign, zero or range handling whatsoever, so
-    /// `to_ordinal(0)` == "zero-م" and `to_ordinal(-1)` == "minus یو-م".
+    /// `to_ordinal(0)` == "صفر-م" and `to_ordinal(-1)` == "منفي یو-م".
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
     }
@@ -701,7 +704,7 @@ impl Lang for LangPs {
 
         let mut ret = String::new();
         if neg {
-            // `ret = self.negword` — "minus ", trailing space included and
+            // `ret = self.negword` — "منفي ", trailing space included and
             // prepended raw (PS supplies no separator of its own).
             ret.push_str(NEGWORD);
         }
@@ -734,8 +737,8 @@ impl Lang for LangPs {
 
     /// `to_cardinal(float/Decimal)` — the FULL entry. Python routes *every*
     /// float/Decimal through the `str(number)` algorithm, so a whole value
-    /// keeps its visible point: `5.0` -> "پنځه point zero", `-0.0` ->
-    /// "minus zero point zero", `Decimal("5.00")` -> "پنځه point zero zero".
+    /// keeps its visible point: `5.0` -> "پنځه اعشاریه صفر", `-0.0` ->
+    /// "منفي صفر اعشاریه صفر", `Decimal("5.00")` -> "پنځه اعشاریه صفر صفر".
     /// The base default's whole-value integer shortcut must not fire here.
     fn cardinal_float_entry(
         &self,
@@ -879,7 +882,7 @@ impl Lang for LangPs {
     /// changes nothing.
     ///
     /// `_int_to_word` is called with the already-`abs`'d `left`, so its
-    /// negative arm stays unreachable here and "minus " is prepended exactly
+    /// negative arm stays unreachable here and "منفي " is prepended exactly
     /// once, at the end.
     fn to_currency(
         &self,
@@ -915,7 +918,7 @@ impl Lang for LangPs {
 
         // `if cents and right:` — a zero `right` suppresses the segment, which
         // is why the float 1.0 renders as a bare "یو euro" (bug 10) and why
-        // 0.001 renders as "zero euros" (bug 8).
+        // 0.001 renders as "صفر euros" (bug 8).
         if cents && right != 0 {
             let right_big = BigInt::from(right);
             let cents_str = self.int_to_word(&right_big);
@@ -927,7 +930,7 @@ impl Lang for LangPs {
         }
 
         if is_negative {
-            // `result = self.negword + result` — "minus ", trailing space
+            // `result = self.negword + result` — "منفي ", trailing space
             // included. Prepended raw, with no separator of its own.
             result.insert_str(0, NEGWORD);
         }
@@ -962,49 +965,49 @@ mod float_tests {
     // --- frozen corpus: `to == "cardinal"` with a dotted float `arg` ---
     #[test]
     fn corpus_float_rows() {
-        assert_eq!(f(0.0, 1), "zero point zero");
-        assert_eq!(f(0.5, 1), "zero point پنځه");
-        assert_eq!(f(1.0, 1), "یو point zero");
-        assert_eq!(f(1.5, 1), "یو point پنځه");
-        assert_eq!(f(2.25, 2), "دوه point دوه پنځه");
-        assert_eq!(f(3.14, 2), "درې point یو څلور");
-        assert_eq!(f(0.01, 2), "zero point zero یو");
-        assert_eq!(f(0.1, 1), "zero point یو");
-        assert_eq!(f(0.99, 2), "zero point نهه نهه");
-        assert_eq!(f(1.01, 2), "یو point zero یو");
-        assert_eq!(f(12.34, 2), "لس دوه point درې څلور");
-        assert_eq!(f(99.99, 2), "نوي نهه point نهه نهه");
-        assert_eq!(f(100.5, 1), "یو سل point پنځه");
-        assert_eq!(f(1234.56, 2), "یو زره دوه سل دېرش څلور point پنځه شپږ");
-        assert_eq!(f(-0.5, 1), "minus zero point پنځه");
-        assert_eq!(f(-1.5, 1), "minus یو point پنځه");
-        assert_eq!(f(-12.34, 2), "minus لس دوه point درې څلور");
+        assert_eq!(f(0.0, 1), "صفر اعشاریه صفر");
+        assert_eq!(f(0.5, 1), "صفر اعشاریه پنځه");
+        assert_eq!(f(1.0, 1), "یو اعشاریه صفر");
+        assert_eq!(f(1.5, 1), "یو اعشاریه پنځه");
+        assert_eq!(f(2.25, 2), "دوه اعشاریه دوه پنځه");
+        assert_eq!(f(3.14, 2), "درې اعشاریه یو څلور");
+        assert_eq!(f(0.01, 2), "صفر اعشاریه صفر یو");
+        assert_eq!(f(0.1, 1), "صفر اعشاریه یو");
+        assert_eq!(f(0.99, 2), "صفر اعشاریه نهه نهه");
+        assert_eq!(f(1.01, 2), "یو اعشاریه صفر یو");
+        assert_eq!(f(12.34, 2), "لس دوه اعشاریه درې څلور");
+        assert_eq!(f(99.99, 2), "نوي نهه اعشاریه نهه نهه");
+        assert_eq!(f(100.5, 1), "یو سل اعشاریه پنځه");
+        assert_eq!(f(1234.56, 2), "یو زره دوه سل دېرش څلور اعشاریه پنځه شپږ");
+        assert_eq!(f(-0.5, 1), "منفي صفر اعشاریه پنځه");
+        assert_eq!(f(-1.5, 1), "منفي یو اعشاریه پنځه");
+        assert_eq!(f(-12.34, 2), "منفي لس دوه اعشاریه درې څلور");
         // The two f64-artefact cases: PS reads `repr`, so the digits are the
         // repr's, reconstructed by formatting to `precision` places.
-        assert_eq!(f(1.005, 3), "یو point zero zero پنځه");
-        assert_eq!(f(2.675, 3), "دوه point شپږ اووه پنځه");
+        assert_eq!(f(1.005, 3), "یو اعشاریه صفر صفر پنځه");
+        assert_eq!(f(2.675, 3), "دوه اعشاریه شپږ اووه پنځه");
     }
 
     // --- frozen corpus: `to == "cardinal_dec"` (Decimal input) ---
     #[test]
     fn corpus_decimal_rows() {
-        assert_eq!(d("0.01"), "zero point zero یو");
+        assert_eq!(d("0.01"), "صفر اعشاریه صفر یو");
         // Trailing zero survives: `str(Decimal("1.10")) == "1.10"`, fraction "10".
-        assert_eq!(d("1.10"), "یو point یو zero");
-        assert_eq!(d("12.345"), "لس دوه point درې څلور پنځه");
+        assert_eq!(d("1.10"), "یو اعشاریه یو صفر");
+        assert_eq!(d("12.345"), "لس دوه اعشاریه درې څلور پنځه");
         // Left part >= 10**9 stringifies to its numerals (bug 4).
         assert_eq!(
             d("98746251323029.99"),
-            "98746251323029 point نهه نهه"
+            "98746251323029 اعشاریه نهه نهه"
         );
-        assert_eq!(d("0.001"), "zero point zero zero یو");
+        assert_eq!(d("0.001"), "صفر اعشاریه صفر صفر یو");
     }
 
     // `str(-0.0) == "-0.0"`, so the sign is carried even though `-0.0 < 0.0`
     // is false: formatting the signed f64 preserves the sign bit.
     #[test]
     fn negative_zero_float() {
-        assert_eq!(f(-0.0, 1), "minus zero point zero");
+        assert_eq!(f(-0.0, 1), "منفي صفر اعشاریه صفر");
     }
 
     // precision_override is dropped, exactly like Python (`precision=` leaves
@@ -1017,11 +1020,11 @@ mod float_tests {
         };
         assert_eq!(
             LangPs::new().to_cardinal_float(&v, Some(1)).unwrap(),
-            "دوه point شپږ اووه پنځه"
+            "دوه اعشاریه شپږ اووه پنځه"
         );
         assert_eq!(
             LangPs::new().to_cardinal_float(&v, Some(5)).unwrap(),
-            "دوه point شپږ اووه پنځه"
+            "دوه اعشاریه شپږ اووه پنځه"
         );
     }
 }

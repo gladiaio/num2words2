@@ -946,9 +946,13 @@ impl Lang for LangBn {
         Ok(format!("{}{}", words, SHAL))
     }
 
-    /// `converter.str_to_number` — BN's own static method:
-    /// `abs(Decimal(str(number)))`, so the sign of a string argument is
-    /// swallowed before any mode sees it ("-17" -> "সতের", no negword).
+    /// `converter.str_to_number` — BN's own static method is
+    /// `abs(Decimal(str(number)))`, so in Python the sign of a string argument
+    /// was swallowed before any mode saw it ("-17" -> "সতের", while -17 and
+    /// `Decimal("-17")` read "ঋণাত্মক সতের"). Fixed (gladiaio/num2words2#156):
+    /// the parsed value keeps its sign and each mode treats it exactly like
+    /// the matching Decimal (the modes that drop the sign for every input
+    /// type, bugs 3 and 7, still do).
     ///
     /// * NaN parses, but the pinned path then dies in `parse_number`'s
     ///   `int(number)`, which for a Decimal NaN raises
@@ -959,7 +963,7 @@ impl Lang for LangBn {
     ///   integer`, which is exactly what the binding reports for `Inf`.
     fn str_to_number(&self, s: &str) -> Result<ParsedNumber> {
         match python_decimal_parse(s)? {
-            ParsedNumber::Dec(d) => Ok(ParsedNumber::Dec(d.abs())),
+            ParsedNumber::Dec(d) => Ok(ParsedNumber::Dec(d)),
             ParsedNumber::Inf { .. } => Ok(ParsedNumber::Inf { negative: false }),
             ParsedNumber::NaN => Err(N2WError::Custom {
                 module: "decimal",

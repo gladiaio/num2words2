@@ -5,7 +5,8 @@
 //! from here means "fall back to the Python converter".
 //!
 //! The port mirrors the Python class quirk-for-quirk:
-//!   * extraction runs the same seven passes in the same order, with the
+//!   * extraction runs the same seven passes in the same order (plus the
+//!     two additions described at the end of this header), with the
 //!     same `used_positions` overlap rule (a later regex match that overlaps
 //!     an earlier extraction is dropped whole, and scanning resumes after
 //!     its end — so its tail is never re-matched);
@@ -27,12 +28,36 @@
 //!
 //! All positions are *character* indices, as in Python. Regex byte spans
 //! are translated through a byte->char map.
+//!
+//! Deliberate departure from the Python original (#151): numbers written
+//! with thousands separators (`1,000,000`, `$1,234.56`, `1.234,5`) are read
+//! as one number: an extra pass right after the temperature passes claims
+//! them (as a currency amount when a `$€£¥` symbol precedes) instead of
+//! letting the later passes split them at the separator into a different
+//! number. A lone `1,000` or `1.000` counts as grouping per the language's
+//! notation (`strnum::number_notation`, #177): `1,000` in en/zh/ja/hi…,
+//! `1.000` in de/es/it/pt… (de "1.000 Leute" is no longer the ordinal "1.").
+//!
+//! Also deliberate (#152): English clock times `H:MM` get their own pass
+//! ("10:30" -> "ten thirty", "10:00" -> "ten o'clock") instead of being read
+//! as two numbers around a kept colon; a following am/pm marker, glued or
+//! spaced, is kept as written ("10:30pm" -> "ten thirty pm", #178). The
+//! English month-first date pattern takes a 1-2 digit day only, so the year
+//! in "1st May 2024" is no longer read as an ordinal day ("May 2024th").
+//!
+//! Also deliberate (#183): German `N.` is an ordinal only when no digit
+//! follows the dot. A Uhr time `14.30 Uhr` / `14:30 Uhr` reads "vierzehn Uhr
+//! dreißig" ("14.00 Uhr" -> "vierzehn Uhr"), and any other dotted digit run
+//! (`1.5`, `3.10.2024`, `Version 2.10`) is left as written: German writes
+//! decimals with a comma, so `1.5` has no standard reading, and the ordinal
+//! pass used to turn it into "Erste5".
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use bigdecimal::num_traits::FromPrimitive;
 use num2words2_core::base::Lang;
+use num2words2_core::strnum::{is_space_group_sep, number_notation, parse_grouped, Grouped};
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
 use num_bigint::BigInt;
 use regex::Regex;
@@ -198,7 +223,9 @@ const MONTH_NAMES: &[(&str, &str)] = &[
 const DATE_TEMPLATES: &[(&str, &[(&str, bool)])] = &[
     ("en", &[
         (r"(\d+)(?:st|nd|rd|th)\s+({month})", true),
-        (r"({month})\s+(\d+)", true),
+        // Day is 1-2 digits: "May 2024" is month + year, not "May 2024th"
+        // (#152).
+        (r"({month})\s+(\d{1,2})\b", true),
         (r"(\d+)\s+({month})", true),
     ]),
     ("fr", &[
@@ -254,6 +281,8 @@ struct Res {
     dates: Vec<(&'static str, Vec<DatePat>)>,
     year: Regex,
     currency: Regex,
+    clock: Regex,
+    uhr: Regex,
 }
 
 impl Res {
@@ -298,6 +327,10 @@ impl Res {
             dates,
             year: re(r"\b(19\d{2}|20\d{2}|2100)\b"),
             currency: re(r"([$€£¥]\s*)(\d+(?:[.,]\d+)?)"),
+            // The trailing boundary is checked in code: a glued "pm" (#178)
+            // has no `\b` before it.
+            clock: re(r"\b(\d{1,2}):(\d{2})"),
+            uhr: re(r"\b(\d{1,2})[.:](\d{2})\s*Uhr\b"),
         }
     }
 
@@ -379,6 +412,11 @@ enum Typ {
     Year,
     Currency(char),
     Number,
+    /// English clock time `H:MM` as (hour, minute, am/pm suffix as
+    /// written, e.g. "pm", "PM", "p.m.").
+    Time(u32, u32, Option<String>),
+    /// German clock time `H.MM Uhr` / `H:MM Uhr` as (hour, minute) (#183).
+    UhrTime(u32, u32),
 }
 
 struct Ext {
@@ -481,7 +519,102 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
     out
 }
 
-/// `SentenceConverter.extract_numbers`, all seven passes in order.
+/// A number written with thousands separators starting at char `start`
+/// (`1,000,000`, `1.234,56`, `-1 000`; #151). Returns the end of the token and
+/// its value as a plain decimal string. Only tokens that really contain
+/// grouping qualify, with [`parse_grouped`]'s rules and the language's
+/// [`number_notation`] (so `1,000` counts only in `1,000.5` languages, `1.000`
+/// only in `1.000,5` ones, #177, and `192.168.1.1` or `1,2,3` never match;
+/// a dot not followed by exactly three digits is left to the later passes:
+/// de "1. Mai" is an ordinal, de "1.5" is kept as written, #183); the
+/// token must not touch an ASCII letter/digit on either side, like pass 7.
+/// ASCII spaces are not taken as separators in running text ("between
+/// 2 100 and"), only the no-break/thin spaces and apostrophes.
+fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, String)> {
+    let n = chars.len();
+    if start > 0 && chars[start - 1].is_ascii_alphanumeric() {
+        return None;
+    }
+    // Never start in the middle of a separated digit run ("3.14,159").
+    if start > 1 && is_part_sep(chars[start - 1]) && chars[start - 2].is_ascii_digit() {
+        return None;
+    }
+    let mut j = start;
+    if j < n && chars[j] == '-' {
+        j += 1;
+    }
+    if j >= n || !chars[j].is_ascii_digit() {
+        return None;
+    }
+    let is_part = |c: char| c.is_ascii_digit() || is_part_sep(c);
+    let mut end = j;
+    while end < n && is_part(chars[end]) {
+        end += 1;
+    }
+    while end > j && !chars[end - 1].is_ascii_digit() {
+        end -= 1;
+    }
+    if end < n && chars[end].is_ascii_alphanumeric() {
+        return None;
+    }
+    let tok: String = chars[start..end].iter().collect();
+    match parse_grouped(&tok, number_notation(lang)) {
+        Grouped::Number { canonical, .. } => {
+            let seps = tok
+                .chars()
+                .filter(|&c| !c.is_ascii_digit() && c != '-')
+                .count();
+            let has_fraction = canonical.contains('.') as usize;
+            if seps > has_fraction {
+                Some((end, canonical))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// A separator [`grouped_token`] reads inside a number in running text.
+fn is_part_sep(c: char) -> bool {
+    c == '.' || c == ',' || (c != ' ' && is_space_group_sep(c))
+}
+
+/// An am/pm marker right after a clock time ending at char `at` (#178):
+/// optional whitespace, then `am`/`pm`/`a.m.`/`p.m.` in any case, not
+/// followed by a letter or digit. Returns the end of the marker and the
+/// marker as written.
+fn ampm_suffix(chars: &[char], at: usize) -> Option<(usize, String)> {
+    let n = chars.len();
+    let mut i = at;
+    while i < n && chars[i].is_whitespace() {
+        i += 1;
+    }
+    let start = i;
+    if i >= n || !matches!(chars[i], 'a' | 'A' | 'p' | 'P') {
+        return None;
+    }
+    i += 1;
+    let dotted = i < n && chars[i] == '.';
+    if dotted {
+        i += 1;
+    }
+    if i >= n || !matches!(chars[i], 'm' | 'M') {
+        return None;
+    }
+    i += 1;
+    // "a.m." takes its closing dot; "am." leaves it to the sentence.
+    if dotted && i < n && chars[i] == '.' {
+        i += 1;
+    }
+    if i < n && (chars[i].is_alphanumeric() || chars[i] == '_') {
+        return None;
+    }
+    Some((i, chars[start..i].iter().collect()))
+}
+
+/// `SentenceConverter.extract_numbers`, all seven passes in order (plus the
+/// grouping and clock-time passes 2b/2c).
 fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     let r = res();
     let n = t.chars.len();
@@ -524,6 +657,130 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
+    // 2b. Numbers with thousands grouping (#151), claimed before the
+    // ordinal/date/currency/plain passes, which would split them at the
+    // separator ("1.000.000" -> ordinal "1." in de, "1,000" -> "1" and "000").
+    // A currency symbol right before the number makes it a currency amount.
+    let mut i = 0;
+    while i < n {
+        if used[i] || !(t.chars[i].is_ascii_digit() || t.chars[i] == '-') {
+            i += 1;
+            continue;
+        }
+        match grouped_token(&t.chars, i, lang) {
+            Some((e, canonical)) if !overlap(&used, i, e) => {
+                // `[$€£¥]\s*` immediately before the number.
+                let mut k = i;
+                while k > 0 && t.chars[k - 1].is_whitespace() {
+                    k -= 1;
+                }
+                let sym = (k > 0 && !canonical.starts_with('-'))
+                    .then(|| t.chars[k - 1])
+                    .filter(|c| matches!(c, '$' | '€' | '£' | '¥'));
+                let (s, typ) = match sym {
+                    Some(c) if !overlap(&used, k - 1, i) => (k - 1, Typ::Currency(c)),
+                    _ => (i, Typ::Number),
+                };
+                exts.push(Ext {
+                    start: s,
+                    end: e,
+                    text: t.slice(s, e),
+                    val: Val::F(pyfloat(&canonical)?),
+                    typ,
+                });
+                mark(&mut used, s, e);
+                i = e;
+            }
+            _ => i += 1,
+        }
+    }
+
+    // 2c. English clock times "10:30" -> "ten thirty" (#152); otherwise the
+    // plain pass reads each side and leaves the colon ("ten:thirty").
+    // "14:30:45" (seconds) and out-of-range values are left alone. An am/pm
+    // suffix, glued or spaced ("10:30pm", "10:30 p.m."), is claimed with the
+    // time and kept as written (#178); it requires a 1-12 hour.
+    if lang == "en" {
+        for m in r.clock.captures_iter(t.s) {
+            let g0 = m.get(0).unwrap();
+            let (s, mut e) = t.span(g0.start(), g0.end());
+            let h: u32 = m[1].parse().unwrap_or(99);
+            let mi: u32 = m[2].parse().unwrap_or(99);
+            let after_colon = s > 0 && t.chars[s - 1] == ':';
+            let seconds = e + 1 < n && t.chars[e] == ':' && t.chars[e + 1].is_ascii_digit();
+            let suffix = ampm_suffix(&t.chars, e);
+            let is_word = |c: char| c.is_alphanumeric() || c == '_';
+            let suffix = match suffix {
+                Some((se, sfx)) if (1..=12).contains(&h) => {
+                    e = se;
+                    Some(sfx)
+                }
+                // Without a suffix the time must end at a word boundary,
+                // as the old `\b` required.
+                _ if e < n && is_word(t.chars[e]) => continue,
+                _ => None,
+            };
+            if h > 23 || mi > 59 || after_colon || seconds || overlap(&used, s, e) {
+                continue;
+            }
+            exts.push(Ext {
+                start: s,
+                end: e,
+                text: t.slice(s, e),
+                val: Val::I(BigInt::from(h)),
+                typ: Typ::Time(h, mi, suffix),
+            });
+            mark(&mut used, s, e);
+        }
+    }
+
+    // 2d. German "14.30 Uhr" / "14:30 Uhr" -> "vierzehn Uhr dreißig"; any
+    // other dotted digit run ("1.5", "3.10.2024") is claimed and left as
+    // written (#183). German decimals use a comma, so "1.5" has no standard
+    // reading, and the ordinal pass would read "1." and glue on the "5".
+    if norm_lang(lang) == "de" {
+        for m in r.uhr.captures_iter(t.s) {
+            let g0 = m.get(0).unwrap();
+            let (s, e) = t.span(g0.start(), g0.end());
+            let h: u32 = m[1].parse().unwrap_or(99);
+            let mi: u32 = m[2].parse().unwrap_or(99);
+            let after_sep = s > 0 && matches!(t.chars[s - 1], '.' | ':');
+            if h > 23 || mi > 59 || after_sep || overlap(&used, s, e) {
+                continue;
+            }
+            exts.push(Ext {
+                start: s,
+                end: e,
+                text: t.slice(s, e),
+                val: Val::I(BigInt::from(h)),
+                typ: Typ::UhrTime(h, mi),
+            });
+            mark(&mut used, s, e);
+        }
+        let mut i = 0;
+        while i < n {
+            if !t.chars[i].is_ascii_digit() || (i > 0 && t.chars[i - 1].is_ascii_alphanumeric()) {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < n && t.chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            let mut end = j;
+            while end + 1 < n && t.chars[end] == '.' && t.chars[end + 1].is_ascii_digit() {
+                end += 1;
+                while end < n && t.chars[end].is_ascii_digit() {
+                    end += 1;
+                }
+            }
+            if end > j && !overlap(&used, i, end) {
+                mark(&mut used, i, end);
+            }
+            i = end;
+        }
+    }
+
     // 3. Standalone ordinals (registry-driven) — before dates. The ordinal
     // surface form owns its full span (digit + suffix); the date pass then
     // only fires where no ordinal was consumed. The integer is the first
@@ -533,6 +790,11 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
             if overlap(&used, s, e) {
+                continue;
+            }
+            // de "1." is an ordinal only when no digit follows the dot
+            // ("1.5" is not "Erste5", #183).
+            if g0.as_str().ends_with('.') && e < n && t.chars[e].is_ascii_digit() {
                 continue;
             }
             let grp = (1..m.len())
@@ -796,12 +1058,24 @@ fn fallback_en(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
     }
 }
 
-/// `SentenceConverter.convert_number`.
+/// The plain cardinal in the sentence's own language.
+fn cardinal_own(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
+    let l = ctx.lang()?;
+    match val {
+        Val::I(n) => l.to_cardinal(n),
+        Val::F(v) => cardinal_float(l, *v),
+    }
+}
+
+/// `SentenceConverter.convert_number`. When the specific reading fails (an
+/// ordinal the language has no word for, e.g. es "0º"), say the cardinal in
+/// the sentence's language before falling back to English, so a Spanish
+/// sentence never gets an English "zero" spliced into it.
 fn convert_number(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
     match convert_inner(ctx, val, typ) {
         Ok(s) => Ok(s),
         Err(e) if is_bail(&e) => Err(e),
-        Err(_) => fallback_en(ctx, val),
+        Err(_) => cardinal_own(ctx, val).or_else(|_| fallback_en(ctx, val)),
     }
 }
 
@@ -852,6 +1126,42 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             ctx.lang()?.to_ordinal(val.i())
         }
         Typ::DateNumber => ctx.lang()?.to_cardinal(val.i()),
+        Typ::Time(h, minute, Some(sfx)) => {
+            // "10:30pm" -> "ten thirty pm", "10:00 PM" -> "ten PM" (#178).
+            let l = ctx.lang()?;
+            let hour = l.to_cardinal(&BigInt::from(*h))?;
+            Ok(match *minute {
+                0 => format!("{} {}", hour, sfx),
+                m if m < 10 => {
+                    format!("{} oh {} {}", hour, l.to_cardinal(&BigInt::from(m))?, sfx)
+                }
+                m => format!("{} {} {}", hour, l.to_cardinal(&BigInt::from(m))?, sfx),
+            })
+        }
+        Typ::Time(h, minute, None) => {
+            let l = ctx.lang()?;
+            let hour = l.to_cardinal(&BigInt::from(*h))?;
+            Ok(match *minute {
+                0 if (1..=12).contains(h) => format!("{} o'clock", hour),
+                // 24-hour full hours: "thirteen hundred", "zero hundred".
+                0 => format!("{} hundred", hour),
+                m if m < 10 => format!("{} oh {}", hour, l.to_cardinal(&BigInt::from(m))?),
+                m => format!("{} {}", hour, l.to_cardinal(&BigInt::from(m))?),
+            })
+        }
+        Typ::UhrTime(h, minute) => {
+            // "14.30 Uhr" -> "vierzehn Uhr dreißig", "14.00 Uhr" ->
+            // "vierzehn Uhr"; the hour 1 is "ein Uhr", not "eins Uhr" (#183).
+            let l = ctx.lang()?;
+            let hour = match *h {
+                1 => "ein".to_string(),
+                h => l.to_cardinal(&BigInt::from(h))?,
+            };
+            Ok(match *minute {
+                0 => format!("{} Uhr", hour),
+                m => format!("{} Uhr {}", hour, l.to_cardinal(&BigInt::from(m))?),
+            })
+        }
         Typ::Year => {
             let l = ctx.lang()?;
             match l.to_year(val.i()) {
@@ -1136,7 +1446,11 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         // this through a state leak (str_to_number stashes _pending_pointword
         // for any dot-bearing string and the sentence converter reuses it);
         // the token's own separator is the faithful, stateless equivalent.
-        if ctx.raw == "pt_BR" && matches!(e.typ, Typ::Number) && e.text.contains('.') {
+        // The decimal mark is the last '.'/',' ("1.234,56" is a comma).
+        if ctx.raw == "pt_BR"
+            && matches!(e.typ, Typ::Number)
+            && e.text.chars().rev().find(|&c| c == '.' || c == ',') == Some('.')
+        {
             converted = converted.replace("vírgula", "ponto");
         }
 

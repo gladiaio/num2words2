@@ -15,7 +15,9 @@
 //! reached: base's `to_cardinal` applies it, but NN's override does not, and
 //! `is_title` is `False` anyway.
 //!
-//! `setup()` also sets `pointword = "point"`, used only by the float path
+//! `setup()` also sets `pointword = "point"` (this port: Nynorsk "komma",
+//! gladiaio/num2words2#154 — Norwegian writes a decimal comma), used only by
+//! the float path
 //! (`"." in n`). `Num2Word_NN` overrides `to_cardinal` outright and handles
 //! non-integer input inline off `str(number)`, so it never reaches
 //! `base.float2tuple`/`to_cardinal_float`; [`LangNn::to_cardinal_float`] ports
@@ -24,11 +26,11 @@
 //!
 //! Because everything keys on `str(number)`, a float/Decimal takes the string
 //! route for *every* value, whole ones included: `to_cardinal(5.0)` is
-//! "fem point zero", never "fem" — Base's `int(value) == value` whole-value
+//! "fem komma null", never "fem" — Base's `int(value) == value` whole-value
 //! shortcut does not exist here. [`LangNn::cardinal_float_entry`] pins that
 //! full routing (and `year_float_entry` inherits it, matching `to_year` ==
 //! `to_cardinal`); [`LangNn::ordinal_float_entry`] rides the same path and
-//! appends "-de" (`to_ordinal(5.0)` == "fem point zero-de");
+//! appends "-de" (`to_ordinal(5.0)` == "fem komma null-de");
 //! [`LangNn::ordinal_num_float_entry`] is `str(number) + "."`, so "5.0." and
 //! even "1e+16." are real outputs. And because the route is the string form,
 //! a value whose `str()` is *exponent notation* crashes `int()` — a Python
@@ -39,11 +41,11 @@
 //! This is a port, not a rewrite. Every item below looks wrong for Norwegian
 //! but is exactly what Python emits, and each is pinned by the frozen corpus:
 //!
-//! 1. **Zero is English.** `_int_to_word` opens with
+//! 1. **Zero (fixed, #154).** Python's `_int_to_word` opens with
 //!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""` —
-//!    always falsy — so the conditional is dead and every zero renders as the
-//!    English "zero", never Nynorsk "null". Corpus: `0 -> "zero"`,
-//!    `to_ordinal(0) -> "zero-de"`.
+//!    always falsy — so in Python every zero renders as the English "zero".
+//!    This port says the Nynorsk "null": `0 -> "null"`,
+//!    `to_ordinal(0) -> "null-de"`.
 //! 2. **No teens.** The `< 100` branch is a plain tens/ones split with no
 //!    11..19 special case, so 11 is "ti ein" (literally "ten one") instead of
 //!    "elleve", 12 is "ti to", 19 is "ti ni". This propagates upward:
@@ -115,7 +117,8 @@ use std::str::FromStr;
 
 /// `setup()`: note the trailing space — NN overrides base's `"(-) "`.
 const NEGWORD: &str = "minus ";
-const POINTWORD: &str = "point";
+/// Python's `"point"`; the Nynorsk decimal comma "komma" here (#154).
+const POINTWORD: &str = "komma";
 
 /// `self.ones`. Index 0 is `""`; see bug 1 — it is only ever read at index 0
 /// through the dead conditional, and at 1..=9 for real digits.
@@ -132,8 +135,9 @@ const HUNDRED: &str = "hundre";
 const THOUSAND: &str = "tusen";
 const MILLION: &str = "million";
 
-/// What `self.ones[0] if self.ones[0] else "zero"` actually evaluates to.
-const ZERO_WORD: &str = "zero";
+/// What `self.ones[0] if self.ones[0] else "zero"` evaluates to: English
+/// "zero" in Python, Nynorsk "null" here (#154).
+const ZERO_WORD: &str = "null";
 
 /// The ceiling of the worded range; at or above it Python returns `str(number)`.
 const FALLBACK_AT: u64 = 1_000_000_000;
@@ -186,7 +190,7 @@ fn int_to_word_small(n: u64) -> String {
 
 /// The shared `head + " " + word [+ " " + rest]` tail of the three scale
 /// branches. Python guards the remainder with `if remainder:`, so a zero
-/// remainder appends nothing and never recurses into the "zero" case.
+/// remainder appends nothing and never recurses into the zero case.
 fn scale(head: &str, word: &str, remainder: u64) -> String {
     let mut out = format!("{} {}", head, word);
     if remainder != 0 {
@@ -413,8 +417,9 @@ impl Lang for LangNn {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
+
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         // Python works on `str(number).strip()` and strips a leading "-"
@@ -427,7 +432,7 @@ impl Lang for LangNn {
         };
         // The trailing `.strip()` is a no-op for integer input (negword's
         // trailing space is always followed by a non-empty word, and
-        // `_int_to_word` never returns "" — zero yields "zero"). Mirrored
+        // `_int_to_word` never returns "" — zero yields "null"). Mirrored
         // anyway to match the source line for line.
         Ok(format!("{}{}", sign, int_to_word(&magnitude))
             .trim()
@@ -497,7 +502,7 @@ impl Lang for LangNn {
 
     /// `to_cardinal(float/Decimal)` full routing. Python's `to_cardinal` keys
     /// on `str(number)`, so *every* float/Decimal takes the string route —
-    /// whole values included: 5.0 keeps its ".0" tail ("fem point zero"),
+    /// whole values included: 5.0 keeps its ".0" tail ("fem komma null"),
     /// `Decimal("5.00")` speaks both zeros, and only a point-less string
     /// (`Decimal("5")` -> "5") lands on the integer branch, via the same
     /// `int(n)` call. Base's whole-value shortcut never runs.
@@ -512,8 +517,8 @@ impl Lang for LangNn {
     /// `to_ordinal(float/Decimal)`. `Num2Word_NN.to_ordinal` is
     /// `self.to_cardinal(number) + "-de"` with **no type guard**, so a float
     /// or Decimal rides the same string route as `to_cardinal` and then takes
-    /// the suffix: `to_ordinal(5.0)` == "fem point zero-de", `to_ordinal(-0.0)`
-    /// == "minus zero point zero-de", and a whole `Decimal("100")` ==
+    /// the suffix: `to_ordinal(5.0)` == "fem komma null-de", `to_ordinal(-0.0)`
+    /// == "minus null komma null-de", and a whole `Decimal("100")` ==
     /// "ein hundre-de". An exponent-notation repr (`str(1e16)` == "1e+16",
     /// `str(Decimal("1E+2"))` == "1E+2") makes the inner `int()` raise its
     /// ValueError *before* Python's `+ "-de"` runs — the `?` reproduces that

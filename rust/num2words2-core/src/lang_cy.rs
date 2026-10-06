@@ -14,12 +14,16 @@
 //!     own class-level `MINUS_PREFIX_WORD = "meinws "` /
 //!     `FLOAT_INFIX_WORD = " pwynt "` and hardcodes `("meinws", None)` into the
 //!     word list, so nothing in the four in-scope modes ever touches the
-//!     missing attributes.
+//!     missing attributes. Base's `to_currency`/`to_fraction` did, and died
+//!     with `AttributeError` on a negative value; the port's `negword` is
+//!     "meinws" (gladiaio/num2words2#157).
 //!
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here, and
+//! Consequently `cards`/`merge` stay at their trait defaults here, and
 //! `to_cardinal` is overridden outright. The ceiling is CY's own explicit
-//! `999 * 10**33` guard, which raises **NotImplementedError** — not the
-//! `OverflowError` that `Num2Word_Base.to_cardinal` would have raised.
+//! `999 * 10**33` guard, which `maxval()` reports. Python raises
+//! NotImplementedError there; fixed (gladiaio/num2words2#159): the port
+//! raises `OverflowError` ("abs(v) must be less than 999 * 10^33."), like
+//! `Num2Word_Base.to_cardinal` would.
 //!
 //! Inherited from `Num2Word_Base` (CY does not override either, so the trait
 //! defaults are correct):
@@ -87,30 +91,33 @@
 //!    would ordinalize both the millions and the units group. Unreachable from
 //!    the four in-scope modes (see `to_ordinal`'s range gate below), but the
 //!    comparison is ported as written rather than "fixed" to a position check.
-//! 7. **`to_ordinal` raises `KeyError` for every negative input.** The guard is
-//!    `if number < 20: return makestring(ORDINAL_WORDS[number])`, and every
-//!    negative satisfies `< 20`, so `ORDINAL_WORDS[-1]` misses the dict. It is
-//!    a crash, not a deliberate raise, but the exception *type* is observable —
-//!    hence `N2WError::Key` and not a tidy `TypeError`. `to_cardinal` is
-//!    unaffected (it strips the sign first) and `to_ordinal_num` is unaffected
-//!    (it returns the input untouched).
+//! 7. ~~**`to_ordinal` raises `KeyError` for every negative input.**~~ Fixed
+//!    (gladiaio/num2words2#158). The guard is `if number < 20: return
+//!    makestring(ORDINAL_WORDS[number])`, and every negative satisfies `< 20`,
+//!    so Python's `ORDINAL_WORDS[-1]` missed the dict. The port raises Base's
+//!    `errmsg_negord` `TypeError` instead, and a fractional float/Decimal
+//!    `errmsg_floatord` (Python: `KeyError` too). `to_cardinal` and
+//!    `to_ordinal_num` are unaffected.
 //!
 //! # Float / Decimal routing (the entry hooks)
 //!
 //! CY's `isinstance(number, float)` guard fires for **every** float, whole
 //! values included: `to_cardinal(1.0)` is "un pwynt dim", never "un". So
 //! [`Lang::cardinal_float_entry`] is overridden to skip the base default's
-//! whole-value shortcut entirely — floats always take [`LangCy::float_to_words`],
-//! Decimals always take the integer branch ([`LangCy::decimal_to_cardinal`]).
+//! whole-value shortcut entirely — floats always take [`LangCy::float_to_words`].
+//! Python sent every Decimal (and so every numeric string) down the integer
+//! branch, which floored the fraction away: `"1.5"` was "un" and `"0.1"` was
+//! "" (gladiaio/num2words2#156). A fractional Decimal now reads like a float
+//! from its exact digits ([`LangCy::decimal_to_words`]); a whole one keeps the
+//! integer branch ([`LangCy::decimal_to_cardinal`]).
 //! `to_year` is Base's `to_cardinal(value)`, so the default
 //! `year_float_entry` (→ `cardinal_float_entry`) is already right.
 //!
 //! `to_ordinal(float/Decimal)` is its own zoo ([`Lang::ordinal_float_entry`]):
 //!
-//! * `number < 20` → `ORDINAL_WORDS[number]`. A float/Decimal key hits the
-//!   dict iff it hash-equals an int key 0..=19: `5.0` → "pumed",
-//!   `-0.0` → "dimfed" (`-0.0 == 0`), while `0.5`, `-1.0`, `Decimal('-3.0')`
-//!   all raise **KeyError**.
+//! * Fractional and negative values raise `TypeError` first (bug 7, #158).
+//! * `number < 20` → `ORDINAL_WORDS[number]`: `5.0` → "pumed", `-0.0` →
+//!   "dimfed" (`-0.0 == 0`).
 //! * `number == 100` → "canfed" (`1E+2` included); `> 100` →
 //!   NotImplementedError — so `to_ordinal(101.0)` raises where
 //!   `to_cardinal(101.0)` renders.
@@ -125,55 +132,21 @@
 //! `.split(".")[1]` raises **IndexError** ("1e+16" has no dot) or the
 //! digit-by-digit `int(c)` hits the 'e' and raises **ValueError**
 //! ("1.5e+16"). The prefix `to_cardinal(int(abs_float))` is computed *before*
-//! the split, so a float past `999 * 10**33` raises NotImplementedError
+//! the split, so a float past `999 * 10**33` raises OverflowError (#159)
 //! first. Reproduced via [`py_float_str`].
 //!
 //! `Decimal('Infinity')` / `Decimal('NaN')` parse fine in `str_to_number` and
 //! only blow up inside `to_cardinal`: the `not number < 999 * 10**33` ceiling
-//! raises **NotImplementedError** for ±Infinity, and `number < 0` raises
-//! **decimal.InvalidOperation** for NaN. The binding's generic Inf/NaN arms
-//! raise Base's OverflowError/ValueError instead, so [`Lang::str_to_number`]
-//! is overridden to return NotImplemented for Inf/NaN — the shim then reruns
-//! the original Python string path, which owns those raises exactly.
+//! fires for ±Infinity (an OverflowError since #159; NotImplementedError in
+//! Python), and `number < 0` raises **decimal.InvalidOperation** for NaN.
+//! Both are served natively by [`Lang::inf_result`] / [`Lang::nan_result`].
 //!
 //! # Fractions
 //!
 //! CY inherits `Num2Word_Base.to_fraction`, whose negative branch is
 //! `sign = "%s " % self.negword.strip()` — and the `pass` `__init__` never
-//! created `self.negword`, so **any negative fraction raises AttributeError**
-//! (`-1/2`, `1/-2`; `-3/-4` is positive and renders). The sign is computed
-//! before the numerator/denominator words, so the AttributeError beats the
-//! KeyError/NotImplementedError those would raise. Ported as a local
-//! override rather than the trait default precisely for that raise.
-//!
-//! # Grammatical kwargs
-//!
-//! `to_cardinal(number, informal=False, gender="masc", ordinal=False,
-//! counted=None, raw=False)` and `to_ordinal(number, informal=False,
-//! gender="masc")` are the live signatures ([`Lang::to_cardinal_kw`] /
-//! [`Lang::to_ordinal_kw`]):
-//!
-//! * `informal` is accepted and ignored (its only use site is commented out).
-//! * `gender` only ever matters as the literal comparison `== "fem"` — "f",
-//!   "m", None, 1 all fall to masculine.
-//! * `counted` fills the first `OBJ` below 100 ("un ci ar hugain") and turns
-//!   into the partitive `o <noun>` (soft mutation: "o gi") at 100 and above.
-//!   Zero returns before `counted` is consulted: `to_cardinal(0, counted="ci")`
-//!   is plain "dim".
-//! * `raw=True` returns the word list itself; the corpus stringifies it, so
-//!   [`py_repr_wordlist`] reproduces the Python `repr` of a list of
-//!   `(str, str|None)` tuples byte for byte.
-//! * `ordinal=` never reaches the converter through `num2words` — the
-//!   dispatcher's own `ordinal` parameter shadows it and rewrites `to`
-//!   — so it is deliberately NOT in the kwargs guard.
-//!
-//! `to_year(value, **kwargs)` is Base's and swallows *every* kwarg, so
-//! [`Lang::to_year_kw`] accepts anything and returns the cardinal.
-//! `to_ordinal_num` and `to_currency` take no extra kwargs — the trait
-//! defaults (fall back to Python's TypeError) are already exact.
-//!
-//! # The currency surface
-//!
+//! created `self.negword`, so in Python **any negative fraction raised
+//! AttributeError** (`-1/2`, `1/-2`). Fixed (#157): the sign is "meinws".
 //! `Num2Word_CY` overrides `to_currency`, `_money_verbose` and
 //! `_cents_verbose`; it inherits `pluralize` from `Num2Word_EUR` and
 //! `to_cheque` / `_cents_terse` from `Num2Word_Base` (all four confirmed on the
@@ -181,12 +154,11 @@
 //!
 //! Two consequences of the `pass` __init__ dominate this surface:
 //!
-//! 1. **`self.negword` never exists**, and `Num2Word_Base.to_currency` reaches
-//!    for it — `minus_str = "%s " % self.negword.strip() if is_negative else ""`.
-//!    Python's conditional expression only evaluates the left operand when
-//!    `is_negative` is true, so a *positive* float is fine and a **negative
-//!    float raises `AttributeError`**. See [`N2WError::Attribute`] below and
-//!    module bug 8.
+//! 1. ~~**`self.negword` never exists**~~, and `Num2Word_Base.to_currency`
+//!    reaches for it — `minus_str = "%s " % self.negword.strip() if
+//!    is_negative else ""` — so in Python a **negative float raised
+//!    `AttributeError`**. Fixed (#157): `negword` is "meinws", CY's own
+//!    cardinal minus word, so `-0.5` reads "meinws ...".
 //! 2. **`CURRENCY_PRECISION` is `Num2Word_Base`'s shared `{}`** (verified:
 //!    `Num2Word_CY.CURRENCY_PRECISION is Num2Word_Base.CURRENCY_PRECISION`).
 //!    `Num2Word_EN.__init__` *rebinds* rather than mutates it, so EN's mils
@@ -221,47 +193,61 @@
 //!    `currency:JPY` / `currency:KWD` / `currency:CHF` succeeding for `0`, `1`,
 //!    `2`, `100`, `1000000` while every float with the same code raises
 //!    `NotImplementedError`. Reproduced in [`LangCy::to_currency`].
-//! 9. **The int branch says `"minws "`, not `"meinws "`.** CY's own
-//!    `MINUS_PREFIX_WORD` is `"meinws "` and `to_cardinal` hardcodes
-//!    `("meinws", None)`, but `to_currency` spells the negative prefix
-//!    `"minws "`. A typo, kept verbatim: `to_currency(-1)` is `"minws un bunt"`.
+//! 9. **The int branch said `"minws "`, not `"meinws "` (fixed, #180).** CY's
+//!    own `MINUS_PREFIX_WORD` is `"meinws "` and `to_cardinal` hardcodes
+//!    `("meinws", None)`, but Python's `to_currency` spells the negative
+//!    prefix `"minws "` — a typo. The port says `"meinws "` like the cardinal
+//!    and the float path: `to_currency(-1)` is `"meinws un bunt"`.
 //! 10. **The unit words in the int branch are pre-mutated literals.**
 //!     `"bunt"` / `"bunnoedd"` are the soft-mutated forms of `punt`/`punnoedd`,
 //!     hardcoded as strings rather than produced by [`softmutation`] — so the
 //!     mutation fires even when nothing precedes it that would trigger one
 //!     (`"dim bunnoedd"` after "dim", which triggers no mutation at all).
 //! 11. **`_cents_verbose(1, ...)` drops the numeral.** The `number > 1` guard
-//!     sends 1 to `m = [(OBJ, None)]`, so `0.01` renders `"... ceiniog ceiniog"`
-//!     — the counted noun and `pluralize`'s singular, with no "un".
+//!     sends 1 to `m = [(OBJ, None)]`, so `0.01` renders `"... ceiniog"` — the
+//!     counted noun alone, with no "un".
 //! 12. **`_money_verbose` always asks `to_cardinal` for the *feminine* form**,
-//!     even for masculine currencies: `2.0 USD` is `"dwy dolar dolar, ..."`.
+//!     even for masculine currencies: `2.0 USD` is `"dwy dolar, ..."`.
 //!     The dead `if currency in CURRENCIES_FEM` guard is commented out in the
 //!     source with the note "always true in this context". `_cents_verbose`, by
 //!     contrast, leaves gender at its masculine default.
-//! 13. **Every float prints the unit twice.** `_money_verbose` already appends
-//!     the currency noun (as `counted=`, or as the `o <plural>` partitive above
-//!     100), and then `Num2Word_Base.to_currency` appends `pluralize(left, cr1)`
-//!     on top: `"deuddeg euro euros"`, `"mil ... o euros euros"`.
-//! 14. **Zero cents leave a double space.** `_cents_verbose(0, ...)` returns
-//!     `""`, and Base's `"%s%s %s%s %s %s"` template still emits the spaces
-//!     around it: `1.0` → `"un euro euro,  ceiniogau"` (two spaces after the
-//!     comma). The `has_decimal` guard keeps the segment alive for `1.0`.
+//! 13. ~~**Every float prints the unit twice.**~~ Fixed
+//!     (gladiaio/num2words2#162). `_money_verbose` already appends the
+//!     currency noun (as `counted=`, or as the `o <plural>` partitive above
+//!     100) and `_cents_verbose` the subunit noun, and then
+//!     `Num2Word_Base.to_currency` appended `pluralize(left, cr1)` and
+//!     `pluralize(right, cr2)` on top: `1.5` was "un punt punt, hanner cant
+//!     ceiniog ceiniogau", `1.01` "un punt punt, ceiniog ceiniog". The port
+//!     keeps the counted forms and drops the generic ones, so each unit is
+//!     named once ("un punt, hanner cant ceiniog"). With `adjective=True`
+//!     only the adjective survives from the generic form ("un dolar US").
+//! 14. ~~**Zero cents leave a double space.**~~ Fixed (gladiaio/num2words2#186).
+//!     Python's `_cents_verbose(0, ...)` returns `""`, and Base's
+//!     `"%s%s %s%s %s %s"` template still emitted the spaces around it:
+//!     `1.0` was `"un punt,  ceiniogau"` (two spaces, no numeral). The port
+//!     spells zero pence with the cardinal's zero word and the counted
+//!     singular noun, like every other pence amount: `"un punt, dim ceiniog"`.
+//!     The `has_decimal` guard still keeps the segment for `1.0`, while the
+//!     int `1` stays `"un bunt"`.
 //!
 //! # Error variants
 //!
 //! * `NotImplementedError` → [`N2WError::NotImplemented`]: `to_ordinal(n)` for
 //!   `n > 100`, `to_cardinal(n)` for `abs(n) >= 999 * 10**33`, and a currency
 //!   code outside CY's four on the float/cheque paths.
-//! * `KeyError` → [`N2WError::Key`]: `to_ordinal(n)` for `n < 0` (bug 7).
-//! * `AttributeError` → [`N2WError::Attribute`]: `to_currency(<negative float>)`
-//!   for a *known* code — the missing `self.negword` (bug 8's sibling). A
-//!   negative float with an *unknown* code raises `NotImplementedError` instead,
-//!   because Base looks `CURRENCY_FORMS` up before it touches `negword`.
+//! * `TypeError` → [`N2WError::Type`]: `to_ordinal(n)` for `n < 0` or a
+//!   fractional value (bug 7, fixed in #158; Python raised `KeyError`).
+//! * Python's `AttributeError` for `to_currency(<negative float>)` (the
+//!   missing `self.negword`) is fixed (#157).
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
-use crate::currency::{CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
-use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
+use std::sync::OnceLock;
+use crate::base::{
+    check_maxval, pow10_big, strictly_negative, verify_ordinal, verify_ordinal_float, Kwargs,
+    KwVal, Lang, N2WError, Result,
+};
+use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
+use crate::floatpath::{float2tuple, FloatValue};
+use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -658,19 +644,6 @@ fn kw_truthy(v: &KwVal) -> bool {
     }
 }
 
-/// The KeyError payload for `ORDINAL_WORDS[<float/Decimal>]`: Python sets the
-/// missing key itself as the exception arg — `str()` of the float, or the
-/// `Decimal('...')` repr. The corpora record only the type; the message
-/// mirrors what `repr(KeyError.args[0])` would show.
-fn float_key_repr(value: &FloatValue) -> String {
-    match value {
-        FloatValue::Float { value, precision } => py_float_str(*value, *precision),
-        FloatValue::Decimal { value, .. } => {
-            format!("Decimal('{}')", python_decimal_str(value))
-        }
-    }
-}
-
 /// Python's `Num2Word_CY.hundred_group`.
 ///
 /// `number` is a single group of three digits (0..=999), so `i64` is provably
@@ -784,9 +757,11 @@ fn hundred_group(number: i64, _informal: bool, gender: &str, ordinal: bool) -> V
     result
 }
 
-/// The `999 * 10**33` ceiling from `to_cardinal`.
-fn maxval_cy() -> BigInt {
-    BigInt::from(999) * BigInt::from(10u32).pow(33)
+/// The `999 * 10**33` ceiling from `to_cardinal` — the exclusive maxval
+/// (gladiaio/num2words2#159).
+fn maxval_cy() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| BigInt::from(999) * pow10_big(33))
 }
 
 /// `Num2Word_CY.CURRENCY_FORMS` — CY's **own** class-body dict, all four codes.
@@ -899,17 +874,9 @@ impl LangCy {
             // "dim" either way.
             return Ok(CARDINAL_WORDS[0].to_vec());
         }
-        // Mirrors Python's `elif not number < 999 * 10**33` verbatim. Kept in
-        // the negated form rather than the "minimal" `>=` so the correspondence
-        // to the source line stays greppable; the two are equivalent for BigInt.
-        #[allow(clippy::nonminimal_bool)]
-        if !(number < maxval_cy()) {
-            // NotImplementedError, *not* the OverflowError that
-            // Num2Word_Base.to_cardinal would raise — CY never reaches base.
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
+        // Python's `elif not number < 999 * 10**33` raised NotImplementedError;
+        // an OverflowError since gladiaio/num2words2#159.
+        check_maxval(&number, maxval_cy())?;
 
         // Split into groups of three digits, from the right. Python iterates
         // pot ascending, so `lowestgroup` ends up holding the *value* of the
@@ -1034,7 +1001,7 @@ impl LangCy {
     ///
     /// Note the order: `prefix = self.to_cardinal(int(abs_float))` runs
     /// *before* the split, so a float at/above `999 * 10**33` raises
-    /// NotImplementedError first.
+    /// OverflowError first (#159).
     ///
     /// `precision_override` is ignored, exactly as Python ignores it here: CY's
     /// `pass` `__init__` never creates `self.precision`, so the dispatcher's
@@ -1083,6 +1050,26 @@ impl LangCy {
         }
     }
 
+    /// `float_to_words` for a fractional `Decimal`, from its exact digits
+    /// (#156): the truncated integer part, " pwynt ", then one cardinal per
+    /// fractional digit, "meinws " in front of a negative.
+    fn decimal_to_words(&self, value: &FloatValue) -> Result<String> {
+        let (pre, post) = float2tuple(value);
+        let prefix = self.to_cardinal_full(&pre.abs(), false, "masc", false)?;
+        let digits = format!("{:0>width$}", post, width = value.precision() as usize);
+        let mut parts: Vec<String> = Vec::new();
+        for c in digits.chars() {
+            let d = c.to_digit(10).expect("float2tuple yields decimal digits");
+            parts.push(self.to_cardinal_full(&BigInt::from(d), false, "masc", false)?);
+        }
+        let result = format!("{} pwynt {}", prefix, parts.join(" "));
+        if strictly_negative(value) {
+            Ok(format!("meinws {}", result))
+        } else {
+            Ok(result)
+        }
+    }
+
     /// Python's `Num2Word_CY.to_cardinal(<Decimal>)`.
     ///
     /// A `Decimal` is **not** a `float`, so the `isinstance(number, float)`
@@ -1112,12 +1099,14 @@ impl LangCy {
         if absval.is_zero() {
             return Ok(makestring(CARDINAL_WORDS[0], None));
         }
-        // `elif not number < 999 * 10**33`, on the full Decimal.
-        #[allow(clippy::nonminimal_bool)]
-        if !(absval < BigDecimal::from(maxval_cy())) {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
+        // `elif not number < 999 * 10**33`, on the full Decimal. An
+        // OverflowError since gladiaio/num2words2#159.
+        if absval >= BigDecimal::from(maxval_cy().clone()) {
+            return Err(N2WError::Overflow(format!(
+                "abs({}) must be less than {}.",
+                absval,
+                maxval_cy()
+            )));
         }
 
         // `(number % 10**pot) // 10**(pot-3)` on the Decimal equals the same
@@ -1177,10 +1166,9 @@ impl LangCy {
     fn to_ordinal_impl(&self, value: &BigInt, gender: &str) -> Result<String> {
         if value < &BigInt::from(20) {
             // Python: ORDINAL_WORDS[number]. Every negative satisfies `< 20`
-            // and misses the dict → KeyError. Module bug 7.
-            if value.is_negative() {
-                return Err(N2WError::Key(format!("{}", value)));
-            }
+            // and missed the dict (KeyError); reject it like Base's
+            // verify_ordinal instead. Module bug 7, #158.
+            verify_ordinal(value)?;
             // 0..=19 — always present.
             let idx = value.to_usize().expect("0..=19 fits usize");
             return Ok(makestring(ORDINAL_WORDS[idx], None));
@@ -1199,6 +1187,10 @@ impl LangCy {
 }
 
 impl Lang for LangCy {
+    fn maxval(&self) -> &BigInt {
+        maxval_cy()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -1211,6 +1203,13 @@ impl Lang for LangCy {
     /// conjunction, so inheriting Base's comma silently corrupts them.
     fn default_separator(&self) -> &str {
         ","
+    }
+
+    /// Never assigned in Python (`pass` `__init__`), so Base's currency and
+    /// fraction paths raised AttributeError on a negative value. CY's own
+    /// cardinal minus word (#157).
+    fn negword(&self) -> &str {
+        "meinws "
     }
 
     // cards() / maxval() / merge() stay at their trait defaults: Python never
@@ -1267,6 +1266,8 @@ impl Lang for LangCy {
     ) -> Result<String> {
         match value {
             FloatValue::Float { value, precision } => self.float_to_words(*value, *precision),
+            // Python floored a fractional Decimal away (#156).
+            FloatValue::Decimal { value: d, .. } if !d.is_integer() => self.decimal_to_words(value),
             FloatValue::Decimal { value, .. } => self.decimal_to_cardinal(value, false),
         }
     }
@@ -1294,10 +1295,10 @@ impl Lang for LangCy {
 
     /// `to_ordinal(float/Decimal)` — Python's dict-lookup gauntlet.
     ///
-    /// * `number < 20` → `ORDINAL_WORDS[number]`. The lookup succeeds iff the
-    ///   value hash-equals an int key 0..=19 (`5.0`, `Decimal('5.00')`,
-    ///   `-0.0`); anything else — fractional, or negative — raises
-    ///   **KeyError** (module bug 7 extended to the float domain).
+    /// * A fractional value raises `errmsg_floatord`, a negative one
+    ///   `errmsg_negord` (Python: KeyError; module bug 7, #158).
+    /// * `number < 20` → `ORDINAL_WORDS[number]`, for a value that
+    ///   hash-equals an int key 0..=19 (`5.0`, `Decimal('5.00')`, `-0.0`).
     /// * `number == 100` → "canfed" (`1E+2` too); `> 100` →
     ///   **NotImplementedError**.
     /// * else (20 ≤ n < 100) → `to_cardinal(number, ordinal=True)`: a float
@@ -1305,20 +1306,12 @@ impl Lang for LangCy {
     ///   ("ugain pwynt dim"); a Decimal reaches the integer branch with
     ///   `ordinal=True` live ("ail a deugain" for `Decimal('42')`).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        // Whole and non-negative from here on (-0.0 is whole zero).
+        let whole = verify_ordinal_float(value)?;
         // `if number < 20:`
-        let lt20 = match value {
-            FloatValue::Float { value, .. } => *value < 20.0,
-            FloatValue::Decimal { value, .. } => *value < BigDecimal::from(20),
-        };
-        if lt20 {
-            if let Some(i) = value.as_whole_int() {
-                // -0.0 == 0 hits the key; true negatives miss it.
-                if !i.is_negative() {
-                    let idx = i.to_usize().expect("0..=19 fits usize");
-                    return Ok(makestring(ORDINAL_WORDS[idx], None));
-                }
-            }
-            return Err(N2WError::Key(float_key_repr(value)));
+        if whole < BigInt::from(20) {
+            let idx = whole.to_usize().expect("0..=19 fits usize");
+            return Ok(makestring(ORDINAL_WORDS[idx], None));
         }
         let (eq100, gt100) = match value {
             FloatValue::Float { value, .. } => (*value == 100.0, *value > 100.0),
@@ -1357,18 +1350,23 @@ impl Lang for LangCy {
     /// `not number < 999 * 10**33` ceiling fires first —
     /// `Decimal('Infinity') < 999*10**33` is False for both signs (the `-`
     /// case flips to `+Infinity` via `number = -number` before the ceiling),
-    /// so it raises **NotImplementedError**. `to_ordinal`/`to_year` reach the
-    /// same raise. `to_ordinal_num` would echo the repr, but no corpus row
-    /// exercises it.
+    /// so it raises — an OverflowError since #159 (NotImplementedError in
+    /// Python). `to_year` reaches the same raise; `to_ordinal` stops at its
+    /// own `> 100` NotImplementedError first. `to_ordinal_num` would echo the
+    /// repr, but no corpus row exercises it.
     fn inf_result(&self, negative: bool, to: &str) -> Result<String> {
         match to {
             "ordinal_num" => Ok(format!(
                 "{}Infinity",
                 if negative { "-" } else { "" }
             )),
-            _ => Err(N2WError::NotImplemented(
+            "ordinal" => Err(N2WError::NotImplemented(
                 "The given number is too large.".to_string(),
             )),
+            _ => Err(N2WError::Overflow(format!(
+                "abs(Infinity) must be less than {}.",
+                maxval_cy()
+            ))),
         }
     }
 
@@ -1400,39 +1398,9 @@ impl Lang for LangCy {
         }
     }
 
-    /// `Num2Word_Base.to_fraction`, restated locally because its negative
-    /// branch reads `self.negword` — which CY's `pass` `__init__` never
-    /// created, so **every negative fraction raises AttributeError**
-    /// (`-1/2`, `1/-2`; `-3/-4` is positive and renders "tri pedwerydds").
-    /// The sign string is built before the numerator/denominator words, so
-    /// the AttributeError beats the KeyError/NotImplementedError that
-    /// `to_ordinal(<big/negative>)` would otherwise raise.
-    fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
-        if denominator.is_zero() {
-            return Err(N2WError::ZeroDivision(
-                "denominator must not be zero".into(),
-            ));
-        }
-        if denominator.is_one() || numerator.is_zero() {
-            return self.to_cardinal(numerator);
-        }
-        let is_negative = numerator.is_negative() ^ denominator.is_negative();
-        if is_negative {
-            // sign = "%s " % self.negword.strip() → missing attribute.
-            return Err(N2WError::Attribute(
-                "'Num2Word_CY' object has no attribute 'negword'".into(),
-            ));
-        }
-        let abs_n = numerator.abs();
-        let abs_d = denominator.abs();
-        let num_word = self.to_cardinal(&abs_n)?;
-        let mut den_word = self.to_ordinal(&abs_d)?;
-        if !abs_n.is_one() {
-            // Base's naive plural: "s" tacked on — "tri pedwerydds".
-            den_word.push('s');
-        }
-        Ok(format!("{} {}", num_word, den_word))
-    }
+    // `to_fraction` is Base's (the trait default). Python's negative branch
+    // read the never-assigned `self.negword` and raised AttributeError; with
+    // `negword` defined it now says "meinws" (#157).
 
     // ---- grammatical kwargs ---------------------------------------------
 
@@ -1602,8 +1570,9 @@ impl Lang for LangCy {
     /// Python's `Num2Word_CY._money_verbose`.
     ///
     /// Both arms ask `to_cardinal` for the **feminine** form unconditionally
-    /// (module bug 12) and both attach the currency noun themselves, on top of
-    /// the `pluralize(left, cr1)` Base appends afterwards (bug 13):
+    /// (module bug 12) and both attach the currency noun themselves — which is
+    /// why `to_currency` no longer appends Base's `pluralize(left, cr1)` as
+    /// well (bug 13, #162):
     ///
     /// * `number > 100` — the partitive: `... o <plural>`. "o" triggers a soft
     ///   mutation on the noun, so `1234.56 USD` gives "o **dd**olarau".
@@ -1638,20 +1607,19 @@ impl Lang for LangCy {
 
     /// Python's `Num2Word_CY._cents_verbose`.
     ///
-    /// Three quirks, all ported: zero cents return `""` (bug 14's source);
-    /// `number == 1` drops the numeral entirely and emits only the noun
-    /// (bug 11); and gender is left at its masculine default, unlike
-    /// [`LangCy::money_verbose`].
+    /// Two quirks ported: `number == 1` drops the numeral entirely and emits
+    /// only the noun (bug 11); and gender is left at its masculine default,
+    /// unlike [`LangCy::money_verbose`]. Python returned `""` for zero
+    /// cents (bug 14, fixed in #186); the port says "dim ceiniog".
     fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
-        // Python returns "" before it ever indexes CURRENCY_FORMS, so a missing
-        // code would not KeyError at zero. Ordered the same way here.
-        if number.is_zero() {
-            return Ok(String::new());
-        }
         let forms = self
             .currency_forms
             .get(currency)
             .ok_or_else(|| N2WError::Key(format!("'{}'", currency)))?;
+        if number.is_zero() {
+            // "dim" triggers no mutation; the counted noun stays singular.
+            return Ok(format!("{} {}", self.to_cardinal(number)?, forms.subunit[0]));
+        }
 
         // `if number > 1: to_cardinal(number, raw=True) else: [(OBJ, None)]`.
         // The else arm also catches a hypothetical negative, which cannot occur:
@@ -1698,51 +1666,94 @@ impl Lang for LangCy {
         let separator = separator.unwrap_or(self.default_separator());
 
         if let CurrencyValue::Int(v) = val {
-            // "minws ", not CY's own MINUS_PREFIX_WORD "meinws " — bug 9.
-            let minus_str = if v.is_negative() { "minws " } else { "" };
+            // Python says "minws " here; the port uses CY's own "meinws ",
+            // like the cardinal and the float path — bug 9 (#180).
+            let minus_str = if v.is_negative() { "meinws " } else { "" };
             let abs_val = v.abs();
-            // Can still raise NotImplementedError past 999 * 10**33.
+            // Raises OverflowError past 999 * 10**33 (#159).
             let money_str = self.to_cardinal(&abs_val)?;
             // Pre-mutated GBP literals, whatever `currency` says — bugs 8, 10.
             let currency_str = if abs_val.is_one() { "bunt" } else { "bunnoedd" };
             return Ok(format!("{}{} {}", minus_str, money_str, currency_str));
         }
 
-        // Floats/Decimals: `super().to_currency(...)` — Num2Word_Base's.
-        //
-        // Base looks CURRENCY_FORMS up *before* it reads `self.negword`, so an
-        // unknown code raises NotImplementedError even when the value is
-        // negative and the AttributeError would otherwise fire. That ordering is
-        // observable — the corpus has `currency:CHF -12.34` as
-        // NotImplementedError but `currency:EUR -12.34` as AttributeError — so
-        // the lookup is repeated here ahead of the sign check.
-        if !self.currency_forms.contains_key(currency) {
-            return Err(N2WError::NotImplemented(format!(
+        // Floats/Decimals: `super().to_currency(...)` — Num2Word_Base's, minus
+        // the generic nouns it appends (module bug 13, #162). Python's
+        // `minus_str = "%s " % self.negword.strip()` raised AttributeError
+        // (CY's `pass` `__init__` never set `negword`); the port's `negword`
+        // is "meinws" (#157).
+        let forms = self.currency_forms.get(currency).ok_or_else(|| {
+            N2WError::NotImplemented(format!(
                 "Currency code \"{}\" not implemented for \"{}\"",
                 currency,
                 self.lang_name()
-            )));
+            ))
+        })?;
+        let (d, has_decimal, is_float) = match val {
+            CurrencyValue::Decimal { value, has_decimal, is_float } => {
+                (value.clone(), *has_decimal, *is_float)
+            }
+            CurrencyValue::Int(_) => unreachable!("int branch returned above"),
+        };
+        // CY's CURRENCY_PRECISION is Base's empty dict: always 100.
+        let scaled = &d * BigDecimal::from(100);
+        let has_fractional_cents = &scaled - scaled.with_scale(0) != BigDecimal::zero();
+        let (left, right, is_negative) = parse_currency_parts(
+            &CurrencyValue::Decimal { value: d, has_decimal, is_float },
+            false,
+            has_fractional_cents,
+            100,
+        );
+        let minus = if is_negative {
+            format!("{} ", self.negword().trim())
+        } else {
+            String::new()
+        };
+        // `_money_verbose` already names the unit, in the form the counted
+        // numeral calls for ("un punt", "dwy bunt", "... o bunnoedd"). Base
+        // then appended `pluralize(left, cr1)` again — "un punt punt" — so
+        // that second noun is dropped; only `adjective=True`'s adjective is
+        // kept from it ("un dolar US").
+        let mut money = self.money_verbose(&left, currency)?;
+        if adjective {
+            if let Some(adj) = self.currency_adjectives.get(currency) {
+                money = format!("{} {}", money, adj);
+            }
         }
-
-        // `minus_str = "%s " % self.negword.strip() if is_negative else ""`.
-        // CY's `__init__` is a bare `pass`, so `self.negword` was never
-        // assigned and any negative float dies on attribute lookup. Positives
-        // are unharmed: Python evaluates the condition first.
-        //
-        // Base derives `is_negative` from `parse_currency_parts`, i.e. from the
-        // ROUND_HALF_UP-quantized value rather than the input. For CY's fixed
-        // divisor of 100 the two agree on every input — a value can only
-        // quantize to -0.00 from a value that is already -0.0, which
-        // `Decimal.__lt__` reports as non-negative anyway. Checked exhaustively
-        // against the live `parse_currency_parts` over 6020 values, so the raw
-        // sign is used directly instead of re-running the split.
-        if val.is_negative() {
-            return Err(N2WError::Attribute(
-                "'Num2Word_CY' object has no attribute 'negword'".into(),
+        let right_int = right.as_bigint_and_exponent().0;
+        if !has_decimal && right_int.is_zero() {
+            return Ok(format!("{}{}", minus, money));
+        }
+        if has_fractional_cents {
+            // Base reads the cents through the float cardinal and names them
+            // with the plural subunit — once, so nothing to drop here.
+            let sub = forms.subunit.get(1).or_else(|| forms.subunit.first());
+            return Ok(format!(
+                "{}{}{} {} {}",
+                minus,
+                money,
+                separator,
+                self.cardinal_from_decimal(&right)?,
+                sub.map(String::as_str).unwrap_or_default()
             ));
         }
-
-        crate::currency::default_to_currency(self, val, currency, cents, separator, adjective)
+        if cents {
+            let cents_str = self.cents_verbose(&right_int, currency)?;
+            // `_cents_verbose` names the subunit too ("hanner cant ceiniog",
+            // bare "ceiniog" for 1, "dim ceiniog" for 0 — module bug 14,
+            // #186), so Base's `pluralize(right, cr2)` was a second noun
+            // ("ceiniog ceiniogau") and is dropped.
+            return Ok(format!("{}{}{} {}", minus, money, separator, cents_str));
+        }
+        let cents_str = self.cents_terse(&right_int, currency)?;
+        Ok(format!(
+            "{}{}{} {} {}",
+            minus,
+            money,
+            separator,
+            cents_str,
+            self.pluralize(&right_int, &forms.subunit)?
+        ))
     }
 
     // cardinal_from_decimal: left at its default — fractional cents are out of

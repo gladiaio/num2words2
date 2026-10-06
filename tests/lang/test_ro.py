@@ -15,7 +15,6 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 # MA 02110-1301 USA
 
-import unittest
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -52,9 +51,7 @@ class Num2WordsROTest(TestCase):
     def test_big_numbers(self):
         self.assertEqual(num2words(1000000, lang="ro"), "un milion")
         self.assertEqual(num2words(1000000000, lang="ro"), "un miliard")
-        self.assertEqual(
-            num2words(33000000, lang="ro"), "treizeci și trei de milioane"
-        )
+        self.assertEqual(num2words(33000000, lang="ro"), "treizeci și trei de milioane")
         self.assertEqual(
             num2words(247000000000, lang="ro"),
             "două sute patruzeci și șapte de miliarde",
@@ -103,9 +100,6 @@ class Num2WordsROTest(TestCase):
             "de mii șapte sute optzeci și nouă de lei",
         )
 
-    # Known num2words2-core Rust-port gap: Romanian (ro) year
-    # (to="year") is not ported.
-    @unittest.expectedFailure
     def test_to_year(self):
         self.assertEqual(
             num2words(1989, lang="ro", to="year"), "o mie nouă sute optzeci și nouă"
@@ -134,6 +128,10 @@ class Num2WordsROTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ro", to="year", suffix="d.Hr."), "unu d.Hr."
+        )
+        # A falsy suffix behaves like suffix=None (gladiaio/num2words2#167).
+        self.assertEqual(
+            num2words(-44, lang="ro", to="year", suffix=""), "patruzeci și patru î.Hr."
         )
         self.assertEqual(
             num2words(-66000000, lang="ro", to="year"),

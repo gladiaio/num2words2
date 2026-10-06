@@ -25,7 +25,7 @@ class Num2WordsYITest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="yi"), "zero")
+        self.assertEqual(num2words(0, lang="yi"), "נול")
         self.assertEqual(num2words(1, lang="yi"), "איינס")
         self.assertEqual(num2words(2, lang="yi"), "צוויי")
         self.assertEqual(num2words(3, lang="yi"), "דרײַ")
@@ -227,51 +227,51 @@ class Num2WordsYITest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="yi"), "minus איינס")
-        self.assertEqual(num2words(-2, lang="yi"), "minus צוויי")
-        self.assertEqual(num2words(-5, lang="yi"), "minus פינף")
-        self.assertEqual(num2words(-10, lang="yi"), "minus צען")
-        self.assertEqual(num2words(-11, lang="yi"), "minus צען איינס")
-        self.assertEqual(num2words(-20, lang="yi"), "minus צוואַנציק")
-        self.assertEqual(num2words(-50, lang="yi"), "minus פופציק")
-        self.assertEqual(num2words(-99, lang="yi"), "minus נײַנציק נײַן")
-        self.assertEqual(num2words(-100, lang="yi"), "minus איינס הונדערט")
-        self.assertEqual(num2words(-101, lang="yi"), "minus איינס הונדערט איינס")
-        self.assertEqual(num2words(-200, lang="yi"), "minus צוויי הונדערט")
-        self.assertEqual(num2words(-999, lang="yi"), "minus נײַן הונדערט נײַנציק נײַן")
-        self.assertEqual(num2words(-1000, lang="yi"), "minus איינס טויזנט")
-        self.assertEqual(num2words(-1001, lang="yi"), "minus איינס טויזנט איינס")
-        self.assertEqual(num2words(-10000, lang="yi"), "minus צען טויזנט")
-        self.assertEqual(num2words(-100000, lang="yi"), "minus איינס הונדערט טויזנט")
-        self.assertEqual(num2words(-1000000, lang="yi"), "minus איינס מיליאָן")
+        self.assertEqual(num2words(-1, lang="yi"), "מינוס איינס")
+        self.assertEqual(num2words(-2, lang="yi"), "מינוס צוויי")
+        self.assertEqual(num2words(-5, lang="yi"), "מינוס פינף")
+        self.assertEqual(num2words(-10, lang="yi"), "מינוס צען")
+        self.assertEqual(num2words(-11, lang="yi"), "מינוס צען איינס")
+        self.assertEqual(num2words(-20, lang="yi"), "מינוס צוואַנציק")
+        self.assertEqual(num2words(-50, lang="yi"), "מינוס פופציק")
+        self.assertEqual(num2words(-99, lang="yi"), "מינוס נײַנציק נײַן")
+        self.assertEqual(num2words(-100, lang="yi"), "מינוס איינס הונדערט")
+        self.assertEqual(num2words(-101, lang="yi"), "מינוס איינס הונדערט איינס")
+        self.assertEqual(num2words(-200, lang="yi"), "מינוס צוויי הונדערט")
+        self.assertEqual(num2words(-999, lang="yi"), "מינוס נײַן הונדערט נײַנציק נײַן")
+        self.assertEqual(num2words(-1000, lang="yi"), "מינוס איינס טויזנט")
+        self.assertEqual(num2words(-1001, lang="yi"), "מינוס איינס טויזנט איינס")
+        self.assertEqual(num2words(-10000, lang="yi"), "מינוס צען טויזנט")
+        self.assertEqual(num2words(-100000, lang="yi"), "מינוס איינס הונדערט טויזנט")
+        self.assertEqual(num2words(-1000000, lang="yi"), "מינוס איינס מיליאָן")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="yi"), "zero point איינס")
-        self.assertEqual(num2words(0.5, lang="yi"), "zero point פינף")
-        self.assertEqual(num2words(0.9, lang="yi"), "zero point נײַן")
-        self.assertEqual(num2words(1.1, lang="yi"), "איינס point איינס")
-        self.assertEqual(num2words(1.5, lang="yi"), "איינס point פינף")
-        self.assertEqual(num2words(2.5, lang="yi"), "צוויי point פינף")
-        self.assertEqual(num2words(3.14, lang="yi"), "דרײַ point איינס פיר")
-        self.assertEqual(num2words(10.5, lang="yi"), "צען point פינף")
-        self.assertEqual(num2words(11.11, lang="yi"), "צען איינס point איינס איינס")
-        self.assertEqual(num2words(20.2, lang="yi"), "צוואַנציק point צוויי")
-        self.assertEqual(num2words(99.99, lang="yi"), "נײַנציק נײַן point נײַן נײַן")
-        self.assertEqual(num2words(100.01, lang="yi"), "איינס הונדערט point zero איינס")
-        self.assertEqual(num2words(100.5, lang="yi"), "איינס הונדערט point פינף")
+        self.assertEqual(num2words(0.1, lang="yi"), "נול פּונקט איינס")
+        self.assertEqual(num2words(0.5, lang="yi"), "נול פּונקט פינף")
+        self.assertEqual(num2words(0.9, lang="yi"), "נול פּונקט נײַן")
+        self.assertEqual(num2words(1.1, lang="yi"), "איינס פּונקט איינס")
+        self.assertEqual(num2words(1.5, lang="yi"), "איינס פּונקט פינף")
+        self.assertEqual(num2words(2.5, lang="yi"), "צוויי פּונקט פינף")
+        self.assertEqual(num2words(3.14, lang="yi"), "דרײַ פּונקט איינס פיר")
+        self.assertEqual(num2words(10.5, lang="yi"), "צען פּונקט פינף")
+        self.assertEqual(num2words(11.11, lang="yi"), "צען איינס פּונקט איינס איינס")
+        self.assertEqual(num2words(20.2, lang="yi"), "צוואַנציק פּונקט צוויי")
+        self.assertEqual(num2words(99.99, lang="yi"), "נײַנציק נײַן פּונקט נײַן נײַן")
+        self.assertEqual(num2words(100.01, lang="yi"), "איינס הונדערט פּונקט נול איינס")
+        self.assertEqual(num2words(100.5, lang="yi"), "איינס הונדערט פּונקט פינף")
         self.assertEqual(
-            num2words(123.45, lang="yi"), "איינס הונדערט צוואַנציק דרײַ point פיר פינף"
+            num2words(123.45, lang="yi"), "איינס הונדערט צוואַנציק דרײַ פּונקט פיר פינף"
         )
-        self.assertEqual(num2words(1000.5, lang="yi"), "איינס טויזנט point פינף")
+        self.assertEqual(num2words(1000.5, lang="yi"), "איינס טויזנט פּונקט פינף")
         self.assertEqual(
             num2words(1234.56, lang="yi"),
-            "איינס טויזנט צוויי הונדערט דרײַסיק פיר point פינף זעקס",
+            "איינס טויזנט צוויי הונדערט דרײַסיק פיר פּונקט פינף זעקס",
         )
-        self.assertEqual(num2words(10000.01, lang="yi"), "צען טויזנט point zero איינס")
-        self.assertEqual(num2words(-0.5, lang="yi"), "minus zero point פינף")
-        self.assertEqual(num2words(-1.5, lang="yi"), "minus איינס point פינף")
-        self.assertEqual(num2words(-10.5, lang="yi"), "minus צען point פינף")
+        self.assertEqual(num2words(10000.01, lang="yi"), "צען טויזנט פּונקט נול איינס")
+        self.assertEqual(num2words(-0.5, lang="yi"), "מינוס נול פּונקט פינף")
+        self.assertEqual(num2words(-1.5, lang="yi"), "מינוס איינס פּונקט פינף")
+        self.assertEqual(num2words(-10.5, lang="yi"), "מינוס צען פּונקט פינף")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -320,15 +320,15 @@ class Num2WordsYITest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="yi", to="currency", currency="EUR"), "zero אייראָ"
+            num2words(0, lang="yi", to="currency", currency="EUR"), "נול אייראָ"
         )
         self.assertEqual(
             num2words(0.01, lang="yi", to="currency", currency="EUR"),
-            "zero אייראָ איינס צענט",
+            "נול אייראָ איינס צענט",
         )
         self.assertEqual(
             num2words(0.5, lang="yi", to="currency", currency="EUR"),
-            "zero אייראָ פופציק צענט",
+            "נול אייראָ פופציק צענט",
         )
         self.assertEqual(
             num2words(1, lang="yi", to="currency", currency="EUR"), "איינס אייראָ"
@@ -338,15 +338,15 @@ class Num2WordsYITest(TestCase):
             "איינס אייראָ פופציק צענט",
         )
         self.assertEqual(
-            num2words(0, lang="yi", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="yi", to="currency", currency="USD"), "נול dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="yi", to="currency", currency="USD"),
-            "zero dollars איינס cent",
+            "נול dollars איינס cent",
         )
         self.assertEqual(
             num2words(0.5, lang="yi", to="currency", currency="USD"),
-            "zero dollars פופציק cents",
+            "נול dollars פופציק cents",
         )
         self.assertEqual(
             num2words(1, lang="yi", to="currency", currency="USD"), "איינס dollar"
@@ -399,7 +399,7 @@ class Num2WordsYITest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="yi"), "zero")
+        self.assertEqual(num2words("0", lang="yi"), "נול")
         self.assertEqual(num2words("1", lang="yi"), "איינס")
         self.assertEqual(num2words("10", lang="yi"), "צען")
         self.assertEqual(num2words("100", lang="yi"), "איינס הונדערט")
@@ -411,7 +411,7 @@ class Num2WordsYITest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="yi"), "zero")
+        self.assertEqual(num2words(0, lang="yi"), "נול")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="yi"), num2words("100", lang="yi"))

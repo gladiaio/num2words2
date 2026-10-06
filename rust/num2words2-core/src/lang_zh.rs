@@ -775,6 +775,22 @@ impl Lang for LangZh {
         Ok(format!("{}{}{}", ORD_PREFIX, value, counter))
     }
 
+    /// `to_year(float/Decimal, reading=..., prefer=...)`: the
+    /// `value == int(value)` guard raises the same TypeError whatever the
+    /// kwargs; a whole value continues into the integer `to_year_kw`.
+    fn year_float_kw(&self, value: &FloatValue, kw: &Kwargs) -> Result<String> {
+        if kw.is_empty() {
+            return self.year_float_entry(value);
+        }
+        if !kw.only(&["reading", "prefer"]) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        match value.as_whole_int() {
+            Some(i) => self.to_year_kw(&i, kw),
+            None => self.year_float_entry(value),
+        }
+    }
+
     /// `to_year(value, reading=False, prefer=None)`. The one kwargs-reachable
     /// branch beyond the defaults: `elif reading == "capital"` prefixes a
     /// positive year with `year_prefix` ("公元一二三四年") — the digits are

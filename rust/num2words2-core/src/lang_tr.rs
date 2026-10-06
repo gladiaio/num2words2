@@ -22,12 +22,15 @@
 //!   therefore disagree: `to_cardinal(1234567890123456789)` reads ...768 but
 //!   `to_ordinal` of the same reads ...789. `float_round_digits` reproduces
 //!   the double rounding exactly. See `python_float_int`.
-//! * Because of that float cast, the 65535 inputs in
-//!   `10**21 - 65536 ..= 10**21 - 2` (all still below MAXVAL = 10**21 - 1, so
-//!   they pass `verify_cardinal`) round *up* to the 22-digit "1000...0" and
-//!   index `CARDINAL_TRIPLETS[7]`, which Python raises `KeyError` for. Mapped
-//!   to `N2WError::Key`. `to_ordinal` is immune — it never casts to float, so
-//!   it tops out at 21 digits and `CARDINAL_TRIPLETS[6]`.
+//! * Fixed (gladiaio/num2words2#159): because of that float cast, the 65535
+//!   inputs in `10**21 - 65536 ..= 10**21 - 2` (all below Python's MAXVAL =
+//!   10**21 - 1, so they passed `verify_cardinal`) round *up* to the 22-digit
+//!   "1000...0" and index `CARDINAL_TRIPLETS[7]`, which Python raised
+//!   `KeyError` for. The port lowers MAXVAL to `10**21 - 65536`, the real
+//!   exclusive ceiling, so those inputs are an `OverflowError` and
+//!   `maxval("tr") - 1` converts. Python's message also named MAXVAL itself as
+//!   "the largest convertible number" while rejecting it; the port names
+//!   `MAXVAL - 1`.
 //! * `verify_ordinal` raises `TypeError(errmsg_negord)` *inside* its own
 //!   `try`, which its `except (ValueError, TypeError)` then swallows and
 //!   re-raises as `TypeError(errmsg_nonnum)`. Negative ordinals therefore
@@ -38,7 +41,9 @@
 //!   `to_ordinal(401607)` is "dörtyüzbinaltıyüzyedinci".
 //! * `verify_ordinal` does NOT raise on a non-integral value — it returns
 //!   `isordinal = False` and `to_ordinal` then returns its pristine `wrd`,
-//!   the empty string: `to_ordinal(0.5)` is `""`. Negatives are flagged by
+//!   the empty string: Python's `to_ordinal(0.5)` is `""`. The port raises
+//!   TypeError there instead, like every language whose ordinal rejects
+//!   fractions (#160); `to_ordinal_num` still sees the `""`. Negatives are flagged by
 //!   the *numeric* `abs(value) == value` (so -0.0 passes and reads
 //!   "sıfırıncı") and re-raised as `TypeError(errmsg_nonnum)`; the MAXVAL
 //!   check still applies to non-integral values, so a huge non-whole
@@ -74,16 +79,20 @@
 //! `to_ordinal`/`to_ordinal_num`/`to_currency` accept no extra kwargs
 //! (trait defaults fall back to Python's own TypeError).
 //!
-//! Currency quirks, equally deliberate:
+//! Currency:
 //!
-//! * `to_currency` short-circuits on a *pure* `int` and never consults
-//!   `CURRENCY_FORMS`: it ignores the `currency` argument entirely and always
-//!   appends `CURRENCY_UNIT` ("lira"), with no separating space. So
-//!   `to_currency(100, "JPY")` is "yüzlira", and an unimplemented code does
-//!   *not* raise on that path — only the inherited float path does.
-//! * That int branch also uses the bare `negword` ("eksibeşlira"), while the
-//!   inherited float path uses `"%s " % negword.strip()` ("eksi oniki avro,
-//!   otuzdört sent"). The space is present in one and absent in the other.
+//! * Fixed (gladiaio/num2words2#187): Python's `to_currency` short-circuits
+//!   on a *pure* `int`, ignores `currency=`, and glues `CURRENCY_UNIT`
+//!   ("lira") and the bare negword on with no spaces ("kırkikilira",
+//!   "eksibeşlira"), while every other input went to `Num2Word_Base` with
+//!   the signature's default `currency="EUR"` ("kırkiki avro, sıfır sent").
+//!   The port sends ints through `Num2Word_Base` too, so `currency=` is
+//!   honoured (an unknown code raises `NotImplementedError` like a float),
+//!   the number words and the unit are separated by a space even though
+//!   cardinals stay unspaced, and an int has no cents segment, as in Base:
+//!   42 -> "kırkiki lira". The default is TRY for both paths — the int
+//!   path's lira, and the unit every currency test without `currency=`
+//!   expects.
 //! * `pluralize` is `forms[0] if number == 1 else forms[0]` — a no-op ternary.
 //!   Turkish does not inflect the currency name, so `number` is dead.
 
@@ -103,19 +112,14 @@ const NEGWORD: &str = "eksi";
 const CARDINAL_HUNDRED: &str = "yüz";
 const ORDINAL_HUNDRED: &str = "yüzüncü";
 
-/// `self.CURRENCY_UNIT`. The int branch of `to_currency` hardcodes this
-/// regardless of the requested currency. (`CURRENCY_SUBUNIT`, "kuruş", is set
-/// alongside it in Python but never read — the subunit words come from
-/// `CURRENCY_FORMS` — so it is not modelled here.)
-const CURRENCY_UNIT: &str = "lira";
-
 const ERRMSG_NONNUM: &str = "Sadece sayılar yazıya çevrilebilir.";
 
 fn errmsg_toobig(value: &BigInt, maxval: &BigInt) -> String {
     format!(
         "abs({}) sayı yazıya çevirmek için çok büyük. \
          Yazıya çevrilebilecek en büyük rakam {}.",
-        value, maxval
+        value,
+        maxval - 1u32
     )
 }
 
@@ -320,9 +324,12 @@ impl Default for LangTr {
 
 impl LangTr {
     pub fn new() -> Self {
-        // MAXVAL = 10 ** ((len(CARDINAL_TRIPLETS) + 1) * 3) - 1 = 10**21 - 1.
+        // Python: MAXVAL = 10 ** ((len(CARDINAL_TRIPLETS) + 1) * 3) - 1 =
+        // 10**21 - 1. Lowered to 10**21 - 2**16 (#159): `to_cardinal`'s float
+        // cast rounds every value from there up to 10**21, one triplet past
+        // the table, so that is the real exclusive ceiling (module docs).
         LangTr {
-            maxval: BigInt::from(10u8).pow(21u32) - 1,
+            maxval: BigInt::from(10u8).pow(21u32) - 65536u32,
             // Built once here, never per call.
             currency_forms: build_currency_forms(),
         }
@@ -956,7 +963,8 @@ fn errmsg_toobig_repr(value_repr: &str, maxval: &BigInt) -> String {
     format!(
         "abs({}) sayı yazıya çevirmek için çok büyük. \
          Yazıya çevrilebilecek en büyük rakam {}.",
-        value_repr, maxval
+        value_repr,
+        maxval - 1u32
     )
 }
 
@@ -1063,10 +1071,10 @@ fn insert_spaces(text: &str, pointword: &str) -> String {
 }
 
 impl Lang for LangTr {
-    /// This language's own `to_currency(currency=...)` default,
-    /// read from the live Python signature. Only 44 of 156 use EUR.
+    /// Python's signature says `currency="EUR"`, but its int path always
+    /// said lira. TRY for both paths since #187.
     fn default_currency(&self) -> &str {
-        "EUR"
+        "TRY"
     }
 
     /// This language's own `to_currency(separator=...)` default,
@@ -1159,14 +1167,18 @@ impl Lang for LangTr {
     /// `to_ordinal(float/Decimal)`: `verify_ordinal` raises TypeError for
     /// numeric negatives (-0.0 passes and reads "sıfırıncı") and
     /// OverflowError above MAXVAL; a non-integral value merely clears
-    /// `isordinal`, so `to_ordinal(0.5)` returns the pristine `""`. Whole
+    /// `isordinal`, so Python's `to_ordinal(0.5)` returns the pristine `""`.
+    /// The port raises TypeError instead (#160). Whole
     /// values read the *exact* integer digits — no float round-trip, unlike
     /// to_cardinal.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.verify_ordinal_float(value)?;
         match value.as_whole_int() {
             Some(i) => self.to_ordinal_impl(&i),
-            None => Ok(String::new()),
+            None => Err(N2WError::Type(format!(
+                "Cannot treat float {} as ordinal.",
+                float_value_repr(value)
+            ))),
         }
     }
 
@@ -1363,11 +1375,10 @@ impl Lang for LangTr {
 
     /// `Num2Word_TR.to_currency`.
     ///
-    /// The int arm is TR's own and deliberately unlike everything else: it
-    /// drops `currency`, `cents`, `separator` and `adjective` on the floor,
-    /// never looks at `CURRENCY_FORMS` (so `to_currency(7, "XXX")` is
-    /// "yedilira", not a NotImplementedError), and glues the parts together
-    /// with no spaces. Everything non-int defers to `Num2Word_Base`.
+    /// Python's int arm dropped `currency`, `cents`, `separator` and
+    /// `adjective`, never looked at `CURRENCY_FORMS`, and glued the parts
+    /// together with no spaces ("kırkikilira"). Since #187 every input
+    /// defers to `Num2Word_Base`, as floats always did.
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1376,13 +1387,6 @@ impl Lang for LangTr {
         separator: Option<&str>,
         adjective: bool,
     ) -> Result<String> {
-        if let CurrencyValue::Int(v) = val {
-            // Python: `self.negword if val < 0 else ""` — the bare negword,
-            // *not* Base's `"%s " % negword.strip()`. Hence "eksibeşlira".
-            let minus_str = if v.is_negative() { NEGWORD } else { "" };
-            let money_str = self.to_cardinal_impl(&v.abs())?;
-            return Ok(format!("{}{}{}", minus_str, money_str, CURRENCY_UNIT));
-        }
         crate::currency::default_to_currency(
             self,
             val,
@@ -1493,9 +1497,9 @@ mod entry_and_kwargs_tests {
         assert_eq!(l().ordinal_float_entry(&fl(1e16)).unwrap(), "onkatrilyonuncu");
         // ORDINAL_TRIPLETS[6] lacks its suffix: cardinal == ordinal.
         assert_eq!(l().ordinal_float_entry(&fl(1e20)).unwrap(), "yüzkentilyon");
-        // Non-integral -> pristine "".
-        assert_eq!(l().ordinal_float_entry(&fl(0.5)).unwrap(), "");
-        assert_eq!(l().ordinal_float_entry(&fl(3.25)).unwrap(), "");
+        // Non-integral -> TypeError, not Python's pristine "" (#160).
+        assert!(matches!(l().ordinal_float_entry(&fl(0.5)), Err(N2WError::Type(_))));
+        assert!(matches!(l().ordinal_float_entry(&fl(3.25)), Err(N2WError::Type(_))));
         // Numeric negatives -> TypeError(errmsg_nonnum).
         assert!(matches!(
             l().ordinal_float_entry(&fl(-2.0)),

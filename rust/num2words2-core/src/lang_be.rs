@@ -6,11 +6,12 @@
 //! Shape: **self-contained**. `Num2Word_BE` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
-//! outright and drives `_int2word` over 3-digit chunks. `cards`/`maxval`/
-//! `merge` therefore stay at their trait defaults, and there is **no overflow
-//! check**: the only ceiling is the `THOUSANDS` table (keys 1..=10), so
-//! `10**33` raises `KeyError: 11` rather than `OverflowError`. `10**30`
-//! ("нанільён") is the largest representable magnitude.
+//! outright and drives `_int2word` over 3-digit chunks. `cards`/`merge` stay
+//! at their trait defaults. The `THOUSANDS` table (keys 1..=10) ends at
+//! `10**30` ("нанільён"); Python's `10**33` raised `KeyError: 11`. Fixed
+//! (gladiaio/num2words2#159): `maxval()` is 10^33 and `_int2word` raises
+//! `OverflowError` for `abs(n) >= 10**33` up front, so the table `KeyError`
+//! is unreachable from the public entry points.
 //!
 //! Inherited from `Num2Word_Base` unchanged, so the trait defaults are right:
 //!   * `to_ordinal_num(value) -> value` → default `Ok(value.to_string())`.
@@ -208,17 +209,17 @@
 //! # Error variants
 //!
 //! * `N2WError::Type` — `verify_ordinal` on a negative (deliberate raise).
-//! * `N2WError::Key` — `THOUSANDS[i]` past index 10, i.e. `n >= 10**33`.
-//!   This is a crash, not a deliberate raise, but the exception *type* is
-//!   observable, so parity means reproducing `KeyError` rather than tidying it
-//!   into `OverflowError`.
+//! * `N2WError::Overflow` — `abs(n) >= 10**33` (#159). Python crashed there
+//!   with a `KeyError` on `THOUSANDS[i]` past index 10; that `N2WError::Key`
+//!   arm is now unreachable from the public entry points.
 //! * `N2WError::Index` — defensive only; see [`char_from_end`].
 //! * `N2WError::Value` — `int()` on a token that is not a decimal integer.
 //!   Reachable in normal use: any float whose `repr` goes to e-notation dies
 //!   here, so `num2words(1e16, lang='be')` raises `ValueError`, not
 //!   `OverflowError`. See [`py_int`].
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::CurrencyForms;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -945,6 +946,7 @@ impl LangBe {
     /// Note the sign is handled *here* (not in `to_cardinal` as in `lang_PL`):
     /// `" ".join([self.negword, self._int2word(abs(n), gender)])`.
     fn int2word(&self, n: &BigInt, gender: &Gender) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
             return Ok(format!("{} {}", NEGWORD, self.int2word(&n.abs(), gender)?));
         }
@@ -1244,7 +1246,19 @@ impl LangBe {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangBe {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,

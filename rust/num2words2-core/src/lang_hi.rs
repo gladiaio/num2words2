@@ -51,18 +51,11 @@
 //! 5. The irregular-ordinal tables cover 0,1,2,3,4,6 but **skip 5**, so
 //!    `to_ordinal(5)` falls through to the regular suffix rule and yields
 //!    "पाँचवाँ" rather than a suppletive form.
-//! 6. **`to_currency` emits a double space after the negword — but only for
-//!    ints.** HI's integer branch builds `"%s %s %s" % (minus_str, money_str,
-//!    currency_str)` where `minus_str` is the *raw* `negword` — "माइनस " with
-//!    its trailing space already attached — so the format's own space lands on
-//!    top of it: `to_currency(-1, "INR")` == "माइनस  एक रुपया", two spaces.
-//!    The float half delegates to `Num2Word_Base`, which instead builds
-//!    `"%s " % self.negword.strip()` and so emits **one**:
-//!    `to_currency(-12.34, "INR")` == "माइनस बारह रुपये, चौंतीस पैसे". Base's
-//!    own int branch would have agreed with the float one; HI's override is
-//!    what splits them. The trailing `.strip()` cannot help — the extra space
-//!    is interior. Only the single-space float form is corpus-pinned (there is
-//!    no negative-int currency row), so this was read off the live interpreter.
+//! 6. **`to_currency` emitted a double space after the negword for ints
+//!    (fixed, #160).** HI's Python integer branch puts the *raw* `negword`
+//!    ("माइनस ") into `"%s %s %s"`, so `to_currency(-1, "INR")` was
+//!    "माइनस  एक रुपया" with two spaces, while the float half (via Base) had
+//!    one. The port strips negword so both say "माइनस एक रुपया".
 //! 7. **The integer branch silently ignores `cents`, `separator` and
 //!    `adjective`.** All three are accepted, then never read before the early
 //!    return. `separator`/`cents` are genuinely meaningless without a cents
@@ -562,11 +555,11 @@ impl Lang for LangHi {
                 }
             };
 
-            // `minus_str = self.negword if val < 0 else ""` — HI takes the raw
-            // negword with its trailing space *intact*, where Base uses
-            // `"%s " % self.negword.strip()`. Combined with the format string
-            // below this is quirk 6: the double space.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // `minus_str = self.negword if val < 0 else ""` — HI's Python takes
+            // the raw negword with its trailing space intact, which with the
+            // format string below double-spaced the output. Stripped here
+            // (quirk 6, fixed).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
             // Bypasses `_money_verbose` and calls `to_cardinal` directly.
             // Identical for HI, which overrides neither.
@@ -715,11 +708,11 @@ mod tests {
     /// corpus leaves untested. Every expectation here was read out of Python.
     #[test]
     fn quirks_match_python() {
-        // Quirk 6: negative *ints* get two spaces, negative floats one.
-        assert_eq!(cur("-1", "INR").unwrap(), "माइनस  एक रुपया");
-        assert_eq!(cur("-2", "INR").unwrap(), "माइनस  दो रुपये");
-        assert_eq!(cur("-100", "INR").unwrap(), "माइनस  सौ रुपये");
-        assert_eq!(cur("-12", "INR").unwrap(), "माइनस  बारह रुपये");
+        // Quirk 6 (fixed, #160): negative ints get one space, like floats.
+        assert_eq!(cur("-1", "INR").unwrap(), "माइनस एक रुपया");
+        assert_eq!(cur("-2", "INR").unwrap(), "माइनस दो रुपये");
+        assert_eq!(cur("-100", "INR").unwrap(), "माइनस सौ रुपये");
+        assert_eq!(cur("-12", "INR").unwrap(), "माइनस बारह रुपये");
 
         // The has_decimal guard: Decimal("5") prints no paise, Decimal("5.00")
         // does, though the two are numerically equal.

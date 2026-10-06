@@ -25,7 +25,7 @@ class Num2WordsNNTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="nn"), "zero")
+        self.assertEqual(num2words(0, lang="nn"), "null")
         self.assertEqual(num2words(1, lang="nn"), "ein")
         self.assertEqual(num2words(2, lang="nn"), "to")
         self.assertEqual(num2words(3, lang="nn"), "tre")
@@ -226,31 +226,31 @@ class Num2WordsNNTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="nn"), "zero point ein")
-        self.assertEqual(num2words(0.5, lang="nn"), "zero point fem")
-        self.assertEqual(num2words(0.9, lang="nn"), "zero point ni")
-        self.assertEqual(num2words(1.1, lang="nn"), "ein point ein")
-        self.assertEqual(num2words(1.5, lang="nn"), "ein point fem")
-        self.assertEqual(num2words(2.5, lang="nn"), "to point fem")
-        self.assertEqual(num2words(3.14, lang="nn"), "tre point ein fire")
-        self.assertEqual(num2words(10.5, lang="nn"), "ti point fem")
-        self.assertEqual(num2words(11.11, lang="nn"), "ti ein point ein ein")
-        self.assertEqual(num2words(20.2, lang="nn"), "tjue point to")
-        self.assertEqual(num2words(99.99, lang="nn"), "nitti ni point ni ni")
-        self.assertEqual(num2words(100.01, lang="nn"), "ein hundre point zero ein")
-        self.assertEqual(num2words(100.5, lang="nn"), "ein hundre point fem")
+        self.assertEqual(num2words(0.1, lang="nn"), "null komma ein")
+        self.assertEqual(num2words(0.5, lang="nn"), "null komma fem")
+        self.assertEqual(num2words(0.9, lang="nn"), "null komma ni")
+        self.assertEqual(num2words(1.1, lang="nn"), "ein komma ein")
+        self.assertEqual(num2words(1.5, lang="nn"), "ein komma fem")
+        self.assertEqual(num2words(2.5, lang="nn"), "to komma fem")
+        self.assertEqual(num2words(3.14, lang="nn"), "tre komma ein fire")
+        self.assertEqual(num2words(10.5, lang="nn"), "ti komma fem")
+        self.assertEqual(num2words(11.11, lang="nn"), "ti ein komma ein ein")
+        self.assertEqual(num2words(20.2, lang="nn"), "tjue komma to")
+        self.assertEqual(num2words(99.99, lang="nn"), "nitti ni komma ni ni")
+        self.assertEqual(num2words(100.01, lang="nn"), "ein hundre komma null ein")
+        self.assertEqual(num2words(100.5, lang="nn"), "ein hundre komma fem")
         self.assertEqual(
-            num2words(123.45, lang="nn"), "ein hundre tjue tre point fire fem"
+            num2words(123.45, lang="nn"), "ein hundre tjue tre komma fire fem"
         )
-        self.assertEqual(num2words(1000.5, lang="nn"), "ein tusen point fem")
+        self.assertEqual(num2words(1000.5, lang="nn"), "ein tusen komma fem")
         self.assertEqual(
             num2words(1234.56, lang="nn"),
-            "ein tusen to hundre tretti fire point fem seks",
+            "ein tusen to hundre tretti fire komma fem seks",
         )
-        self.assertEqual(num2words(10000.01, lang="nn"), "ti tusen point zero ein")
-        self.assertEqual(num2words(-0.5, lang="nn"), "minus zero point fem")
-        self.assertEqual(num2words(-1.5, lang="nn"), "minus ein point fem")
-        self.assertEqual(num2words(-10.5, lang="nn"), "minus ti point fem")
+        self.assertEqual(num2words(10000.01, lang="nn"), "ti tusen komma null ein")
+        self.assertEqual(num2words(-0.5, lang="nn"), "minus null komma fem")
+        self.assertEqual(num2words(-1.5, lang="nn"), "minus ein komma fem")
+        self.assertEqual(num2words(-10.5, lang="nn"), "minus ti komma fem")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -295,15 +295,15 @@ class Num2WordsNNTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="NOK"), "zero kroner"
+            num2words(0, lang="nn", to="currency", currency="NOK"), "null kroner"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="NOK"),
-            "zero kroner ein øre",
+            "null kroner ein øre",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="NOK"),
-            "zero kroner femti øre",
+            "null kroner femti øre",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="NOK"), "ein krone"
@@ -313,15 +313,15 @@ class Num2WordsNNTest(TestCase):
             "ein krone femti øre",
         )
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="nn", to="currency", currency="USD"), "null dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="USD"),
-            "zero dollars ein cent",
+            "null dollars ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="USD"),
-            "zero dollars femti cents",
+            "null dollars femti cents",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="USD"), "ein dollar"
@@ -331,15 +331,15 @@ class Num2WordsNNTest(TestCase):
             "ein dollar femti cents",
         )
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="nn", to="currency", currency="EUR"), "null euros"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="EUR"),
-            "zero euros ein cent",
+            "null euros ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="EUR"),
-            "zero euros femti cents",
+            "null euros femti cents",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="EUR"), "ein euro"
@@ -376,7 +376,7 @@ class Num2WordsNNTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="nn"), "zero")
+        self.assertEqual(num2words("0", lang="nn"), "null")
         self.assertEqual(num2words("1", lang="nn"), "ein")
         self.assertEqual(num2words("10", lang="nn"), "ti")
         self.assertEqual(num2words("100", lang="nn"), "ein hundre")
@@ -388,7 +388,7 @@ class Num2WordsNNTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="nn"), "zero")
+        self.assertEqual(num2words(0, lang="nn"), "null")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="nn"), num2words("100", lang="nn"))

@@ -25,7 +25,7 @@ class Num2WordsFOTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="fo"), "zero")
+        self.assertEqual(num2words(0, lang="fo"), "null")
         self.assertEqual(num2words(1, lang="fo"), "ein")
         self.assertEqual(num2words(2, lang="fo"), "tvey")
         self.assertEqual(num2words(3, lang="fo"), "trý")
@@ -247,31 +247,31 @@ class Num2WordsFOTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="fo"), "zero point ein")
-        self.assertEqual(num2words(0.5, lang="fo"), "zero point fimm")
-        self.assertEqual(num2words(0.9, lang="fo"), "zero point níggju")
-        self.assertEqual(num2words(1.1, lang="fo"), "ein point ein")
-        self.assertEqual(num2words(1.5, lang="fo"), "ein point fimm")
-        self.assertEqual(num2words(2.5, lang="fo"), "tvey point fimm")
-        self.assertEqual(num2words(3.14, lang="fo"), "trý point ein fýra")
-        self.assertEqual(num2words(10.5, lang="fo"), "tíggju point fimm")
-        self.assertEqual(num2words(11.11, lang="fo"), "tíggju ein point ein ein")
-        self.assertEqual(num2words(20.2, lang="fo"), "tjúgu point tvey")
-        self.assertEqual(num2words(99.99, lang="fo"), "níti níggju point níggju níggju")
-        self.assertEqual(num2words(100.01, lang="fo"), "ein hundrað point zero ein")
-        self.assertEqual(num2words(100.5, lang="fo"), "ein hundrað point fimm")
+        self.assertEqual(num2words(0.1, lang="fo"), "null komma ein")
+        self.assertEqual(num2words(0.5, lang="fo"), "null komma fimm")
+        self.assertEqual(num2words(0.9, lang="fo"), "null komma níggju")
+        self.assertEqual(num2words(1.1, lang="fo"), "ein komma ein")
+        self.assertEqual(num2words(1.5, lang="fo"), "ein komma fimm")
+        self.assertEqual(num2words(2.5, lang="fo"), "tvey komma fimm")
+        self.assertEqual(num2words(3.14, lang="fo"), "trý komma ein fýra")
+        self.assertEqual(num2words(10.5, lang="fo"), "tíggju komma fimm")
+        self.assertEqual(num2words(11.11, lang="fo"), "tíggju ein komma ein ein")
+        self.assertEqual(num2words(20.2, lang="fo"), "tjúgu komma tvey")
+        self.assertEqual(num2words(99.99, lang="fo"), "níti níggju komma níggju níggju")
+        self.assertEqual(num2words(100.01, lang="fo"), "ein hundrað komma null ein")
+        self.assertEqual(num2words(100.5, lang="fo"), "ein hundrað komma fimm")
         self.assertEqual(
-            num2words(123.45, lang="fo"), "ein hundrað tjúgu trý point fýra fimm"
+            num2words(123.45, lang="fo"), "ein hundrað tjúgu trý komma fýra fimm"
         )
-        self.assertEqual(num2words(1000.5, lang="fo"), "ein túsund point fimm")
+        self.assertEqual(num2words(1000.5, lang="fo"), "ein túsund komma fimm")
         self.assertEqual(
             num2words(1234.56, lang="fo"),
-            "ein túsund tvey hundrað tríati fýra point fimm seks",
+            "ein túsund tvey hundrað tríati fýra komma fimm seks",
         )
-        self.assertEqual(num2words(10000.01, lang="fo"), "tíggju túsund point zero ein")
-        self.assertEqual(num2words(-0.5, lang="fo"), "minus zero point fimm")
-        self.assertEqual(num2words(-1.5, lang="fo"), "minus ein point fimm")
-        self.assertEqual(num2words(-10.5, lang="fo"), "minus tíggju point fimm")
+        self.assertEqual(num2words(10000.01, lang="fo"), "tíggju túsund komma null ein")
+        self.assertEqual(num2words(-0.5, lang="fo"), "minus null komma fimm")
+        self.assertEqual(num2words(-1.5, lang="fo"), "minus ein komma fimm")
+        self.assertEqual(num2words(-10.5, lang="fo"), "minus tíggju komma fimm")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -316,15 +316,15 @@ class Num2WordsFOTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="fo", to="currency", currency="DKK"), "zero krónur"
+            num2words(0, lang="fo", to="currency", currency="DKK"), "null krónur"
         )
         self.assertEqual(
             num2words(0.01, lang="fo", to="currency", currency="DKK"),
-            "zero krónur ein oyra",
+            "null krónur ein oyra",
         )
         self.assertEqual(
             num2words(0.5, lang="fo", to="currency", currency="DKK"),
-            "zero krónur fimmti oyru",
+            "null krónur fimmti oyru",
         )
         self.assertEqual(
             num2words(1, lang="fo", to="currency", currency="DKK"), "ein króna"
@@ -334,15 +334,15 @@ class Num2WordsFOTest(TestCase):
             "ein króna fimmti oyru",
         )
         self.assertEqual(
-            num2words(0, lang="fo", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="fo", to="currency", currency="USD"), "null dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="fo", to="currency", currency="USD"),
-            "zero dollars ein cent",
+            "null dollars ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="fo", to="currency", currency="USD"),
-            "zero dollars fimmti cents",
+            "null dollars fimmti cents",
         )
         self.assertEqual(
             num2words(1, lang="fo", to="currency", currency="USD"), "ein dollar"
@@ -352,15 +352,15 @@ class Num2WordsFOTest(TestCase):
             "ein dollar fimmti cents",
         )
         self.assertEqual(
-            num2words(0, lang="fo", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="fo", to="currency", currency="EUR"), "null euros"
         )
         self.assertEqual(
             num2words(0.01, lang="fo", to="currency", currency="EUR"),
-            "zero euros ein cent",
+            "null euros ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="fo", to="currency", currency="EUR"),
-            "zero euros fimmti cents",
+            "null euros fimmti cents",
         )
         self.assertEqual(
             num2words(1, lang="fo", to="currency", currency="EUR"), "ein euro"
@@ -409,7 +409,7 @@ class Num2WordsFOTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="fo"), "zero")
+        self.assertEqual(num2words("0", lang="fo"), "null")
         self.assertEqual(num2words("1", lang="fo"), "ein")
         self.assertEqual(num2words("10", lang="fo"), "tíggju")
         self.assertEqual(num2words("100", lang="fo"), "ein hundrað")
@@ -421,7 +421,7 @@ class Num2WordsFOTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="fo"), "zero")
+        self.assertEqual(num2words(0, lang="fo"), "null")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="fo"), num2words("100", lang="fo"))

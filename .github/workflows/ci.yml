@@ -112,5 +112,6 @@ jobs:
       run: |
         pip install dist/*.whl
         python -c "import num2words2; print('Version:', getattr(num2words2, '__version__', 'not set'))"
+        python -c "import importlib.metadata as m, num2words2; assert num2words2.__version__ == m.version('num2words2'), (num2words2.__version__, m.version('num2words2'))"
         python -c "from num2words2 import num2words; print('English 42:', num2words(42, lang='en'))"
         python -c "from num2words2 import num2words; print('Assamese 42:', num2words(42, lang='as'))"

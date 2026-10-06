@@ -8,8 +8,10 @@
 //! `merge`, `to_ordinal`, `to_ordinal_num` and `to_year` are overridden.
 //!
 //! DA keeps EUR's long scale but pluralises both suffixes:
-//! `GIGA_SUFFIX = "illiarder"`, `MEGA_SUFFIX = "illioner"` — hence
-//! 10^6 → "millioner" (not "million") and 10^9 → "milliarder". `high` holds
+//! `GIGA_SUFFIX = "illiarder"`, `MEGA_SUFFIX = "illioner"`, so the cards
+//! are "millioner"/"milliarder"; `merge` strips the plural "er" when the
+//! count is exactly one (10^6 → "en million", 2·10^6 → "to millioner";
+//! #163, upstream savoirfairelinux/num2words#688). `high` holds
 //! 100 stems, so `cap = 3 + 6*100 = 603`, the top card is 10^603
 //! ("centilliarder") and `MAXVAL = 1000 * 10^603 = 10^606`.
 //!
@@ -18,8 +20,11 @@
 //! `Num2Word_DA` carries `self.ordflag`, set to `True` by `to_ordinal`,
 //! read by `merge`, and reset to `False` afterwards. It changes `merge`'s
 //! `cnum == 1` arm: with the flag set, a leading "et" is dropped even above
-//! 10^6, so `to_cardinal(10**6)` == "en millioner" but the cardinal computed
-//! *inside* `to_ordinal(10**6)` is just "millioner" → "millionerte".
+//! 10^6, so `to_cardinal(10**6)` == "en million" but the cardinal computed
+//! *inside* `to_ordinal(10**6)` is just "millioner" (Python then emits
+//! "millionerte"; the port strips the plural, see bug 3 / #172). Python
+//! drops that "en" inside compounds too (10**6 + 1 → "millioner første");
+//! the port applies the flag only to a bare scale word (see bug 3 / #184).
 //!
 //! Two consequences:
 //!
@@ -31,7 +36,7 @@
 //!    so an `OverflowError` from `to_cardinal(v >= 10**606)` leaves
 //!    `ordflag == True` on the shared singleton in `CONVERTER_CLASSES`. Every
 //!    later `to_cardinal` on that instance then silently drops the leading
-//!    "et"/"en" ("millioner" instead of "en millioner"). The Rust port cannot
+//!    "et"/"en" ("millioner" instead of "en million"). The Rust port cannot
 //!    reproduce a poisoned singleton and does not try to; a differential
 //!    harness must not compare Python `to_cardinal` output taken *after* an
 //!    overflowing `to_ordinal` on the same instance.
@@ -53,9 +58,17 @@
 //!    *nothing* is appended, so 123456 == "ethundrede og treogtyvetusind"
 //!    + "firehundrede og seksoghalvtreds" run together:
 //!    "ethundrede og treogtyvetusindfirehundrede og seksoghalvtreds".
-//! 3. **Plural millions.** `MEGA_SUFFIX`/`GIGA_SUFFIX` are plural, so
-//!    10^6 == "en millioner" — grammatically wrong Danish ("en million"),
-//!    kept verbatim.
+//! 3. **Plural millions — fixed (#163).** `MEGA_SUFFIX`/`GIGA_SUFFIX` are
+//!    plural, and Python emits 10^6 == "en millioner". The port strips the
+//!    "er" after "en" ("en million", "en milliard"), as upstream
+//!    savoirfairelinux/num2words#688 does. Ordinals are fixed too (#172):
+//!    Python ordinalises the plural ("millionerte"); the port builds on the
+//!    singular stem, 10^6 → "millionte", 2·10^6 → "to millionte",
+//!    10^9 → "milliardte". Compounds are fixed as well (#184): Python
+//!    drops the count and keeps the plural (10^6 + 1 → "millioner
+//!    første"); the port ordinalises the last word of the plain cardinal,
+//!    10^6 + 1 → "en million første", 10^6 + 1000 → "en million
+//!    ettusindte", as 1001 → "ettusinde og første".
 //! 4. **Ordinal suffixes double up.** `to_ordinal` first rewrites a trailing
 //!    cardinal via `ords`, *then* appends "te"/"ende" by `value % 100`, with
 //!    no check that a rewrite happened. 30 has no `ords` entry ("tredive"
@@ -76,18 +89,11 @@
 //!    "minus et hundrede seksoghalvtreds". Reproduced with `div_mod_floor`;
 //!    `num-bigint`'s bare `/` and `%` truncate and would give the wrong
 //!    answer here.
-//! 9. **Negative integers get a double space.** `Num2Word_DA.to_currency`'s
-//!    integer arm takes `minus_str = self.negword` *raw* — trailing space
-//!    intact — and drops it into `"%s %s %s"`, so `to_currency(-12, "DKK")`
-//!    is "minus  tolv kroner" with two spaces. The trailing `.strip()` only
-//!    touches the ends, never the interior. Base would have said
-//!    "minus tolv kroner" (it uses `negword.strip() + " "`), and the float
-//!    arm — which delegates to Base — does exactly that: `-12.34` is
-//!    "minus tolv kroner, ...". So the spacing differs between `-12` and
-//!    `-12.0` in the same language. Verified against the live interpreter.
-//!    Note DA's template is `"%s %s %s"`, unlike `lang_DE.py`'s `"%s%s %s"`
-//!    — DE therefore does *not* have this bug and its port must not be
-//!    copied here.
+//! 9. **Negative integers got a double space (fixed, #160).**
+//!    `Num2Word_DA.to_currency`'s integer arm takes `minus_str = self.negword`
+//!    *raw* and drops it into `"%s %s %s"`, so Python's `to_currency(-12,
+//!    "DKK")` is "minus  tolv kroner". The port strips negword, as Base and
+//!    the float arm do, and says "minus tolv kroner".
 //! 10. **The integer arm silently ignores `adjective=`.** Only Base's float
 //!     arm consults `CURRENCY_ADJECTIVES`, so `to_currency(2, "USD",
 //!     adjective=True)` is "to dollars" while `to_currency(2.5, "USD",
@@ -336,6 +342,13 @@ fn da_merge(l: (&str, &BigInt), r: (&str, &BigInt), ordflag: bool) -> (String, B
             return (next_text, next_num);
         }
         ctext = "en".to_string();
+        // The scale words are stored plural ("millioner"/"milliarder"); a
+        // count of exactly one takes the singular: "en million" (#163,
+        // upstream savoirfairelinux/num2words#688). Both suffixes end in
+        // ASCII "er", so the byte slice is on a char boundary.
+        if ntext.ends_with("er") {
+            ntext.truncate(ntext.len() - 2);
+        }
     }
 
     let val: BigInt;
@@ -698,8 +711,19 @@ impl Lang for LangDa {
         self.verify_ordinal(value)?;
 
         // self.ordflag = True; outword = self.to_cardinal(value); ordflag = False
-        let engine = DaOrd { base: self };
-        let mut outword = default_to_cardinal(&engine, value)?;
+        //
+        // Python's ordflag drops the "en" before *every* million-scale word,
+        // so compounds lost their count: 10**6 + 1 → "millioner første"
+        // (#184). The port keeps the flag only for a bare scale word
+        // (10**6 → "millionte", #172); any other value ordinalises the last
+        // word of the plain cardinal: "en million første", the way 1001 is
+        // "ettusinde og første".
+        let bare_scale = value >= &BigInt::from(1_000_000) && self.cards.get(value).is_some();
+        let mut outword = if bare_scale {
+            default_to_cardinal(&DaOrd { base: self }, value)?
+        } else {
+            default_to_cardinal(self, value)?
+        };
 
         // First insertion-ordered suffix hit wins, then break.
         for (key, rep) in self.ords.iter() {
@@ -709,6 +733,15 @@ impl Lang for LangDa {
                 outword = format!("{}{}", &outword[..cut], rep);
                 break;
             }
+        }
+
+        // The scale words are stored plural ("millioner"/"milliarder"); the
+        // ordinal is built on the singular stem: "millionte", "to
+        // milliardte" (#172), the way "tusind" takes "te" directly. Only a
+        // value that ends on the scale word itself reaches here with that
+        // suffix, and `% 100 == 0` then appends "te".
+        if outword.ends_with("illioner") || outword.ends_with("illiarder") {
+            outword.truncate(outword.len() - 2);
         }
 
         // value is non-negative here, so % == mod_floor.
@@ -926,10 +959,10 @@ impl Lang for LangDa {
                 }
             };
 
-            // `minus_str = self.negword if val < 0 else ""` — the raw negword,
-            // trailing space and all. Combined with the `"%s %s %s"` template
-            // below that yields "minus  tolv kroner". See module docs, bug 9.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // `minus_str = self.negword if val < 0 else ""` — stripped here,
+            // unlike Python, so the `"%s %s %s"` template below yields
+            // "minus tolv kroner", not "minus  tolv kroner" (#160).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
             // Python calls `self.to_cardinal` here, not `self._money_verbose`
             // — identical for DA, which does not override `_money_verbose`.
@@ -950,9 +983,7 @@ impl Lang for LangDa {
             // Python's integer branch never reads CURRENCY_ADJECTIVES. See
             // module docs, bug 10. (It *is* honoured on the float arm below.)
             //
-            // Python: ("%s %s %s" % (...)).strip(). `trim()` matches `strip()`
-            // on the ends only; it must NOT collapse the interior double space
-            // that a negative `minus_str` introduces.
+            // Python: ("%s %s %s" % (...)).strip().
             return Ok(format!("{} {} {}", minus_str, money_str, currency_str)
                 .trim()
                 .to_string());

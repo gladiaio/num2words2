@@ -25,7 +25,7 @@ class Num2WordsSDTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="sd"), "zero")
+        self.assertEqual(num2words(0, lang="sd"), "ٻڙي")
         self.assertEqual(num2words(1, lang="sd"), "هڪ")
         self.assertEqual(num2words(2, lang="sd"), "ٻه")
         self.assertEqual(num2words(3, lang="sd"), "ٽي")
@@ -190,29 +190,29 @@ class Num2WordsSDTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="sd"), "minus هڪ")
-        self.assertEqual(num2words(-2, lang="sd"), "minus ٻه")
-        self.assertEqual(num2words(-5, lang="sd"), "minus پنج")
-        self.assertEqual(num2words(-10, lang="sd"), "minus ڏهه")
-        self.assertEqual(num2words(-11, lang="sd"), "minus ڏهه هڪ")
-        self.assertEqual(num2words(-20, lang="sd"), "minus ويهه")
-        self.assertEqual(num2words(-50, lang="sd"), "minus پنجاهه")
-        self.assertEqual(num2words(-99, lang="sd"), "minus نوي نو")
-        self.assertEqual(num2words(-100, lang="sd"), "minus هڪ سو")
-        self.assertEqual(num2words(-101, lang="sd"), "minus هڪ سو هڪ")
-        self.assertEqual(num2words(-200, lang="sd"), "minus ٻه سو")
-        self.assertEqual(num2words(-999, lang="sd"), "minus نو سو نوي نو")
-        self.assertEqual(num2words(-1000, lang="sd"), "minus هڪ هزار")
-        self.assertEqual(num2words(-1001, lang="sd"), "minus هڪ هزار هڪ")
-        self.assertEqual(num2words(-10000, lang="sd"), "minus ڏهه هزار")
-        self.assertEqual(num2words(-100000, lang="sd"), "minus هڪ سو هزار")
-        self.assertEqual(num2words(-1000000, lang="sd"), "minus هڪ لک")
+        self.assertEqual(num2words(-1, lang="sd"), "منفي هڪ")
+        self.assertEqual(num2words(-2, lang="sd"), "منفي ٻه")
+        self.assertEqual(num2words(-5, lang="sd"), "منفي پنج")
+        self.assertEqual(num2words(-10, lang="sd"), "منفي ڏهه")
+        self.assertEqual(num2words(-11, lang="sd"), "منفي ڏهه هڪ")
+        self.assertEqual(num2words(-20, lang="sd"), "منفي ويهه")
+        self.assertEqual(num2words(-50, lang="sd"), "منفي پنجاهه")
+        self.assertEqual(num2words(-99, lang="sd"), "منفي نوي نو")
+        self.assertEqual(num2words(-100, lang="sd"), "منفي هڪ سو")
+        self.assertEqual(num2words(-101, lang="sd"), "منفي هڪ سو هڪ")
+        self.assertEqual(num2words(-200, lang="sd"), "منفي ٻه سو")
+        self.assertEqual(num2words(-999, lang="sd"), "منفي نو سو نوي نو")
+        self.assertEqual(num2words(-1000, lang="sd"), "منفي هڪ هزار")
+        self.assertEqual(num2words(-1001, lang="sd"), "منفي هڪ هزار هڪ")
+        self.assertEqual(num2words(-10000, lang="sd"), "منفي ڏهه هزار")
+        self.assertEqual(num2words(-100000, lang="sd"), "منفي هڪ سو هزار")
+        self.assertEqual(num2words(-1000000, lang="sd"), "منفي هڪ لک")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="sd"), "zero point هڪ")
-        self.assertEqual(num2words(0.5, lang="sd"), "zero point پنج")
-        self.assertEqual(num2words(0.9, lang="sd"), "zero point نو")
+        self.assertEqual(num2words(0.1, lang="sd"), "ٻڙي point هڪ")
+        self.assertEqual(num2words(0.5, lang="sd"), "ٻڙي point پنج")
+        self.assertEqual(num2words(0.9, lang="sd"), "ٻڙي point نو")
         self.assertEqual(num2words(1.1, lang="sd"), "هڪ point هڪ")
         self.assertEqual(num2words(1.5, lang="sd"), "هڪ point پنج")
         self.assertEqual(num2words(2.5, lang="sd"), "ٻه point پنج")
@@ -221,17 +221,17 @@ class Num2WordsSDTest(TestCase):
         self.assertEqual(num2words(11.11, lang="sd"), "ڏهه هڪ point هڪ هڪ")
         self.assertEqual(num2words(20.2, lang="sd"), "ويهه point ٻه")
         self.assertEqual(num2words(99.99, lang="sd"), "نوي نو point نو نو")
-        self.assertEqual(num2words(100.01, lang="sd"), "هڪ سو point zero هڪ")
+        self.assertEqual(num2words(100.01, lang="sd"), "هڪ سو point ٻڙي هڪ")
         self.assertEqual(num2words(100.5, lang="sd"), "هڪ سو point پنج")
         self.assertEqual(num2words(123.45, lang="sd"), "هڪ سو ويهه ٽي point چار پنج")
         self.assertEqual(num2words(1000.5, lang="sd"), "هڪ هزار point پنج")
         self.assertEqual(
             num2words(1234.56, lang="sd"), "هڪ هزار ٻه سو ٽيهه چار point پنج ڇهه"
         )
-        self.assertEqual(num2words(10000.01, lang="sd"), "ڏهه هزار point zero هڪ")
-        self.assertEqual(num2words(-0.5, lang="sd"), "minus zero point پنج")
-        self.assertEqual(num2words(-1.5, lang="sd"), "minus هڪ point پنج")
-        self.assertEqual(num2words(-10.5, lang="sd"), "minus ڏهه point پنج")
+        self.assertEqual(num2words(10000.01, lang="sd"), "ڏهه هزار point ٻڙي هڪ")
+        self.assertEqual(num2words(-0.5, lang="sd"), "منفي ٻڙي point پنج")
+        self.assertEqual(num2words(-1.5, lang="sd"), "منفي هڪ point پنج")
+        self.assertEqual(num2words(-10.5, lang="sd"), "منفي ڏهه point پنج")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -276,15 +276,15 @@ class Num2WordsSDTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="sd", to="currency", currency="PKR"), "zero روپيا"
+            num2words(0, lang="sd", to="currency", currency="PKR"), "ٻڙي روپيا"
         )
         self.assertEqual(
             num2words(0.01, lang="sd", to="currency", currency="PKR"),
-            "zero روپيا هڪ پئسو",
+            "ٻڙي روپيا هڪ پئسو",
         )
         self.assertEqual(
             num2words(0.5, lang="sd", to="currency", currency="PKR"),
-            "zero روپيا پنجاهه پئسا",
+            "ٻڙي روپيا پنجاهه پئسا",
         )
         self.assertEqual(
             num2words(1, lang="sd", to="currency", currency="PKR"), "هڪ روپي"
@@ -294,15 +294,15 @@ class Num2WordsSDTest(TestCase):
             "هڪ روپي پنجاهه پئسا",
         )
         self.assertEqual(
-            num2words(0, lang="sd", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="sd", to="currency", currency="USD"), "ٻڙي dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="sd", to="currency", currency="USD"),
-            "zero dollars هڪ cent",
+            "ٻڙي dollars هڪ cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sd", to="currency", currency="USD"),
-            "zero dollars پنجاهه cents",
+            "ٻڙي dollars پنجاهه cents",
         )
         self.assertEqual(
             num2words(1, lang="sd", to="currency", currency="USD"), "هڪ dollar"
@@ -312,15 +312,15 @@ class Num2WordsSDTest(TestCase):
             "هڪ dollar پنجاهه cents",
         )
         self.assertEqual(
-            num2words(0, lang="sd", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="sd", to="currency", currency="EUR"), "ٻڙي euros"
         )
         self.assertEqual(
             num2words(0.01, lang="sd", to="currency", currency="EUR"),
-            "zero euros هڪ cent",
+            "ٻڙي euros هڪ cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sd", to="currency", currency="EUR"),
-            "zero euros پنجاهه cents",
+            "ٻڙي euros پنجاهه cents",
         )
         self.assertEqual(
             num2words(1, lang="sd", to="currency", currency="EUR"), "هڪ euro"
@@ -349,7 +349,7 @@ class Num2WordsSDTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="sd"), "zero")
+        self.assertEqual(num2words("0", lang="sd"), "ٻڙي")
         self.assertEqual(num2words("1", lang="sd"), "هڪ")
         self.assertEqual(num2words("10", lang="sd"), "ڏهه")
         self.assertEqual(num2words("100", lang="sd"), "هڪ سو")
@@ -361,7 +361,7 @@ class Num2WordsSDTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="sd"), "zero")
+        self.assertEqual(num2words(0, lang="sd"), "ٻڙي")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="sd"), num2words("100", lang="sd"))

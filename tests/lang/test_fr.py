@@ -211,3 +211,20 @@ def test_fr_ordinal_drops_trailing_s_of_cents_and_vingts():
     # Non-cents/vingts words unaffected
     assert num2words(3, lang="fr", to="ordinal") == "troisième"
     assert num2words(100, lang="fr", to="ordinal") == "centième"
+
+
+def test_fr_ordinal_drops_trailing_s_of_big_units():
+    # Regression for num2words2#165 (rest of savoirfairelinux/num2words#686).
+    from num2words2 import num2words
+    for lang in ("fr", "fr_BE", "fr_CH", "fr_DZ"):
+        assert num2words(2_000_000, lang=lang, to="ordinal") == "deux millionième"
+        assert num2words(3 * 10**9, lang=lang, to="ordinal") == "trois milliardième"
+        assert num2words(2 * 10**12, lang=lang, to="ordinal") == "deux billionième"
+        assert num2words(10**7, lang=lang, to="ordinal") == "dix millionième"
+        assert num2words(10**6, lang=lang, to="ordinal") == "millionième"
+        # Cardinals keep the plural.
+        assert num2words(2_000_000, lang=lang) == "deux millions"
+        assert num2words(3 * 10**9, lang=lang) == "trois milliards"
+        # Fractions still pluralise the denominator noun after a count > 1.
+        assert num2words("1/10000000", lang=lang, to="fraction") == "un dix millionième"
+        assert num2words("3/10000000", lang=lang, to="fraction") == "trois dix millionièmes"

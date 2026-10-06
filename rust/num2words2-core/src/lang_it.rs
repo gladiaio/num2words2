@@ -10,11 +10,14 @@
 //!
 //!   1. `self.cards` / `self.MAXVAL` are never built (the `high_numwords`
 //!      guard in `Num2Word_Base.__init__` never runs), so `splitnum`/`clean`/
-//!      `merge` are dead code and **there is no overflow check**. The only
-//!      ceiling is `big_number_to_cardinal`'s explicit `length >= 66` guard,
-//!      which raises `NotImplementedError`. `cards`/`maxval`/`merge` therefore
-//!      stay at their trait defaults here.
-//!   2. The `errmsg_*` attributes are never assigned either — see bug 4 below.
+//!      `merge` are dead code. The only ceiling is `big_number_to_cardinal`'s
+//!      explicit `length >= 66` guard, which Python raises as
+//!      `NotImplementedError`. Fixed (gladiaio/num2words2#159): the port
+//!      raises `OverflowError` ("abs(v) must be less than 10^65.") and
+//!      `maxval()` reports 10^65. `cards`/`merge` stay at their trait
+//!      defaults here.
+//!   2. The `errmsg_*` attributes are never assigned either — see bug 4 below
+//!      (fixed: the port raises Base's wording itself).
 //!
 //! `Num2Word_EUR.setup` only populates `self.high_numwords`, which is dead
 //! for the same reason; `Num2Word_IT.setup` additionally sets
@@ -103,20 +106,20 @@
 //!    empty-`exponent` path (`int("")` → `ValueError`) unreachable; it is
 //!    modelled as `N2WError::Value` rather than a panic, for fidelity.
 //!
-//! 4. **`to_ordinal_num` of a negative raises `AttributeError`, not
-//!    `TypeError`.** `verify_ordinal` reaches
-//!    `raise TypeError(self.errmsg_negord % value)`, but `errmsg_negord` is
-//!    only ever assigned in `Num2Word_Base.__init__`, which `Num2Word_IT`
-//!    never calls. Evaluating `self.errmsg_negord` blows up first with
-//!    `AttributeError: 'Num2Word_IT' object has no attribute 'errmsg_negord'`.
-//!    The corpus confirms this for every negative `ordinal_num` row.
-//!    **`base.rs` has no `N2WError::Attribute` variant**, so this is emitted as
-//!    `N2WError::Type` carrying a message that names `AttributeError`
-//!    explicitly — see [`attribute_error`] and the porting report's `concerns`.
+//! 4. ~~**`to_ordinal_num` raises `AttributeError` for negatives and
+//!    floats.**~~ Fixed (gladiaio/num2words2#155/#157). `verify_ordinal`
+//!    reaches `raise TypeError(self.errmsg_negord % value)`, but the
+//!    `errmsg_*` attributes are only assigned in `Num2Word_Base.__init__`,
+//!    which `Num2Word_IT` never calls, so Python died with `AttributeError`
+//!    on the lookup. `to_ordinal_num` now agrees with `to_ordinal`, which
+//!    deliberately accepts negatives (item 5): a negative is written with its
+//!    sign (`-1` → "-1"), and only a fractional value is rejected, with Base's
+//!    `errmsg_floatord` `TypeError`.
 //!
-//! 5. **`to_ordinal` of a negative is not a real ordinal**: it prefixes "meno "
-//!    and recurses, so `to_ordinal(-1)` == "meno primo" rather than raising.
-//!    `to_ordinal` never calls `verify_ordinal`, unlike `to_ordinal_num`.
+//! 5. **`to_ordinal` of a negative prefixes "meno "** and recurses, so
+//!    `to_ordinal(-1)` == "meno primo" rather than raising, unlike most
+//!    languages. This is deliberate upstream (`test_it.py::test_negative`
+//!    pins it), so it is kept, and `to_ordinal_num` follows it (item 4).
 //!
 //! 6. **`to_currency` silently ignores `adjective=True` for `int` input.**
 //!    `Num2Word_IT.to_currency` reimplements the integer branch and simply
@@ -150,7 +153,8 @@
 //! `saturating_sub`. `str.split()` with no argument splits on whitespace runs
 //! and drops empties — `split_whitespace` matches it.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, floatord_error, pow10_big, py_num_str, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -299,13 +303,6 @@ fn exponent_length_to_string(exponent_length: usize) -> String {
     } else {
         format!("{}iliardo", prefix)
     }
-}
-
-/// Python raised `AttributeError`, which `base.rs` cannot express. See module
-/// bug 4: emitted as `N2WError::Type` with a message naming the real type, so
-/// the integration layer can remap it.
-fn attribute_error(msg: &str) -> N2WError {
-    N2WError::Attribute(msg.to_string())
 }
 
 /// Python raised `ValueError` (`int("")`). Unreachable in practice — see
@@ -457,17 +454,13 @@ impl LangIt {
 
     /// `big_number_to_cardinal`. Only ever called with `number >= 10**6`, and
     /// `number` is genuinely unbounded here (`BigInt`, never a fixed-width
-    /// cast) up to the 66-digit guard.
+    /// cast) up to the maxval (10^65) guard.
     fn big_number_to_cardinal(&self, number: &BigInt) -> Result<String> {
         // Python: digits = [c for c in str(int(number))]. `number` is known
         // non-negative at this point, so no sign leaks into the digit list.
         let digits: Vec<char> = number.to_string().chars().collect();
         let length = digits.len();
-        if length >= 66 {
-            return Err(N2WError::NotImplemented(
-                "The given number is too large.".to_string(),
-            ));
-        }
+        check_maxval(number, maxval_ceiling())?;
         // This is how many digits come before the "illion" term.
         //   cento miliardi => 3
         //   dieci milioni => 2
@@ -578,20 +571,6 @@ impl LangIt {
             }
             Ok(string + "esimo")
         }
-    }
-
-    /// `Num2Word_Base.verify_ordinal`, as reached from `to_ordinal_num`.
-    ///
-    /// The float check (`errmsg_floatord`) cannot fire on integer input. The
-    /// negative check is module bug 4: Python means to raise `TypeError` but
-    /// dies evaluating the missing `errmsg_negord` attribute first.
-    fn verify_ordinal(&self, value: &BigInt) -> Result<()> {
-        if value.is_negative() {
-            return Err(attribute_error(
-                "'Num2Word_IT' object has no attribute 'errmsg_negord'",
-            ));
-        }
-        Ok(())
     }
 
     /// `Num2Word_IT.float_to_words(float_number, ordinal=True)` for a
@@ -757,7 +736,19 @@ impl Default for LangIt {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `big_number_to_cardinal`
+/// names numbers of up to 65 digits, so 10^65 and above raise
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(65))
+}
+
 impl Lang for LangIt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -789,9 +780,9 @@ impl Lang for LangIt {
         self.ordinal(value)
     }
 
+    /// `str(int(value))`. Negatives are accepted, as `to_ordinal` accepts
+    /// them (module bug 4, #155).
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        self.verify_ordinal(value)?;
-        // Python: return str(int(value))
         Ok(value.to_string())
     }
 
@@ -897,24 +888,15 @@ impl Lang for LangIt {
         }
     }
 
-    /// `to_ordinal_num(float/Decimal)`: `verify_ordinal(value)` then
-    /// `str(int(value))`.
-    ///
-    /// `Num2Word_IT.__init__` never chains to `Num2Word_Base.__init__`, so
-    /// neither `errmsg_floatord` nor `errmsg_negord` exists — both
-    /// verify_ordinal arms die on the attribute lookup (AttributeError, not
-    /// TypeError; module bug 4). A fractional value hits the float arm first,
-    /// so `-1.5` is the `errmsg_floatord` AttributeError.
+    /// `to_ordinal_num(float/Decimal)`: `str(int(value))` for a whole value,
+    /// negatives included as in `to_ordinal`. A fractional value raises Base's
+    /// `errmsg_floatord` `TypeError` — Python meant to, but died with
+    /// `AttributeError` on the missing attribute (module bug 4, #157).
     fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
-        match value.as_whole_int() {
-            None => Err(attribute_error(
-                "'Num2Word_IT' object has no attribute 'errmsg_floatord'",
-            )),
-            Some(i) if i.is_negative() => Err(attribute_error(
-                "'Num2Word_IT' object has no attribute 'errmsg_negord'",
-            )),
-            Some(i) => Ok(i.to_string()),
-        }
+        value
+            .as_whole_int()
+            .map(|i| i.to_string())
+            .ok_or_else(|| floatord_error(py_num_str(value)))
     }
 
     /// `Num2Word_IT.to_fraction` (issue #584): Italian '-o → -i' plurals, the

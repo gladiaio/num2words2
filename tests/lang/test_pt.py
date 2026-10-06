@@ -234,3 +234,22 @@ def test_pt_handles_10_27_and_above():
     from num2words2 import num2words
     assert "quintilião" in num2words(10**30, lang="pt")
     assert "nonilião" in num2words(10**54, lang="pt")
+
+
+def test_pt_ordinal_large_scale_words():
+    # gladiaio/num2words2#173: KeyError('18') from 10**18; the ordinal now
+    # follows the cardinal's long scale up to MAXVAL.
+    import pytest
+
+    from num2words2 import num2words
+    assert num2words(10**18, lang="pt", to="ordinal") == "trilionésimo"
+    assert num2words(2 * 10**21 + 5, lang="pt", to="ordinal") == (
+        "segundo milésimo trilionésimo quinto"
+    )
+    assert num2words(10**24, lang="pt", to="ordinal") == "quatrilionésimo"
+    assert num2words(10**36, lang="pt", to="ordinal") == "sextilionésimo"
+    assert num2words(10**54, lang="pt", to="ordinal") == "nonilionésimo"
+    assert num2words(10**57 - 1, lang="pt", to="ordinal").endswith("nono")
+    with pytest.raises(OverflowError):
+        num2words(10**57, lang="pt", to="ordinal")
+    assert num2words(10**18, lang="pt", to="ordinal_num") == "%dº" % 10**18

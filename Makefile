@@ -81,7 +81,8 @@ clean:  ## Clean build artifacts and cache files
 
 build:  ## Build package for distribution
 	@echo "📦 Building package..."
-	$(PYTHON) setup.py sdist bdist_wheel
+	$(PYTHON) -m maturin sdist
+	$(PYTHON) -m maturin build --release
 	@echo "✅ Build completed"
 
 check-build:  ## Check package build for PyPI

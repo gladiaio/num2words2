@@ -51,7 +51,9 @@
 //!    `merge`. Reproduced here only by *omission*: we leave `cards`/`maxval`
 //!    at their trait defaults rather than modelling a table nothing consults.
 //!    The consequence that *is* observable: TH never raises `OverflowError`,
-//!    at any magnitude (corpus goes to 10^21 and returns fine).
+//!    at any magnitude (corpus goes to 10^21 and returns fine). Fixed
+//!    (gladiaio/num2words2#159): `maxval("th")` used to report that inert
+//!    9000 although 10^12 converts fine; it is now None.
 //!
 //! 2. **Three hardcoded string special-cases in `left_num_to_text`**, compared
 //!    against the *decimal string*, not the value:
@@ -568,11 +570,9 @@ fn cardinal_float_from_value(v: &FloatValue) -> String {
 }
 
 impl Lang for LangTh {
+    // No `maxval`: the inert Python MAXVAL of 9000 is not reported (bug 1,
+    // #159), so `maxval("th")` is None — Thai has no ceiling.
 
-    fn python_maxval(&self) -> Option<num_bigint::BigInt> {
-        // Python class attribute MAXVAL (self-contained converter).
-        Some(num_bigint::BigInt::from(9000u64))
-    }
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {

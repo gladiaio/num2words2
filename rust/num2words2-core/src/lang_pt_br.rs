@@ -26,7 +26,8 @@
 //!   * `set_high_numwords`: EUR's. `GIGA_SUFFIX = None` (PT) so the illiard
 //!     rung is skipped entirely; only `MEGA_SUFFIX = "ilião"` fires.
 //!   * `merge`: PT_BR's (below). PT's is fully shadowed.
-//!   * `to_ordinal` / `to_ordinal_num` / `to_year`: PT's, inherited unchanged.
+//!   * `to_ordinal` / `to_ordinal_num` / `to_year`: PT's, inherited unchanged
+//!     except that the ordinal stops at 10^36 (short-scale table, #173).
 //!   * `verify_ordinal`: `Num2Word_Base`'s → TypeError on negatives.
 //!
 //! # Scale of the card table
@@ -39,10 +40,14 @@
 //! `MEGA_SUFFIX`, giving cards 10^54 "nonilião" … 10^6 "milião", and
 //! `MAXVAL = 1000 * 10^54 = 10^57`. Verified against the interpreter.
 //!
-//! **The overflow check is unreachable.** `Num2Word_PT_BR.to_cardinal` only
-//! ever hands `super()` a value `< 10^9` (see the per-branch notes below), so
-//! `default_to_cardinal`'s `>= MAXVAL` test never fires and no card above
-//! 10^6 is ever consulted. The table is still built in full for fidelity.
+//! **Fixed (gladiaio/num2words2#159): `MAXVAL` is enforced.** Python's
+//! `Num2Word_PT_BR.to_cardinal` only ever hands `super()` a value `< 10^9`
+//! (see the per-branch notes below), so base's `>= MAXVAL` test never fired
+//! and `to_cardinal(10**57)` returned "um bilhão trilhões trilhões trilhões
+//! trilhões" although `maxval("pt_BR")` is 10^57. The port checks `MAXVAL` at
+//! the top of [`Lang::to_cardinal`] instead, so 10^57 and above raise
+//! `OverflowError`. No card above 10^6 is ever consulted; the table is still
+//! built in full for fidelity.
 //!
 //! # Faithfully reproduced Python quirks
 //!
@@ -176,17 +181,18 @@
 //!
 //! * `to_ordinal(n)` / `to_ordinal_num(n)` for any `n < 0` → `TypeError`
 //!   (deliberate, from `Num2Word_Base.verify_ordinal`) → [`N2WError::Type`].
-//! * `to_ordinal(n)` for `n >= 10^18` → **KeyError**: the digit loop asks for
-//!   `thousand_separators[18]` and PT_BR's table stops at 15. This is a crash,
-//!   not a deliberate raise, but the type is observable → [`N2WError::Key`].
-//!   Note 18-digit values are fine (max idx 17, and 17 % 3 != 0); the failure
-//!   starts at 19 digits.
+//! * `to_ordinal(n)` for `n >= 10^36` → `OverflowError` →
+//!   [`N2WError::Overflow`]. Python's `thousand_separators` stops at 15, so
+//!   it crashed with a `KeyError` from 10^18 (#173). The port continues the
+//!   short scale through "decilionésimo" (10^33); past that the Brazilian
+//!   names are not well enough attested to invent, so the ordinal stops
+//!   below the cardinal's `MAXVAL` (10^57) with a clear error.
 //! * `to_cardinal` has no reachable error path at all (see "Scale" above).
 //! * `to_currency` / `to_cheque` for a code outside {BRL, EUR, USD} →
 //!   `NotImplementedError` → [`N2WError::NotImplemented`], but for
 //!   `to_currency` *only* when the value is not an integer (quirk 7).
 
-use crate::base::{default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
+use crate::base::{check_maxval, default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -197,6 +203,11 @@ use num_traits::{FromPrimitive, One, Signed, Zero};
 use std::collections::HashMap;
 
 /// `Num2Word_PT.hundreds`, keys 1..=9. Index 0 is absent in Python.
+/// `to_ordinal` handles values below `10^ORDINAL_MAX_EXP`: the short-scale
+/// ordinal table stops at "decilionésimo" (10^33). Python had no ceiling and
+/// crashed with KeyError from 10^18 (#173).
+const ORDINAL_MAX_EXP: u32 = 36;
+
 const HUNDREDS: [&str; 10] = [
     "", // absent in Python
     "cento",
@@ -623,13 +634,20 @@ impl LangPtBr {
         // PT_BR.setup thousand_separators — overrides PT's, which used the
         // European long scale (9: "milésimo milionésimo", 12: "bilionésimo").
         // Brazil is short scale: bilionésimo = 10^9, trilionésimo = 10^12.
-        // Nothing above 15, hence the KeyError at 10^18 (see module docs).
+        // Python stops at 15 (KeyError from 10^18, #173); the port carries
+        // the short scale on to "decilionésimo" (10^33), see ORDINAL_MAXVAL.
         let thousand_separators: HashMap<usize, &'static str> = [
             (3usize, "milésimo"),
             (6, "milionésimo"),
             (9, "bilionésimo"),
             (12, "trilionésimo"),
             (15, "quatrilionésimo"),
+            (18, "quintilionésimo"),
+            (21, "sextilionésimo"),
+            (24, "setilionésimo"),
+            (27, "octilionésimo"),
+            (30, "nonilionésimo"),
+            (33, "decilionésimo"),
         ]
         .into_iter()
         .collect();
@@ -1182,6 +1200,8 @@ impl Lang for LangPtBr {
     ///     falls through to the trailing comma loop — every other branch
     ///     returns early (quirk 3).
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
+        // The MAXVAL check Python never reaches (module docs, #159).
+        check_maxval(value, &self.maxval)?;
         // Handle negative numbers. negword already carries its trailing space.
         if value.is_negative() {
             return Ok(format!("{}{}", self.negword(), self.to_cardinal(&(-value))?));
@@ -1299,6 +1319,18 @@ impl Lang for LangPtBr {
     /// "segundo milionésimo milésimo" for 6000000.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
+        // Portuguese has no ordinal for zero; Python returns "" here (#160).
+        if value.is_zero() {
+            return Err(N2WError::Value("Cannot treat 0 as ordinal.".into()));
+        }
+
+        // The scale table ends at "decilionésimo" (10^33), #173.
+        if value >= &BigInt::from(10u8).pow(ORDINAL_MAX_EXP) {
+            return Err(N2WError::Overflow(format!(
+                "abs({}) must be less than 10**{} for to='ordinal' in pt_BR.",
+                value, ORDINAL_MAX_EXP
+            )));
+        }
 
         let s = value.to_string(); // Python: value = str(int(value))
         let mut result: Vec<String> = Vec::new();
@@ -1306,9 +1338,8 @@ impl Lang for LangPtBr {
 
         for (idx, ch) in s.chars().rev().enumerate() {
             if idx != 0 && idx % 3 == 0 {
-                // PT_BR's table stops at 15 → KeyError from idx 18 (i.e. any
-                // value with 19+ digits). The lookup happens before the digit
-                // is examined, so even 10^18 with all-zero groups blows up.
+                // Every idx below ORDINAL_MAX_EXP is in the table (checked
+                // above), so the `None` arm is unreachable.
                 thousand_separator = match self.thousand_separators.get(&idx) {
                     Some(t) => *t,
                     None => return Err(N2WError::Key(idx.to_string())),
@@ -1365,9 +1396,10 @@ impl Lang for LangPtBr {
     /// `Num2Word_PT.to_ordinal` (inherited) on float/Decimal input.
     ///
     /// `value = int(value)` — truncation toward zero — runs *before*
-    /// `verify_ordinal`, so `2.5` -> "segundo", `0.5` -> "", `-0.0` -> "",
+    /// `verify_ordinal`, so `2.5` -> "segundo", `0.5` / `-0.0` -> ValueError
+    /// (they truncate to 0, which has no ordinal; Python returns "", #160),
     /// and `-1.5` raises the negative-num TypeError (never the float one).
-    /// 10^18 and up still hit the `thousand_separators` KeyError.
+    /// 10^36 and up raise OverflowError (#173).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.to_ordinal(&float_trunc_int(value)?)
     }
@@ -1477,8 +1509,8 @@ impl Lang for LangPtBr {
     ///     end in "s" (Base appends unconditionally);
     ///   * `abs_n == 1` short-circuits the numerator to the literal "um".
     /// `denominator == 1` / `numerator == 0` return the *signed* cardinal,
-    /// before any of that. `self.to_ordinal(abs_d)` can still raise (KeyError
-    /// at 10^18+), which propagates exactly as in Python.
+    /// before any of that. `self.to_ordinal(abs_d)` can still raise
+    /// (OverflowError at 10^36; Python's KeyError at 10^18+ is #173).
     fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
         if denominator.is_zero() {
             return Err(N2WError::ZeroDivision(

@@ -3,9 +3,9 @@
 //! Shape: **self-contained**. `Num2Word_RM_SURSILV` is a *bare* class — it
 //! subclasses nothing at all (not even `Num2Word_Base`), and its `__init__` is
 //! a single `pass`. There is no inheritance chain to chase: everything the
-//! class can do is the six methods in the file. Consequently `cards`,
-//! `maxval` and `merge` stay at their trait defaults and are never reached,
-//! and there is **no `OverflowError` path** anywhere in this language.
+//! class can do is the six methods in the file. Consequently `cards` and
+//! `merge` stay at their trait defaults and are never reached; `maxval()`
+//! reports the ceiling below.
 //!
 //! The module header says "Based on lang_IT template from Filippo Costa", and
 //! the skeleton matches `lang_IT`/`lang_LIJ`: `MINUS_PREFIX_WORD`, a size
@@ -13,35 +13,28 @@
 //! entirely Sursilvan, driven by string `.replace()` passes rather than by
 //! table lookups.
 //!
-//! # `to_ordinal_num` and `to_year` do not exist — every call is AttributeError
+//! # Missing methods (fixed, gladiaio/num2words2#157)
 //!
-//! This is the single most important fact about this language, and it is not a
-//! guess: because the class has **no base class**, it inherits neither
-//! `Num2Word_Base.to_ordinal_num` (which would return `str(value)`) nor
-//! `Num2Word_Base.to_year` (which would delegate to `to_cardinal`). The
-//! dispatcher's `getattr(converter, "to_ordinal_num")` therefore raises
-//!
-//! ```text
-//! AttributeError: 'Num2Word_RM_SURSILV' object has no attribute 'to_ordinal_num'
-//! ```
-//!
-//! for **every** input, and likewise for `to_year`. The frozen corpus confirms
-//! this: all 125 `ordinal_num` and `year` rows (90 + 35) are
-//! `{"ok": false, "err": "AttributeError"}` — there is not one successful row
-//! among them, for any input.
-//!
-//! `base.rs` has no `N2WError::Attribute` variant, so — following the
-//! precedent already set by `lang_it.rs` — these are emitted as
-//! `N2WError::Type` carrying a message that names `AttributeError` explicitly.
-//! See [`attribute_error`] and the porting report's `concerns`.
+//! The class has no base, so in Python `to_ordinal_num`, `to_year`,
+//! `to_currency`, `to_cheque`, `to_fraction` and `str_to_number` simply did
+//! not exist: those modes, and every string input, raised `AttributeError`
+//! before any conversion ran, and a `Decimal` crashed in the integer ladder.
+//! The port now follows `lang_rm` (see its module docs): strings use the
+//! shared `Decimal(value)` parse, a `Decimal` reads like the int (whole) or
+//! the float (fractional, exact digits), `to_year` is the cardinal as in
+//! `Num2Word_Base`, and `to_ordinal_num`, currency, cheques and fractions
+//! raise a `NotImplementedError` naming the language — no ordinal-numeral
+//! marker or currency wording is attested to port.
 //!
 //! # Ceiling
 //!
 //! `big_number_to_cardinal` raises `NotImplementedError("The given number is
-//! too large.")` when `len(str(number)) >= 66`, so the wall is at **10**65**
+//! too large.")` in Python when `len(str(number)) >= 66`, so the wall is at **10**65**
 //! exactly (10**65 - 1, a 65-digit number, is the largest convertible value).
 //! `to_cardinal` tests the sign *before* the size dispatch, so `-10**65`
-//! raises too. Note this is `NotImplementedError`, **not** `OverflowError`.
+//! raises too. Python raises `NotImplementedError`; fixed
+//! (gladiaio/num2words2#159): the port raises `OverflowError` ("abs(v) must
+//! be less than 10^65.").
 //!
 //! That bound also makes `EXPONENT_PREFIXES` provably safe: `len(exponent)`
 //! peaks at 63 (a 65-digit number gives `predigits = 65 % 3 = 2`), and
@@ -102,7 +95,8 @@
 //!    raising. This class has no `verify_ordinal` at all, and `to_ordinal(0)`
 //!    happily returns "nulla".
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
@@ -200,15 +194,6 @@ fn str_tens(tens: u32) -> Option<&'static str> {
 const EXPONENT_PREFIXES: [&str; 11] = [
     ZERO, "m", "b", "tr", "quadr", "quint", "sest", "sett", "ott", "nov", "dec",
 ];
-
-/// Python raised `AttributeError`, which `base.rs` cannot express. See module
-/// docs.
-fn attribute_error(attr: &str) -> N2WError {
-    N2WError::Attribute(format!(
-        "'Num2Word_RM_SURSILV' object has no attribute '{}'",
-        attr
-    ))
-}
 
 /// Python `s[:-n]`, counting **characters** not bytes. Python clamps rather
 /// than panicking when `n > len(s)`.
@@ -373,9 +358,7 @@ fn big_number_to_cardinal(number: &BigInt) -> Result<String> {
     debug_assert!(!number.is_negative());
     let digits: Vec<char> = number.to_string().chars().collect();
     let length = digits.len();
-    if length >= 66 {
-        return Err(N2WError::NotImplemented("The given number is too large.".into()));
-    }
+    check_maxval(number, maxval_ceiling())?;
     // This is how many digits come before the "illion" term.
     //   tschien milliardas => 3
     //   diesch milliuns => 2
@@ -424,7 +407,7 @@ fn big_number_to_cardinal(number: &BigInt) -> Result<String> {
 ///
 /// The `isinstance(number, float)` branch is dead for integer input and is
 /// omitted along with `float_to_words`. Note the sign test comes *first*, so
-/// `-10**65` raises `NotImplementedError` just like `+10**65`.
+/// `-10**65` raises `OverflowError` just like `+10**65`.
 fn to_cardinal_impl(number: &BigInt) -> Result<String> {
     if number.is_negative() {
         return Ok(MINUS_PREFIX_WORD.to_string() + &to_cardinal_impl(&(-number))?);
@@ -529,7 +512,7 @@ fn f64_trunc_to_bigint(f: f64) -> Result<BigInt> {
 fn float_body_f64(x: f64, precision: u32) -> Result<String> {
     // prefix = to_cardinal(int(float_number)); `int()` truncates toward zero.
     // Computed *before* the point probe, exactly as Python does — for a huge
-    // float the 66-digit NotImplementedError beats the IndexError below.
+    // float the maxval OverflowError (#159) beats the IndexError below.
     let pre = f64_trunc_to_bigint(x)?;
     let prefix = to_cardinal_impl(&pre)?;
 
@@ -598,8 +581,9 @@ fn decimal_fixed_str(d: &BigDecimal, precision: u32) -> String {
 /// * `abs(d) >= 10**6` → `big_number_to_cardinal` splits `str(number)` — which
 ///   carries the '.' — and, since the integer part has `>= 7` digits while
 ///   `predigits <= 3`, the '.' always lands in `digits[predigits:]`; the branch
-///   then calls `int("...<frac>...")` → **ValueError**. If `len(str(number))
-///   >= 66` it raises **NotImplementedError** first.
+///   then calls `int("...<frac>...")` → **ValueError**. A magnitude `>=
+///   10**65` raises **OverflowError** first (#159); a `str(number)` of 66+
+///   characters below that still raises **NotImplementedError**.
 ///
 /// A negative Decimal prepends "minus " *after* the recursive call, which
 /// raises, so the sign never reaches the output — take abs and reproduce the
@@ -614,9 +598,14 @@ fn decimal_to_cardinal(value: &BigDecimal, precision: u32) -> Result<String> {
         ));
     }
 
+    // gladiaio/num2words2#159: a magnitude past maxval is an OverflowError,
+    // checked before Python's `len(str(number)) >= 66` string guard.
+    check_maxval(&d.with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
     // >= 10**6: reproduce big_number_to_cardinal on str(number).
     let s = decimal_fixed_str(&d, precision);
     let length = s.chars().count();
+    // Only reachable below maxval when the fraction digits push str(number)
+    // past 65 characters; magnitudes past maxval were rejected above (#159).
     if length >= 66 {
         return Err(N2WError::NotImplemented(
             "The given number is too large.".into(),
@@ -764,10 +753,22 @@ impl Default for LangRmSursilv {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `big_number_to_cardinal`
+/// names numbers of up to 65 digits, so 10^65 and above raise
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(65))
+}
+
 impl Lang for LangRmSursilv {
-    // Num2Word_RM and its variants define no to_currency / to_cheque
-    // at all, so Python raises AttributeError on attribute lookup —
-    // not the NotImplementedError the trait default would give.
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
+    // The class defines no to_currency (Python raised AttributeError on the
+    // lookup) and there is no Romansh currency wording to port: a clear
+    // NotImplementedError instead (gladiaio/num2words2#157).
     fn to_currency(
         &self,
         _val: &crate::currency::CurrencyValue,
@@ -776,17 +777,11 @@ impl Lang for LangRmSursilv {
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
-        Err(N2WError::Attribute(format!(
-            "'{}' object has no attribute 'to_currency'",
-            "Num2Word_RM_SURSILV",
-        )))
+        Err(crate::lang_rm::unsupported("rm_sursilv", "to='currency'"))
     }
 
     fn to_cheque(&self, _val: &bigdecimal::BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(format!(
-            "'{}' object has no attribute 'to_cheque'",
-            "Num2Word_RM_SURSILV",
-        )))
+        Err(crate::lang_rm::unsupported("rm_sursilv", "to='cheque'"))
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
@@ -797,18 +792,19 @@ impl Lang for LangRmSursilv {
         to_ordinal_impl(value)
     }
 
-    /// **Does not exist in Python.** `Num2Word_RM_SURSILV` has no base class,
-    /// so it inherits no `to_ordinal_num` and the dispatcher's `getattr`
-    /// raises `AttributeError` for every input. See module docs.
+    /// Python's class had no `to_ordinal_num` (AttributeError for every
+    /// input), and no ordinal-numeral marker is attested for Romansh in the
+    /// module or its tests, so the port raises a clear NotImplementedError
+    /// rather than inventing one (#157).
     fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
-        Err(attribute_error("to_ordinal_num"))
+        Err(crate::lang_rm::unsupported("rm_sursilv", "to='ordinal_num'"))
     }
 
-    /// **Does not exist in Python.** Same story as `to_ordinal_num` — no base
-    /// class means no inherited `to_year`, so every call is an
-    /// `AttributeError`. See module docs.
-    fn to_year(&self, _value: &BigInt) -> Result<String> {
-        Err(attribute_error("to_year"))
+    /// Python's class had no `to_year` (AttributeError for every input).
+    /// `Num2Word_Base.to_year` is the cardinal, which is what the port
+    /// returns (#157).
+    fn to_year(&self, value: &BigInt) -> Result<String> {
+        self.to_cardinal(value)
     }
 
     /// `Num2Word_RM_SURSILV.to_cardinal(<float | Decimal>)` — the float/Decimal
@@ -829,8 +825,9 @@ impl Lang for LangRmSursilv {
     /// * **float** → the sign is stripped (recursing prepends "minus "), then
     ///   `float_to_words` renders it. Integer-valued floats are included (the
     ///   gate is `isinstance(number, float)`, not `int(number) != number`).
-    /// * **Decimal** → not a `float`, so it falls through to the integer
-    ///   dispatch and crashes there. See [`decimal_to_cardinal`].
+    /// * **Decimal** → not a `float`, so in Python it fell through to the
+    ///   integer dispatch and crashed there; it now reads like the int or the
+    ///   float (#157).
     ///
     /// `precision_override` (the `precision=` kwarg) is ignored, exactly as
     /// Python ignores it here: the bare class never sets `self.precision`, so
@@ -842,6 +839,11 @@ impl Lang for LangRmSursilv {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        // A Decimal crashed in the integer ladder in Python; it now reads like
+        // the int (whole) or the float (fractional, exact digits) (#157).
+        if let FloatValue::Decimal { .. } = value {
+            return crate::lang_rm::decimal_cardinal(self, value, MINUS_PREFIX_WORD, FLOAT_INFIX_WORD);
+        }
         match value {
             FloatValue::Float { value, precision } => {
                 if *value < 0.0 {
@@ -865,14 +867,20 @@ impl Lang for LangRmSursilv {
     /// Full `to_cardinal(float/Decimal)` routing. The gate is
     /// `isinstance(number, float)`, **not** `int(number) == number`, so a
     /// whole-valued float still renders through `float_to_words`
-    /// (`1.0` -> "in comma nulla") and a whole-valued Decimal still crashes
-    /// through the integer ladder (`Decimal("5.0")` -> TypeError). The base
+    /// (`1.0` -> "in comma nulla") and a whole-valued Decimal crashed
+    /// through the integer ladder (`Decimal("5.0")` -> TypeError) in Python —
+    /// now it reads like the int (#157). The base
     /// default's whole-value -> int-path shortcut is exactly wrong here.
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        // A Decimal crashed in the integer ladder in Python; it now reads like
+        // the int (whole) or the float (fractional, exact digits) (#157).
+        if let FloatValue::Decimal { .. } = value {
+            return crate::lang_rm::decimal_cardinal(self, value, MINUS_PREFIX_WORD, FLOAT_INFIX_WORD);
+        }
         match value {
             FloatValue::Float { value, precision } => {
                 if *value < 0.0 {
@@ -894,63 +902,52 @@ impl Lang for LangRmSursilv {
     /// `to_ordinal(float/Decimal)` — see [`float_ordinal_f64`] /
     /// [`decimal_ordinal`] for the branch-by-branch mapping.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        // A whole Decimal crashed on `ORDINAL_WORDS[<Decimal>]` in Python; it
+        // now reads like the int (#157).
+        if let FloatValue::Decimal { value: d, .. } = value {
+            if d.is_integer() {
+                return self.to_ordinal(&d.with_scale(0).as_bigint_and_exponent().0);
+            }
+        }
         match value {
             FloatValue::Float { value, precision } => float_ordinal_f64(*value, *precision),
             FloatValue::Decimal { value, precision } => decimal_ordinal(value, *precision),
         }
     }
 
-    /// **Does not exist in Python** — same AttributeError as the integer
-    /// [`Lang::to_ordinal_num`] override; the float/Decimal entry would
-    /// otherwise echo the repr.
+    /// See [`Lang::to_ordinal_num`] above (#157).
     fn ordinal_num_float_entry(&self, _value: &FloatValue, _repr_str: &str) -> Result<String> {
-        Err(attribute_error("to_ordinal_num"))
+        Err(crate::lang_rm::unsupported("rm_sursilv", "to='ordinal_num'"))
     }
 
-    /// **Does not exist in Python** — same AttributeError as the integer
-    /// [`Lang::to_year`] override.
-    fn year_float_entry(&self, _value: &FloatValue) -> Result<String> {
-        Err(attribute_error("to_year"))
+    /// `to_year(float/Decimal)`: a whole value is the integer year; a
+    /// fractional one is a `TypeError`, as in `lang_en` (#157).
+    fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        match value.as_whole_int() {
+            Some(i) => self.to_year(&i),
+            None => Err(crate::base::year_float_error(value)),
+        }
     }
 
 
-    /// `Decimal('-0.0')` — which `BigDecimal` cannot represent (no signed
-    /// zero), so it is served here rather than demoted to `Float{-0.0}`.
-    ///
-    /// A `Decimal` is not a `float`, so RM's `to_cardinal`/`to_ordinal` skip
-    /// the `float_to_words` branch: `Decimal('-0.0') < 0` is False and its
-    /// `% 1 == 0`, so it lands in the integer table branch and indexes a list
-    /// with the Decimal — `CARDINAL_WORDS[<Decimal>]` / `ORDINAL_WORDS[<Decimal>]`
-    /// — raising **TypeError**. `to_ordinal_num`/`to_year` don't exist on this
-    /// bare class, so they are **AttributeError** as always. Verified against
-    /// the interpreter; the demoted `Float{-0.0}` path would otherwise render
-    /// "nulla comma nulla" for cardinal, which is wrong.
+    /// `Decimal('-0.0')` is a whole Decimal, so it reads like the int zero
+    /// (#157; Python crashed with TypeError in the integer ladder). Served
+    /// here because the `Float{-0.0}` demotion would take the float reading.
     fn neg_zero_decimal(&self, to: &str) -> Option<Result<String>> {
-        Some(match to {
-            "cardinal" | "ordinal" => Err(N2WError::Type(
-                "list indices must be integers or slices, not decimal.Decimal".into(),
-            )),
-            "ordinal_num" => Err(attribute_error("to_ordinal_num")),
-            "year" => Err(attribute_error("to_year")),
-            _ => return None,
-        })
+        match to {
+            "cardinal" | "year" => Some(self.to_cardinal(&BigInt::from(0))),
+            "ordinal" => Some(self.to_ordinal(&BigInt::from(0))),
+            _ => None,
+        }
     }
 
-    /// **Does not exist in Python.** The dispatcher does
-    /// `converter.str_to_number(value)` for every string input, and this
-    /// bare class has no such attribute — so *every* `num2words("...")`
-    /// call raises AttributeError before any parsing ("5", "1.5", "abc",
-    /// "Infinity" alike). Corpus: all 78 string rows are AttributeError.
-    fn str_to_number(&self, _s: &str) -> Result<crate::strnum::ParsedNumber> {
-        Err(attribute_error("str_to_number"))
-    }
+    // `str_to_number`: the trait default, the shared `Decimal(value)` parse.
+    // Python's class had none, so every string raised AttributeError (#157).
 
-    /// **Does not exist in Python.** `to_fraction` is a `Num2Word_Base`
-    /// method (issue #584) and this class has no base, so the attribute
-    /// lookup fails for every n/d — including `1/0`, where Python never
-    /// reaches the ZeroDivision check. Corpus: all 25 fraction2 rows are
-    /// AttributeError.
+    /// Python's class had no `to_fraction` (AttributeError for every n/d).
+    /// Base's generic reading ("<n> <ordinal>s") is not Romansh, so this is a
+    /// clear NotImplementedError instead (#157).
     fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(attribute_error("to_fraction"))
+        Err(crate::lang_rm::unsupported("rm_sursilv", "fractions"))
     }
 }

@@ -1617,14 +1617,10 @@ impl Lang for LangFi {
     /// `super()`. The int branch is not a re-spelling of Base's — it differs in
     /// three observable ways, all reproduced here:
     ///
-    /// 1. **The double space.** Base builds its sign as
-    ///    `"%s " % self.negword.strip()`; FI concatenates `self.negword` *raw*
-    ///    into `"%s %s %s"`. `negword` is `"miinus "` — already trailing a
-    ///    space — so the format's own separator lands on top of it and
-    ///    `to_currency(-2, "EUR")` is **`"miinus  kaksi euroa"`**, with two
-    ///    spaces. The trailing `.strip()` only touches the ends, so the seam
-    ///    survives. Floats route to Base and get a single space, meaning
-    ///    `-2` and `-2.0` disagree about their own spacing.
+    /// 1. **The double space (fixed, #160).** FI's Python concatenates
+    ///    `self.negword` (`"miinus "`) *raw* into `"%s %s %s"`, so
+    ///    `to_currency(-2, "EUR")` is `"miinus  kaksi euroa"`. The port strips
+    ///    it as Base does and says `"miinus kaksi euroa"`.
     /// 2. **`adjective` is ignored.** The int branch never calls
     ///    `prefix_currency`, so `to_currency(2, "USD", adjective=True)` is
     ///    `"kaksi dollaria"` while `to_currency(2.0, "USD", adjective=True)` is
@@ -1667,8 +1663,9 @@ impl Lang for LangFi {
                 }
             };
 
-            // `minus_str = self.negword if val < 0 else ""` — raw, unstripped.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // `minus_str = self.negword if val < 0 else ""` — raw in Python;
+            // stripped here so there is no double space (#160).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
             let money_str = self.to_cardinal(&abs_val)?;
 

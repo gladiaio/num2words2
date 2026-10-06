@@ -459,6 +459,15 @@ pub trait Lang {
         self.cardinal_float_entry(value, None)
     }
 
+    /// `to_year(float/Decimal, **kwargs)`. Like the integer `*_kw` hooks the
+    /// default serves only an empty bag and declines any actual kwarg.
+    fn year_float_kw(&self, value: &FloatValue, kw: &Kwargs) -> Result<String> {
+        if kw.is_empty() {
+            return self.year_float_entry(value);
+        }
+        Err(N2WError::Fallback("kwargs".into()))
+    }
+
     // ---- string inputs ---------------------------------------------------
 
     /// `converter.str_to_number`. Base is `Decimal(value)`; ES ("1ro" ->
@@ -597,6 +606,69 @@ pub trait Lang {
     }
 }
 
+/// Base's `errmsg_negord`: the `TypeError` most languages raise for a
+/// negative ordinal. Shared so the languages that used to crash or wrap
+/// around instead (et/ms/pl/hy/cy/..., gladiaio/num2words2#155/#158) raise
+/// the same wording.
+pub fn negord_error(value: impl std::fmt::Display) -> N2WError {
+    N2WError::Type(format!("Cannot treat negative num {} as ordinal.", value))
+}
+
+/// Base's `errmsg_floatord`: the `TypeError` for a fractional ordinal.
+pub fn floatord_error(value: impl std::fmt::Display) -> N2WError {
+    N2WError::Type(format!("Cannot treat float {} as ordinal.", value))
+}
+
+/// `str(value)` of a float/Decimal, for error-message text only.
+pub fn py_num_str(value: &FloatValue) -> String {
+    match value {
+        FloatValue::Float { value, .. } => format!("{:?}", value),
+        FloatValue::Decimal { value, .. } => crate::strnum::python_decimal_str(value),
+    }
+}
+
+/// `value < 0` — strictly, so `-0.0` is not negative here.
+pub fn strictly_negative(value: &FloatValue) -> bool {
+    match value {
+        FloatValue::Float { value, .. } => *value < 0.0,
+        FloatValue::Decimal { value, .. } => value.is_negative(),
+    }
+}
+
+/// Base's `verify_ordinal` for an integer: negatives raise `errmsg_negord`.
+pub fn verify_ordinal(value: &BigInt) -> Result<()> {
+    if value.is_negative() {
+        return Err(negord_error(value));
+    }
+    Ok(())
+}
+
+/// Base's `verify_ordinal` for a float/Decimal: a fractional (or non-finite)
+/// value raises `errmsg_floatord`, a negative one `errmsg_negord`. Returns
+/// the whole value as an integer.
+pub fn verify_ordinal_float(value: &FloatValue) -> Result<BigInt> {
+    let i = value
+        .as_whole_int()
+        .ok_or_else(|| floatord_error(py_num_str(value)))?;
+    if strictly_negative(value) {
+        return Err(negord_error(py_num_str(value)));
+    }
+    Ok(i)
+}
+
+/// The `TypeError` for `to='year'` on a fractional value, in the wording
+/// `lang_en` uses (issue #67).
+pub fn year_float_error(value: &FloatValue) -> N2WError {
+    N2WError::Type(format!(
+        "to='year' expects an integer; got non-integer {} {}",
+        match value {
+            FloatValue::Float { .. } => "float",
+            FloatValue::Decimal { .. } => "Decimal",
+        },
+        py_num_str(value)
+    ))
+}
+
 /// Python's `Num2Word_Base.to_fraction`.
 pub fn default_to_fraction<L: Lang + ?Sized>(
     lang: &L,
@@ -705,6 +777,26 @@ pub fn clean<L: Lang + ?Sized>(lang: &L, val: Vec<Node>) -> Node {
         val = out;
     }
     val.into_iter().next().unwrap()
+}
+
+/// `10**exp` as a `BigInt` (callers cache it in a `OnceLock`).
+pub fn pow10_big(exp: u32) -> BigInt {
+    BigInt::from(10u8).pow(exp)
+}
+
+/// The `abs(v) must be less than MAXVAL.` guard for self-contained languages
+/// whose scale-word tables run out (gladiaio/num2words2#159). Call it at the
+/// top of the routine that receives the whole integer, and return the same
+/// `maxval` from `Lang::maxval` so `maxval(lang)` reports the real ceiling.
+pub fn check_maxval(value: &BigInt, maxval: &BigInt) -> Result<()> {
+    let v = value.abs();
+    if &v >= maxval {
+        return Err(N2WError::Overflow(format!(
+            "abs({}) must be less than {}.",
+            v, maxval
+        )));
+    }
+    Ok(())
 }
 
 /// Python's `Num2Word_Base.to_cardinal` for integral input.

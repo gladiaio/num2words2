@@ -27,13 +27,20 @@ from __future__ import unicode_literals
 from . import _rust as _RUST
 from .grouping import group_digits  # noqa: F401  (re-exported)
 
-# Version information
+# Version information, read from the installed distribution's metadata.
+# maturin stamps it from pyproject.toml (rewritten from the git tag at
+# release), so it cannot drift from what pip reports.
 try:
-    from ._version import __version__, __version_tuple__
-except ImportError:
-    # Package is not installed, provide defaults
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _dist_version
+
+    __version__ = _dist_version("num2words2")
+except PackageNotFoundError:
+    # Imported from a source tree that was never installed.
     __version__ = "unknown"
-    __version_tuple__ = (0, 0, 0, "unknown", 0)
+__version_tuple__ = tuple(
+    int(p) if p.isdigit() else p for p in __version__.split(".")
+)
 
 # Exception types defined in the compiled core and re-exported so
 # ``from num2words2 import NumberTooLargeError`` (and ``except`` on it) keep

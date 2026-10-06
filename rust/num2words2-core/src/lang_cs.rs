@@ -8,9 +8,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! populates `self.cards` and never sets a meaningful `MAXVAL`. `to_cardinal`
 //! is overridden outright and drives `_int2word` over 3-digit chunks, so
-//! `cards`/`maxval`/`merge` stay at their trait defaults here and there is
-//! **no overflow check**. The only ceiling is the `THOUSANDS` table (keys
-//! 1..=10), which raises `KeyError` rather than `OverflowError` — see below.
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` table
+//! (keys 1..=10) ends at 10^30; `maxval()` is 10^33 and larger values raise
+//! `OverflowError` up front (gladiaio/num2words2#159) — see below.
 //!
 //! `setup()` sets `negword = "mínus"` and `pointword = "čárka"`.
 //!
@@ -89,14 +89,17 @@
 //! `THOUSANDS` has keys 1..=10, i.e. chunk indices up to 10^30. `_int2word`
 //! looks up `THOUSANDS[i]` for every non-zero chunk, so a value with a
 //! non-zero chunk at index >= 11 — anything from 10^33 up, given a non-zero
-//! leading group — raises `KeyError`. That is Czech's de facto MAXVAL, and it
-//! maps to `N2WError::Key`, not `Overflow`. See [`thousands_at`].
+//! leading group — raised `KeyError` in Python. Fixed
+//! (gladiaio/num2words2#159): `_int2word` rejects `abs(n) >= 10**33` with
+//! `OverflowError` first, so the `N2WError::Key` arm of [`thousands_at`] is
+//! unreachable from the public entry points.
 //!
 //! No `ValueError`/`IndexError` path is reachable here: `to_cardinal` strips
 //! the sign from the *string* before calling `_int2word`, so the `"-"`-into-
 //! `int()` hazard that breaks `lang_PL.to_ordinal` cannot fire in Czech.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -180,8 +183,8 @@ const THOUSANDS: [(&str, &str, &str); 11] = [
     ("quintillion", "quintilliony", "quintillionů"),       // 10^30
 ];
 
-/// `THOUSANDS[i]`. Keys 1..=10 only; `i >= 11` is a `KeyError` — the de facto
-/// MAXVAL. `i == 0` is unreachable (the call site guards with `if i > 0`) but
+/// `THOUSANDS[i]`. Keys 1..=10 only; `i >= 11` would be a `KeyError`, kept
+/// unreachable by the 10^33 MAXVAL check (#159). `i == 0` is unreachable (the call site guards with `if i > 0`) but
 /// is reported as a `KeyError` too, matching what Python would do.
 fn thousands_at(i: usize) -> Result<(&'static str, &'static str, &'static str)> {
     THOUSANDS
@@ -515,6 +518,7 @@ impl LangCs {
 
     /// Port of `Num2Word_CS._int2word(n)`. `n` is non-negative.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO_WORD.to_string());
         }
@@ -566,7 +570,19 @@ impl LangCs {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
 impl Lang for LangCs {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,

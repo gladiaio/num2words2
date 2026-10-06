@@ -15,6 +15,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 # MA 02110-1301 USA
 
+from decimal import Decimal
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -106,6 +107,28 @@ class Num2WordsENTest(TestCase):
             "ސަތޭކަމިލިޔަން ރުފިޔާ"
         )
 
+    def test_to_currency_rounding(self):
+        # gladiaio/num2words2#170: the integer part was rounded half-even and
+        # the remainder went negative ("two rufiyaa minus fifty laari").
+        self.assertEqual(num2words(1.5, lang='dv', to='currency'),
+                         'އެއް ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words('1.5', lang='dv', to='currency'),
+                         'އެއް ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words(2.5, lang='dv', to='currency'),
+                         'ދެ ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words(99.99, lang='dv', to='currency'),
+                         'ނުވަދިހަނުވަ ރުފިޔާ ނުވަދިހަނުވަ ލާރި')
+        self.assertEqual(num2words(-1.5, lang='dv', to='currency'),
+                         'މައިނަސް އެއް ރުފިޔާ ފަންސާސް ލާރި')
+        self.assertEqual(num2words(-2.25, lang='dv', to='currency'),
+                         'މައިނަސް ދެ ރުފިޔާ ފަންސަވީސް ލާރި')
+        self.assertEqual(num2words(1.999, lang='dv', to='currency'),
+                         'ދެ ރުފިޔާ')
+        self.assertEqual(num2words(0.001, lang='dv', to='currency'),
+                         'ސުން ރުފިޔާ')
+        self.assertNotIn('މައިނަސް',
+                         num2words(1234.56, lang='dv', to='currency'))
+
     def test_to_year(self):
         # issue 141
         # "e2 e2"
@@ -127,3 +150,22 @@ class Num2WordsENTest(TestCase):
                          'ސާޅީސްހަތަރެއް ބީ.ސީ')
         self.assertEqual(num2words(-66000000, lang='dv', to='year'),
                          'ފަސްދޮޅަސްހަމިލިޔަން ބީ.ސީ')
+
+    def test_scientific_float_reads_full_value(self):
+        # issue 190: a float whose repr is '1e+21' was read as its mantissa.
+        self.assertEqual(num2words(1e21, lang='dv'),
+                         num2words(10**21, lang='dv'))
+        self.assertEqual(num2words(1e21, lang='dv'), 'އެއްސެކްސްޓިލިޔަން')
+        self.assertEqual(num2words(1e16, lang='dv'),
+                         num2words(10**16, lang='dv'))
+        self.assertEqual(num2words(1.5e20, lang='dv'),
+                         num2words(150 * 10**18, lang='dv'))
+        self.assertEqual(num2words(Decimal('1E+2'), lang='dv'),
+                         num2words(100, lang='dv'))
+        self.assertEqual(num2words(1e21, lang='dv', to='ordinal'),
+                         num2words(10**21, lang='dv', to='ordinal'))
+        # 1e-7 keeps its leading zeros after the point
+        self.assertEqual(num2words(1e-7, lang='dv'),
+                         'ސުމެއް ޕޮއިންޓް ' + 'ސުމެއް ' * 6 + 'އެކެއް')
+        with self.assertRaises(OverflowError):
+            num2words(1e33, lang='dv')

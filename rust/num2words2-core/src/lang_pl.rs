@@ -4,9 +4,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int2word` over 3-digit chunks. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — the only ceiling is the `THOUSANDS` table (see
-//! below), which raises `KeyError` rather than `OverflowError`.
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` table
+//! ends at 10^63 (see below); Python raised `KeyError` from 10^66 up. Fixed
+//! (gladiaio/num2words2#159): `maxval()` is 10^66 and `_int2word` /
+//! `to_ordinal` raise `OverflowError` for `abs(n) >= 10**66` up front.
 //!
 //! Inherited from `Num2Word_Base` (unchanged by PL, so the trait defaults do
 //! the right thing):
@@ -32,16 +33,21 @@
 //!    `HUNDREDS_ORDINALS[8][1]` "ośiemset" → "osiemset",
 //!    `HUNDREDS_ORDINALS[5][1]` "pięcset" → "pięćset", and
 //!    `prefixes_ordinal[3]` "milairdowy" → "miliardowy" — so
-//!    `to_ordinal(10**9)` == "miliardowy".
+//!    `to_ordinal(10**9)` == "miliardowy". Python's `prefixes_ordinal`
+//!    stopped there, so a value ending in four or more zero groups
+//!    (`to_ordinal(10**12)`) raised `KeyError: 4`; fixed (#174): past
+//!    "miliardowy" the port forms the scale noun + "owy" ("bilionowy",
+//!    "trylionowy", …, "decyliardowy").
 //! 4. `to_ordinal(0)` returned an `IndexError` upstream (the `while last == 0`
 //!    loop pops the only fragment, then indexes an empty list); PR #668 fixes
 //!    it to "zerowy", adopted here.
-//! 5. `to_ordinal(n)` for **every** negative `n` raises
-//!    `ValueError: invalid literal for int() with base 10: '-'`, because the
-//!    minus sign survives into either `splitbyx`'s head chunk or
-//!    `get_digits`'s `"%03d"` slice. `to_cardinal` is unaffected (it strips
-//!    the sign first), and `to_ordinal_num` is unaffected (it returns the
-//!    input untouched).
+//! 5. ~~`to_ordinal(n)` for **every** negative `n` raises
+//!    `ValueError: invalid literal for int() with base 10: '-'`~~ — fixed
+//!    (gladiaio/num2words2#155). The minus sign survived into `splitbyx` /
+//!    `get_digits` and died in `int()`. The port now raises Base's
+//!    `errmsg_negord` `TypeError`, like most languages, and a fractional
+//!    float/Decimal raises `errmsg_floatord` instead of an empty
+//!    `NotImplementedError`; a whole float (`2.0`) converts like its int.
 //! 6. `to_currency`'s integer path second-guesses its own `pluralize`: any
 //!    value above 1 whose cardinal *ends with* "jeden" is forced to form 1
 //!    instead. Polish grammar wants form 2 there ("dwadzieścia jeden
@@ -58,7 +64,10 @@
 //! observable, so parity means reproducing it rather than tidying it into a
 //! `TypeError`. See [`value_error`], [`index_error`], [`key_error`].
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{
+    check_maxval, pow10_big, verify_ordinal, verify_ordinal_float, Lang, N2WError, Result,
+};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -172,7 +181,9 @@ const HUNDREDS_ORDINALS: [(&str, &str); 10] = [
 ];
 
 /// `prefixes_ordinal`, keys 1..=3 only. Index 0 is absent in Python and
-/// unreachable (guarded by `level > 0`); index >= 4 is a `KeyError`.
+/// unreachable (guarded by `level > 0`); index >= 4 was a `KeyError` in
+/// Python (#174) and is now derived from `THOUSANDS`, see
+/// [`LangPl::prefix_ordinal`].
 const PREFIXES_ORDINAL: [&str; 4] = [
     "",
     "tysięczny",
@@ -388,8 +399,8 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
 
 pub struct LangPl {
     /// `THOUSANDS`: chunk index → the three plural forms. Keys 1..=21, i.e.
-    /// up to 1000^21 == 10^63 ("decyliard"). A chunk index of 22 or more is a
-    /// `KeyError`, which is Polish's de facto (and rather abrupt) MAXVAL.
+    /// up to 1000^21 == 10^63 ("decyliard"). A chunk index of 22 or more
+    /// (10^66 and up) is pre-empted by the MAXVAL check (#159).
     thousands: HashMap<usize, [String; 3]>,
     /// `CURRENCY_FORMS`, built once here rather than per `to_currency` call.
     currency_forms: HashMap<&'static str, CurrencyForms>,
@@ -435,11 +446,23 @@ impl LangPl {
         }
     }
 
-    /// `THOUSANDS[i]`, raising `KeyError` past 21.
+    /// `THOUSANDS[i]`, raising `KeyError` past 21 (unreachable, #159).
     fn thousands_at(&self, i: usize) -> Result<&[String; 3]> {
         self.thousands
             .get(&i)
             .ok_or_else(|| key_error(i.to_string()))
+    }
+
+    /// `prefixes_ordinal[level]`. Python's table stops at 3 ("miliardowy")
+    /// and raised `KeyError` from 10^12 (#174). Past it the adjective is the
+    /// scale noun + "owy", the pattern the table itself follows
+    /// ("milion" → "milionowy"): "bilionowy", "biliardowy", "trylionowy", …
+    /// up to "decyliardowy" (10^63), the last scale word below MAXVAL.
+    fn prefix_ordinal(&self, level: usize) -> Result<String> {
+        if let Some(p) = PREFIXES_ORDINAL.get(level).filter(|_| level >= 1) {
+            return Ok(p.to_string());
+        }
+        Ok(format!("{}owy", self.thousands_at(level)?[0]))
     }
 
     /// Port of `Num2Word_PL.pluralize`.
@@ -473,6 +496,7 @@ impl LangPl {
     /// `pre_part` can hand it a negative, which raises `ValueError` via
     /// `get_digits` exactly as Python does.
     fn int2word(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
             return Ok(ZERO.to_string());
         }
@@ -635,16 +659,19 @@ impl LangPl {
     }
 }
 
-/// Python's `int(s)` acceptance for the strings PL's `to_ordinal` splits: an
-/// optional sign followed by ASCII digits. Anything else — a '.' or the 'E'
-/// of a scientific `str(Decimal)` — fails, which the callers turn into the
-/// ValueError `splitbyx`'s `int()` raises.
-fn is_plain_int_str(s: &str) -> bool {
-    let t = s.strip_prefix('-').unwrap_or(s);
-    !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit())
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^63, so 10^66 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(66))
 }
 
 impl Lang for LangPl {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -685,15 +712,18 @@ impl Lang for LangPl {
     /// Port of `Num2Word_PL.to_ordinal`.
     ///
     /// `if number % 1 != 0: raise NotImplementedError()` is unreachable for
-    /// integers, so it is not modelled. Raises `IndexError` for 0, `KeyError`
-    /// for level >= 4 (>= 10^12), and `ValueError` for every negative.
+    /// integers, so it is not modelled. Raises `TypeError` for every
+    /// negative (#155) and `OverflowError` for values >= 10^66 (#159).
+    /// Python's `KeyError` for level >= 4 (>= 10^12) is fixed (#174).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
         // PR savoirfairelinux/num2words#668: splitbyx("0") yields a single
         // zero fragment; the pop loop below empties the list and then indexes
         // it (IndexError). Handle zero explicitly.
         if value.is_zero() {
             return Ok("zerowy".to_string());
         }
+        check_maxval(value, maxval_ceiling())?;
         let mut words: Vec<String> = Vec::new();
         let mut fragments = splitbyx(&value.to_string(), 3)?;
 
@@ -726,13 +756,7 @@ impl Lang for LangPl {
             output.push(' ');
         }
         if level > 0 {
-            // prefixes_ordinal has keys 1..=3; level >= 4 → KeyError.
-            let p = PREFIXES_ORDINAL
-                .get(level)
-                .filter(|_| level >= 1)
-                .copied()
-                .ok_or_else(|| key_error(level.to_string()))?;
-            output.push_str(p);
+            output.push_str(&self.prefix_ordinal(level)?);
         }
         Ok(output)
     }
@@ -813,47 +837,14 @@ impl Lang for LangPl {
 
     /// `to_ordinal(float/Decimal)`.
     ///
-    /// ```python
-    /// if number % 1 != 0:
-    ///     raise NotImplementedError()
-    /// fragments = list(splitbyx(str(number), 3))
-    /// ...
-    /// ```
-    ///
-    /// A fractional value raises NotImplementedError; a whole one is split
-    /// from `str(number)` — where any '.' or 'E' dies in `int()` with
-    /// ValueError. `repr(float)` always carries one or the other, so *every*
-    /// float is ValueError; only a fixed-notation whole `Decimal` reaches
-    /// the real ordinal path (negatives then die in `get_digits` exactly as
-    /// ints do).
+    /// Python raised an empty `NotImplementedError` for a fractional value
+    /// and split `str(number)` for a whole one, where any '.' or 'E' died in
+    /// `int()` with `ValueError` — so every float failed. Now Base's
+    /// `verify_ordinal` rules apply (#155): fractional → `errmsg_floatord`,
+    /// negative → `errmsg_negord`, whole → the integer ordinal.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        if value.as_whole_int().is_none() {
-            // NotImplementedError. The binding treats NotImplemented as
-            // "fall back to the original Python", which re-raises the same
-            // NotImplementedError — observably identical either way.
-            return Err(N2WError::NotImplemented(String::new()));
-        }
-        match value {
-            FloatValue::Float { value, .. } => Err(value_error(format!(
-                "invalid literal for int() with base 10: '{}'",
-                value
-            ))),
-            FloatValue::Decimal { value: d, .. } => {
-                let s = python_decimal_str(d);
-                if is_plain_int_str(&s) {
-                    // The integer port reproduces IndexError for 0, KeyError
-                    // for level >= 4 and ValueError for negatives.
-                    self.to_ordinal(&d.with_scale(0).as_bigint_and_exponent().0)
-                } else {
-                    Err(value_error(format!(
-                        "invalid literal for int() with base 10: '{}'",
-                        s
-                    )))
-                }
-            }
-        }
+        self.to_ordinal(&verify_ordinal_float(value)?)
     }
-
 
     /// `Decimal('-0.0')` per mode. `BigDecimal` cannot carry the sign, so the
     /// binding cannot demote it to a signed-zero `Float` without losing the
@@ -864,8 +855,8 @@ impl Lang for LangPl {
     /// (which year delegates to) reads `str(number)` == "-0.0", strips the
     /// sign textually, and speaks "minus zero przecinek zero". The other two
     /// modes coincide with the demoted `Float{-0.0}` path and return `None`:
-    ///   * ordinal → `splitbyx("-0.0")` feeds `int("-")` → `ValueError`, which
-    ///     `ordinal_float_entry` already reproduces for `Float{-0.0}`;
+    ///   * ordinal → zero, which `ordinal_float_entry` already gives for
+    ///     `Float{-0.0}`;
     ///   * ordinal_num → Base echoes `str(number)` == "-0.0", which the default
     ///     `ordinal_num_float_entry` already returns from `repr_str`.
     fn neg_zero_decimal(&self, to: &str) -> Option<Result<String>> {

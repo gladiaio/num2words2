@@ -319,6 +319,17 @@ class Num2WordsMSTest(TestCase):
         self.assertEqual(num2words(1001, lang="ms", ordinal=True), "ke-seribu satu")
         self.assertEqual(num2words(10000, lang="ms", ordinal=True), "ke-sepuluh ribu")
 
+    def test_currency_int_is_units(self):
+        # gladiaio/num2words2#171: an int was read as cents.
+        for v in (1, 42, 100, -5, 1000000):
+            self.assertEqual(
+                num2words(v, lang="ms", to="currency"),
+                num2words(float(v), lang="ms", to="currency"),
+            )
+        self.assertEqual(
+            num2words(42, lang="ms", to="currency"), "empat puluh dua ringgit"
+        )
+
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
@@ -334,7 +345,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="MYR"),
-            "kosong ringgit satu sen",
+            "satu ringgit",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="MYR"),
@@ -353,7 +364,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="SGD"),
-            "kosong dolar satu sen",
+            "satu dolar",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="SGD"),
@@ -372,7 +383,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="USD"),
-            "kosong dolar satu sen",
+            "satu dolar",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="USD"),
@@ -391,7 +402,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="EUR"),
-            "kosong euro satu sen",
+            "satu euro",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="EUR"),
@@ -410,7 +421,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="GBP"),
-            "kosong paun satu peni",
+            "satu paun",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="GBP"),
@@ -429,7 +440,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="IDR"),
-            "kosong rupiah satu sen",
+            "satu rupiah",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="IDR"),
@@ -448,7 +459,7 @@ class Num2WordsMSTest(TestCase):
         )
         self.assertEqual(
             num2words(1, lang="ms", to="currency", currency="BND"),
-            "kosong dolar satu sen",
+            "satu dolar",
         )
         self.assertEqual(
             num2words(1.5, lang="ms", to="currency", currency="BND"),
@@ -507,3 +518,11 @@ class Num2WordsMSTest(TestCase):
         self.assertEqual(num2words(100, lang="ms"), num2words("100", lang="ms"))
         self.assertEqual(num2words(1000, lang="ms"), num2words("1000", lang="ms"))
 
+
+    def test_negative_ordinal_raises(self):
+        # gladiaio/num2words2#155: Python list indexing wrapped -1 to
+        # "kesepuluh" (tenth), -11 to "" and crashed with IndexError below.
+        for n in (-1, -2, -11, -12, -42, -1000, -0.5, -1.5):
+            with self.assertRaisesRegex(TypeError, "Cannot treat negative"):
+                num2words(n, lang="ms", to="ordinal")
+        self.assertEqual(num2words(10, lang="ms", to="ordinal"), "kesepuluh")

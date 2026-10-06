@@ -17,7 +17,6 @@
 
 from __future__ import division, print_function, unicode_literals
 
-import unittest
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -28,9 +27,6 @@ def n2zh_hk(*args, **kwargs):
 
 
 class Num2WordsZHTest(TestCase):
-    # Known num2words2-core Rust-port gap: Chinese (zh_hk) currency
-    # (to="currency") is not ported.
-    @unittest.expectedFailure
     def test_currency(self):
         self.assertEqual(n2zh_hk("0", to="currency", reading="capital"), "零圓整")
         self.assertEqual(n2zh_hk(5.00, to="currency", reading="capital"), "伍圓整")

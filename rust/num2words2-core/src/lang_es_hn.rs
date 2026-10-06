@@ -64,7 +64,7 @@
 //! 5. `to_ordinal(10**18)` == "un trillón" — the `value < 1e18` guard fails, so
 //!    the `else` arm silently returns the **cardinal** instead of an ordinal.
 //!    Likewise `to_ordinal(10**21)` == "mil trillones".
-//! 6. `to_ordinal(0)` == `""` (empty string), not "cero" or an error.
+//! 6. `to_ordinal(0)` raises ValueError here (Python returns `""`; #160).
 //!
 //! ## The two `math.log` crash bands
 //!
@@ -609,6 +609,7 @@ impl Lang for LangEsHn {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         // Python's default gender is "m".
         self.to_ordinal_gender(value, "m")
     }
@@ -634,7 +635,8 @@ impl Lang for LangEsHn {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -677,6 +679,7 @@ impl Lang for LangEsHn {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         let gender = if kw.str("gender") == Some("f") { "f" } else { "m" };
         self.to_ordinal_gender(value, gender)
     }

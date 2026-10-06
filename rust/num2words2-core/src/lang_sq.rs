@@ -84,6 +84,13 @@
 //!    cheques while quietly degrading to a bare cardinal for currency. Base's
 //!    version also reads `CURRENCY_PRECISION` (empty here → 100), which is why
 //!    `to_cheque(1234.56, "JPY")` is "... AND 56/100 JENË".
+//! 9. **Empty and cent-less currency strings (fixed, #160).** Python's
+//!    `to_currency(0)` is `""` (no segment is ever appended), and a Decimal
+//!    or string amount takes the `isinstance(val, float)` else-arm that zeroes
+//!    the cents, so `Decimal("0.1")` was `""` and `"1.5"` was "një lek". The
+//!    port says "zero lekë" for 0 and renders Decimal cents like float ones:
+//!    `Decimal("0.1")` == "dhjetë qindarkë", `"1.5"` == "një lek, pesëdhjetë
+//!    qindarkë".
 //!
 //! # Currency shape
 //!
@@ -809,14 +816,10 @@ impl Lang for LangSq {
         // Python branches on `isinstance(val, float)`: a *float* renders its
         // cents, while a Decimal (what a string input becomes through
         // str_to_number) takes the else-arm — `whole = int(val);
-        // cents_value = 0` — so `to_currency("1.5")` is just "një lek".
-        // CurrencyValue carries the origin as `is_float`, so both arms are
-        // representable: a non-float Decimal simply never shows cents here.
-        let from_float = matches!(&val, CurrencyValue::Decimal { is_float: true, .. });
-        if cents_positive && cents && !from_float {
-            // Python's else-arm: whole = int(val); cents_value = 0 — the
-            // cents segment vanishes for Decimal input.
-        } else if cents_positive && cents {
+        // cents_value = 0` — so Python's `to_currency("1.5")` is just
+        // "një lek" and `Decimal("0.1")` is "". The port renders Decimal
+        // cents exactly like float ones (bug 9, fixed).
+        if cents_positive && cents {
             if whole.is_positive() {
                 // Python collapses what it has so far into one string and
                 // glues the separator onto its tail, so the separator lands
@@ -845,13 +848,19 @@ impl Lang for LangSq {
             }
         }
 
+        // Python returns "" for a zero amount — nothing was ever appended.
+        // Spell it like any other whole amount instead (bug 9, fixed).
+        if result.is_empty() {
+            result.push(self.to_cardinal(&whole)?);
+            result.push(self.pluralize(&whole, &forms.unit)?);
+        }
+
         // `result.insert(0, self.negword.strip())` — a separate join element,
         // so it is "minus dymbëdhjetë euro, ...".
         if is_negative {
             result.insert(0, self.negword().trim().to_string());
         }
 
-        // to_currency(0, "EUR") == "" — nothing was ever appended.
         Ok(result.join(" "))
     }
 

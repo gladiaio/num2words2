@@ -69,26 +69,31 @@
 //! `_money_verbose`, `_cents_verbose`, `_cents_terse` and `to_cheque` are all
 //! inherited from `Num2Word_Base` unchanged, so their trait defaults stand.
 //!
-//! ## The tuple leak
+//! ## The tuple leak (fixed, #169)
 //!
 //! `Num2Word_IS.pluralize(self, n, noun)` **shadows**
 //! `Num2Word_EUR.pluralize(self, n, forms)` with an incompatible contract: it
 //! expects a single noun *string*, but `Num2Word_Base.to_currency` — which IS
 //! delegates every float to — calls `self.pluralize(left, cr1)` with the
-//! `CURRENCY_FORMS` **tuple**. Python's duck typing lets that through, every
-//! branch falls out returning the tuple untouched, and the `"%s"` template
-//! then stringifies the tuple itself:
+//! `CURRENCY_FORMS` **tuple**. In Python every branch falls out returning the
+//! tuple untouched and the `"%s"` template stringifies it:
+//! `"tólf ('evra', 'evrur'), þrjátíu og fjórir ('sent', 'sent')"`.
 //!
-//! ```text
-//! num2words(12.34, lang="is", to="currency", currency="EUR")
-//!   -> "tólf ('evra', 'evrur'), þrjátíu og fjórir ('sent', 'sent')"
-//! ```
+//! The port does not reproduce that. [`LangIs::pluralize`] on the tuple call
+//! site picks a form with the rule IS's own `pluralize` applies to nouns —
+//! singular when `n % 10 == 1 and n % 100 != 11`, plural otherwise — and the
+//! int branch of `to_currency` uses the same rule, so `21` and `21.0` agree:
+//! `num2words(5.5, lang="is", to="currency")` → `"fimm krónur, fimmtíu aurar"`.
 //!
-//! That is a genuine upstream bug and it is what the corpus pins, so
-//! [`LangIs::pluralize`] reproduces the tuple repr byte for byte. Note the
-//! asymmetry it creates: `to_currency(2, ...)` (a true `int`) never reaches
-//! `pluralize` — IS's own override indexes `cr1` directly — so ints print
-//! clean ("tveir evrur") while floats leak.
+//! ## Numeral gender (fixed, #185)
+//!
+//! Python always prints the masculine cardinal before the currency noun:
+//! `"einn króna"`, `"tveir evrur"`. Icelandic 1–4 agree with the noun, so the
+//! port inflects the final numeral token (the same token `genderize` acts
+//! on) by the gender of the noun it counts — see [`currency_gender`]:
+//! `"ein króna"`, `"tuttugu og tvær evrur"`, `"einn eyrir"`, `"eitt sent"`.
+//! Int, float and string amounts all go through [`LangIs::money_verbose`] /
+//! [`LangIs::cents_verbose`], so they agree.
 
 use crate::base::{set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -129,26 +134,33 @@ fn plural_forms(word: &str) -> Option<&'static [&'static str; 2]> {
     PLURALS.iter().find(|(k, _)| *k == word).map(|(_, v)| v)
 }
 
-/// Python's `str()` of a tuple whose elements are all `str`.
-///
-/// Required because `Num2Word_IS.pluralize` returns `base.to_currency`'s
-/// `cr1`/`cr2` tuple unchanged and the `"%s"` template stringifies it (see the
-/// module docs). This is the *rendering* half of that bug.
-///
-/// Element quoting is the plain `'…'` form. Python's `repr(str)` would switch
-/// to `"…"` for a string containing an apostrophe, and would escape
-/// backslashes and non-printables — but IS's currency vocabulary is a closed
-/// set of nine plain-letter words, optionally prefixed by a
-/// `CURRENCY_ADJECTIVES` value ("íslenskar ", "US "), so none of those cases
-/// can arise. Non-ASCII stays literal in both languages (Python since PEP
-/// 3138), so "króna" renders as `'króna'`, not `'kr\xf3na'`.
-fn py_tuple_repr(items: &[String]) -> String {
-    let inner: Vec<String> = items.iter().map(|s| format!("'{}'", s)).collect();
-    match inner.len() {
-        0 => "()".to_string(),
-        // Python disambiguates a 1-tuple with a trailing comma: `('x',)`.
-        1 => format!("({},)", inner[0]),
-        _ => format!("({})", inner.join(", ")),
+/// Grammatical gender of the currency nouns in [`build_currency_forms`],
+/// as `(unit, subunit)` (#185): *króna* and *evra* are feminine, *dalur* and
+/// *eyrir* masculine, *sent* neuter. Every code in the table is listed; an
+/// unknown code never reaches here (the forms lookup raises first) but would
+/// keep the masculine Python always printed.
+fn currency_gender(code: &str) -> (usize, usize) {
+    match code {
+        "ISK" => (KVK, KK),
+        "EUR" => (KVK, HK),
+        "USD" => (KK, HK),
+        _ => (KK, KK),
+    }
+}
+
+/// Re-inflect the final token of a masculine cardinal for `gender`
+/// ("tuttugu og einn" → "tuttugu og ein"). Only 1–4 inflect; anything else,
+/// and any earlier token (e.g. "eitt" in "eitt þúsund"), is left alone.
+fn gender_last(text: &str, gender: usize) -> String {
+    match text.rsplit_once(' ') {
+        Some((head, last)) => match gender_forms(last) {
+            Some(forms) => format!("{} {}", head, forms[gender]),
+            None => text.to_string(),
+        },
+        None => match gender_forms(text) {
+            Some(forms) => forms[gender].to_string(),
+            None => text.to_string(),
+        },
     }
 }
 
@@ -318,7 +330,7 @@ impl LangIs {
     ///
     /// * `merge` (cardinal path) passes a card word → this inherent method.
     /// * `base.to_currency` (currency path) passes the `CURRENCY_FORMS` tuple
-    ///   → the [`Lang::pluralize`] impl, which reproduces the tuple leak.
+    ///   → the [`Lang::pluralize`] impl, which picks a form (#169).
     ///
     /// Inherent methods win name resolution over trait methods, so `merge`'s
     /// `self.pluralize(lnum, rtext)` binds here on the `&str` argument while
@@ -418,53 +430,42 @@ impl Lang for LangIs {
 
     // currency_precision is NOT overridden: IS inherits Num2Word_Base's empty
     // CURRENCY_PRECISION, so `.get(code, 100)` is always 100 — exactly the
-    // trait default. Likewise money_verbose / cents_verbose / cents_terse /
-    // to_cheque, which IS inherits from Num2Word_Base unchanged.
+    // trait default. Likewise cents_terse / to_cheque, which IS inherits from
+    // Num2Word_Base unchanged.
 
-    /// Port of `Num2Word_IS.pluralize(n, noun)` **for the tuple call site** —
-    /// i.e. the one `Num2Word_Base.to_currency` reaches. See the module docs;
-    /// the short version is that this always returns the tuple's `str()`.
+    /// Base's `to_cardinal`, with the final numeral agreeing with the unit
+    /// noun's gender (#185): "ein króna", "tuttugu og tvær evrur".
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(gender_last(&self.to_cardinal(number)?, currency_gender(currency).0))
+    }
+
+    /// As [`LangIs::money_verbose`], for the subunit noun: "einn eyrir",
+    /// "eitt sent".
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(gender_last(&self.to_cardinal(number)?, currency_gender(currency).1))
+    }
+
+    /// `Num2Word_IS.pluralize(n, noun)` **for the tuple call site** — the
+    /// one `Num2Word_Base.to_currency` reaches.
     ///
-    /// Walking the Python with `noun` bound to a `CURRENCY_FORMS` tuple:
-    ///
-    /// ```text
-    /// form = 0 if (n % 10 == 1 and n % 100 != 11) else 1
-    /// if form == 0:                  return noun        # the tuple
-    /// elif self.GIGA_SUFFIX in noun: return noun.replace(...)
-    /// elif self.MEGA_SUFFIX in noun: return noun.replace(...)
-    /// elif noun not in PLURALS:      return noun        # the tuple
-    /// return PLURALS[noun][form]
-    /// ```
-    ///
-    /// Both live arms return `noun` unchanged, so the count `n` has no effect
-    /// whatsoever — corpus row `0.01 EUR` proves it, taking `form == 1` for
-    /// the unit and `form == 0` for the subunit and leaking both tuples.
+    /// Python returns the `CURRENCY_FORMS` tuple itself here and the template
+    /// prints its repr (#169). The port instead applies IS's own count rule
+    /// to the tuple: `forms[0]` when `n % 10 == 1 and n % 100 != 11`, else
+    /// `forms[1]` (falling back to `forms[0]` for a 1-tuple).
     fn pluralize(&self, n: &BigInt, forms: &[String]) -> Result<String> {
         let ten = BigInt::from(10);
         let hundred = BigInt::from(100);
+        let n = n.abs();
         let form = if n.mod_floor(&ten).is_one() && n.mod_floor(&hundred) != BigInt::from(11) {
             0usize
         } else {
             1usize
         };
-        if form == 0 {
-            return Ok(py_tuple_repr(forms));
-        }
-        // `self.GIGA_SUFFIX in noun` is a *substring* test when noun is a str
-        // (the merge path) but *element equality* when noun is a tuple — this
-        // path. It could only fire if a currency form were literally
-        // "illjarður"/"illjón", and the body would then raise AttributeError,
-        // because tuples have no `.replace`. Unreachable with IS's table;
-        // ported rather than dropped so the shape survives a table change.
-        if forms.iter().any(|f| f == GIGA_SUFFIX || f == MEGA_SUFFIX) {
-            return Err(N2WError::Attribute(
-                "'tuple' object has no attribute 'replace'".into(),
-            ));
-        }
-        // `elif noun not in PLURALS` — PLURALS is keyed by str, so a tuple key
-        // never hits, the test is always true, and the tuple falls straight
-        // back out. `PLURALS[noun][form]` below it is dead.
-        Ok(py_tuple_repr(forms))
+        forms
+            .get(form)
+            .or_else(|| forms.first())
+            .cloned()
+            .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
     /// Port of `Num2Word_IS.to_currency`.
@@ -473,16 +474,12 @@ impl Lang for LangIs {
     /// `Num2Word_Base.to_currency` verbatim. The int branch is hand-rolled and
     /// diverges from Base in three observable ways:
     ///
-    /// 1. It indexes `cr1` directly instead of calling `pluralize`, so ints
-    ///    escape the tuple leak that floats suffer.
-    /// 2. It uses `self.negword` **unstripped** where Base uses
-    ///    `self.negword.strip()` + `" "`. `negword` is `"mínus "`, so the
-    ///    `"%s %s %s"` template emits a *double* space:
-    ///    `to_currency(-12, currency="EUR")` == `"mínus  tólf evrur"`.
-    ///    Confirmed live. The trailing `.strip()` only cleans the ends, so the
-    ///    interior double space survives. No corpus row covers it (the only
-    ///    negative arg, `-12.34`, is a float and takes Base's single-space
-    ///    path), but it is the real behaviour.
+    /// 1. It indexes `cr1` directly (`cr1[0]` only when `abs_val == 1`). The
+    ///    port routes it through the same [`Lang::pluralize`] as floats (#169)
+    ///    so `21` and `21.0` both say "króna".
+    /// 2. Python uses `self.negword` (`"mínus "`) **unstripped**, so the
+    ///    `"%s %s %s"` template emits a double space: `"mínus tólf evrur"`.
+    ///    Fixed here (#160): the port strips it and says `"mínus tólf evrur"`.
     /// 3. It ignores `adjective=` entirely — no `prefix_currency` call — so
     ///    `to_currency(2, currency="ISK", adjective=True)` == `"tveir krónur"`,
     ///    with no "íslenskar". Floats do apply the adjective.
@@ -495,7 +492,7 @@ impl Lang for LangIs {
         adjective: bool,
     ) -> Result<String> {
         // Python: `if isinstance(val, int)` — a real int, never a whole float.
-        // `1` prints no cents; `1.0` prints "núll ('sent', 'sent')".
+        // `1` prints no cents; `1.0` prints "núll sent".
         if let CurrencyValue::Int(v) = val {
             // try:    cr1, cr2 = self.CURRENCY_FORMS[currency]
             // except (KeyError, AttributeError):
@@ -506,23 +503,15 @@ impl Lang for LangIs {
             // re-raises the same miss as NotImplementedError, so an unknown
             // code still errors rather than falling back to anything.
             if let Some(forms) = self.currency_forms(currency) {
-                let minus_str = if v.is_negative() { self.negword() } else { "" };
+                let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
                 let abs_val = v.abs();
-                let money_str = self.to_cardinal(&abs_val)?;
+                // Python: self.to_cardinal(abs_val), always masculine. The
+                // port agrees the numeral with the noun (#185).
+                let money_str = self.money_verbose(&abs_val, currency)?;
 
-                // if abs_val == 1: cr1[0]
-                // else:            cr1[1] if len(cr1) > 1 else cr1[0]
-                // The `isinstance(cr1, tuple)` guards are always true for IS's
-                // table, so they collapse into the tuple arms.
-                let currency_str = if abs_val.is_one() {
-                    forms.unit.first()
-                } else {
-                    forms.unit.get(1).or_else(|| forms.unit.first())
-                };
-                // `cr1[0]` on an empty tuple would be IndexError. IS's table
-                // has no empty entry, so this cannot fire.
-                let currency_str = currency_str
-                    .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
+                // Python: cr1[0] if abs_val == 1 else cr1[1]. Unified with
+                // the float path's count rule (#169).
+                let currency_str = Lang::pluralize(self, &abs_val, &forms.unit)?;
 
                 // ("%s %s %s" % (minus_str, money_str, currency_str)).strip()
                 return Ok(format!("{} {} {}", minus_str, money_str, currency_str)
@@ -744,7 +733,7 @@ mod tests {
     /// the Python side. That split is the whole ballgame for IS: `1` takes
     /// IS's own int branch and prints "einn evra", while `1.0` falls through
     /// to `Num2Word_Base.to_currency` and prints
-    /// "einn ('evra', 'evrur'), núll ('sent', 'sent')".
+    /// "ein evra, núll sent".
     ///
     /// `has_decimal` is `!is_int` because every non-int row in the corpus is a
     /// Python `float`, for which `isinstance(val, float)` short-circuits the
@@ -781,34 +770,35 @@ mod tests {
         }
     }
 
-    /// Every `is` currency row in the frozen corpus, verbatim.
+    /// Every `is` currency row in the frozen corpus; float rows corrected for
+    /// #169, numeral gender for #185 (evra f, dalur m, sent n).
     #[test]
     fn corpus_currency() {
         let cases: &[(&str, &str, std::result::Result<&str, &str>)] = &[
         ("0",        "EUR",   Ok("núll evrur")),
-        ("1",        "EUR",   Ok("einn evra")),
-        ("2",        "EUR",   Ok("tveir evrur")),
+        ("1",        "EUR",   Ok("ein evra")),
+        ("2",        "EUR",   Ok("tvær evrur")),
         ("100",      "EUR",   Ok("eitt hundrað evrur")),
-        ("12.34",    "EUR",   Ok("tólf ('evra', 'evrur'), þrjátíu og fjórir ('sent', 'sent')")),
-        ("0.01",     "EUR",   Ok("núll ('evra', 'evrur'), einn ('sent', 'sent')")),
-        ("1.0",      "EUR",   Ok("einn ('evra', 'evrur'), núll ('sent', 'sent')")),
-        ("99.99",    "EUR",   Ok("níutíu og níu ('evra', 'evrur'), níutíu og níu ('sent', 'sent')")),
-        ("1234.56",  "EUR",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórir ('evra', 'evrur'), fimmtíu og sex ('sent', 'sent')")),
-        ("-12.34",   "EUR",   Ok("mínus tólf ('evra', 'evrur'), þrjátíu og fjórir ('sent', 'sent')")),
+        ("12.34",    "EUR",   Ok("tólf evrur, þrjátíu og fjögur sent")),
+        ("0.01",     "EUR",   Ok("núll evrur, eitt sent")),
+        ("1.0",      "EUR",   Ok("ein evra, núll sent")),
+        ("99.99",    "EUR",   Ok("níutíu og níu evrur, níutíu og níu sent")),
+        ("1234.56",  "EUR",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórar evrur, fimmtíu og sex sent")),
+        ("-12.34",   "EUR",   Ok("mínus tólf evrur, þrjátíu og fjögur sent")),
         ("1000000",  "EUR",   Ok("ein milljón evrur")),
-        ("0.5",      "EUR",   Ok("núll ('evra', 'evrur'), fimmtíu ('sent', 'sent')")),
+        ("0.5",      "EUR",   Ok("núll evrur, fimmtíu sent")),
         ("0",        "USD",   Ok("núll dalir")),
         ("1",        "USD",   Ok("einn dalur")),
         ("2",        "USD",   Ok("tveir dalir")),
         ("100",      "USD",   Ok("eitt hundrað dalir")),
-        ("12.34",    "USD",   Ok("tólf ('dalur', 'dalir'), þrjátíu og fjórir ('sent', 'sent')")),
-        ("0.01",     "USD",   Ok("núll ('dalur', 'dalir'), einn ('sent', 'sent')")),
-        ("1.0",      "USD",   Ok("einn ('dalur', 'dalir'), núll ('sent', 'sent')")),
-        ("99.99",    "USD",   Ok("níutíu og níu ('dalur', 'dalir'), níutíu og níu ('sent', 'sent')")),
-        ("1234.56",  "USD",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórir ('dalur', 'dalir'), fimmtíu og sex ('sent', 'sent')")),
-        ("-12.34",   "USD",   Ok("mínus tólf ('dalur', 'dalir'), þrjátíu og fjórir ('sent', 'sent')")),
+        ("12.34",    "USD",   Ok("tólf dalir, þrjátíu og fjögur sent")),
+        ("0.01",     "USD",   Ok("núll dalir, eitt sent")),
+        ("1.0",      "USD",   Ok("einn dalur, núll sent")),
+        ("99.99",    "USD",   Ok("níutíu og níu dalir, níutíu og níu sent")),
+        ("1234.56",  "USD",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórir dalir, fimmtíu og sex sent")),
+        ("-12.34",   "USD",   Ok("mínus tólf dalir, þrjátíu og fjögur sent")),
         ("1000000",  "USD",   Ok("ein milljón dalir")),
-        ("0.5",      "USD",   Ok("núll ('dalur', 'dalir'), fimmtíu ('sent', 'sent')")),
+        ("0.5",      "USD",   Ok("núll dalir, fimmtíu sent")),
         ("0",        "GBP",   Err("NotImplementedError")),
         ("1",        "GBP",   Err("NotImplementedError")),
         ("2",        "GBP",   Err("NotImplementedError")),
@@ -899,11 +889,12 @@ mod tests {
         }
     }
 
-    /// Every `is` cheque row in the frozen corpus, verbatim.
+    /// Every `is` cheque row in the frozen corpus; numeral gender corrected
+    /// for #185 ("FJÓRAR … EVRUR").
     #[test]
     fn corpus_cheque() {
         let cases: &[(&str, &str, std::result::Result<&str, &str>)] = &[
-        ("1234.56",  "EUR",   Ok("EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRIR AND 56/100 EVRUR")),
+        ("1234.56",  "EUR",   Ok("EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRAR AND 56/100 EVRUR")),
         ("1234.56",  "USD",   Ok("EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRIR AND 56/100 DALIR")),
         ("1234.56",  "GBP",   Err("NotImplementedError")),
         ("1234.56",  "JPY",   Err("NotImplementedError")),
@@ -959,83 +950,85 @@ mod tests {
             is_float: true,
         };
 
-        // 1. Negative *int* keeps IS's unstripped negword -> DOUBLE space.
-        //    (The corpus's only negative arg, -12.34, is a float and takes
-        //    Base's single-space path -- covered above.)
+        // 1. Negative *int*: single space after the minus word (#160).
         assert_eq!(
             l.to_currency(&int(-12), "EUR", true, None, false).unwrap(),
-            "mínus  tólf evrur"
+            "mínus tólf evrur"
         );
         assert_eq!(
             l.to_currency(&int(-1), "EUR", true, None, false).unwrap(),
-            "mínus  einn evra"
+            "mínus ein evra"
         );
 
         // 2. ISK, the default currency, is never exercised by the corpus.
-        assert_eq!(l.to_currency(&int(1), "ISK", true, None, false).unwrap(), "einn króna");
-        assert_eq!(l.to_currency(&int(2), "ISK", true, None, false).unwrap(), "tveir krónur");
+        assert_eq!(l.to_currency(&int(1), "ISK", true, None, false).unwrap(), "ein króna");
+        assert_eq!(l.to_currency(&int(2), "ISK", true, None, false).unwrap(), "tvær krónur");
         assert_eq!(
             l.to_currency(&flt("12.34"), "ISK", true, None, false).unwrap(),
-            "tólf ('króna', 'krónur'), þrjátíu og fjórir ('eyrir', 'aurar')"
+            "tólf krónur, þrjátíu og fjórir aurar"
         );
 
         // 3. adjective=True is ignored on the int path, applied on the float
-        //    path (and there it is prefixed *inside* the leaked tuple).
-        assert_eq!(l.to_currency(&int(2), "ISK", true, None, true).unwrap(), "tveir krónur");
+        //    path.
+        assert_eq!(l.to_currency(&int(2), "ISK", true, None, true).unwrap(), "tvær krónur");
         assert_eq!(
             l.to_currency(&flt("2.5"), "ISK", true, None, true).unwrap(),
-            "tveir ('íslenskar króna', 'íslenskar krónur'), fimmtíu ('eyrir', 'aurar')"
+            "tvær íslenskar krónur, fimmtíu aurar"
         );
 
         // 4. cents=false swaps _cents_verbose for _cents_terse (width 2, since
         //    IS inherits Base's empty CURRENCY_PRECISION -> divisor 100).
         assert_eq!(
             l.to_currency(&flt("12.34"), "EUR", false, None, false).unwrap(),
-            "tólf ('evra', 'evrur'), 34 ('sent', 'sent')"
+            "tólf evrur, 34 sent"
         );
         // A caller-supplied separator replaces the "," default.
         assert_eq!(
             l.to_currency(&flt("12.34"), "EUR", true, Some(" og"), false).unwrap(),
-            "tólf ('evra', 'evrur') og þrjátíu og fjórir ('sent', 'sent')"
+            "tólf evrur og þrjátíu og fjögur sent"
         );
 
         // 5. has_decimal, not the numeric value, gates the cents segment:
         //    Decimal("5") and Decimal("5.00") are numerically equal.
         let d5 = CurrencyValue::Decimal { value: BigDecimal::from_str("5").unwrap(), has_decimal: false, is_float: false };
         let d500 = CurrencyValue::Decimal { value: BigDecimal::from_str("5.00").unwrap(), has_decimal: true, is_float: false };
-        assert_eq!(l.to_currency(&d5, "EUR", true, None, false).unwrap(), "fimm ('evra', 'evrur')");
+        assert_eq!(l.to_currency(&d5, "EUR", true, None, false).unwrap(), "fimm evrur");
         assert_eq!(
             l.to_currency(&d500, "EUR", true, None, false).unwrap(),
-            "fimm ('evra', 'evrur'), núll ('sent', 'sent')"
+            "fimm evrur, núll sent"
         );
 
         // 6. Negative cheque, and a cheque whose cents are zero.
         assert_eq!(
             l.to_cheque(&BigDecimal::from_str("-1234.56").unwrap(), "EUR").unwrap(),
-            "MINUS EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRIR AND 56/100 EVRUR"
+            "MINUS EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRAR AND 56/100 EVRUR"
         );
         assert_eq!(
             l.to_cheque(&BigDecimal::from_str("1.0").unwrap(), "ISK").unwrap(),
-            "EINN AND 00/100 KRÓNUR"
+            "EIN AND 00/100 KRÓNUR"
         );
     }
 
-    /// `pluralize` on the tuple call site ignores `n` entirely -- both live
-    /// branches return the tuple untouched. Guards the leak against a
-    /// well-meaning "fix".
+    /// `pluralize` on the tuple call site picks a form by IS's count rule
+    /// (#169) instead of leaking the tuple repr.
     #[test]
-    fn pluralize_tuple_is_count_independent() {
+    fn pluralize_tuple_picks_form() {
         let l = LangIs::new();
-        let forms: Vec<String> = vec!["evra".into(), "evrur".into()];
-        for n in [0i64, 1, 2, 11, 21, 34, 101] {
-            // UFCS is required: the inherent `pluralize(&self, n, &str)` wins
-            // plain method resolution, which is precisely why `merge` keeps
-            // getting the string behaviour while `default_to_currency` --
-            // generic over `L: Lang`, where only the trait method is visible --
-            // gets the tuple one.
+        let forms: Vec<String> = vec!["króna".into(), "krónur".into()];
+        for (n, want) in [
+            (0i64, "krónur"),
+            (1, "króna"),
+            (2, "krónur"),
+            (11, "krónur"),
+            (21, "króna"),
+            (111, "krónur"),
+            (-1, "króna"),
+        ] {
+            // UFCS: the inherent `pluralize(&self, n, &str)` wins plain
+            // method resolution.
             assert_eq!(
                 Lang::pluralize(&l, &BigInt::from(n), &forms).unwrap(),
-                "('evra', 'evrur')",
+                want,
                 "n = {}",
                 n
             );

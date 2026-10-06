@@ -16,6 +16,7 @@
 # MA 02110-1301 USA
 from __future__ import unicode_literals
 
+from decimal import Decimal
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -391,16 +392,19 @@ TEST_CASES_DECIMALS = [
     (123.4567, "cant a thri ar hugain pwynt pedwar pump chwech saith")
 ]
 
+# gladiaio/num2words2#162: each unit is named once, in the counted form
+# ("un punt punt, ceiniog ceiniog" before). Zero pence say "dim ceiniog"
+# (#186; it was an empty numeral and a double space).
 TEST_CASES_TO_CURRENCY_GBP = (
-    (0.00, "dim punt punnoedd,  ceiniogau"),
-    (0.23, "dim punt punnoedd, tri cheiniog ar hugain ceiniogau"),
-    (2.04, "dwy bunt punnoedd, pedwar ceiniog ceiniogau"),
-    (3.50, "tair punt punnoedd, hanner cant ceiniog ceiniogau"),
-    (2002.15, "dwy fil dwy o bunnoedd punnoedd, pymtheg ceiniog ceiniogau"),
-    (100.01, "cant punt punnoedd, ceiniog ceiniog"),
-    (50.00, "hanner cant punt punnoedd,  ceiniogau"),
-    (51.00, "hanner cant ac un punt punnoedd,  ceiniogau"),
-    (152.50, "cant a hanner a dwy o bunnoedd punnoedd, hanner cant ceiniog ceiniogau"),
+    (0.00, "dim punt, dim ceiniog"),
+    (0.23, "dim punt, tri cheiniog ar hugain"),
+    (2.04, "dwy bunt, pedwar ceiniog"),
+    (3.50, "tair punt, hanner cant ceiniog"),
+    (2002.15, "dwy fil dwy o bunnoedd, pymtheg ceiniog"),
+    (100.01, "cant punt, ceiniog"),
+    (50.00, "hanner cant punt, dim ceiniog"),
+    (51.00, "hanner cant ac un punt, dim ceiniog"),
+    (152.50, "cant a hanner a dwy o bunnoedd, hanner cant ceiniog"),
 )
 
 TEST_CASES_COUNTED = [
@@ -431,8 +435,9 @@ class Num2WordsCYTest(TestCase):
         for test in TEST_CASES_CARDINAL_FEM:
             self.assertEqual(num2words(test[0], lang="cy", gender="fem"), test[1])
 
-    def test_number_not_implemented(self):
-        with self.assertRaises(NotImplementedError):
+    def test_number_too_large(self):
+        # gladiaio/num2words2#159: OverflowError, not NotImplementedError.
+        with self.assertRaises(OverflowError):
             num2words(10**66, lang="cy")
 
     def test_decimals(self):
@@ -472,3 +477,51 @@ class Num2WordsCYTest(TestCase):
         self.assertEqual(num2words(-0.4, lang="cy"), "meinws dim pwynt pedwar")
         self.assertEqual(num2words(-0.5, lang="cy"), "meinws dim pwynt pump")
         self.assertEqual(num2words(-1.4, lang="cy"), "meinws un pwynt pedwar")
+
+    def test_currency_negative_word(self):
+        # gladiaio/num2words2#180: the int path said "minws".
+        self.assertEqual(
+            num2words(-5, lang="cy", to="currency"), "meinws pump bunnoedd"
+        )
+        self.assertEqual(num2words(-1, lang="cy", to="currency"), "meinws un bunt")
+        self.assertTrue(
+            num2words(-5.5, lang="cy", to="currency").startswith("meinws ")
+        )
+
+    def test_currency_names_each_unit_once(self):
+        # gladiaio/num2words2#162
+        pound = {"punt", "bunt", "phunt", "bunnoedd", "punnoedd"}
+        pence = {"ceiniog", "geiniog", "cheiniog", "ceiniogau"}
+        for x in [1.5, 2.5, 1.01, 10.10, 152.50, 2002.15]:
+            words = num2words(x, lang="cy", to="currency")
+            words = words.replace(",", "").split()
+            self.assertEqual(sum(w in pound for w in words), 1, x)
+            self.assertEqual(sum(w in pence for w in words), 1, x)
+        self.assertEqual(
+            num2words(1.5, lang="cy", to="currency"),
+            "un punt, hanner cant ceiniog",
+        )
+        self.assertEqual(
+            num2words(1.01, lang="cy", to="currency"), "un punt, ceiniog"
+        )
+        self.assertEqual(
+            num2words(1.5, lang="cy", to="currency", currency="USD",
+                      adjective=True),
+            "un dolar US, hanner cant ceiniog",
+        )
+
+    def test_currency_zero_pence(self):
+        # gladiaio/num2words2#186: zero pence was an empty numeral
+        # ("un punt,  ceiniogau").
+        for x in (1.0, "1.0", Decimal("1.00")):
+            self.assertEqual(
+                num2words(x, lang="cy", to="currency"), "un punt, dim ceiniog"
+            )
+        self.assertEqual(
+            num2words(-5.0, lang="cy", to="currency"),
+            "meinws pump punt, dim ceiniog",
+        )
+        self.assertEqual(
+            num2words(1.0, lang="cy", to="currency", cents=False),
+            "un punt, 00 ceiniogau",
+        )

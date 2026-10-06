@@ -29,11 +29,12 @@
 //! This is a port, not a rewrite. Every item below looks wrong and is exactly
 //! what Python emits; all are confirmed against the frozen corpus.
 //!
-//! 1. **`negword` and `pointword` are untranslated English.** `setup()` sets
-//!    `self.negword = "minus "` and `self.pointword = "point"` in a module
-//!    whose every other word is Sinhala. So `to_cardinal(-1)` == "minus එක",
-//!    not a Sinhala negation. Corpus-confirmed for -1/-7/-21/-42/-100/-999/
-//!    -1000/-1000000 and for `to_year(-500)` == "minus පහ සියය".
+//! 1. **`negword` and `pointword` (fixed, gladiaio/num2words2#154).** Python's
+//!    `setup()` sets the English `self.negword = "minus "` and
+//!    `self.pointword = "point"` in a module whose every other word is
+//!    Sinhala. This port uses the Sinhala සෘණ ("negative") and දශම
+//!    ("decimal"): `to_cardinal(-1)` == "සෘණ එක", `to_cardinal(1.5)` ==
+//!    "එක දශම පහ", `to_year(-500)` == "සෘණ පහ සියය".
 //! 2. **`self.ones[0]` is `""`**, so the zero ternary
 //!    `return self.ones[0] if self.ones[0] else "බිංදුව"` can never take its
 //!    first arm — the empty string is falsy. The conditional is dead and zero
@@ -55,7 +56,7 @@
 //!    through the `str(number) + "."` template: `to_ordinal_num(-1)` == "-1."
 //!    rather than the `TypeError` (`errmsg_negord`) that `verify_ordinal`
 //!    exists to raise. `to_ordinal` likewise accepts negatives:
-//!    `to_ordinal(-1)` == "minus එක වැනි". Both corpus-confirmed.
+//!    `to_ordinal(-1)` == "සෘණ එක වැනි". Both corpus-confirmed.
 //! 6. **`_int_to_word`'s `number < 0` arm is dead code.** `to_cardinal` strips
 //!    the sign from the *string* before calling `int()`, and every recursive
 //!    call passes a quotient or remainder that is non-negative by
@@ -94,11 +95,11 @@
 //!    the decimal branch and depend on it.
 //!
 //! 12. **Whole floats keep their ".0" tail.** Routing is `"." in str(number)`,
-//!    and `str(5.0)` is `"5.0"`, so `to_cardinal(5.0)` == "පහ point බිංදුව" —
+//!    and `str(5.0)` is `"5.0"`, so `to_cardinal(5.0)` == "පහ දශම බිංදුව" —
 //!    never Base's whole-value integer route. `Decimal("5")` (str `"5"`, no
 //!    dot) *does* take the integer path. `cardinal_float_entry` carries this
 //!    routing; `to_ordinal`/`to_year` inherit it by composition
-//!    (`to_ordinal(5.0)` == "පහ point බිංදුව වැනි"), and `to_ordinal_num(5.0)`
+//!    (`to_ordinal(5.0)` == "පහ දශම බිංදුව වැනි"), and `to_ordinal_num(5.0)`
 //!    suffixes the raw repr: "5.0.".
 //! 13. **Exponential string forms raise ValueError on the worded modes.**
 //!    `str(1e16)` == "1e+16" and `str(Decimal("1E+2"))` == "1E+2" contain no
@@ -161,17 +162,18 @@ use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-/// `setup(): self.negword = "minus "` — verbatim, trailing space included.
+/// `setup(): self.negword = "minus "`, here in Sinhala (#154), trailing space
+/// included.
 ///
 /// Note SI's `to_cardinal` concatenates `self.negword` **raw**, unlike
 /// `Num2Word_Base.to_cardinal`/`parse_minus`, which normalise via
 /// `"%s " % self.negword.strip()`. Here the two happen to coincide because the
 /// literal already carries exactly one trailing space.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "සෘණ ";
 
-/// `setup(): self.pointword = "point"`. Unused on the integer path (kept so
-/// the trait's `pointword()` reports what Python holds).
-const POINTWORD: &str = "point";
+/// `setup(): self.pointword = "point"`, here the Sinhala දශම (#154). Used by
+/// the float path.
+const POINTWORD: &str = "දශම";
 
 /// The `else` arm of `_int_to_word`'s zero ternary — the only reachable one
 /// (see bug 2).
@@ -525,7 +527,7 @@ impl Lang for LangSi {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        POINTWORD
     }
 
     /// Port of `Num2Word_SI.to_cardinal`, integer path only.
@@ -553,7 +555,7 @@ impl Lang for LangSi {
     /// Port of `Num2Word_SI.to_ordinal`: `to_cardinal(number) + " වැනි"`.
     ///
     /// No `verify_ordinal` call, so negatives and the raw-digit fallback both
-    /// flow through: `to_ordinal(-1)` == "minus එක වැනි" and
+    /// flow through: `to_ordinal(-1)` == "සෘණ එක වැනි" and
     /// `to_ordinal(10**9)` == "1000000000 වැනි" (bugs 4 and 5).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}{}", self.to_cardinal(value)?, ORDINAL_SUFFIX))
@@ -572,7 +574,7 @@ impl Lang for LangSi {
     /// return self.to_cardinal(val)`. `longval` is accepted and ignored, so
     /// there is no era handling and no two-digit pairing — `to_year(1999)` is
     /// just the cardinal "දහස නවය සියය අනූව නවය", and `to_year(-500)` is
-    /// "minus පහ සියය" rather than anything BC-flavoured.
+    /// "සෘණ පහ සියය" rather than anything BC-flavoured.
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -618,15 +620,15 @@ impl Lang for LangSi {
     ///   CPython `repr` on 8k+ values including the large-magnitude ones above.
     ///   The sign is read from the **sign bit** (`is_sign_negative`), not
     ///   `v < 0`, because Python keys on `str(number)` and `str(-0.0)` is
-    ///   `"-0.0"` — SI prepends "minus" for negative zero (`num2words(-0.0,
-    ///   lang='si')` == "minus බිංදුව point බිංදුව").
+    ///   `"-0.0"` — SI prepends the negword for negative zero (`num2words(-0.0,
+    ///   lang='si')` == "සෘණ බිංදුව දශම බිංදුව").
     /// * *Decimal*: the arm is exact; [`plain_decimal_string`] re-renders the
     ///   Decimal's own digits and scale in plain notation, matching
     ///   `str(Decimal)` for every non-exponential value — all five corpus
     ///   `cardinal_dec` rows, including the trailing-zero case `1.10` (scale is
     ///   preserved, so `right == "10"`) and `98746251323029.99`, whose integer
     ///   part exceeds 1e9 and therefore leaks raw digits through
-    ///   [`LangSi::int_to_word`]'s bug-4 fallback: "98746251323029 point නවය නවය".
+    ///   [`LangSi::int_to_word`]'s bug-4 fallback: "98746251323029 දශම නවය නවය".
     ///   The exponential-`str(Decimal)` case (e.g. `Decimal("1E+2")`) is the
     ///   same untested divergence flagged as bug 8 for `to_currency`.
     ///
@@ -693,7 +695,7 @@ impl Lang for LangSi {
     ///
     /// Python's `to_cardinal` is string-driven: `"." in str(number)` picks the
     /// decimal grammar, and `str(5.0)` is `"5.0"`, so **whole floats keep
-    /// their ".0" tail** ("පහ point බිංදුව") instead of taking Base's
+    /// their ".0" tail** ("පහ දශම බිංදුව") instead of taking Base's
     /// whole-value integer route. Without a visible point the sign-free string
     /// lands in `int(n)`:
     ///   * `Decimal("5")` -> `"5"` -> the integer path ("පහ");
@@ -729,7 +731,7 @@ impl Lang for LangSi {
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + " වැනි"` with no type guard, so floats get
-    /// the full decimal phrase plus the suffix ("පහ point බිංදුව වැනි") and
+    /// the full decimal phrase plus the suffix ("පහ දශම බිංදුව වැනි") and
     /// bug 13's ValueError propagates unchanged for exponential forms.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!(
@@ -869,7 +871,7 @@ impl Lang for LangSi {
         );
 
         // Python: `if cents and right:` — `right` is an int, so this is
-        // "cents requested AND the cents are non-zero". Note `cents=False`
+        // "cents requested AND the cents are non-බිංදුව". Note `cents=False`
         // drops the segment outright rather than falling back to
         // `_cents_terse`, which is why SI never calls it.
         if cents && !right.is_zero() {
@@ -883,7 +885,8 @@ impl Lang for LangSi {
         // Python: `return (self.negword if is_negative else "") + result`
         // NEGWORD is spliced **raw**, with its trailing space and without the
         // `negword.strip() + " "` normalisation `default_to_currency` applies.
-        // They coincide only because the literal is already "minus ".
+        // They coincide only because the literal is already "සෘණ ".
+
         Ok(format!(
             "{}{}",
             if is_negative { NEGWORD } else { "" },
@@ -916,24 +919,24 @@ mod float_entry_tests {
         // Whole float keeps its ".0" tail through every worded mode.
         assert_eq!(
             l.cardinal_float_entry(&fv(5.0, 1), None).unwrap(),
-            "පහ point බිංදුව"
+            "පහ දශම බිංදුව"
         );
         assert_eq!(
             l.ordinal_float_entry(&fv(5.0, 1)).unwrap(),
-            "පහ point බිංදුව වැනි"
+            "පහ දශම බිංදුව වැනි"
         );
-        assert_eq!(l.year_float_entry(&fv(5.0, 1)).unwrap(), "පහ point බිංදුව");
+        assert_eq!(l.year_float_entry(&fv(5.0, 1)).unwrap(), "පහ දශම බිංදුව");
         // ordinal_num echoes the Python repr and appends the period.
         assert_eq!(l.ordinal_num_float_entry(&fv(5.0, 1), "5.0").unwrap(), "5.0.");
-        // Negative zero: sign bit -> "minus".
+        // Negative zero: sign bit -> the negword.
         assert_eq!(
             l.ordinal_float_entry(&fv(-0.0, 1)).unwrap(),
-            "minus බිංදුව point බිංදුව වැනි"
+            "සෘණ බිංදුව දශම බිංදුව වැනි"
         );
         // Trailing zeros survive through the Decimal arm.
         assert_eq!(
             l.cardinal_float_entry(&dv("5.00", 2), None).unwrap(),
-            "පහ point බිංදුව බිංදුව"
+            "පහ දශම බිංදුව බිංදුව"
         );
         // Decimal without a point takes the integer path.
         assert_eq!(l.cardinal_float_entry(&dv("5", 0), None).unwrap(), "පහ");

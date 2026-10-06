@@ -5,10 +5,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! populates `self.cards` and `MAXVAL` is never consulted. `to_cardinal` is
 //! overridden outright and drives `_int2word` over 3-digit chunks, so
-//! `cards`/`maxval`/`merge` stay at their trait defaults here and there is
-//! **no `OverflowError` path at all**. The only ceiling is the `THOUSANDS` /
-//! `prefixes_ordinal` tables (keys 1..=10, i.e. up to 10^30 "нонільйон");
-//! past that Python raises `KeyError`, not `OverflowError`.
+//! `cards`/`merge` stay at their trait defaults here. The `THOUSANDS` /
+//! `prefixes_ordinal` tables (keys 1..=10) end at 10^30 "нонільйон"; past
+//! that Python raised `KeyError`. Fixed (gladiaio/num2words2#159): `maxval()`
+//! is 10^33 and values at or above it raise `OverflowError` (quirk 8).
 //!
 //! Inherited from `Num2Word_Base`, unchanged by UK:
 //!   * `verify_ordinal(value)` — raises `TypeError` for negatives. UK's
@@ -49,9 +49,11 @@
 //!    instead. The live code therefore never elides the leading "one" of a
 //!    thousands chunk: `to_cardinal(1000)` == "одна тисяча" (not "тисяча")
 //!    and `to_cardinal(1000000)` == "один мільйон". Corpus-confirmed.
-//! 5. `THOUSANDS[1][1][0]` is "тисячи" — a Russianism; the Ukrainian genitive
-//!    is "тисячі" (which the module does use at `[5][0]`). Preserved as-is.
-//!    Unreachable in this scope: `morphological_case` is always 0 (see below).
+//! 5. Fixed (gladiaio/num2words2#179): Python's `THOUSANDS[1][1][0]` is
+//!    "тисячи" — a Russianism; the Ukrainian genitive singular is "тисячі"
+//!    (which the module itself uses at `[5][0]`). Unreachable while `case=`
+//!    was unsupported; now that it is served, the table carries "тисячі", so
+//!    `to_cardinal(1000, case="genitive")` == "однієї тисячі".
 //! 6. `TWENTIES_ORDINALS[9][1]` is "дев'яности"; the standard form is
 //!    "дев'яноста". Preserved as-is, and it *is* reachable —
 //!    `to_ordinal(90000)` == "дев'яноститисячний".
@@ -59,19 +61,32 @@
 //!    chunk) because "тисяча" is feminine — hence "одна тисяча" / "дві тисячі"
 //!    but "один мільйон" / "два мільйони". Correct Ukrainian, noted because
 //!    the condition looks like a gender bug at a glance.
-//! 8. `KeyError` is the de facto MAXVAL: `THOUSANDS`/`prefixes_ordinal` stop
-//!    at key 10, so both `to_cardinal(10**33)` and `to_ordinal(10**33)` raise
-//!    `KeyError: 11`, and `10**36` raises `KeyError: 12`. Verified.
+//! 8. Fixed (gladiaio/num2words2#159): `THOUSANDS`/`prefixes_ordinal` stop
+//!    at key 10, so Python's `to_cardinal(10**33)` and `to_ordinal(10**33)`
+//!    raised `KeyError: 11`. `_int2word` and `to_ordinal` now check
+//!    `abs(n) >= 10**33` first and raise `OverflowError`, and `maxval()`
+//!    reports 10^33.
 //!
-//! # Dropped kwargs (out of scope, flagged in the report)
+//! # Kwargs
 //!
-//! Python's `to_cardinal(number, **kwargs)` accepts `case` (one of six
-//! morphological cases, resolved via `[...].index(case)`) and `gender`
-//! (feminine aliases `{"f", "feminine", "ж", "жіночий", "женский"}`). The
-//! Rust `Lang` trait passes neither, so `morphological_case` is always 0
-//! (nominative) and `feminine` is always false — which is exactly what the
-//! corpus rows exercise. The full six-form tables are transcribed anyway so
-//! the data is complete and reviewable; only index 0 is reachable today.
+//! Python's `to_cardinal(number, **kwargs)` accepts `gender` (feminine
+//! aliases `{"f", "feminine", "ж", "жіночий", "женский"}`, compared after
+//! `str.lower()`; anything else is masculine) and `case` (one of six
+//! morphological cases, resolved via `[...].index(case)`).
+//!
+//! * `gender` is served by `to_cardinal_kw` / `to_cardinal_float_kw`
+//!   (gladiaio/num2words2#145); for float/Decimal input it applies to both
+//!   sides of the point, as in Python.
+//! * `case` is served by the same hooks (gladiaio/num2words2#179) and
+//!   indexes the second axis of every cardinal table. Python resolves it
+//!   first and case-sensitively, so a miss (`case="Genitive"`, `case=3`) is
+//!   `ValueError: <repr> is not in list` before any other check.
+//!
+//! Ordinals and years take no kwargs (`to_ordinal(self, number)`), so their
+//! hooks keep the trait default.
+//!
+//! Integer currency picks the gender per currency (`FEMININE_MONEY` /
+//! `FEMININE_CENTS`) and takes no kwargs.
 //!
 //! # Currency surface
 //!
@@ -88,7 +103,8 @@
 //!
 //! `to_currency` is overridden for the `isinstance(val, int)` case only; the
 //! float case and `to_cheque` fall through to `Num2Word_Base`. See the
-//! `to_currency` doc comment for the four quirks the int path carries.
+//! `to_currency` doc comment for the quirks the int path carries; its
+//! number/gender agreement now matches the float path (#164).
 //!
 //! ## Fractional cents (out of scope, flagged)
 //!
@@ -122,7 +138,8 @@
 //! may catch, so parity means reproducing the type rather than tidying it
 //! into a `TypeError`.
 
-use crate::base::{Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, KwVal, Kwargs, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -424,7 +441,8 @@ static HUNDREDS_ORDINALS: [[&str; 2]; 10] = [
 
 /// `THOUSANDS`: chunk index 1..=10 (10^3 … 10^30) × 6 cases × 3 plural forms.
 /// Index 0 is absent in Python and unreachable (guarded by `i > 0`).
-/// A chunk index of 11 or more is a `KeyError` — the de facto MAXVAL.
+/// A chunk index of 11 or more would be a `KeyError`; the 10^33 MAXVAL
+/// check (#159) keeps it unreachable.
 static THOUSANDS: [[[&str; 3]; 6]; 11] = [
     // 0 — absent in Python
     [
@@ -438,7 +456,7 @@ static THOUSANDS: [[[&str; 3]; 6]; 11] = [
     // 10^3
     [
         ["тисяча", "тисячі", "тисяч"],
-        ["тисячи", "тисяч", "тисяч"], // "тисячи" sic — see module docs, quirk 5
+        ["тисячі", "тисяч", "тисяч"], // Python: "тисячи" — see module docs, quirk 5
         ["тисячі", "тисячам", "тисячам"],
         ["тисячу", "тисячі", "тисяч"],
         ["тисячею", "тисячами", "тисячами"],
@@ -749,6 +767,69 @@ fn is_feminine_cents(currency: &str) -> bool {
 // The exception type is observable behaviour a caller may catch, so parity
 // requires reproducing it rather than tidying it into a TypeError.
 
+/// The feminine `gender=` aliases `Num2Word_UK.to_cardinal` accepts — the
+/// same set as `lang_RU`: short code, English name, and the Ukrainian /
+/// Russian Cyrillic names. Compared after `str.lower()`.
+const FEMININE_ALIASES: [&str; 5] = ["f", "feminine", "ж", "жіночий", "женский"];
+
+/// `isinstance(gender_kw, str) and gender_kw.lower() in feminine_aliases`.
+/// Anything else — an absent key, a masculine/neuter name, a non-string —
+/// is masculine; Python never raises on `gender=`.
+fn feminine_from_kwarg(kv: Option<&KwVal>) -> bool {
+    match kv {
+        Some(KwVal::Str(g)) => FEMININE_ALIASES.contains(&g.to_lowercase().as_str()),
+        _ => false,
+    }
+}
+
+/// The `case=` names, in `morphological_case` index order (the second axis
+/// of every cardinal table).
+const CASES: [&str; 6] = [
+    "nominative",
+    "genitive",
+    "dative",
+    "accusative",
+    "instrumental",
+    "locative",
+];
+
+/// `[...].index(case)` — case-sensitive; a miss is Python's
+/// `ValueError: <repr> is not in list`. An absent key is nominative.
+fn case_from_kwarg(kv: Option<&KwVal>) -> Result<usize> {
+    let kv = match kv {
+        None => return Ok(0),
+        Some(kv) => kv,
+    };
+    if let KwVal::Str(c) = kv {
+        if let Some(i) = CASES.iter().position(|x| x == c) {
+            return Ok(i);
+        }
+    }
+    let repr = match kv {
+        KwVal::Str(c) => format!("'{}'", c),
+        KwVal::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+        KwVal::Int(i) => i.to_string(),
+        KwVal::List(l) => format!(
+            "[{}]",
+            l.iter().map(|x| format!("'{}'", x)).collect::<Vec<_>>().join(", ")
+        ),
+        KwVal::None => "None".to_string(),
+    };
+    Err(value_error(format!("{} is not in list", repr)))
+}
+
+/// The kwargs `Num2Word_UK.to_cardinal(number, **kwargs)` reads. It swallows
+/// any other key silently, but an unknown key still declines to the
+/// dispatcher (like `lang_RU`) rather than guessing.
+const CARDINAL_KWARGS: [&str; 2] = ["case", "gender"];
+
+/// Resolve `(feminine, morphological_case)` in Python's order: `case` is
+/// looked up first, so a bad `case=` raises before anything else.
+fn opts_from_kwargs(kw: &Kwargs) -> Result<(bool, usize)> {
+    let mcase = case_from_kwarg(kw.get("case"))?;
+    Ok((feminine_from_kwarg(kw.get("gender")), mcase))
+}
+
 fn index_error(msg: &str) -> N2WError {
     N2WError::Index(msg.to_string())
 }
@@ -1018,10 +1099,10 @@ impl LangUk {
 
     /// Port of `Num2Word_UK._int2word`.
     ///
-    /// `feminine` and `morphological_case` are always `false` / `0` in this
-    /// scope (the trait exposes no kwargs), but both are threaded through so
-    /// the algorithm matches the source line for line.
+    /// `feminine` comes from the `gender=` kwarg (or the currency's gender);
+    /// `morphological_case` is the `case=` index (0, nominative, by default).
     fn int2word(&self, n: &BigInt, feminine: bool, mcase: usize) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
             let n_value = self.int2word(&n.abs(), feminine, mcase)?;
             return Ok(format!("{} {}", NEGWORD, n_value));
@@ -1078,94 +1159,44 @@ impl LangUk {
 
         Ok(words.join(" "))
     }
-}
 
-impl Lang for LangUk {
-    /// This language's own `to_currency(currency=...)` default,
-    /// read from the live Python signature. Only 44 of 156 use EUR.
-    fn default_currency(&self) -> &str {
-        "EUR"
+    /// [`cardinal_float_entry`](Lang::cardinal_float_entry) with the
+    /// resolved `gender`/`case` kwargs threaded through.
+    fn cardinal_entry_with(&self, value: &FloatValue, feminine: bool, mcase: usize) -> Result<String> {
+        let has_point = match value {
+            FloatValue::Float { value, .. } => float_repr_has_point(*value),
+            FloatValue::Decimal { value, .. } => python_decimal_str(value).contains('.'),
+        };
+        if has_point {
+            return self.cardinal_float_with(value, feminine, mcase);
+        }
+        // No '.' in str(number) → `self._int2word(int(n), ...)`.
+        match value {
+            // A finite float without a point reprs in exponent form
+            // ("1e+16"), which int() rejects.
+            FloatValue::Float { value, .. } => Err(value_error(format!(
+                "invalid literal for int() with base 10: '{}'",
+                value
+            ))),
+            FloatValue::Decimal { value, .. } => {
+                let s = python_decimal_str(value);
+                match parse_signed_int(&s) {
+                    Some(n) => self.int2word(&n, feminine, mcase),
+                    // "1E+2"-style scientific strings → ValueError.
+                    None => Err(value_error(format!(
+                        "invalid literal for int() with base 10: '{}'",
+                        s
+                    ))),
+                }
+            }
+        }
     }
 
-    /// This language's own `to_currency(separator=...)` default,
-    /// read from the live Python signature. Base's is ",", but only
-    /// 36 of 149 languages actually use it — most default to " " or a
-    /// conjunction, so inheriting Base's comma silently corrupts them.
-    fn default_separator(&self) -> &str {
-        ","
-    }
-
-    fn negword(&self) -> &str {
-        NEGWORD
-    }
-
-    fn pointword(&self) -> &str {
-        "кома"
-    }
-
-    /// Port of `Num2Word_UK.to_cardinal`, integer path only.
-    ///
-    /// Python does `n = str(number).replace(",", ".")` and branches on `"."`;
-    /// `str(int)` never contains one, so integers always take the `else`
-    /// branch → `self._int2word(int(n), gender, morphological_case)`. With no
-    /// kwargs, `gender` is `False` and `morphological_case` is `0`. The float
-    /// branch (pointword, leading-zero expansion) is ported in
-    /// [`to_cardinal_float`](Self::to_cardinal_float) below.
-    ///
-    /// There is no `MAXVAL`/`OverflowError` check: `Num2Word_UK` overrides
-    /// `to_cardinal` outright and never reaches `Num2Word_Base`'s guard.
-    fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        self.int2word(value, false, 0)
-    }
-
-    /// Port of the `"." in n` branch of `Num2Word_UK.to_cardinal`.
-    ///
-    /// `Num2Word_UK` does **not** override `Num2Word_Base.to_cardinal_float`;
-    /// its `to_cardinal` intercepts non-integers inline and never touches
-    /// `base.float2tuple`. So this port reproduces that *string-based* branch,
-    /// not the binary `float2tuple` heuristic that the trait default
-    /// (`floatpath::default_to_cardinal_float`) implements. The f64 artefact
-    /// that heuristic exists to rescue is therefore irrelevant here: UK reads
-    /// `str(number)` directly, so `2.675` → "два кома шістсот сімдесят п'ять"
-    /// (the repr digits "675"), *not* the `674.999…`→675 artefact path.
-    ///
-    /// ```python
-    /// n = str(number).replace(",", ".")
-    /// if "." in n:
-    ///     is_negative = n.startswith("-")
-    ///     abs_n = n[1:] if is_negative else n
-    ///     left, right = abs_n.split(".")
-    ///     leading_zero_count = len(right) - len(right.lstrip("0"))
-    ///     right_side = self._int2word(int(right), gender, morphological_case)
-    ///     decimal_part = (ZERO[0] + " ") * leading_zero_count + right_side
-    ///     result = "%s %s %s" % (self._int2word(int(left), ...),
-    ///                            self.pointword, decimal_part)
-    ///     if is_negative:
-    ///         result = self.negword + " " + result
-    ///     return result
-    /// ```
-    ///
-    /// `str(number)` is reconstructed per arm:
-    ///   * **Float** — `format!("{:.precision$}", value)` reproduces Python's
-    ///     `repr`/`str(float)`. `precision` is the fractional-digit count of
-    ///     that shortest round-trip repr, so formatting the raw f64 to exactly
-    ///     that many places yields the identical digits (checked for every
-    ///     corpus float, incl. `1.005`→"1.005" and `2.675`→"2.675"). No
-    ///     `round_ties_even` is needed — the arithmetic never leaves the string.
-    ///   * **Decimal** — exact arbitrary-precision digits, so the trailing zero
-    ///     of `Decimal("1.10")` survives as "…кома десять" (10), never the
-    ///     "…кома один" a `float(1.10)` cast would give (issue #603), and the
-    ///     trillion-scale `98746251323029.99` keeps every digit.
-    ///
-    /// `gender`/`morphological_case` are unreachable through the trait (always
-    /// masculine / nominative) and `precision=` is ignored — matching the live
-    /// interpreter, where `num2words(0.5, lang="uk", precision=3)` is still
-    /// "нуль кома п'ять".
-    fn to_cardinal_float(
-        &self,
-        value: &FloatValue,
-        _precision_override: Option<u32>,
-    ) -> Result<String> {
+    /// The `"." in n` branch of `Num2Word_UK.to_cardinal` — see
+    /// [`to_cardinal_float`](Lang::to_cardinal_float) for the full port
+    /// notes. Python hands the resolved `gender`/`case` to *both* sides of
+    /// the point, so `to_cardinal(1.1, gender="f")` is "одна кома одна".
+    fn cardinal_float_with(&self, value: &FloatValue, feminine: bool, mcase: usize) -> Result<String> {
         // Reconstruct (sign, integer part, fractional-digit string). `right`
         // keeps its leading zeros and is exactly `precision` chars wide (empty
         // only when precision == 0, i.e. str(number) had no ".").
@@ -1213,7 +1244,7 @@ impl Lang for LangUk {
         // kept faithful — int2word applies the sign via its own negword arm.
         if right.is_empty() {
             let n = if is_negative { -left_int } else { left_int };
-            return self.int2word(&n, false, 0);
+            return self.int2word(&n, feminine, mcase);
         }
 
         // leading_zero_count = len(right) - len(right.lstrip("0")); `right` is
@@ -1222,8 +1253,8 @@ impl Lang for LangUk {
         // int(right) — leading zeros are inert, "00" parses to 0.
         let right_int = parse_int(&right)?;
 
-        let left_word = self.int2word(&left_int, false, 0)?;
-        let right_side = self.int2word(&right_int, false, 0)?;
+        let left_word = self.int2word(&left_int, feminine, mcase)?;
+        let right_side = self.int2word(&right_int, feminine, mcase)?;
         // (ZERO[0] + " ") * leading_zero_count + right_side
         let decimal_part = format!(
             "{}{}",
@@ -1238,6 +1269,139 @@ impl Lang for LangUk {
             result = format!("{} {}", NEGWORD, result);
         }
         Ok(result)
+    }
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
+impl Lang for LangUk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
+    /// This language's own `to_currency(currency=...)` default,
+    /// read from the live Python signature. Only 44 of 156 use EUR.
+    fn default_currency(&self) -> &str {
+        "EUR"
+    }
+
+    /// This language's own `to_currency(separator=...)` default,
+    /// read from the live Python signature. Base's is ",", but only
+    /// 36 of 149 languages actually use it — most default to " " or a
+    /// conjunction, so inheriting Base's comma silently corrupts them.
+    fn default_separator(&self) -> &str {
+        ","
+    }
+
+    fn negword(&self) -> &str {
+        NEGWORD
+    }
+
+    fn pointword(&self) -> &str {
+        "кома"
+    }
+
+    /// Port of `Num2Word_UK.to_cardinal`, integer path only.
+    ///
+    /// Python does `n = str(number).replace(",", ".")` and branches on `"."`;
+    /// `str(int)` never contains one, so integers always take the `else`
+    /// branch → `self._int2word(int(n), gender, morphological_case)`. With no
+    /// kwargs, `gender` is `False` and `morphological_case` is `0`; see
+    /// `to_cardinal_kw` for the kwargs. The float
+    /// branch (pointword, leading-zero expansion) is ported in
+    /// [`to_cardinal_float`](Self::to_cardinal_float) below.
+    ///
+    /// There is no `MAXVAL`/`OverflowError` check: `Num2Word_UK` overrides
+    /// `to_cardinal` outright and never reaches `Num2Word_Base`'s guard.
+    fn to_cardinal(&self, value: &BigInt) -> Result<String> {
+        self.int2word(value, false, 0)
+    }
+
+    /// `to_cardinal(number, gender=..., case=...)`. `gender`
+    /// (gladiaio/num2words2#145) selects `ONES_FEMININE` for the units chunk
+    /// ("двадцять одна"); the thousands chunk is feminine regardless,
+    /// agreeing with "тисяча". `case` (gladiaio/num2words2#179) indexes the
+    /// second axis of every table ("двадцяти одного" in the genitive).
+    fn to_cardinal_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
+        if !kw.only(&CARDINAL_KWARGS) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        let (feminine, mcase) = opts_from_kwargs(kw)?;
+        self.int2word(value, feminine, mcase)
+    }
+
+    /// `to_cardinal(float/Decimal, gender=..., case=...)`: the "." branch
+    /// applies both to each side of the point. `precision=` is ignored, as in
+    /// [`cardinal_float_entry`](Self::cardinal_float_entry).
+    fn to_cardinal_float_kw(
+        &self,
+        value: &FloatValue,
+        _precision_override: Option<u32>,
+        kw: &Kwargs,
+    ) -> Result<String> {
+        if !kw.only(&CARDINAL_KWARGS) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        let (feminine, mcase) = opts_from_kwargs(kw)?;
+        self.cardinal_entry_with(value, feminine, mcase)
+    }
+
+    /// Port of the `"." in n` branch of `Num2Word_UK.to_cardinal`.
+    ///
+    /// `Num2Word_UK` does **not** override `Num2Word_Base.to_cardinal_float`;
+    /// its `to_cardinal` intercepts non-integers inline and never touches
+    /// `base.float2tuple`. So this port reproduces that *string-based* branch,
+    /// not the binary `float2tuple` heuristic that the trait default
+    /// (`floatpath::default_to_cardinal_float`) implements. The f64 artefact
+    /// that heuristic exists to rescue is therefore irrelevant here: UK reads
+    /// `str(number)` directly, so `2.675` → "два кома шістсот сімдесят п'ять"
+    /// (the repr digits "675"), *not* the `674.999…`→675 artefact path.
+    ///
+    /// ```python
+    /// n = str(number).replace(",", ".")
+    /// if "." in n:
+    ///     is_negative = n.startswith("-")
+    ///     abs_n = n[1:] if is_negative else n
+    ///     left, right = abs_n.split(".")
+    ///     leading_zero_count = len(right) - len(right.lstrip("0"))
+    ///     right_side = self._int2word(int(right), gender, morphological_case)
+    ///     decimal_part = (ZERO[0] + " ") * leading_zero_count + right_side
+    ///     result = "%s %s %s" % (self._int2word(int(left), ...),
+    ///                            self.pointword, decimal_part)
+    ///     if is_negative:
+    ///         result = self.negword + " " + result
+    ///     return result
+    /// ```
+    ///
+    /// `str(number)` is reconstructed per arm:
+    ///   * **Float** — `format!("{:.precision$}", value)` reproduces Python's
+    ///     `repr`/`str(float)`. `precision` is the fractional-digit count of
+    ///     that shortest round-trip repr, so formatting the raw f64 to exactly
+    ///     that many places yields the identical digits (checked for every
+    ///     corpus float, incl. `1.005`→"1.005" and `2.675`→"2.675"). No
+    ///     `round_ties_even` is needed — the arithmetic never leaves the string.
+    ///   * **Decimal** — exact arbitrary-precision digits, so the trailing zero
+    ///     of `Decimal("1.10")` survives as "…кома десять" (10), never the
+    ///     "…кома один" a `float(1.10)` cast would give (issue #603), and the
+    ///     trillion-scale `98746251323029.99` keeps every digit.
+    ///
+    /// Here `gender`/`morphological_case` are the defaults (masculine /
+    /// nominative); `to_cardinal_float_kw` passes the kwargs through
+    /// `cardinal_float_with`. `precision=` is ignored — matching the live
+    /// interpreter, where `num2words(0.5, lang="uk", precision=3)` is still
+    /// "нуль кома п'ять".
+    fn to_cardinal_float(
+        &self,
+        value: &FloatValue,
+        _precision_override: Option<u32>,
+    ) -> Result<String> {
+        self.cardinal_float_with(value, false, 0)
     }
 
     /// `to_cardinal(float/Decimal)` — the FULL routing, whole values included.
@@ -1255,35 +1419,9 @@ impl Lang for LangUk {
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
-        precision_override: Option<u32>,
+        _precision_override: Option<u32>,
     ) -> Result<String> {
-        let has_point = match value {
-            FloatValue::Float { value, .. } => float_repr_has_point(*value),
-            FloatValue::Decimal { value, .. } => python_decimal_str(value).contains('.'),
-        };
-        if has_point {
-            return self.to_cardinal_float(value, precision_override);
-        }
-        // No '.' in str(number) → `self._int2word(int(n), ...)`.
-        match value {
-            // A finite float without a point reprs in exponent form
-            // ("1e+16"), which int() rejects.
-            FloatValue::Float { value, .. } => Err(value_error(format!(
-                "invalid literal for int() with base 10: '{}'",
-                value
-            ))),
-            FloatValue::Decimal { value, .. } => {
-                let s = python_decimal_str(value);
-                match parse_signed_int(&s) {
-                    Some(n) => self.int2word(&n, false, 0),
-                    // "1E+2"-style scientific strings → ValueError.
-                    None => Err(value_error(format!(
-                        "invalid literal for int() with base 10: '{}'",
-                        s
-                    ))),
-                }
-            }
-        }
+        self.cardinal_entry_with(value, false, 0)
     }
 
     /// `to_ordinal(float/Decimal)`.
@@ -1365,6 +1503,7 @@ impl Lang for LangUk {
         if value.is_zero() {
             return Ok("нульовий".to_string());
         }
+        check_maxval(value, maxval_ceiling())?;
 
         let mut words: Vec<String> = Vec::new();
         let mut fragments = splitbyx(&value.to_string(), 3)?;
@@ -1523,28 +1662,25 @@ impl Lang for LangUk {
     ///     return super().to_currency(val, ...)
     /// ```
     ///
-    /// # Quirks reproduced (all interpreter-verified)
+    /// # Fixed: number and gender agreement on the int path (#164)
     ///
-    /// 1. **The int path does not call `pluralize`.** It hard-codes `cr1[0]`
-    ///    for `abs == 1` and `cr1[1]` otherwise, so the third (genitive
-    ///    plural) form is unreachable and the Slavic 5+ rule is skipped:
-    ///    `to_currency(0, "USD")` == "нуль долари" and
-    ///    `to_currency(100, "USD")` == "сто долари" — grammatically wrong
-    ///    Ukrainian ("доларів" is correct), but exactly what Python emits and
-    ///    what the corpus freezes. The float path *does* pluralize properly,
-    ///    hence `to_currency(1234.56, "USD")` == "…долари" vs
-    ///    `to_currency(0.01, "USD")` == "…доларів".
-    /// 2. **The int path calls `to_cardinal`, not `_money_verbose`**, so the
-    ///    feminine-unit table is bypassed and the numeral stays masculine even
-    ///    for a feminine currency: `to_currency(1, "JPY")` == "один єна"
-    ///    (mismatched gender), while `to_currency(1.0, "JPY")` == "одна єна,
-    ///    нуль сен" via `_money_verbose`. Corpus-confirmed on both rows.
-    /// 3. **`minus_str` is `self.negword`, unstripped and unpadded** — unlike
+    /// Python hard-codes `cr1[0]` for `abs == 1` and `cr1[1]` otherwise and
+    /// calls `to_cardinal` instead of `_money_verbose`, so it emits
+    /// "п'ять долари", "нуль долари", "один гривня" and
+    /// "двадцять один гривні". The port instead uses the same `pluralize` +
+    /// `_money_verbose` pair as the float path, so an int always matches the
+    /// unit half of the equivalent float: `to_currency(5, "USD")` ==
+    /// "п'ять доларів", `to_currency(21, "UAH")` == "двадцять одна гривня",
+    /// `to_currency(1, "JPY")` == "одна єна".
+    ///
+    /// # Quirks still reproduced (all interpreter-verified)
+    ///
+    /// 1. **`minus_str` is `self.negword`, unstripped and unpadded** — unlike
     ///    `Num2Word_Base`, which builds `"%s " % self.negword.strip()`. For UK
     ///    `negword` is "мінус" with no surrounding space, so the `" ".join`-ish
     ///    `"%s %s %s"` template plus the trailing `.strip()` yields the same
     ///    result either way. Ported literally regardless.
-    /// 4. **`cents`, `separator` and `adjective` are ignored on the int path.**
+    /// 2. **`cents`, `separator` and `adjective` are ignored on the int path.**
     ///    No cents segment is emitted, so `separator` has nothing to join and
     ///    `adjective` nothing to prefix (`CURRENCY_ADJECTIVES` is empty).
     ///
@@ -1574,20 +1710,12 @@ impl Lang for LangUk {
 
                 let minus_str = if v.is_negative() { NEGWORD } else { "" };
                 let abs_val = v.abs();
-                let money_str = self.to_cardinal(&abs_val)?;
-
-                // Python: `cr1[0] if abs_val == 1 else cr1[1]`, guarded by
-                // `isinstance(cr1, tuple)` / `len(cr1) > 1` fallbacks that can
-                // never fire here — every UK entry is a 3-tuple. The `len > 1`
-                // check is mirrored anyway so a 1-form entry would degrade the
-                // way Python's does rather than panic.
-                let currency_str = if abs_val.is_one() {
-                    &cr1[0]
-                } else if cr1.len() > 1 {
-                    &cr1[1]
-                } else {
-                    &cr1[0]
-                };
+                // #164: Python calls `to_cardinal` and picks `cr1[0]` for 1,
+                // else `cr1[1]`, so "п'ять долари" / "двадцять один гривні".
+                // Reuse the float path's agreement instead: `_money_verbose`
+                // for the numeral's gender and `pluralize` for the noun form.
+                let money_str = self.money_verbose(&abs_val, currency)?;
+                let currency_str = self.pluralize(&abs_val, cr1)?;
 
                 // ("%s %s %s" % (...)).strip() — for a positive value
                 // minus_str is empty, so the template leaves a leading space
@@ -1688,5 +1816,62 @@ mod float_tests {
              мільйон триста двадцять три тисячі двадцять дев'ять кома дев'яносто дев'ять"
         );
         assert_eq!(card_dec("0.001"), "нуль кома нуль нуль один");
+    }
+}
+
+#[cfg(test)]
+mod kwargs_tests {
+    use super::*;
+
+    fn kw(items: &[(&str, &str)]) -> Kwargs {
+        Kwargs(
+            items
+                .iter()
+                .map(|(k, v)| (k.to_string(), KwVal::Str(v.to_string())))
+                .collect(),
+        )
+    }
+
+    fn card(n: i64, items: &[(&str, &str)]) -> String {
+        LangUk::new()
+            .to_cardinal_kw(&BigInt::from(n), &kw(items))
+            .unwrap()
+    }
+
+    /// gladiaio/num2words2#145.
+    #[test]
+    fn gender() {
+        assert_eq!(card(21, &[("gender", "f")]), "двадцять одна");
+        assert_eq!(card(21, &[("gender", "Feminine")]), "двадцять одна");
+        assert_eq!(card(2, &[("gender", "ж")]), "дві");
+        assert_eq!(card(21, &[("gender", "m")]), "двадцять один");
+        assert_eq!(card(21, &[]), "двадцять один");
+        let f = LangUk::new()
+            .to_cardinal_float_kw(
+                &FloatValue::Float { value: 1.1, precision: 1 },
+                None,
+                &kw(&[("gender", "f")]),
+            )
+            .unwrap();
+        assert_eq!(f, "одна кома одна");
+        // Unknown kwargs still decline to the dispatcher.
+        assert!(matches!(
+            LangUk::new().to_cardinal_kw(&BigInt::from(1), &kw(&[("foo", "x")])),
+            Err(N2WError::Fallback(_))
+        ));
+    }
+
+    /// gladiaio/num2words2#179.
+    #[test]
+    fn case() {
+        assert_eq!(card(1000, &[("case", "genitive")]), "однієї тисячі");
+        assert_eq!(card(21, &[("case", "dative"), ("gender", "f")]), "двадцяти одній");
+        assert_eq!(card(5, &[("case", "instrumental")]), "п'ятьма");
+        assert_eq!(card(5, &[("case", "nominative")]), "п'ять");
+        // Case is resolved first, case-sensitively: ValueError, even past maxval.
+        let e = LangUk::new()
+            .to_cardinal_kw(&pow10_big(40), &kw(&[("case", "Genitive")]))
+            .unwrap_err();
+        assert!(matches!(e, N2WError::Value(ref m) if m == "'Genitive' is not in list"));
     }
 }

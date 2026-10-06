@@ -29,7 +29,9 @@
 //! `to_ordinal(value, gender="m", definite=False, plural=False)`,
 //! `to_currency(val, currency="ILS", cents=True, separator=AND,
 //! adjective=False, prefer_singular=False, prefer_singular_cents=False)`.
-//! Ported as `to_cardinal_kw` / `to_ordinal_kw` / `to_currency_kw`:
+//! Ported as `to_cardinal_kw` / `to_ordinal_kw` / `to_currency_kw`, plus
+//! `to_cardinal_float_kw` for float/Decimal input (`gender` reaches only the
+//! integer part; `construct` is dropped by `to_cardinal_float`):
 //!
 //!   * `gender` is only ever compared with `== "m"`, so *any* other value —
 //!     "f", "x", even an explicit `None` — selects the feminine forms. An
@@ -119,10 +121,10 @@
 
 use crate::base::{KwVal, Kwargs, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{default_to_cardinal_float_by, float_repr_precision, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{One, Signed, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -985,6 +987,39 @@ impl Lang for LangHe {
             out,
             int2word(&v, gender_m, construct, false, false, false)?
         ))
+    }
+
+    /// `to_cardinal(float/Decimal, gender="f", construct=False)`.
+    ///
+    /// A whole value passes `int(value) == value` and takes the integer path
+    /// with both kwargs. Any other value goes to `to_cardinal_float(value,
+    /// gender=gender)` (`construct` is dropped there), where only the integer
+    /// part is gendered — the digits after the point are `to_cardinal(curr)`,
+    /// feminine. Same float cast as the kwarg-free [`LangHe::to_cardinal_float`],
+    /// and the same ignored `precision=`.
+    fn to_cardinal_float_kw(
+        &self,
+        value: &FloatValue,
+        _precision_override: Option<u32>,
+        kw: &Kwargs,
+    ) -> Result<String> {
+        if !kw.only(&["gender", "construct"]) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        if let Some(i) = value.as_whole_int() {
+            return self.to_cardinal_kw(&i, kw);
+        }
+        let gender = Kwargs(kw.0.iter().filter(|(k, _)| k == "gender").cloned().collect());
+        let fv = match value {
+            FloatValue::Float { .. } => value.clone(),
+            FloatValue::Decimal { value: d, .. } => {
+                let f = d.to_f64().ok_or_else(|| {
+                    N2WError::Value(format!("cannot represent {} as f64", d))
+                })?;
+                FloatValue::Float { value: f, precision: float_repr_precision(f) }
+            }
+        };
+        default_to_cardinal_float_by(self, &fv, None, |pre| self.to_cardinal_kw(pre, &gender))
     }
 
     /// `to_ordinal(value, gender="m", definite=False, plural=False)` with

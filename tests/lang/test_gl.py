@@ -25,7 +25,7 @@ class Num2WordsGLTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="gl"), "zero")
+        self.assertEqual(num2words(0, lang="gl"), "cero")
         self.assertEqual(num2words(1, lang="gl"), "un")
         self.assertEqual(num2words(2, lang="gl"), "dous")
         self.assertEqual(num2words(3, lang="gl"), "tres")
@@ -207,51 +207,51 @@ class Num2WordsGLTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="gl"), "minus un")
-        self.assertEqual(num2words(-2, lang="gl"), "minus dous")
-        self.assertEqual(num2words(-5, lang="gl"), "minus cinco")
-        self.assertEqual(num2words(-10, lang="gl"), "minus dez")
-        self.assertEqual(num2words(-11, lang="gl"), "minus dez un")
-        self.assertEqual(num2words(-20, lang="gl"), "minus vinte")
-        self.assertEqual(num2words(-50, lang="gl"), "minus cincuenta")
-        self.assertEqual(num2words(-99, lang="gl"), "minus noventa nove")
-        self.assertEqual(num2words(-100, lang="gl"), "minus un cento")
-        self.assertEqual(num2words(-101, lang="gl"), "minus un cento un")
-        self.assertEqual(num2words(-200, lang="gl"), "minus dous cento")
-        self.assertEqual(num2words(-999, lang="gl"), "minus nove cento noventa nove")
-        self.assertEqual(num2words(-1000, lang="gl"), "minus un mil")
-        self.assertEqual(num2words(-1001, lang="gl"), "minus un mil un")
-        self.assertEqual(num2words(-10000, lang="gl"), "minus dez mil")
-        self.assertEqual(num2words(-100000, lang="gl"), "minus un cento mil")
-        self.assertEqual(num2words(-1000000, lang="gl"), "minus un millón")
+        self.assertEqual(num2words(-1, lang="gl"), "menos un")
+        self.assertEqual(num2words(-2, lang="gl"), "menos dous")
+        self.assertEqual(num2words(-5, lang="gl"), "menos cinco")
+        self.assertEqual(num2words(-10, lang="gl"), "menos dez")
+        self.assertEqual(num2words(-11, lang="gl"), "menos dez un")
+        self.assertEqual(num2words(-20, lang="gl"), "menos vinte")
+        self.assertEqual(num2words(-50, lang="gl"), "menos cincuenta")
+        self.assertEqual(num2words(-99, lang="gl"), "menos noventa nove")
+        self.assertEqual(num2words(-100, lang="gl"), "menos un cento")
+        self.assertEqual(num2words(-101, lang="gl"), "menos un cento un")
+        self.assertEqual(num2words(-200, lang="gl"), "menos dous cento")
+        self.assertEqual(num2words(-999, lang="gl"), "menos nove cento noventa nove")
+        self.assertEqual(num2words(-1000, lang="gl"), "menos un mil")
+        self.assertEqual(num2words(-1001, lang="gl"), "menos un mil un")
+        self.assertEqual(num2words(-10000, lang="gl"), "menos dez mil")
+        self.assertEqual(num2words(-100000, lang="gl"), "menos un cento mil")
+        self.assertEqual(num2words(-1000000, lang="gl"), "menos un millón")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="gl"), "zero point un")
-        self.assertEqual(num2words(0.5, lang="gl"), "zero point cinco")
-        self.assertEqual(num2words(0.9, lang="gl"), "zero point nove")
-        self.assertEqual(num2words(1.1, lang="gl"), "un point un")
-        self.assertEqual(num2words(1.5, lang="gl"), "un point cinco")
-        self.assertEqual(num2words(2.5, lang="gl"), "dous point cinco")
-        self.assertEqual(num2words(3.14, lang="gl"), "tres point un catro")
-        self.assertEqual(num2words(10.5, lang="gl"), "dez point cinco")
-        self.assertEqual(num2words(11.11, lang="gl"), "dez un point un un")
-        self.assertEqual(num2words(20.2, lang="gl"), "vinte point dous")
-        self.assertEqual(num2words(99.99, lang="gl"), "noventa nove point nove nove")
-        self.assertEqual(num2words(100.01, lang="gl"), "un cento point zero un")
-        self.assertEqual(num2words(100.5, lang="gl"), "un cento point cinco")
+        self.assertEqual(num2words(0.1, lang="gl"), "cero coma un")
+        self.assertEqual(num2words(0.5, lang="gl"), "cero coma cinco")
+        self.assertEqual(num2words(0.9, lang="gl"), "cero coma nove")
+        self.assertEqual(num2words(1.1, lang="gl"), "un coma un")
+        self.assertEqual(num2words(1.5, lang="gl"), "un coma cinco")
+        self.assertEqual(num2words(2.5, lang="gl"), "dous coma cinco")
+        self.assertEqual(num2words(3.14, lang="gl"), "tres coma un catro")
+        self.assertEqual(num2words(10.5, lang="gl"), "dez coma cinco")
+        self.assertEqual(num2words(11.11, lang="gl"), "dez un coma un un")
+        self.assertEqual(num2words(20.2, lang="gl"), "vinte coma dous")
+        self.assertEqual(num2words(99.99, lang="gl"), "noventa nove coma nove nove")
+        self.assertEqual(num2words(100.01, lang="gl"), "un cento coma cero un")
+        self.assertEqual(num2words(100.5, lang="gl"), "un cento coma cinco")
         self.assertEqual(
-            num2words(123.45, lang="gl"), "un cento vinte tres point catro cinco"
+            num2words(123.45, lang="gl"), "un cento vinte tres coma catro cinco"
         )
-        self.assertEqual(num2words(1000.5, lang="gl"), "un mil point cinco")
+        self.assertEqual(num2words(1000.5, lang="gl"), "un mil coma cinco")
         self.assertEqual(
             num2words(1234.56, lang="gl"),
-            "un mil dous cento trinta catro point cinco seis",
+            "un mil dous cento trinta catro coma cinco seis",
         )
-        self.assertEqual(num2words(10000.01, lang="gl"), "dez mil point zero un")
-        self.assertEqual(num2words(-0.5, lang="gl"), "minus zero point cinco")
-        self.assertEqual(num2words(-1.5, lang="gl"), "minus un point cinco")
-        self.assertEqual(num2words(-10.5, lang="gl"), "minus dez point cinco")
+        self.assertEqual(num2words(10000.01, lang="gl"), "dez mil coma cero un")
+        self.assertEqual(num2words(-0.5, lang="gl"), "menos cero coma cinco")
+        self.assertEqual(num2words(-1.5, lang="gl"), "menos un coma cinco")
+        self.assertEqual(num2words(-10.5, lang="gl"), "menos dez coma cinco")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -296,15 +296,15 @@ class Num2WordsGLTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="gl", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="gl", to="currency", currency="EUR"), "cero euros"
         )
         self.assertEqual(
             num2words(0.01, lang="gl", to="currency", currency="EUR"),
-            "zero euros un céntimo",
+            "cero euros un céntimo",
         )
         self.assertEqual(
             num2words(0.5, lang="gl", to="currency", currency="EUR"),
-            "zero euros cincuenta céntimos",
+            "cero euros cincuenta céntimos",
         )
         self.assertEqual(
             num2words(1, lang="gl", to="currency", currency="EUR"), "un euro"
@@ -314,15 +314,15 @@ class Num2WordsGLTest(TestCase):
             "un euro cincuenta céntimos",
         )
         self.assertEqual(
-            num2words(0, lang="gl", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="gl", to="currency", currency="USD"), "cero dollars"
         )
         self.assertEqual(
             num2words(0.01, lang="gl", to="currency", currency="USD"),
-            "zero dollars un cent",
+            "cero dollars un cent",
         )
         self.assertEqual(
             num2words(0.5, lang="gl", to="currency", currency="USD"),
-            "zero dollars cincuenta cents",
+            "cero dollars cincuenta cents",
         )
         self.assertEqual(
             num2words(1, lang="gl", to="currency", currency="USD"), "un dollar"
@@ -359,7 +359,7 @@ class Num2WordsGLTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="gl"), "zero")
+        self.assertEqual(num2words("0", lang="gl"), "cero")
         self.assertEqual(num2words("1", lang="gl"), "un")
         self.assertEqual(num2words("10", lang="gl"), "dez")
         self.assertEqual(num2words("100", lang="gl"), "un cento")
@@ -371,7 +371,7 @@ class Num2WordsGLTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="gl"), "zero")
+        self.assertEqual(num2words(0, lang="gl"), "cero")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="gl"), num2words("100", lang="gl"))

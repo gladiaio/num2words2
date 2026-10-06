@@ -503,16 +503,16 @@ class Num2WordsHATest(TestCase):
             num2words(1000, lang="ha", to="currency", currency="NGN"), "naira dubu"
         )
 
-        # Test negative currency
+        # Test negative currency (single space after "ban", #160)
         self.assertEqual(
-            num2words(-1, lang="ha", to="currency", currency="NGN"), "ban  naira ɗaya"
+            num2words(-1, lang="ha", to="currency", currency="NGN"), "ban naira ɗaya"
         )
         self.assertEqual(
-            num2words(-10, lang="ha", to="currency", currency="NGN"), "ban  naira goma"
+            num2words(-10, lang="ha", to="currency", currency="NGN"), "ban naira goma"
         )
         self.assertEqual(
             num2words(-1.5, lang="ha", to="currency", currency="NGN"),
-            "ban  naira ɗaya da kobo hamsin",
+            "ban naira ɗaya da kobo hamsin",
         )
 
         # Test currency without cents

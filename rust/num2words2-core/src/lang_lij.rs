@@ -8,15 +8,14 @@
 //!   * `setup()` is never called, so `self.negword` / `self.pointword` are
 //!     **never set**. LIJ sidesteps this by using its own class attribute
 //!     `MINUS_PREFIX_WORD = "meno "` in `to_cardinal`/`to_ordinal`. Anything
-//!     that reads `self.negword` — i.e. `to_currency` — dies with
-//!     `AttributeError`; the frozen corpus records exactly that for
-//!     `currency:*` with a negative arg. See [`LangLij::to_currency`].
+//!     that read `self.negword` — `to_currency` and `to_fraction` — died with
+//!     `AttributeError` on a negative value. Fixed (gladiaio/num2words2#157):
+//!     the port's `negword` is that same "meno". See [`LangLij::to_currency`].
 //!   * `self.cards` / `self.MAXVAL` are never built (LIJ defines no
-//!     `high_numwords`/`mid_numwords`/`low_numwords` either), so `cards`,
-//!     `maxval` and `merge` stay at their trait defaults and are never
-//!     reached. There is **no `OverflowError` path** in this language.
-//!   * The only ceiling is `big_number_to_cardinal`'s explicit
-//!     `NotImplementedError` — see "Ceiling" below.
+//!     `high_numwords`/`mid_numwords`/`low_numwords` either), so `cards`
+//!     and `merge` stay at their trait defaults and are never reached.
+//!   * The only ceiling is `big_number_to_cardinal`'s `EXPONENTS` table;
+//!     `maxval()` reports it (10^36) — see "Ceiling" below.
 //!
 //! Inherited from `Num2Word_EU` — note that `Num2Word_EU` is the *Basque*
 //! converter, so LIJ picks up two Basque-flavoured methods verbatim. This is
@@ -56,8 +55,9 @@
 //! large.")`. `len(str(mils)) > 30` ⇒ 11 triplets, so the wall is at
 //! **10**36** exactly (10**36 - 1 is the largest convertible value, and
 //! `to_cardinal` checks the sign *first*, so -10**36 raises too). Verified
-//! against the interpreter. Note this is `NotImplementedError`, not
-//! `OverflowError`.
+//! against the interpreter. Python raises `NotImplementedError` there; fixed
+//! (gladiaio/num2words2#159): the port raises `OverflowError` ("abs(v) must
+//! be less than 10^36.").
 //!
 //! # Faithfully reproduced Python oddities
 //!
@@ -95,15 +95,11 @@
 //!    with `ordinal=True` ordinalizes only the *integer prefix*
 //!    (`self.to_ordinal(int(float_number), gender, plural)`); the fractional
 //!    digits stay cardinal and masculine.
-//! 8. **`to_fraction` is Base's, and it reads `self.negword` on the negative
-//!    branch** — which (bare `__init__`, see above) does not exist, so any
-//!    sign-negative fraction raises `AttributeError`. The dispatcher routes
-//!    every `"n/d"` *string* through `to_fraction` regardless of `to=`, so
-//!    `num2words("-3/4", to="year"/"currency"/...)` all raise AttributeError
-//!    too. Non-negative fractions never touch `negword` (the sign is a
-//!    conditional *expression*) and render fine — including `-3/-4` (signs
-//!    cancel) and `-5/1` (short-circuits into LIJ's own `to_cardinal`, which
-//!    uses `MINUS_PREFIX_WORD`, not `negword`).
+//! 8. ~~**`to_fraction` is Base's, and it reads `self.negword` on the
+//!    negative branch**~~ — which (bare `__init__`, see above) did not exist,
+//!    so any sign-negative fraction (and every `"-3/4"` string, whatever
+//!    `to=`) raised `AttributeError`. Fixed (#157): the sign is "meno", as
+//!    in LIJ's own cardinal.
 //! 9. **`to_cardinal(Decimal("NaN"))` raises `decimal.InvalidOperation`**, not
 //!    ValueError: the very first test `number < 0` is a NaN comparison, which
 //!    the decimal module refuses. See [`LangLij::str_to_number`].
@@ -118,7 +114,8 @@
 //! and uses `plural` for truthiness only, so the `*_kw` hooks normalise
 //! accordingly. `zero` is immune to both gender and plural in the ordinals.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use std::sync::OnceLock;
+use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
@@ -421,8 +418,10 @@ fn big_number_to_cardinal(number: &BigInt, gender: &str) -> Result<String> {
         i += 3;
     }
 
+    // Python: `len(triplets) > len(EXPONENTS)` raised NotImplementedError
+    // here; it is an OverflowError since gladiaio/num2words2#159.
     if triplets.len() > EXPONENTS.len() {
-        return Err(N2WError::NotImplemented("The given number is too large.".into()));
+        check_maxval(number, maxval_ceiling())?;
     }
 
     let mut string = if !remainder.is_zero() {
@@ -469,7 +468,7 @@ fn big_number_to_cardinal(number: &BigInt, gender: &str) -> Result<String> {
 fn to_cardinal_gender(number: &BigInt, gender: &str) -> Result<String> {
     if number.is_negative() {
         // Sign is handled *before* the size dispatch, so -10**36 raises
-        // NotImplementedError just like +10**36.
+        // OverflowError just like +10**36.
         return Ok(MINUS_PREFIX_WORD.to_string() + &to_cardinal_gender(&(-number), gender)?);
     }
     // Each branch below 10**6 is bounded by its own guard, so the u32
@@ -705,7 +704,25 @@ impl Default for LangLij {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#159): `EXPONENTS` names ten
+/// triplets above the million, so 10^36 and above raise `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(36))
+}
+
 impl Lang for LangLij {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
+    /// Python never sets `self.negword` (bare `__init__`), so reading it
+    /// raised AttributeError. LIJ's own minus word, `MINUS_PREFIX_WORD`, is
+    /// the natural value (#157).
+    fn negword(&self) -> &str {
+        MINUS_PREFIX_WORD
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -904,51 +921,9 @@ impl Lang for LangLij {
         }
     }
 
-    /// `Num2Word_Base.to_fraction`, re-ported here because its negative
-    /// branch reads `self.negword` — which `Num2Word_LIJ` never sets (bare
-    /// `__init__`, no class attribute), so a sign-negative fraction raises
-    /// `AttributeError`. Everything else is the base default verbatim:
-    ///
-    /// ```python
-    /// if denominator == 0: raise ZeroDivisionError("denominator must not be zero")
-    /// if denominator == 1 or numerator == 0: return self.to_cardinal(numerator)
-    /// is_negative = (numerator < 0) ^ (denominator < 0)
-    /// abs_n = abs(int(numerator)); abs_d = abs(int(denominator))
-    /// sign = "%s " % self.negword.strip() if is_negative else ""   # <- raises
-    /// num_word = self.to_cardinal(abs_n)
-    /// den_word = self.to_ordinal(abs_d)
-    /// if abs_n != 1: den_word = den_word + "s"
-    /// return sign + num_word + " " + den_word
-    /// ```
-    ///
-    /// Ordering matters: `sign` is a conditional *expression*, so `negword`
-    /// is only touched when `is_negative` — `-3/-4` (signs cancel) renders
-    /// "trei quartos", `0/-5` short-circuits to "zero", and `-5/1`
-    /// short-circuits into LIJ's own `to_cardinal` ("meno çinque", via
-    /// `MINUS_PREFIX_WORD`). The raise happens *before* `num_word`/`den_word`
-    /// are computed, so `-10**36/2` is AttributeError, not NotImplementedError.
-    fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
-        if denominator.is_zero() {
-            return Err(N2WError::ZeroDivision("denominator must not be zero".into()));
-        }
-        if denominator.is_one() || numerator.is_zero() {
-            return self.to_cardinal(numerator);
-        }
-        let is_negative = numerator.is_negative() ^ denominator.is_negative();
-        if is_negative {
-            return Err(N2WError::Attribute(
-                "'Num2Word_LIJ' object has no attribute 'negword'".into(),
-            ));
-        }
-        let abs_n = numerator.abs();
-        let abs_d = denominator.abs();
-        let num_word = self.to_cardinal(&abs_n)?;
-        let mut den_word = self.to_ordinal(&abs_d)?;
-        if !abs_n.is_one() {
-            den_word += "s"; // base's naive plural, kept verbatim
-        }
-        Ok(format!("{} {}", num_word, den_word))
-    }
+    // `to_fraction` is Base's (the trait default). Python's negative branch
+    // read the missing `self.negword` and raised AttributeError; with
+    // `negword` defined above it now says "meno" (module bug 8, #157).
 
     // ---- grammatical kwargs ----------------------------------------------
 
@@ -1026,26 +1001,23 @@ impl Lang for LangLij {
     ///
     /// Three things make it diverge sharply from `default_to_currency`:
     ///
-    /// 1. **`parse_currency_parts(val)` is called with no keyword arguments**,
-    ///    so the *module* defaults apply — `is_int_with_cents=True`,
-    ///    `keep_precision=False`, `divisor=100`. Base passes
-    ///    `is_int_with_cents=False` and branches on `isinstance(val, int)` to
-    ///    suppress cents for true ints; LIJ does neither. A plain `int` is
-    ///    therefore read as a **count of cents**: `to_currency(100)` is "un
-    ///    euro e zero citti" and `to_currency(1)` is "zero euro e un citto",
-    ///    not "un euro". The `Int`/`Decimal` split still matters for how the
-    ///    value is split, but not for whether cents appear — LIJ always prints
-    ///    them, so `has_decimal` is unused here (`Decimal("5")` and
-    ///    `Decimal("5.00")` both give "çinque dòllai e zero citti").
+    /// 1. ~~**`parse_currency_parts(val)` is called with no keyword
+    ///    arguments**~~, so in Python the *module* default
+    ///    `is_int_with_cents=True` applied and a plain `int` was read as a
+    ///    **count of cents**: `to_currency(42)` was "zero euro e quarantedoî
+    ///    citti" while `42.0` and `"42"` gave "quarantedoî euro e zero citti"
+    ///    — the old upstream convention savoirfairelinux/num2words#426 fixed
+    ///    everywhere else. Fixed (gladiaio/num2words2#161): an `int` is a
+    ///    count of units, so all three agree. LIJ always prints the cents
+    ///    segment, so `has_decimal` is unused here (`5` and `Decimal("5.00")`
+    ///    both give "çinque dòllai e zero citti").
     /// 2. **The divisor is hardcoded to 100**, ignoring `CURRENCY_PRECISION`
     ///    entirely — moot for LIJ, whose table is empty, but it means adding a
     ///    3-decimal code to `CURRENCY_FORMS` would silently mis-split it.
-    /// 3. **`self.negword` does not exist.** Python's
-    ///    `minus_str = "%s " % self.negword.strip() if is_negative else ""` is
-    ///    a conditional *expression*, so the attribute is only touched on the
-    ///    negative branch. `__init__` is a bare `pass`, `setup()` never runs,
-    ///    and there is no class-level fallback — so every negative value dies
-    ///    with `AttributeError` while non-negatives sail through.
+    /// 3. **`self.negword` does not exist** in Python (`__init__` is a bare
+    ///    `pass`), so `minus_str = "%s " % self.negword.strip()` raised
+    ///    `AttributeError` for every negative value. The port uses LIJ's own
+    ///    minus word, "meno" (#157).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1058,8 +1030,9 @@ impl Lang for LangLij {
         // resolve it to LIJ's own `separator=" e"` before the ported body.
         let separator = separator.unwrap_or(self.default_separator());
 
-        // `parse_currency_parts(val)` — bare call, module defaults. See (1).
-        let (left, right, is_negative) = parse_currency_parts(val, true, false, 100);
+        // Python called `parse_currency_parts(val)` bare, so an int was read
+        // as cents; it is a count of units here, like 42.0 and "42" (1, #161).
+        let (left, right, is_negative) = parse_currency_parts(val, false, false, 100);
 
         // The forms lookup precedes the negword read, so an unknown code
         // raises NotImplementedError even for a negative value: the corpus has
@@ -1094,12 +1067,12 @@ impl Lang for LangLij {
             "m"
         };
 
-        // See (3). Everything above this line runs first in Python too.
-        if is_negative {
-            return Err(N2WError::Attribute(
-                "'Num2Word_LIJ' object has no attribute 'negword'".into(),
-            ));
-        }
+        // See (3).
+        let minus_str = if is_negative {
+            format!("{} ", self.negword().trim())
+        } else {
+            String::new()
+        };
 
         // `right` came back with keep_precision=False, so it is a whole number
         // of cents in 0..=99 and carries scale 0.
@@ -1116,10 +1089,10 @@ impl Lang for LangLij {
             format!("{:0>2}", right_int)
         };
 
-        // Python: "%s%s %s%s %s %s" % (minus_str, money_str, ...) — `minus_str`
-        // is provably "" here, since the only branch that sets it raised above.
+        // Python: "%s%s %s%s %s %s" % (minus_str, money_str, ...).
         Ok(format!(
-            "{} {}{} {} {}",
+            "{}{} {}{} {} {}",
+            minus_str,
             money_str,
             self.pluralize(&left, &cr1)?,
             separator,

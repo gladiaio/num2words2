@@ -27,14 +27,14 @@
 //! rather than delegating to `floatpath::default_to_cardinal_float`. The two
 //! differ in five observable ways:
 //!
-//! 13. **BG branches on `isinstance(n, float)`, so `Decimal` input never
-//!     reaches the float branch at all** — it falls through to the integer
-//!     tail and is silently **truncated**: `num2words(Decimal("12.345"),
-//!     lang="bg")` == "дванадесет", `Decimal("0.001")` == "нула",
-//!     `Decimal("-1.5")` == "минус един". The whole #603 exact-precision
-//!     apparatus is therefore dead for BG; the corpus's five `cardinal_dec`
-//!     rows are all bare integers. Base would have said "дванадесет точка три
-//!     четири пет".
+//! 13. ~~**BG branches on `isinstance(n, float)`, so `Decimal` input never
+//!     reaches the float branch at all**~~ — fixed (gladiaio/num2words2#156).
+//!     Python fell through to the integer tail and silently **truncated**
+//!     (`Decimal("12.345")` == "дванадесет", `Decimal("-1.5")` == "минус
+//!     един"), and string input, parsed to a Decimal, did the same. A
+//!     fractional Decimal now takes the same branch as a float, fed from
+//!     `float2tuple`'s exact Decimal arm (so #603's trillion-scale digits
+//!     survive): `Decimal("12.345")` == "дванадесет точка три четири пет".
 //! 14. **The fractional digits use `self.ones[d]`, not `self.to_cardinal(d)`.**
 //!     Base renders each post-decimal digit through `to_cardinal`, which for
 //!     BG forces `masculine=True`; BG's own loop indexes the neuter `ones`
@@ -170,9 +170,9 @@
 //! The currency surface can fail only on an unknown currency code, with the
 //! two distinct `NotImplemented` messages described in oddity 7.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{year_float_error, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -589,21 +589,16 @@ impl LangBg {
         self.int_to_ordinal(&trunc)
     }
 
-    /// `Num2Word_BG._int_to_cardinal(n)` fed a float/Decimal with **no**
-    /// exception net (the `to_year` path). Whole values ride the dict
-    /// lookups; a fractional one raises KeyError from `self.ones[…]`.
+    /// `Num2Word_BG._int_to_cardinal(n)` fed a whole float/Decimal (the
+    /// `to_year` path; fractional values are rejected before this, #158).
     /// Note the negative branch drops `masculine=True`, so "-21.0" reads
     /// "минус двадесет и едно" — unlike the masculine int path.
     fn cardinal_year_numeric(&self, value: &FloatValue) -> Result<String> {
-        let (neg, frac, whole) = decompose_numeric(value);
+        let (neg, _, whole) = decompose_numeric(value);
 
         // `if n == 0: return self.ones[0]` — numeric, so -0.0 lands here.
-        if whole.is_zero() && !frac {
+        if whole.is_zero() {
             return Ok(ONES[0].to_string());
-        }
-        if frac {
-            // `_int_to_word` reaches `self.ones[<fraction>]` → KeyError.
-            return Err(N2WError::Key(frac_key_msg(value)));
         }
         if neg {
             // No masculine flag on the negative recursion (oddity 1).
@@ -684,49 +679,7 @@ impl LangBg {
                 Err(_) => return Ok(self.int_to_cardinal(&pre_int)),
             };
 
-            // `if n < 0` — not Base's `value < 0 and pre == 0`. BG writes the
-            // sign itself and abs()es `pre`, which covers int(-0.5) == 0 for
-            // free. `-0.0 < 0` is false in Python and in Rust alike.
-            let (mut result, pre) = if n < 0.0 {
-                (NEGWORD.to_string(), pre.abs())
-            } else {
-                (String::new(), pre)
-            };
-
-            // `pre` is now >= 0, so this takes `_int_to_cardinal`'s positive
-            // path: the integer part is masculine ("два точка две пет").
-            result.push_str(&self.int_to_cardinal(&pre));
-
-            // Always true for a non-integral double — `repr` only goes to
-            // exponent form at >= 1e16, where every double is integral — but
-            // Python tests it, so the port does too.
-            if precision > 0 {
-                result.push(' ');
-                result.push_str(POINTWORD);
-
-                // `"0" * (self.precision - len(post_str)) + post_str`. Python's
-                // `str * negative` is "", so an over-long post is left alone.
-                let mut post_str = post.to_string();
-                let len = post_str.chars().count();
-                if (precision as usize) > len {
-                    post_str = format!("{}{}", "0".repeat(precision as usize - len), post_str);
-                }
-
-                // `for digit in post_str` — every character, *not* Base's
-                // `for i in range(self.precision)`. Identical whenever post
-                // fits its precision, which is every case I could find.
-                for ch in post_str.chars() {
-                    let d = ch
-                        .to_digit(10)
-                        .expect("float2tuple yields a non-negative decimal integer");
-                    result.push(' ');
-                    // `self.ones[int(digit)]` — the NEUTER table, where Base
-                    // would recurse into to_cardinal and get masculine
-                    // "един"/"два" for 1 and 2 (oddity 14).
-                    result.push_str(ONES[d as usize]);
-                }
-            }
-            return Ok(result.trim().to_string());
+            return Ok(self.fraction_words(n < 0.0, pre, post, precision));
         }
 
         // "For integers" — an integral float such as 1.0 or -3.0.
@@ -739,11 +692,60 @@ impl LangBg {
         Ok(self.int_to_cardinal(&pre_int))
     }
 
+    /// The fractional branch of BG's `to_cardinal`, from `float2tuple`'s
+    /// `(pre, post)`. Shared by the float and (since #156) Decimal paths.
+    fn fraction_words(&self, negative: bool, pre: BigInt, post: BigInt, precision: u32) -> String {
+        // `if n < 0` — not Base's `value < 0 and pre == 0`. BG writes the
+        // sign itself and abs()es `pre`, which covers int(-0.5) == 0 for
+        // free. `-0.0 < 0` is false in Python and in Rust alike.
+        let (mut result, pre) = if negative {
+            (NEGWORD.to_string(), pre.abs())
+        } else {
+            (String::new(), pre)
+        };
+
+        // `pre` is now >= 0, so this takes `_int_to_cardinal`'s positive
+        // path: the integer part is masculine ("два точка две пет").
+        result.push_str(&self.int_to_cardinal(&pre));
+
+        // Always true for a non-integral double — `repr` only goes to
+        // exponent form at >= 1e16, where every double is integral — but
+        // Python tests it, so the port does too.
+        if precision > 0 {
+            result.push(' ');
+            result.push_str(POINTWORD);
+
+            // `"0" * (self.precision - len(post_str)) + post_str`. Python's
+            // `str * negative` is "", so an over-long post is left alone.
+            let mut post_str = post.to_string();
+            let len = post_str.chars().count();
+            if (precision as usize) > len {
+                post_str = format!("{}{}", "0".repeat(precision as usize - len), post_str);
+            }
+
+            // `for digit in post_str` — every character, *not* Base's
+            // `for i in range(self.precision)`. Identical whenever post
+            // fits its precision, which is every case I could find.
+            for ch in post_str.chars() {
+                let d = ch
+                    .to_digit(10)
+                    .expect("float2tuple yields a non-negative decimal integer");
+                result.push(' ');
+                // `self.ones[int(digit)]` — the NEUTER table, where Base
+                // would recurse into to_cardinal and get masculine
+                // "един"/"два" for 1 and 2 (oddity 14).
+                result.push_str(ONES[d as usize]);
+            }
+        }
+        result.trim().to_string()
+    }
+
     /// `Num2Word_BG.to_cardinal(n)` where Python's `n` is a **Decimal**.
     ///
     /// The float branch is guarded by `isinstance(n, float)`, and a Decimal is
-    /// not one, so it never runs — `float2tuple`'s exact-precision Decimal arm
-    /// is dead code for BG and the value is simply truncated (oddity 13):
+    /// not one, so Python truncated every Decimal here (oddity 13). Since
+    /// #156 only *whole* Decimals reach this; fractional ones take
+    /// [`LangBg::fraction_words`]:
     ///
     /// ```python
     /// if n < 0:
@@ -787,16 +789,6 @@ fn decompose_numeric(value: &FloatValue) -> (bool, bool, BigInt) {
             let whole = d.abs().with_scale(0).as_bigint_and_exponent().0;
             (neg, frac, whole)
         }
-    }
-}
-
-/// The KeyError payload — Python's missing dict key is the fractional
-/// residue. The corpus compares exception types only, so this is
-/// best-effort text.
-fn frac_key_msg(value: &FloatValue) -> String {
-    match value {
-        FloatValue::Float { value, .. } => format!("{}", value),
-        FloatValue::Decimal { value, .. } => format!("{}", value),
     }
 }
 
@@ -948,12 +940,17 @@ impl Lang for LangBg {
     }
 
     /// `to_year(float/Decimal)` — `Num2Word_BG.to_year` has **no** exception
-    /// net, so the KeyError `_int_to_word` raises on a fractional residue
-    /// propagates (`0.5` → KeyError), while whole values ride the dict
-    /// lookups to the same words as their int counterparts — including the
-    /// neuter "минус едно" negatives ("-21.0" → "минус двадесет и едно").
+    /// net, so in Python the KeyError `_int_to_word` raised on a fractional
+    /// residue propagated (`0.5` → KeyError). The port raises a `TypeError`
+    /// instead, in en's `to='year'` wording (gladiaio/num2words2#158). Whole
+    /// values ride the dict lookups to the same words as their int
+    /// counterparts — including the neuter "минус едно" negatives ("-21.0" →
+    /// "минус двадесет и едно").
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
-        let (neg, frac, whole) = decompose_numeric(value);
+        if value.as_whole_int().is_none() {
+            return Err(year_float_error(value));
+        }
+        let (neg, _, whole) = decompose_numeric(value);
 
         // `if n < 1000` — every negative and every value under 1000.
         if neg || whole < BigInt::from(1000) {
@@ -963,11 +960,7 @@ impl Lang for LangBg {
             // thousands = n // 1000 == 1 for this whole range → "хиляда".
             let mut result = "хиляда".to_string();
             let remainder = &whole - BigInt::from(1000);
-            if remainder.is_positive() || frac {
-                if frac {
-                    // `_int_to_cardinal(remainder)` dies in `self.ones[…]`.
-                    return Err(N2WError::Key(frac_key_msg(value)));
-                }
+            if remainder.is_positive() {
                 result.push(' ');
                 result.push_str(&self.int_to_cardinal(&remainder));
             }
@@ -996,7 +989,12 @@ impl Lang for LangBg {
     ) -> Result<String> {
         match value {
             FloatValue::Float { value, precision } => self.to_cardinal_f64(*value, *precision),
-            // `isinstance(n, float)` is False → truncate, no fraction at all.
+            // Python's `isinstance(n, float)` was False → truncated (oddity
+            // 13, #156). A fractional Decimal now reads like a float, exactly.
+            FloatValue::Decimal { value: d, precision } if !d.is_integer() => {
+                let (pre, post) = float2tuple(value);
+                Ok(self.fraction_words(d.is_negative(), pre, post, *precision))
+            }
             FloatValue::Decimal { value, .. } => Ok(self.to_cardinal_bigdecimal(value)),
         }
     }
@@ -1441,42 +1439,42 @@ mod tests {
 
     /// Every `"lang": "bg", "to": "cardinal_dec"` corpus row.
     ///
-    /// All five are bare integers: `isinstance(n, float)` is false for a
-    /// Decimal, so BG never enters its float branch and truncates instead
-    /// (oddity 13). The #603 trillion-scale row is the one that proves the
-    /// value is not being routed through an f64 on the way: 98746251323029.99
-    /// keeps its ...029, which a float cast would have rounded to ...030.
+    /// Python truncated all five (oddity 13); since #156 a fractional Decimal
+    /// reads like a float. The #603 trillion-scale row proves the value is
+    /// not routed through an f64: 98746251323029.99 keeps its ...029, which a
+    /// float cast would have rounded to ...030.
     #[test]
     fn cardinal_decimal_corpus_rows() {
         let bg = LangBg::new();
         let rows: Vec<(&str, u32, &str)> = vec![
-            ("0.01", 2, "нула"),
-            ("1.10", 2, "един"),
-            ("12.345", 3, "дванадесет"),
+            ("0.01", 2, "нула точка нула едно"),
+            ("1.10", 2, "един точка едно нула"),
+            ("12.345", 3, "дванадесет точка три четири пет"),
             (
                 "98746251323029.99",
                 2,
                 "деветдесет и осем хиляди седемстотин четиридесет и шест милиарда \
-                 двеста петдесет и едно милиона триста двадесет и три хиляди двадесет и девет",
+                 двеста петдесет и едно милиона триста двадесет и три хиляди двадесет и девет \
+                 точка девет девет",
             ),
-            ("0.001", 3, "нула"),
+            ("0.001", 3, "нула точка нула нула едно"),
         ];
         for (s, p, want) in rows {
             assert_eq!(bg.to_cardinal_float(&dec(s, p), None).unwrap(), want, "{}", s);
         }
     }
 
-    /// Decimal negatives and signed zero, cross-checked against the live
-    /// interpreter. `Decimal("-0.0") < 0` is false in Python, and BigDecimal
-    /// has no signed zero, so both answer plain "нула" with no sign.
+    /// Decimal negatives and signed zero read like the matching floats
+    /// (#156). `Decimal("-0.0") < 0` is false in Python, and BigDecimal has
+    /// no signed zero, so both zeros answer plain "нула" with no sign.
     #[test]
     fn cardinal_decimal_negatives() {
         let bg = LangBg::new();
         for (s, p, want) in [
-            ("-1.5", 1, "минус един"),
-            ("-0.5", 1, "минус нула"),
-            ("-12.34", 2, "минус дванадесет"),
-            ("2.675", 3, "два"),
+            ("-1.5", 1, "минус един точка пет"),
+            ("-0.5", 1, "минус нула точка пет"),
+            ("-12.34", 2, "минус дванадесет точка три четири"),
+            ("2.675", 3, "два точка шест седем пет"),
             ("-0.0", 1, "нула"),
             ("0.0", 1, "нула"),
         ] {
@@ -1555,7 +1553,10 @@ mod tests {
                 bg.to_cardinal_float(&f(2.675, 3), p).unwrap(),
                 "два точка шест седем пет"
             );
-            assert_eq!(bg.to_cardinal_float(&dec("12.345", 3), p).unwrap(), "дванадесет");
+            assert_eq!(
+                bg.to_cardinal_float(&dec("12.345", 3), p).unwrap(),
+                "дванадесет точка три четири пет"
+            );
         }
     }
 
