@@ -343,36 +343,36 @@ class Num2WordsISTest(TestCase):
             "núll krónur, fimmtíu aurar",
         )
         self.assertEqual(
-            num2words(1, lang="is", to="currency", currency="ISK"), "einn króna"
+            num2words(1, lang="is", to="currency", currency="ISK"), "ein króna"
         )
         self.assertEqual(
             num2words(1.5, lang="is", to="currency", currency="ISK"),
-            "einn króna, fimmtíu aurar",
+            "ein króna, fimmtíu aurar",
         )
         self.assertEqual(
             num2words(0, lang="is", to="currency", currency="EUR"), "núll evrur"
         )
         self.assertEqual(
             num2words(0.01, lang="is", to="currency", currency="EUR"),
-            "núll evrur, einn sent",
+            "núll evrur, eitt sent",
         )
         self.assertEqual(
             num2words(0.5, lang="is", to="currency", currency="EUR"),
             "núll evrur, fimmtíu sent",
         )
         self.assertEqual(
-            num2words(1, lang="is", to="currency", currency="EUR"), "einn evra"
+            num2words(1, lang="is", to="currency", currency="EUR"), "ein evra"
         )
         self.assertEqual(
             num2words(1.5, lang="is", to="currency", currency="EUR"),
-            "einn evra, fimmtíu sent",
+            "ein evra, fimmtíu sent",
         )
         self.assertEqual(
             num2words(0, lang="is", to="currency", currency="USD"), "núll dalir"
         )
         self.assertEqual(
             num2words(0.01, lang="is", to="currency", currency="USD"),
-            "núll dalir, einn sent",
+            "núll dalir, eitt sent",
         )
         self.assertEqual(
             num2words(0.5, lang="is", to="currency", currency="USD"),
@@ -399,10 +399,41 @@ class Num2WordsISTest(TestCase):
         for v in (21, 21.0):
             self.assertTrue(
                 num2words(v, lang="is", to="currency").startswith(
-                    "tuttugu og einn króna"
+                    "tuttugu og ein króna"
                 )
             )
         self.assertEqual(num2words(11, lang="is", to="currency"), "ellefu krónur")
+
+    def test_currency_numeral_gender(self):
+        # gladiaio/num2words2#185: 1-4 agree with the noun (króna/evra f,
+        # dalur/eyrir m, sent n), also in compounds, on int/float/str alike.
+        cases = [
+            (1, "ISK", "ein króna"),
+            (2, "ISK", "tvær krónur"),
+            (3, "ISK", "þrjár krónur"),
+            (4, "ISK", "fjórar krónur"),
+            (21, "ISK", "tuttugu og ein króna"),
+            (1001, "ISK", "eitt þúsund og ein króna"),
+            (-1, "ISK", "mínus ein króna"),
+            ("22", "ISK", "tuttugu og tvær krónur"),
+            (0.01, "ISK", "núll krónur, einn eyrir"),
+            (2.02, "ISK", "tvær krónur, tveir aurar"),
+            ("21.03", "ISK", "tuttugu og ein króna, þrír aurar"),
+            (3.04, "EUR", "þrjár evrur, fjögur sent"),
+            (21.01, "EUR", "tuttugu og ein evra, eitt sent"),
+            (2, "USD", "tveir dalir"),
+            (2.02, "USD", "tveir dalir, tvö sent"),
+        ]
+        for value, cur, want in cases:
+            self.assertEqual(
+                num2words(value, lang="is", to="currency", currency=cur), want
+            )
+        self.assertEqual(
+            num2words(2.5, lang="is", to="currency", currency="ISK", adjective=True),
+            "tvær íslenskar krónur, fimmtíu aurar",
+        )
+        # The plain cardinal stays masculine.
+        self.assertEqual(num2words(21, lang="is"), "tuttugu og einn")
 
     def test_year(self):
         """Test year conversion."""

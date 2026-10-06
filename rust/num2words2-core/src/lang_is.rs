@@ -84,8 +84,16 @@
 //! singular when `n % 10 == 1 and n % 100 != 11`, plural otherwise — and the
 //! int branch of `to_currency` uses the same rule, so `21` and `21.0` agree:
 //! `num2words(5.5, lang="is", to="currency")` → `"fimm krónur, fimmtíu aurar"`.
-//! (Numeral gender is not adjusted: "einn króna" keeps the masculine
-//! numeral, as the int branch always has.)
+//!
+//! ## Numeral gender (fixed, #185)
+//!
+//! Python always prints the masculine cardinal before the currency noun:
+//! `"einn króna"`, `"tveir evrur"`. Icelandic 1–4 agree with the noun, so the
+//! port inflects the final numeral token (the same token `genderize` acts
+//! on) by the gender of the noun it counts — see [`currency_gender`]:
+//! `"ein króna"`, `"tuttugu og tvær evrur"`, `"einn eyrir"`, `"eitt sent"`.
+//! Int, float and string amounts all go through [`LangIs::money_verbose`] /
+//! [`LangIs::cents_verbose`], so they agree.
 
 use crate::base::{set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -124,6 +132,36 @@ fn gender_forms(word: &str) -> Option<&'static [&'static str; 3]> {
 
 fn plural_forms(word: &str) -> Option<&'static [&'static str; 2]> {
     PLURALS.iter().find(|(k, _)| *k == word).map(|(_, v)| v)
+}
+
+/// Grammatical gender of the currency nouns in [`build_currency_forms`],
+/// as `(unit, subunit)` (#185): *króna* and *evra* are feminine, *dalur* and
+/// *eyrir* masculine, *sent* neuter. Every code in the table is listed; an
+/// unknown code never reaches here (the forms lookup raises first) but would
+/// keep the masculine Python always printed.
+fn currency_gender(code: &str) -> (usize, usize) {
+    match code {
+        "ISK" => (KVK, KK),
+        "EUR" => (KVK, HK),
+        "USD" => (KK, HK),
+        _ => (KK, KK),
+    }
+}
+
+/// Re-inflect the final token of a masculine cardinal for `gender`
+/// ("tuttugu og einn" → "tuttugu og ein"). Only 1–4 inflect; anything else,
+/// and any earlier token (e.g. "eitt" in "eitt þúsund"), is left alone.
+fn gender_last(text: &str, gender: usize) -> String {
+    match text.rsplit_once(' ') {
+        Some((head, last)) => match gender_forms(last) {
+            Some(forms) => format!("{} {}", head, forms[gender]),
+            None => text.to_string(),
+        },
+        None => match gender_forms(text) {
+            Some(forms) => forms[gender].to_string(),
+            None => text.to_string(),
+        },
+    }
 }
 
 /// `Num2Word_IS.CURRENCY_FORMS`, the class body verbatim.
@@ -392,8 +430,20 @@ impl Lang for LangIs {
 
     // currency_precision is NOT overridden: IS inherits Num2Word_Base's empty
     // CURRENCY_PRECISION, so `.get(code, 100)` is always 100 — exactly the
-    // trait default. Likewise money_verbose / cents_verbose / cents_terse /
-    // to_cheque, which IS inherits from Num2Word_Base unchanged.
+    // trait default. Likewise cents_terse / to_cheque, which IS inherits from
+    // Num2Word_Base unchanged.
+
+    /// Base's `to_cardinal`, with the final numeral agreeing with the unit
+    /// noun's gender (#185): "ein króna", "tuttugu og tvær evrur".
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(gender_last(&self.to_cardinal(number)?, currency_gender(currency).0))
+    }
+
+    /// As [`LangIs::money_verbose`], for the subunit noun: "einn eyrir",
+    /// "eitt sent".
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(gender_last(&self.to_cardinal(number)?, currency_gender(currency).1))
+    }
 
     /// `Num2Word_IS.pluralize(n, noun)` **for the tuple call site** — the
     /// one `Num2Word_Base.to_currency` reaches.
@@ -455,7 +505,9 @@ impl Lang for LangIs {
             if let Some(forms) = self.currency_forms(currency) {
                 let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
                 let abs_val = v.abs();
-                let money_str = self.to_cardinal(&abs_val)?;
+                // Python: self.to_cardinal(abs_val), always masculine. The
+                // port agrees the numeral with the noun (#185).
+                let money_str = self.money_verbose(&abs_val, currency)?;
 
                 // Python: cr1[0] if abs_val == 1 else cr1[1]. Unified with
                 // the float path's count rule (#169).
@@ -681,7 +733,7 @@ mod tests {
     /// the Python side. That split is the whole ballgame for IS: `1` takes
     /// IS's own int branch and prints "einn evra", while `1.0` falls through
     /// to `Num2Word_Base.to_currency` and prints
-    /// "einn evra, núll sent".
+    /// "ein evra, núll sent".
     ///
     /// `has_decimal` is `!is_int` because every non-int row in the corpus is a
     /// Python `float`, for which `isinstance(val, float)` short-circuits the
@@ -718,32 +770,33 @@ mod tests {
         }
     }
 
-    /// Every `is` currency row in the frozen corpus; float rows corrected for #169.
+    /// Every `is` currency row in the frozen corpus; float rows corrected for
+    /// #169, numeral gender for #185 (evra f, dalur m, sent n).
     #[test]
     fn corpus_currency() {
         let cases: &[(&str, &str, std::result::Result<&str, &str>)] = &[
         ("0",        "EUR",   Ok("núll evrur")),
-        ("1",        "EUR",   Ok("einn evra")),
-        ("2",        "EUR",   Ok("tveir evrur")),
+        ("1",        "EUR",   Ok("ein evra")),
+        ("2",        "EUR",   Ok("tvær evrur")),
         ("100",      "EUR",   Ok("eitt hundrað evrur")),
-        ("12.34",    "EUR",   Ok("tólf evrur, þrjátíu og fjórir sent")),
-        ("0.01",     "EUR",   Ok("núll evrur, einn sent")),
-        ("1.0",      "EUR",   Ok("einn evra, núll sent")),
+        ("12.34",    "EUR",   Ok("tólf evrur, þrjátíu og fjögur sent")),
+        ("0.01",     "EUR",   Ok("núll evrur, eitt sent")),
+        ("1.0",      "EUR",   Ok("ein evra, núll sent")),
         ("99.99",    "EUR",   Ok("níutíu og níu evrur, níutíu og níu sent")),
-        ("1234.56",  "EUR",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórir evrur, fimmtíu og sex sent")),
-        ("-12.34",   "EUR",   Ok("mínus tólf evrur, þrjátíu og fjórir sent")),
+        ("1234.56",  "EUR",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórar evrur, fimmtíu og sex sent")),
+        ("-12.34",   "EUR",   Ok("mínus tólf evrur, þrjátíu og fjögur sent")),
         ("1000000",  "EUR",   Ok("ein milljón evrur")),
         ("0.5",      "EUR",   Ok("núll evrur, fimmtíu sent")),
         ("0",        "USD",   Ok("núll dalir")),
         ("1",        "USD",   Ok("einn dalur")),
         ("2",        "USD",   Ok("tveir dalir")),
         ("100",      "USD",   Ok("eitt hundrað dalir")),
-        ("12.34",    "USD",   Ok("tólf dalir, þrjátíu og fjórir sent")),
-        ("0.01",     "USD",   Ok("núll dalir, einn sent")),
+        ("12.34",    "USD",   Ok("tólf dalir, þrjátíu og fjögur sent")),
+        ("0.01",     "USD",   Ok("núll dalir, eitt sent")),
         ("1.0",      "USD",   Ok("einn dalur, núll sent")),
         ("99.99",    "USD",   Ok("níutíu og níu dalir, níutíu og níu sent")),
         ("1234.56",  "USD",   Ok("eitt þúsund tvö hundruð þrjátíu og fjórir dalir, fimmtíu og sex sent")),
-        ("-12.34",   "USD",   Ok("mínus tólf dalir, þrjátíu og fjórir sent")),
+        ("-12.34",   "USD",   Ok("mínus tólf dalir, þrjátíu og fjögur sent")),
         ("1000000",  "USD",   Ok("ein milljón dalir")),
         ("0.5",      "USD",   Ok("núll dalir, fimmtíu sent")),
         ("0",        "GBP",   Err("NotImplementedError")),
@@ -836,11 +889,12 @@ mod tests {
         }
     }
 
-    /// Every `is` cheque row in the frozen corpus, verbatim.
+    /// Every `is` cheque row in the frozen corpus; numeral gender corrected
+    /// for #185 ("FJÓRAR … EVRUR").
     #[test]
     fn corpus_cheque() {
         let cases: &[(&str, &str, std::result::Result<&str, &str>)] = &[
-        ("1234.56",  "EUR",   Ok("EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRIR AND 56/100 EVRUR")),
+        ("1234.56",  "EUR",   Ok("EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRAR AND 56/100 EVRUR")),
         ("1234.56",  "USD",   Ok("EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRIR AND 56/100 DALIR")),
         ("1234.56",  "GBP",   Err("NotImplementedError")),
         ("1234.56",  "JPY",   Err("NotImplementedError")),
@@ -903,12 +957,12 @@ mod tests {
         );
         assert_eq!(
             l.to_currency(&int(-1), "EUR", true, None, false).unwrap(),
-            "mínus einn evra"
+            "mínus ein evra"
         );
 
         // 2. ISK, the default currency, is never exercised by the corpus.
-        assert_eq!(l.to_currency(&int(1), "ISK", true, None, false).unwrap(), "einn króna");
-        assert_eq!(l.to_currency(&int(2), "ISK", true, None, false).unwrap(), "tveir krónur");
+        assert_eq!(l.to_currency(&int(1), "ISK", true, None, false).unwrap(), "ein króna");
+        assert_eq!(l.to_currency(&int(2), "ISK", true, None, false).unwrap(), "tvær krónur");
         assert_eq!(
             l.to_currency(&flt("12.34"), "ISK", true, None, false).unwrap(),
             "tólf krónur, þrjátíu og fjórir aurar"
@@ -916,10 +970,10 @@ mod tests {
 
         // 3. adjective=True is ignored on the int path, applied on the float
         //    path.
-        assert_eq!(l.to_currency(&int(2), "ISK", true, None, true).unwrap(), "tveir krónur");
+        assert_eq!(l.to_currency(&int(2), "ISK", true, None, true).unwrap(), "tvær krónur");
         assert_eq!(
             l.to_currency(&flt("2.5"), "ISK", true, None, true).unwrap(),
-            "tveir íslenskar krónur, fimmtíu aurar"
+            "tvær íslenskar krónur, fimmtíu aurar"
         );
 
         // 4. cents=false swaps _cents_verbose for _cents_terse (width 2, since
@@ -931,7 +985,7 @@ mod tests {
         // A caller-supplied separator replaces the "," default.
         assert_eq!(
             l.to_currency(&flt("12.34"), "EUR", true, Some(" og"), false).unwrap(),
-            "tólf evrur og þrjátíu og fjórir sent"
+            "tólf evrur og þrjátíu og fjögur sent"
         );
 
         // 5. has_decimal, not the numeric value, gates the cents segment:
@@ -947,11 +1001,11 @@ mod tests {
         // 6. Negative cheque, and a cheque whose cents are zero.
         assert_eq!(
             l.to_cheque(&BigDecimal::from_str("-1234.56").unwrap(), "EUR").unwrap(),
-            "MINUS EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRIR AND 56/100 EVRUR"
+            "MINUS EITT ÞÚSUND TVÖ HUNDRUÐ ÞRJÁTÍU OG FJÓRAR AND 56/100 EVRUR"
         );
         assert_eq!(
             l.to_cheque(&BigDecimal::from_str("1.0").unwrap(), "ISK").unwrap(),
-            "EINN AND 00/100 KRÓNUR"
+            "EIN AND 00/100 KRÓNUR"
         );
     }
 
