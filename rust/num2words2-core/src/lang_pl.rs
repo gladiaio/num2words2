@@ -1074,6 +1074,7 @@ fn plural_form_index(n: &BigInt) -> usize {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;

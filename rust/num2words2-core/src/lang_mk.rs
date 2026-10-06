@@ -143,7 +143,6 @@ use std::str::FromStr;
 /// `setup`: `self.negword = "minus "`; this port uses the Macedonian word
 /// (#154). The trailing space is load-bearing — MK's `to_cardinal`
 /// concatenates it raw (see bug 5).
-
 const NEGWORD: &str = "минус ";
 
 /// `setup`: `self.pointword = "point"`, replaced by the Macedonian decimal

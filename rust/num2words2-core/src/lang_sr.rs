@@ -548,7 +548,6 @@ fn feminine_kwarg(kw: &Kwargs) -> Result<bool> {
 /// transliterates them to Cyrillic (gladiaio/num2words2#154); Serbian
 /// Latin/Cyrillic is a one-to-one mapping, and `sr_Latn` keeps its own Latin
 /// table.
-
 ///
 /// # Why the gender flag is a `"False"`/`"True"` string
 ///

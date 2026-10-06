@@ -150,3 +150,21 @@ jobs:
         python -c "import importlib.metadata as m, num2words2; assert num2words2.__version__ == m.version('num2words2'), (num2words2.__version__, m.version('num2words2'))"
         python -c "from num2words2 import num2words; print('English 42:', num2words(42, lang='en'))"
         python -c "from num2words2 import num2words; print('Assamese 42:', num2words(42, lang='as'))"
+
+  clippy:
+    name: Clippy (deny-level lints)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
+    # Only the correctness/suspicious groups fail the build; the remaining
+    # style/complexity warnings stay warnings (#246).
+    - name: cargo clippy
+      working-directory: rust
+      run: cargo clippy --all-targets -- -D clippy::correctness -D clippy::suspicious

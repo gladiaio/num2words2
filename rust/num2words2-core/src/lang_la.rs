@@ -250,6 +250,7 @@ fn digit(n: &BigInt) -> usize {
 /// float `to_cardinal`. The float path feeds only the digits before the ".",
 /// which `format!` guarantees are `[0-9]+`, so this never fails in practice;
 /// the error arm mirrors the `ValueError` `int()` raises on a bad literal.
+#[allow(dead_code)] // kept from the port; currently unreferenced (#246)
 fn parse_int(s: &str) -> Result<BigInt> {
     s.parse::<BigInt>().map_err(|_| {
         N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))

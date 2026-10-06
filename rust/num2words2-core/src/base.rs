@@ -715,6 +715,7 @@ pub fn default_to_fraction<L: Lang + ?Sized>(
 
 /// Python's `splitnum`. Returns `None` where Python falls off the loop and
 /// implicitly returns `None` (value larger than every card).
+#[allow(clippy::never_loop)] // mirrors Python's `for ...: return` (first card <= value)
 pub fn splitnum<L: Lang + ?Sized>(lang: &L, value: &BigInt) -> Option<Vec<Node>> {
     let cards = lang.cards();
     for (elem, word) in cards.iter_from(value) {

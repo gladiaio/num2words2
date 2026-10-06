@@ -291,6 +291,7 @@ const MODIFIERS: [&str; 15] = [
 
 const ORDINAL_SUFFIX: &str = "\u{0ca8}\u{0cc7}"; // ನೇ
 const GENITIVE: &str = "\u{0ca6}"; // ದ
+#[allow(dead_code)] // kept from the port; currently unreferenced (#246)
 const POINTWORD: &str = "\u{0cac}\u{0cbf}\u{0c82}\u{0ca6}\u{0cc1}"; // ಬಿಂದು
 const HUNDRED: &str = "\u{0ca8}\u{0cc2}\u{0cb0}\u{0cc1}"; // ನೂರು
 const THOUSAND: &str = "\u{0cb8}\u{0cbe}\u{0cb5}\u{0cbf}\u{0cb0}"; // ಸಾವಿರ

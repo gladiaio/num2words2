@@ -814,6 +814,7 @@ impl Lang for LangEsHn {
 // two f64-artefact rescues (1.005, 2.675) and the trillion-scale Decimal
 // row that a `float()` cast would corrupt (issue #603).
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;

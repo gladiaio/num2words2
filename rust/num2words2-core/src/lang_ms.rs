@@ -1069,6 +1069,7 @@ mod tests {
 // `_int_to_cardinal(int(value))` (integer part, truncated toward zero, spelled
 // as a plain cardinal — no pointword, no fractional digits). See
 // `LangMs::to_cardinal_float`.
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;

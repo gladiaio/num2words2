@@ -381,13 +381,10 @@ impl LangIs {
     /// Python's `adj.split()[-1]` would raise `IndexError` on an all-whitespace
     /// `adj`. That is unreachable: every card word is non-empty and `merge`
     /// only ever builds `"a b"` / `"a og b"` from non-empty parts. The
-    /// `unwrap_or("")` below therefore never fires; `""` is not in `GENDERS`,
+    /// `unwrap_or_default()` below therefore never fires; `""` is not in `GENDERS`,
     /// so it would fall through to the identity return regardless.
     fn genderize(&self, adj: &str, noun: &str) -> String {
-        let last = match adj.split_whitespace().last() {
-            Some(w) => w,
-            None => "",
-        };
+        let last = adj.split_whitespace().last().unwrap_or_default();
         let forms = match gender_forms(last) {
             Some(f) => f,
             None => return adj.to_string(),

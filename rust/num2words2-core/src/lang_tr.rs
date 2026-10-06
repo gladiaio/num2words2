@@ -1401,6 +1401,7 @@ impl Lang for LangTr {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -1461,6 +1462,7 @@ mod float_tests {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod entry_and_kwargs_tests {
     use super::*;

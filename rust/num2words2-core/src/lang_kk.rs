@@ -315,7 +315,6 @@ fn get_digits(n: u32) -> [usize; 3] {
 /// been constructed and any in-place mutation has happened):
 /// `{"KZT": ("теңге", "тиын"), "USD": ("доллар", "цент")}`. Every other code
 /// (GBP, JPY, KWD, BHD, INR, CNY, CHF, ...) raises `NotImplementedError`.
-
 ///
 /// # The one-element arity is the port, not a shortcut
 ///

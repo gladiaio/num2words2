@@ -132,6 +132,7 @@ const ZERO: &str = "אפס";
 const AND: &str = "ו";
 const DEF: &str = "ה";
 const NEGWORD: &str = "מינוס";
+#[allow(dead_code)] // kept from the port; currently unreferenced (#246)
 const POINTWORD: &str = "נקודה";
 
 /// `THOUSANDS[1][0]`.

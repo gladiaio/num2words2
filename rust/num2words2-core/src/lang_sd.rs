@@ -207,7 +207,6 @@ const ORDINAL_SUFFIX: &str = "-\u{0648}";
 /// `self.pointword` — the word between the integer and fractional parts on the
 /// float path. Still the English "point": the Sindhi decimal word needs a
 /// native-speaker check (gladiaio/num2words2#154), so it is left as is.
-
 const POINTWORD: &str = "point";
 
 /// The 10^9 ceiling past which `_int_to_word` gives up and returns digits.
@@ -803,6 +802,7 @@ impl Lang for LangSd {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;

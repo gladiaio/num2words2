@@ -210,6 +210,7 @@ use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
+#[cfg(test)] // only the tests build BigDecimals
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -1003,6 +1004,7 @@ impl Lang for LangYo {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
