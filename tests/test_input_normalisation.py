@@ -72,3 +72,30 @@ def test_en_aero_exponent_and_non_finite(lang):
     for s in ("NaN", "inf", "-inf"):
         assert _call(s, lang=lang) == _call(s, lang="en")
         assert _call(s, lang=lang) in (ValueError, OverflowError)
+
+
+# ---- #213: integral values of any type in the integer modes ---------------
+
+@pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("to", ["ordinal", "ordinal_num", "year"])
+def test_integral_value_of_any_type_reads_as_the_integer(lang, to):
+    want = _call(1999, lang=lang, to=to)
+    for x in ("1999", Decimal("1999"), 1999.0, Decimal("1999.0"), "1999.0",
+              Decimal("1.999E+3")):
+        assert _call(x, lang=lang, to=to) == want, (x, lang, to)
+
+
+def test_issue_213_examples():
+    year = num2words(1999, lang="et", to="year")
+    assert num2words("1999", lang="et", to="year") == year
+    assert (num2words(1999.0, lang="ms", to="year")
+            == num2words(1999, lang="ms", to="year"))
+    assert (num2words(Decimal("1999"), lang="ta", to="year")
+            == num2words(1999, lang="ta", to="year"))
+    assert num2words("5", lang="bn", to="ordinal_num") == "পঞ্চম"
+    assert (num2words(1999.0, lang="uk", to="ordinal")
+            == num2words(1999, lang="uk", to="ordinal"))
+    assert (num2words(Decimal("1999.0"), lang="hi", to="ordinal_num")
+            == num2words(1999, lang="hi", to="ordinal_num"))
+    # A whole Decimal no longer keeps its scale: "5th", not "5.00th".
+    assert num2words(Decimal("5.00"), to="ordinal_num") == "5th"

@@ -383,6 +383,14 @@ fn to_float_core(
         }
     }
     let v = float_value(value, precision, decimal_str)?;
+    // The integer modes take an integral value of any input type as that
+    // integer — 1999.0, Decimal('1999.0') and '1999' read like 1999
+    // (gladiaio/num2words2#213); the language never sees the float form.
+    if matches!(to, "ordinal" | "ordinal_num" | "year") {
+        if let Some(n) = v.as_whole_int() {
+            return int_int_mode(l, to, &n, kw);
+        }
+    }
     let r = match to {
         "cardinal" => {
             if kw.is_empty() {
@@ -397,19 +405,7 @@ fn to_float_core(
         // kwargs on the other non-cardinal float modes stay unported.
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
         "ordinal" => l.ordinal_float_entry(&v),
-        // PR savoirfairelinux/num2words#666: an integer-valued float (1.0,
-        // 2.0, 21.0) is a valid ordinal and must format without the decimal
-        // point ("1st", not "1.0st"). Mirror the dispatcher's int-conversion:
-        // route a whole float through the integer to_ordinal_num, which the
-        // corpus already covers. The dispatcher guards on `isinstance(number,
-        // float)`, so this must NOT fire for Decimal input — including
-        // Decimal('-0.0'), which the binder demotes to Float{-0.0}. A non-empty
-        // `decimal_str` marks a Decimal; gate on it so Decimals keep their
-        // scale ("5.00th", "-0.0ste") via the unchanged entry.
-        "ordinal_num" => match (decimal_str.is_empty(), v.whole_float_int()) {
-            (true, Some(n)) => l.to_ordinal_num(&n),
-            _ => l.ordinal_num_float_entry(&v, repr_str),
-        },
+        "ordinal_num" => l.ordinal_num_float_entry(&v, repr_str),
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
@@ -733,6 +729,12 @@ fn dec_mode(
     let prec = value.as_bigint_and_exponent().1.unsigned_abs() as u32;
     let fv = FloatValue::Decimal { value: value.clone(), precision: prec };
     let repr = python_decimal_str(value);
+    // '1999.0' in an integer mode reads like 1999 (#213).
+    if matches!(to, "ordinal" | "ordinal_num" | "year") {
+        if let Some(n) = fv.as_whole_int() {
+            return int_mode(l, to, &n, kw, currency, cents, separator, adjective);
+        }
+    }
     match to {
         "cardinal" => {
             if kw.is_empty() {

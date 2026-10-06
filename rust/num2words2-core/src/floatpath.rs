@@ -109,21 +109,6 @@ impl FloatValue {
             }
         }
     }
-
-    /// PR savoirfairelinux/num2words#666: the dispatcher's
-    /// `isinstance(number, float) and number == int(number)` test — `Some(int)`
-    /// only for a genuine `float` (not `Decimal`) whose value is integral.
-    /// Routes a whole float through the integer `to_ordinal_num` so the result
-    /// formats without the decimal point ("1st", not "1.0st"). Decimals keep
-    /// their scale ("5.00th"), matching `isinstance(number, float) == False`.
-    pub fn whole_float_int(&self) -> Option<BigInt> {
-        match self {
-            FloatValue::Float { value, .. } if value.is_finite() && value.fract() == 0.0 => {
-                BigInt::from_f64(*value)
-            }
-            _ => None,
-        }
-    }
 }
 
 /// Python's `Num2Word_Base.float2tuple`. Returns `(pre, post)`.
