@@ -34,7 +34,9 @@
 //! as one number: an extra pass right after the temperature passes claims
 //! them (as a currency amount when a `$€£¥` symbol precedes) instead of
 //! letting the later passes split them at the separator into a different
-//! number.
+//! number. A lone `1,000` or `1.000` counts as grouping per the language's
+//! notation (`strnum::number_notation`, #177): `1,000` in en/zh/ja/hi…,
+//! `1.000` in de/es/it/pt… (de "1.000 Leute" is no longer the ordinal "1.").
 //!
 //! Also deliberate (#152): English clock times `H:MM` get their own pass
 //! ("10:30" -> "ten thirty", "10:00" -> "ten o'clock") instead of being read
@@ -48,7 +50,7 @@ use std::sync::OnceLock;
 
 use bigdecimal::num_traits::FromPrimitive;
 use num2words2_core::base::Lang;
-use num2words2_core::strnum::{comma_groups_thousands, is_space_group_sep, parse_grouped, Grouped};
+use num2words2_core::strnum::{is_space_group_sep, number_notation, parse_grouped, Grouped};
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
 use num_bigint::BigInt;
 use regex::Regex;
@@ -509,8 +511,11 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
 /// A number written with thousands separators starting at char `start`
 /// (`1,000,000`, `1.234,56`, `-1 000`; #151). Returns the end of the token and
 /// its value as a plain decimal string. Only tokens that really contain
-/// grouping qualify, with [`parse_grouped`]'s rules (so `1,000` counts only
-/// in dot-decimal languages, and `192.168.1.1` or `1,2,3` never match); the
+/// grouping qualify, with [`parse_grouped`]'s rules and the language's
+/// [`number_notation`] (so `1,000` counts only in `1,000.5` languages, `1.000`
+/// only in `1.000,5` ones, #177, and `192.168.1.1` or `1,2,3` never match;
+/// a dot not followed by exactly three digits, as in de "1. Mai", is left to
+/// the ordinal pass); the
 /// token must not touch an ASCII letter/digit on either side, like pass 7.
 /// ASCII spaces are not taken as separators in running text ("between
 /// 2 100 and"), only the no-break/thin spaces and apostrophes.
@@ -542,7 +547,7 @@ fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, Str
         return None;
     }
     let tok: String = chars[start..end].iter().collect();
-    match parse_grouped(&tok, comma_groups_thousands(lang)) {
+    match parse_grouped(&tok, number_notation(lang)) {
         Grouped::Number { canonical, .. } => {
             let seps = tok
                 .chars()

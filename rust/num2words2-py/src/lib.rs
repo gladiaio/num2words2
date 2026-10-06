@@ -13,7 +13,7 @@ use bigdecimal::BigDecimal;
 use num2words2_core::base::{Kwargs, KwVal, Lang};
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
-    comma_groups_thousands, has_py_digit, parse_grouped, python_decimal_str, python_int_parse,
+    has_py_digit, number_notation, parse_grouped, python_decimal_str, python_int_parse,
     Grouped, ParsedNumber,
 };
 use num2words2_core::N2WError;
@@ -541,10 +541,12 @@ fn from_string_core(
             // A pure numeric string with thousands separators ("1,000",
             // "1.000.000", "1 000") is the number it spells; the sentence
             // converter below would split it at the separator and read a
-            // different number (#151). Ambiguous or malformed grouping
+            // different number (#151). Whether a lone "1,000" is grouping
+            // depends on the language's notation (#177; "1.000" never gets
+            // here: it is a valid Decimal). Ambiguous or malformed grouping
             // raises instead of guessing.
             let grouped = if catchable {
-                parse_grouped(s, comma_groups_thousands(lang))
+                parse_grouped(s, number_notation(lang))
             } else {
                 Grouped::NotGrouped
             };

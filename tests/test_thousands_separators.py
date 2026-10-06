@@ -95,3 +95,78 @@ def test_sentence_non_grouping_separators_untouched():
     assert "one hundred and ninety-two" in num2words_sentence("IP: 192.168.1.1")
     assert num2words_sentence("1st, 2nd, and 3rd place") == (
         "First, second, and third place")
+
+
+# Per-language notation table (#177): which languages write 1,000.5 and
+# which 1.000,5.
+@pytest.mark.parametrize(
+    "value, lang, expected",
+    [
+        ("1,000", "zh", "一千"),
+        ("1,000", "ja", "千"),
+        ("1,000", "hi", "एक हज़ार"),
+        ("1,000", "ko", "천"),
+    ],
+)
+def test_comma_grouping_in_dot_decimal_languages(value, lang, expected):
+    assert num2words(value, lang=lang) == expected
+
+
+@pytest.mark.parametrize(
+    "value, lang",
+    [
+        ("1,000", "fr"),     # comma-decimal, groups with spaces
+        ("1,000", "es_gt"),  # regional variants are not inherited from es
+    ],
+)
+def test_comma_grouping_stays_ambiguous_elsewhere(value, lang):
+    with pytest.raises(ValueError):
+        num2words(value, lang=lang)
+
+
+def test_plain_dot_string_is_still_a_decimal():
+    # A plain "1.000" is a valid Decimal and keeps that reading even in de;
+    # only running text uses the notation table for a lone dot.
+    assert num2words("1.000", lang="de") == "eins"
+
+
+@pytest.mark.parametrize(
+    "text, lang, expected",
+    [
+        ("Es kamen 1.000 Leute", "de", "Es kamen eintausend Leute"),
+        ("Es kamen 1.000.000 Leute", "de", "Es kamen eine Million Leute"),
+        ("Seite 1.234.", "de", "Seite eintausendzweihundertvierunddreißig."),
+        ("Es kostet € 1.000", "de", "Es kostet eintausend Euro und null Cent"),
+        ("1.000 pessoas", "pt_BR", "Mil pessoas"),
+        ("1.000 personas", "es", "Mil personas"),
+        ("1,000 people", "zh", "一千 people"),
+        ("1,000 people", "ja", "千 people"),
+        ("1,000 people", "en", "One thousand people"),
+    ],
+)
+def test_sentence_lone_separator_per_notation(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+def test_sentence_dot_ordinal_untouched():
+    # A dot not followed by exactly three digits stays an ordinal.
+    assert num2words_sentence("am 1. Mai", lang="de") == "am ersten Mai"
+
+
+def test_leading_zero_is_never_grouping():
+    assert num2words("0,500") == "zero point five zero zero"
+    assert num2words("0,500", lang="de") == "null Komma fünf null null"
+    assert "hundert" not in num2words_sentence("Wert 0.123", lang="de")
+
+
+@pytest.mark.parametrize(
+    "text, lang, thousand",
+    [
+        # Not standard notation in these languages: never read as a thousand.
+        ("1,000 Leute", "de", "tausend"),
+        ("1.000 personnes", "fr", "mille"),
+        ("1.000 people", "en", "thousand"),
+    ],
+)
+def test_sentence_lone_separator_not_grouping(text, lang, thousand):
+    assert thousand not in num2words_sentence(text, lang=lang).lower()
