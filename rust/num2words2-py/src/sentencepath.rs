@@ -104,7 +104,6 @@
 //! dot ends a sentence — not when it is the first character (`.5`) or ends
 //! a listed abbreviation (`approx.`, `ca.`, `No.`, `e.g.`, `z.B.`, …).
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use std::str::FromStr;
@@ -449,6 +448,9 @@ fn ascii_digits(p: &str) -> String {
 /// the Arabic decimal separator `٫` between two digits mapped to '.'. Char
 /// for char, so positions are unchanged (#228).
 fn normalize_digits(text: &str) -> String {
+    if text.is_ascii() {
+        return text.to_string();
+    }
     let cs: Vec<char> = text.chars().collect();
     let digit = |c: char| unicode_digit(c).is_some();
     cs.iter()
@@ -474,27 +476,40 @@ fn res() -> &'static Res {
 
 // ------------------------------------------------------------- char space
 
+/// How far back (in chars) the context checks before a number look: far
+/// more than any "<month> <day>," prefix, abbreviation or article needs.
+const CONTEXT: usize = 256;
+
 /// The sentence with a byte-offset -> char-offset map, so regex byte spans
 /// become the char positions Python slices with.
 struct Text<'a> {
     s: &'a str,
     chars: Vec<char>,
-    b2c: HashMap<usize, usize>,
+    /// Byte offset -> char offset (only char boundaries are ever looked up).
+    b2c: Vec<usize>,
 }
 
 impl<'a> Text<'a> {
     fn new(s: &'a str) -> Text<'a> {
         let chars: Vec<char> = s.chars().collect();
-        let mut b2c = HashMap::with_capacity(chars.len() + 1);
+        let mut b2c = vec![0; s.len() + 1];
         for (ci, (bi, _)) in s.char_indices().enumerate() {
-            b2c.insert(bi, ci);
+            b2c[bi] = ci;
         }
-        b2c.insert(s.len(), chars.len());
+        b2c[s.len()] = chars.len();
         Text { s, chars, b2c }
     }
 
     fn span(&self, bstart: usize, bend: usize) -> (usize, usize) {
-        (self.b2c[&bstart], self.b2c[&bend])
+        (self.b2c[bstart], self.b2c[bend])
+    }
+
+    /// The (at most [`CONTEXT`]) chars before `pos`, and whether more text
+    /// precedes them. Context checks look only this far back, so they cost
+    /// O(1) per number instead of rebuilding the whole prefix (#256).
+    fn before(&self, pos: usize) -> (String, bool) {
+        let from = pos.saturating_sub(CONTEXT);
+        (self.slice(from, pos), from > 0)
     }
 
     fn slice(&self, a: usize, b: usize) -> String {
@@ -1251,7 +1266,7 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             if overlap(&used, s, e) {
                 continue;
             }
-            let before = t.slice(0, s);
+            let (before, _) = t.before(s);
             if year_ctx.is_match(before.trim()) {
                 exts.push(Ext {
                     start: s,
@@ -1689,13 +1704,13 @@ const ABBREVIATIONS: &[&str] = &[
 /// Whether the text before a number ends a sentence, so the number is
 /// capitalised: `!`/`?`, or a `.` that is neither the very first character
 /// (".5") nor the dot of an abbreviation ("approx. 5", "No. 5", #235).
-fn ends_sentence(bt: &str) -> bool {
+fn ends_sentence(bt: &str, more_before: bool) -> bool {
     match bt.chars().last() {
         Some('!') | Some('?') => true,
         Some('.') => {
             let head = bt[..bt.len() - 1].trim_end();
             if head.is_empty() {
-                return false;
+                return more_before;
             }
             let word: String = head
                 .chars()
@@ -1886,8 +1901,9 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         ord_mode: to == "ordinal",
     };
 
-    // Replace from end to beginning to preserve positions.
-    let mut result: Vec<char> = text.chars().collect();
+    // Convert every extraction, then build the output in one forward pass:
+    // splicing into the text per number was quadratic (#256).
+    let mut repls: Vec<(usize, usize, String)> = Vec::with_capacity(exts.len());
     for e in exts.iter().rev() {
         let mut converted = match &e.typ {
             // An amount the language cannot name (no word for the code, or
@@ -1919,8 +1935,8 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         let needs_cap = if e.start == 0 {
             true
         } else {
-            let before = t.slice(0, e.start);
-            ends_sentence(before.trim_end())
+            let (before, more) = t.before(e.start);
+            ends_sentence(before.trim_end(), more)
         };
         if needs_cap && !converted.is_empty() {
             converted = capitalize_first(&converted);
@@ -1937,7 +1953,7 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
             }
             // German ordinal dates need case agreement.
             Typ::OrdinalDate if ctx.raw == "de" => {
-                let before = t.slice(0, e.start);
+                let (before, more) = t.before(e.start);
                 let b = before.trim().to_lowercase();
                 if b.ends_with("am")
                     || b.ends_with("zum")
@@ -1947,7 +1963,7 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
                     if !converted.ends_with('n') {
                         converted.push('n');
                     }
-                } else if (b.is_empty() || b.ends_with(['.', '!', '?', ':', ';', ',', '(']))
+                } else if ((b.is_empty() && !more) || b.ends_with(['.', '!', '?', ':', ';', ',', '(']))
                     && converted.ends_with('e')
                 {
                     // No article or preposition before it: strong
@@ -1959,11 +1975,20 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
             _ => converted,
         };
 
-        // Python slicing tolerates end > len (fr's num_end+2 quirk).
-        let end = e.end.min(result.len());
-        let start = e.start.min(end);
-        result.splice(start..end, replacement.chars());
+        repls.push((e.start, e.end, replacement));
     }
 
-    Ok(result.into_iter().collect())
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + text.len() / 2);
+    let mut pos = 0;
+    for (start, end, replacement) in repls.iter().rev() {
+        // Python slicing tolerates end > len (fr's num_end+2 quirk).
+        let end = (*end).min(chars.len());
+        let start = (*start).min(end).max(pos);
+        out.extend(&chars[pos..start]);
+        out.push_str(replacement);
+        pos = pos.max(end);
+    }
+    out.extend(&chars[pos..]);
+    Ok(out)
 }
