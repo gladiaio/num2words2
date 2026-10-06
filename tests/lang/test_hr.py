@@ -210,3 +210,24 @@ class Num2WordsHRTest(TestCase):
         self.assertEqual(num2words(1100, lang="hr"), "tisuća sto")
         self.assertEqual(num2words(11000, lang="hr"), "jedanaest tisuća")
         self.assertEqual(num2words(11001, lang="hr"), "jedanaest tisuća jedan")
+
+    def test_cheque_names_the_unit(self):
+        # gladiaio/num2words2#189: the cheque ended in the gender flag
+        # ("FALSE"/"TRUE") instead of the currency name.
+        self.assertEqual(
+            num2words(12.5, lang="hr", to="cheque"), "DVANAEST AND 50/100 EURA"
+        )
+        self.assertEqual(
+            num2words(1234.56, lang="hr", to="cheque", currency="EUR"),
+            "TISUĆA DVJESTO TRIDESET ČETIRI AND 56/100 EURA",
+        )
+        self.assertEqual(
+            num2words(12.5, lang="hr", to="cheque", currency="USD"),
+            "DVANAEST AND 50/100 DOLARA",
+        )
+        self.assertEqual(
+            num2words(-12.5, lang="hr", to="cheque", currency="HRK"),
+            "MINUS DVANAEST AND 50/100 KUNA",
+        )
+        with self.assertRaises(NotImplementedError):
+            num2words(12.5, lang="hr", to="cheque", currency="JPY")

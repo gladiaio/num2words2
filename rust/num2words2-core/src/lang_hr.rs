@@ -143,7 +143,8 @@
 //! pins for GBP/JPY/KWD/BHD/INR/CNY/CHF.
 //!
 //! It overrides `to_currency` and `_cents_verbose`; `to_cheque`,
-//! `_money_verbose` and `_cents_terse` stay `Num2Word_Base`'s. It defines
+//! `_money_verbose` and `_cents_terse` stay `Num2Word_Base`'s (the port fixes
+//! `to_cheque`'s unit word, quirk 6). It defines
 //! neither `CURRENCY_ADJECTIVES` nor `CURRENCY_PRECISION`, so both remain
 //! Base's empty dicts and [`Lang::currency_precision`] keeps its default 100
 //! for every code.
@@ -153,16 +154,17 @@
 //!
 //! # Faithfully reproduced Python oddities (currency)
 //!
-//! 6. **`to_cheque` prints the gender flag as the currency name.**
-//!    `Num2Word_Base.to_cheque` does `cr1, _cr2 = self.CURRENCY_FORMS[currency]`
-//!    then `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, intending "the
+//! 6. **`to_cheque` printed the gender flag as the currency name (fixed,
+//!    #189).** `Num2Word_Base.to_cheque` does
+//!    `cr1, _cr2 = self.CURRENCY_FORMS[currency]` then
+//!    `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, intending "the
 //!    plural form". HR's `cr1` is a **4-tuple**, so `cr1[-1]` is the trailing
 //!    `bool`, which `"%s"` renders as `False`/`True` and `.upper()` then
-//!    shouts. The corpus pins it:
-//!    `to_cheque(1234.56, "EUR")` ==
-//!    "TISUĆA DVJESTO TRIDESET ČETIRI AND 56/100 FALSE". HRK, whose flag is
-//!    `True`, would end in "TRUE". Reproduced through the *unmodified*
-//!    [`crate::currency::default_to_cheque`].
+//!    shouts: `to_cheque(12.5, "EUR")` == "DVANAEST AND 50/100 FALSE" (HRK:
+//!    "TRUE"). Same bug as `sr` (#176); [`LangHr::to_cheque`] goes through the
+//!    shared `lang_sr::sr_to_cheque`, which takes the "many" form:
+//!    "DVANAEST AND 50/100 EURA". "AND"/"MINUS" stay English, as in every
+//!    other language's cheque format.
 //! 7. **`to_currency` accepts `adjective=` and then ignores it.** The parameter
 //!    is in HR's signature but its body never reads it — unlike
 //!    `Num2Word_Base.to_currency`, which would apply `prefix_currency`. So
@@ -230,7 +232,8 @@
 //!
 //! # Verification
 //!
-//! All 117 `hr` currency + cheque corpus rows match byte for byte. Beyond the
+//! All 117 `hr` currency + cheque corpus rows match byte for byte (cheque
+//! rows bar the unit word, quirk 6). Beyond the
 //! corpus, ~20k differential cases were run against the live interpreter —
 //! every code (including **HRK**, which the corpus never exercises, and unknown
 //! codes), `cents=True`/`False`, `separator` omitted/`""`/`" i"`/`","`, `int` /
@@ -513,14 +516,12 @@ fn pluralize<'a>(number: &BigInt, forms: &'a (&'a str, &'a str, &'a str, bool)) 
 /// * `Num2Word_Base.to_cheque` reads `cr1[-1]` believing it is the plural unit
 ///   name and interpolates it into a `"%s"` — module-doc quirk 6. Python
 ///   renders the bool as the text `False`/`True`, which `.upper()` shouts.
+///   The port's [`LangHr::to_cheque`] reads the "many" form instead (#189).
 ///
-/// `CurrencyForms` stores `Vec<String>`, so keeping the flag as the exact text
-/// Python's `"%s"` produces reproduces the cheque bug through the *unmodified*
-/// [`crate::currency::default_to_cheque`] (which takes `forms.unit.last()`),
-/// while [`LangHr::cents_verbose`] recovers the boolean by comparing against
-/// `"True"`. Storing a real `bool` would need a parallel table *and* a
-/// `to_cheque` override to reprint it — more code, same bytes. This mirrors
-/// what `lang_sr.rs` does with the identical Python shape.
+/// `CurrencyForms` stores `Vec<String>`, so the flag is kept as the exact text
+/// Python's `"%s"` produces, and [`LangHr::cents_verbose`] recovers the
+/// boolean by comparing against `"True"`. This mirrors what `lang_sr.rs` does
+/// with the identical Python shape.
 ///
 /// The arity is load-bearing beyond that: [`LangHr::pluralize`] indexes 0..=2,
 /// so dropping the third form would silently change output.
@@ -1159,8 +1160,9 @@ impl Lang for LangHr {
     //
     // HR overrides `to_currency` and `_cents_verbose`, and supplies its own
     // `CURRENCY_FORMS` + `pluralize`. Everything else on the currency path —
-    // `to_cheque`, `_money_verbose`, `_cents_terse` — is `Num2Word_Base`'s, and
-    // the trait defaults already mirror those, so they are left alone.
+    // `_money_verbose`, `_cents_terse` — is `Num2Word_Base`'s, and the trait
+    // defaults already mirror those, so they are left alone. `to_cheque` is
+    // Base's too, except for the unit word (quirk 6, #189).
     // `CURRENCY_ADJECTIVES` and `CURRENCY_PRECISION` are Base's empty dicts, so
     // `currency_adjective` (None) and `currency_precision` (100) are correct as
     // inherited.
@@ -1171,6 +1173,12 @@ impl Lang for LangHr {
 
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
+    }
+
+    /// `Num2Word_Base.to_cheque` with the "many" form as the unit word instead
+    /// of the gender flag (quirk 6, #189), via the helper `sr` shares.
+    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
+        crate::lang_sr::sr_to_cheque(self, val, currency)
     }
 
     /// Port of `Num2Word_HR.pluralize` over a `CURRENCY_FORMS` entry.

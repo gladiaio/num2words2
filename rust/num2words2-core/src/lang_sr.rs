@@ -583,7 +583,8 @@ pub(crate) fn feminine_last(cyr: &str) -> String {
     }
 }
 
-/// `Num2Word_Base.to_cheque` for SR's 4-tuple forms, shared with `sr_Latn`.
+/// `Num2Word_Base.to_cheque` for SR's 4-tuple forms, shared with `sr_Latn`
+/// and `hr` (whose `CURRENCY_FORMS` has the same shape, #189).
 ///
 /// Identical to `currency::default_to_cheque` except for the unit word:
 /// Base takes `cr1[-1]`, which for SR is the gender flag ("FALSE"/"TRUE"),
@@ -604,7 +605,7 @@ pub(crate) fn sr_to_cheque<L: Lang + ?Sized>(
     let is_negative = val.is_negative();
     let abs_val = val.abs();
     let whole = abs_val.with_scale(0).as_bigint_and_exponent().0;
-    // SR's CURRENCY_PRECISION is empty, so the divisor is always 100.
+    // SR's (and HR's) CURRENCY_PRECISION is empty, so the divisor is always 100.
     let sub = ((&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(100))
         .with_scale(0)
         .as_bigint_and_exponent()
