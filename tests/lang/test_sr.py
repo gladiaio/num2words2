@@ -185,11 +185,11 @@ class Num2WordsSRTest(TestCase):
             num2words(10111, lang="sr", to="currency", currency="EUR", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет један рубља",
+            "десет хиљада сто двадесет један рубља",  # masculine numeral: lang_sr.rs quirk 10
             num2words(10121, lang="sr", to="currency", currency="RUB", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет два рубље",
+            "десет хиљада сто двадесет два рубље",  # masculine numeral: lang_sr.rs quirk 10
             num2words(10122, lang="sr", to="currency", currency="RUB", separator=" i"),
         )
         self.assertEqual(
