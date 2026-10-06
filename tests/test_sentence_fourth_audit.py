@@ -208,7 +208,7 @@ def test_currency_symbols(text, lang, expected):
         ("в 90-е годы", "ru", "в 90-е годы"),  # "-е" is ambiguous: kept
         ("5-летний", "ru", "5-летний"),
         ("1-й", "uk", "Перший"),
-        ("1. i 2. miejsce.", "pl", "Pierwszy i drugi miejsce."),
+        ("1. i 2. miejsce.", "pl", "Pierwszy i drugie miejsce."),
         ("Mam 3. Potem", "pl", "Mam trzy. Potem"),  # sentence end
         ("1. místo", "cs", "První místo"),
         ("1. maj", "da", "Første maj"),
@@ -264,3 +264,23 @@ def test_de_ordinal_date_strong_ending(text, expected):
 )
 def test_capitalisation_after_dot(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #232 follow-up: pl ordinals agree with the following noun -------------
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("2. miejsce", "Drugie miejsce"),
+        ("1. nagroda", "Pierwsza nagroda"),
+        ("3. część", "Trzecia część"),
+        ("21. edycja", "Dwudziesta pierwsza edycja"),
+        ("121. rocznica", "Sto dwudziesta pierwsza rocznica"),
+        ("2. kierowca", "Drugi kierowca"),
+        ("1002. noc", "Tysiąc druga noc"),
+        ("3. dzień", "Trzeci dzień"),
+        ("1. maja", "Pierwszy maja"),  # dates stay masculine nominative
+    ],
+)
+def test_pl_ordinal_gender(text, expected):
+    assert num2words_sentence(text, lang="pl") == expected

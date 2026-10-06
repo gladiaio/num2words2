@@ -94,7 +94,9 @@
 //! Also deliberate (#232): the ordinal registry knows the native notations
 //! — ru/uk `1-й` (ru `2-я` feminine; case endings and the ambiguous `-е`
 //! are left as written), pl/cs/sk/da/nb/fi/tr `1.` before a lowercase word
-//! (a dot before a capital is a sentence end), es/pt/it `1°`/`1º`/`2ª`
+//! (a dot before a capital is a sentence end; pl agrees with the noun
+//! after it, guessed from its ending: "2. miejsce" -> "drugie miejsce",
+//! while a month keeps "pierwszy maja"), es/pt/it `1°`/`1º`/`2ª`
 //! (feminine for `ª`; pt/it take no `gender=`, so their -o ordinals are
 //! turned -a), and the prefix forms keep their prefix word: ja `第1位` ->
 //! `第一位`, ko `제1회` -> `제일회`, vi `thứ 2` -> `thứ hai` (`thứ nhất`,
@@ -246,6 +248,61 @@ enum OrdKind {
     Fem,
     Cardinal,
     Vi,
+    /// pl ordinal agreeing with the following noun: `PlGender::Fem` /
+    /// `PlGender::Neut` (masculine is plain [`OrdKind::Masc`]).
+    Pl(PlGender),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlGender {
+    Masc,
+    Fem,
+    Neut,
+}
+
+/// The gender of a Polish noun guessed from its ending — a heuristic: -o,
+/// -e, -ę, -um neuter; -a, -ść feminine; otherwise masculine, with the
+/// common masculine -a nouns and feminine consonant nouns listed.
+fn pl_noun_gender(word: &str) -> PlGender {
+    const MASC_A: &[&str] = &[
+        "mężczyzna", "kolega", "kierowca", "poeta", "sędzia", "artysta", "turysta",
+        "specjalista",
+    ];
+    const FEM_CONS: &[&str] = &[
+        "noc", "rzecz", "mysz", "twarz", "sól", "krew", "wieś", "pieśń", "dłoń", "jesień",
+    ];
+    let w = word.to_lowercase();
+    if MASC_A.contains(&w.as_str()) {
+        PlGender::Masc
+    } else if FEM_CONS.contains(&w.as_str()) || w.ends_with('a') || w.ends_with("ść") {
+        PlGender::Fem
+    } else if w.ends_with(['o', 'e', 'ę']) || w.ends_with("um") {
+        PlGender::Neut
+    } else {
+        PlGender::Masc
+    }
+}
+
+/// A masculine Polish ordinal in gender `g`. Only the tens and units words
+/// inflect; hundreds and thousands stay ("sto dwudziesta pierwsza"), so the
+/// last (at most two) words ending in -y/-i take adjective endings.
+fn pl_ordinal_gender(masc: &str, g: PlGender) -> String {
+    let mut words: Vec<String> = masc.split(' ').map(str::to_string).collect();
+    let n = words.len();
+    for w in words.iter_mut().skip(n.saturating_sub(2)) {
+        let stem = |k: usize| w[..w.len() - k].to_string();
+        let new = match g {
+            PlGender::Masc => continue,
+            PlGender::Fem if w.ends_with("gi") => format!("{}ga", stem(2)),
+            PlGender::Fem if w.ends_with('i') => format!("{}ia", stem(1)),
+            PlGender::Fem if w.ends_with('y') => format!("{}a", stem(1)),
+            PlGender::Neut if w.ends_with('i') => format!("{}ie", stem(1)),
+            PlGender::Neut if w.ends_with('y') => format!("{}e", stem(1)),
+            _ => continue,
+        };
+        *w = new;
+    }
+    words.join(" ")
 }
 
 /// `lang_registry.MONTH_NAMES` — month-name regex per lang (a non-capturing
@@ -1166,7 +1223,26 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                     if k == e || k >= n || !c[k].is_lowercase() {
                         continue;
                     }
-                    OrdKind::Masc
+                    if norm_lang(lang) == "pl" {
+                        // Agree with the noun that follows ("2. miejsce" ->
+                        // "drugie miejsce"); a month keeps the masculine
+                        // date form ("1. maja" -> "pierwszy maja").
+                        let mut j = k;
+                        while j < n && c[j].is_alphabetic() {
+                            j += 1;
+                        }
+                        let word = t.slice(k, j);
+                        let month = r.months_re(lang).is_some_and(|mr| {
+                            Regex::new(&format!("(?i)^{}$", mr))
+                                .is_ok_and(|re| re.is_match(&word))
+                        });
+                        match pl_noun_gender(&word) {
+                            g if !month && g != PlGender::Masc => OrdKind::Pl(g),
+                            _ => OrdKind::Masc,
+                        }
+                    } else {
+                        OrdKind::Masc
+                    }
                 }
                 OrdForm::Hyphen => {
                     let ending = m.get(2).unwrap().as_str();
@@ -1529,6 +1605,7 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             let n = val.i();
             match kind {
                 OrdKind::Masc => l.to_ordinal(n),
+                OrdKind::Pl(g) => Ok(pl_ordinal_gender(&l.to_ordinal(n)?, *g)),
                 OrdKind::Cardinal => l.to_cardinal(n),
                 // Vietnamese: "thứ nhất", "thứ tư", else the cardinal.
                 OrdKind::Vi if *n == BigInt::from(1) => Ok("nhất".to_string()),
