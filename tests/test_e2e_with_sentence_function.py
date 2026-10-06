@@ -5,20 +5,27 @@ Test the num2words_sentence function against the e2e CSV test file.
 """
 
 import csv
-import io
 import os
 import sys
 
 from num2words2 import num2words_sentence
 
-# Force UTF-8 encoding for stdout on Windows
-if sys.platform == "win32":
-    # Set console code page to UTF-8 on Windows
-    if hasattr(sys.stdout, "buffer"):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-    if hasattr(sys.stderr, "buffer"):
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
-    # Also set environment variable for Python
+
+def _force_utf8_console():
+    """Make print() survive non-ASCII output on a Windows console.
+
+    Only for running this file as a script. Under pytest, sys.stdout is
+    pytest's capture stream: wrapping its buffer in a new TextIOWrapper
+    hands ownership of pytest's temp file to the wrapper, which closes it
+    when garbage-collected, and pytest then crashes at teardown with
+    "ValueError: I/O operation on closed file" (every Windows job of the
+    scheduled workflow). reconfigure() changes the encoding in place.
+    """
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     os.environ["PYTHONIOENCODING"] = "utf-8"
 
 
@@ -204,6 +211,7 @@ def run_csv_file(csv_path):
 
 
 def main():
+    _force_utf8_console()
     csv_path = "tests/data/e2e_test_sentences.csv"
 
     print(f"Testing with: {csv_path}\n")
