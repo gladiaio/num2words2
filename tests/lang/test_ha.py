@@ -250,43 +250,43 @@ class Num2WordsHATest(TestCase):
         self.assertEqual(num2words(0.5, lang="ha"), "sifiri wajen biyar")
         self.assertEqual(num2words(0.9, lang="ha"), "sifiri wajen tara")
         self.assertEqual(
-            num2words(1.1, lang="ha"), "ɗaya wajen tiriliyan dubu goma da tara"
+            num2words(1.1, lang="ha"), "ɗaya wajen ɗaya"
         )
         self.assertEqual(num2words(1.5, lang="ha"), "ɗaya wajen biyar")
         self.assertEqual(num2words(2.5, lang="ha"), "biyu wajen biyar")
         self.assertEqual(
-            num2words(3.14, lang="ha"), "uku wajen tiriliyan dubu sha huɗu sha biyu"
+            num2words(3.14, lang="ha"), "uku wajen sha huɗu"
         )
         self.assertEqual(num2words(10.5, lang="ha"), "goma wajen biyar")
         self.assertEqual(
             num2words(11.11, lang="ha"),
-            "sha ɗaya wajen tiriliyan dubu goma ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara arba'in da uku",
+            "sha ɗaya wajen sha ɗaya",
         )
         self.assertEqual(
             num2words(20.2, lang="ha"),
-            "ashirin wajen tiriliyan dubu ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara casa'in da uku",
+            "ashirin wajen biyu",
         )
         self.assertEqual(
             num2words(99.99, lang="ha"),
-            "casa'in da tara wajen tiriliyan dubu tara ɗari takwas casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara arba'in da tara",
+            "casa'in da tara wajen casa'in da tara",
         )
         self.assertEqual(
             num2words(100.01, lang="ha"),
-            "ɗari wajen sifiri tiriliyan dubu goma dubu biyar ɗari sha shida",
+            "ɗari wajen sifiri ɗaya",
         )
         self.assertEqual(num2words(100.5, lang="ha"), "ɗari wajen biyar")
         self.assertEqual(
             num2words(123.45, lang="ha"),
-            "ɗari ashirin da uku wajen tiriliyan dubu arba'in da biyar ɗari biyu tamanin da huɗu",
+            "ɗari ashirin da uku wajen arba'in da biyar",
         )
         self.assertEqual(num2words(1000.5, lang="ha"), "dubu wajen biyar")
         self.assertEqual(
             num2words(1234.56, lang="ha"),
-            "dubu ɗari biyu talatin da huɗu wajen tiriliyan dubu biyar ɗari biyar casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari huɗu hamsin da huɗu",
+            "dubu ɗari biyu talatin da huɗu wajen hamsin da shida",
         )
         self.assertEqual(
             num2words(10000.01, lang="ha"),
-            "dubu goma wajen sifiri tiriliyan dubu goma dubu ɗari biyu sha takwas ɗari biyu saba'in da tara",
+            "dubu goma wajen sifiri ɗaya",
         )
         self.assertEqual(num2words(-0.5, lang="ha"), "ban sifiri wajen biyar")
         self.assertEqual(num2words(-1.5, lang="ha"), "ban ɗaya wajen biyar")
@@ -551,3 +551,14 @@ class Num2WordsHATest(TestCase):
             "tiriliyan biliyan ɗari biyu talatin da huɗu miliyan ɗari biyar sittin da bakwai dubu ɗari takwas casa'in ɗari ashirin da uku",
         )
 
+
+    def test_float_digits_come_from_the_repr(self):
+        # gladiaio/num2words2#207: str(value - int(value)) carried binary
+        # noise (1.05 - 1 == 0.050000000000000044) into the words.
+        from decimal import Decimal
+        for v in (1.05, 1.1, 3.14, 2.675, 99.99, 0.1 + 0.2, 123.456):
+            self.assertEqual(num2words(v, lang="ha"),
+                             num2words(Decimal(repr(v)), lang="ha"))
+        self.assertEqual(num2words(1.05, lang="ha"), "ɗaya wajen sifiri biyar")
+        self.assertEqual(num2words(1.1, lang="ha"), "ɗaya wajen ɗaya")
+        self.assertNotIn("tiriliyan", num2words(0.1 + 0.2, lang="ha"))

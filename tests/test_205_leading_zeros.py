@@ -30,8 +30,8 @@ def test_leading_zeros_are_read(lang, kind):
     small, three = EXPECTED[lang]
     assert num2words(kind("0.05"), lang=lang) == small
     assert num2words(kind("0.05"), lang=lang) != num2words(kind("0.5"), lang=lang)
-    # vi rounds floats to two places; ha floats read binary noise (#207).
-    if kind is not float or lang not in ("vi", "ha"):
+    # vi rounds floats to two places.
+    if kind is not float or lang != "vi":
         assert num2words(kind("3.007"), lang=lang) == three
 
 
