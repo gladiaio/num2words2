@@ -256,28 +256,28 @@ class Num2WordsMSTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="ms"), "kosong")
-        self.assertEqual(num2words(0.5, lang="ms"), "kosong")
-        self.assertEqual(num2words(0.9, lang="ms"), "kosong")
-        self.assertEqual(num2words(1.1, lang="ms"), "satu")
-        self.assertEqual(num2words(1.5, lang="ms"), "satu")
-        self.assertEqual(num2words(2.5, lang="ms"), "dua")
-        self.assertEqual(num2words(3.14, lang="ms"), "tiga")
-        self.assertEqual(num2words(10.5, lang="ms"), "sepuluh")
-        self.assertEqual(num2words(11.11, lang="ms"), "sebelas")
-        self.assertEqual(num2words(20.2, lang="ms"), "dua puluh")
-        self.assertEqual(num2words(99.99, lang="ms"), "sembilan puluh sembilan")
-        self.assertEqual(num2words(100.01, lang="ms"), "seratus")
-        self.assertEqual(num2words(100.5, lang="ms"), "seratus")
-        self.assertEqual(num2words(123.45, lang="ms"), "seratus dua puluh tiga")
-        self.assertEqual(num2words(1000.5, lang="ms"), "seribu")
+        self.assertEqual(num2words(0.1, lang="ms"), "kosong perpuluhan satu")
+        self.assertEqual(num2words(0.5, lang="ms"), "kosong perpuluhan lima")
+        self.assertEqual(num2words(0.9, lang="ms"), "kosong perpuluhan sembilan")
+        self.assertEqual(num2words(1.1, lang="ms"), "satu perpuluhan satu")
+        self.assertEqual(num2words(1.5, lang="ms"), "satu perpuluhan lima")
+        self.assertEqual(num2words(2.5, lang="ms"), "dua perpuluhan lima")
+        self.assertEqual(num2words(3.14, lang="ms"), "tiga perpuluhan satu empat")
+        self.assertEqual(num2words(10.5, lang="ms"), "sepuluh perpuluhan lima")
+        self.assertEqual(num2words(11.11, lang="ms"), "sebelas perpuluhan satu satu")
+        self.assertEqual(num2words(20.2, lang="ms"), "dua puluh perpuluhan dua")
+        self.assertEqual(num2words(99.99, lang="ms"), "sembilan puluh sembilan perpuluhan sembilan sembilan")
+        self.assertEqual(num2words(100.01, lang="ms"), "seratus perpuluhan kosong satu")
+        self.assertEqual(num2words(100.5, lang="ms"), "seratus perpuluhan lima")
+        self.assertEqual(num2words(123.45, lang="ms"), "seratus dua puluh tiga perpuluhan empat lima")
+        self.assertEqual(num2words(1000.5, lang="ms"), "seribu perpuluhan lima")
         self.assertEqual(
-            num2words(1234.56, lang="ms"), "seribu dua ratus tiga puluh empat"
+            num2words(1234.56, lang="ms"), "seribu dua ratus tiga puluh empat perpuluhan lima enam"
         )
-        self.assertEqual(num2words(10000.01, lang="ms"), "sepuluh ribu")
-        self.assertEqual(num2words(-0.5, lang="ms"), "kosong")
-        self.assertEqual(num2words(-1.5, lang="ms"), "negatif satu")
-        self.assertEqual(num2words(-10.5, lang="ms"), "negatif sepuluh")
+        self.assertEqual(num2words(10000.01, lang="ms"), "sepuluh ribu perpuluhan kosong satu")
+        self.assertEqual(num2words(-0.5, lang="ms"), "negatif kosong perpuluhan lima")
+        self.assertEqual(num2words(-1.5, lang="ms"), "negatif satu perpuluhan lima")
+        self.assertEqual(num2words(-10.5, lang="ms"), "negatif sepuluh perpuluhan lima")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -530,3 +530,15 @@ class Num2WordsMSTest(TestCase):
             with self.assertRaisesRegex(TypeError, "Cannot treat float"):
                 num2words(n, lang="ms", to="ordinal")
         self.assertEqual(num2words(10, lang="ms", to="ordinal"), "kesepuluh")
+
+    def test_fraction_is_read(self):
+        # gladiaio/num2words2#206: the fraction was dropped (0.5 -> "kosong").
+        from decimal import Decimal
+        self.assertEqual(num2words(0.5, lang="ms"), "kosong perpuluhan lima")
+        self.assertEqual(num2words(Decimal("1.75"), lang="ms"),
+                         "satu perpuluhan tujuh lima")
+        self.assertEqual(num2words("1.75", lang="ms"),
+                         "satu perpuluhan tujuh lima")
+        self.assertEqual(num2words(-0.25, lang="ms"),
+                         "negatif kosong perpuluhan dua lima")
+        self.assertEqual(num2words(5.0, lang="ms"), "lima")

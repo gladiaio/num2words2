@@ -101,13 +101,18 @@
 //!    Collapsed to a straight delegation here.
 //! 5. `ones[8]` is `"lapan"`, not the fuller `"delapan"`. Preserved verbatim
 //!    (corpus pins `"lapan puluh"` for 80).
+//! 6. ~~**The cardinal truncates every non-integer.**~~ Python's
+//!    `except BaseException` retry read `_int_to_cardinal(int(n))`, so `0.5`
+//!    was "kosong" and `-0.25` lost its sign. Fixed
+//!    (gladiaio/num2words2#206): a float/Decimal reads "perpuluhan" and each
+//!    fractional digit; see [`LangMs::to_cardinal_float`].
 //!
 //! # Error variants
 //!
 //! Negative ordinals raise `TypeError` (bug 1), and every mode raises
 //! `OverflowError` from the 10^15 ceiling (#203). Below it
-//! `to_cardinal`/`to_ordinal_num`/`to_year` cannot fail for integer input: every table index `_int_to_word` computes is
-//! provably in range (see the safety notes on [`int_to_word`]), so the
+//! `to_cardinal`/`to_ordinal_num`/`to_year` cannot fail for integer input:
+//! every table index `_int_to_word` computes is provably in range (see the safety notes on [`int_to_word`]), so the
 //! `except BaseException` fallbacks in the Python `to_cardinal` /
 //! `to_ordinal_num` are unreachable and are not modelled.
 //!
@@ -117,9 +122,12 @@
 //! handshake as in `lang_ES`). Every method is a pure function of its argument,
 //! so the stateless Rust path is faithful.
 
-use crate::base::{check_maxval, negord_error, pow10_big, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, negord_error, pow10_big, py_num_str, strictly_negative, verify_ordinal, Lang,
+    N2WError, Result,
+};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{default_to_cardinal_float, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -523,8 +531,11 @@ impl Lang for LangMs {
         "negatif "
     }
 
+    /// Python set "titik" here but never emitted it (the float path dropped
+    /// the fraction). The decimal word read since #206 is the standard
+    /// Malaysian "perpuluhan".
     fn pointword(&self) -> &str {
-        "titik"
+        "perpuluhan"
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
@@ -579,68 +590,27 @@ impl Lang for LangMs {
         ms_cardinal_numeric(value)
     }
 
-    /// The float/Decimal cardinal path — **not** `Num2Word_Base`'s.
+    /// The float/Decimal cardinal path.
     ///
-    /// MS overrides `to_cardinal` and *never* delegates to
-    /// `Num2Word_Base.to_cardinal_float`, so the inherited float path
-    /// (pointword + a word per fractional digit) is the wrong shape for MS. In
-    /// Python a non-integer flows straight into
-    /// `to_cardinal(n)` -> `_int_to_cardinal(n)` -> `_int_to_word(n)`, which
-    /// indexes `self.ones` / `self.tens` (Python `list`s) or `self.teens`
-    /// (a `dict`) with the raw float/Decimal. A `list` index that is not an
-    /// `int` raises `TypeError`; a fractional value misses the `teens` `dict`
-    /// and raises `KeyError`. Either way MS's bare `except BaseException`
-    /// retries as `self._int_to_cardinal(int(n))`, and that retry cannot raise
-    /// a second time — so the observable result is *always*
+    /// In Python a non-integer flowed into `_int_to_word(n)`, which indexes
+    /// `self.ones`/`self.tens` (lists) or `self.teens` (a dict) with the raw
+    /// float/Decimal, raised, and MS's bare `except BaseException` retried as
+    /// `_int_to_cardinal(int(n))`. So the fraction was dropped entirely —
+    /// `0.5` -> "kosong", `Decimal("1.75")` -> "satu" — and `int(-0.25) == 0`
+    /// lost the sign too. Fixed (gladiaio/num2words2#206): the value is read
+    /// like `Num2Word_Base.to_cardinal_float`, the integer part, the decimal
+    /// word "perpuluhan", then each fractional digit ("kosong perpuluhan
+    /// lima"). Whole values never get here (the default `cardinal_float_entry`
+    /// sends them to the integer path).
     ///
-    /// ```text
-    /// _int_to_cardinal(int(value))
-    /// ```
-    ///
-    /// i.e. the integer part (truncated toward zero) spelled as a plain
-    /// cardinal, with **no** `pointword` and **no** fractional digits. This is
-    /// bug-for-bug the Python behaviour, verified against the live interpreter
-    /// over 40,000 random float/Decimal inputs (0 mismatches) and pinned by the
-    /// corpus: `0.5` -> "kosong", `12.34` -> "dua belas", `-12.34` ->
-    /// "negatif dua belas", `Decimal("98746251323029.99")` -> the full 14-digit
-    /// integer with the `.99` dropped. Note `int(-0.5) == 0`, so the sign is
-    /// silently lost (`-0.5` -> "kosong"), unlike the base path which would
-    /// re-prepend the negword.
-    ///
-    /// `precision_override` (the `precision=` kwarg, issue #580) is ignored:
-    /// MS's `to_cardinal(self, n)` takes no such parameter and never reads
-    /// `self.precision`, so `num2words(v, lang="ms", precision=5)` is
-    /// byte-for-byte `num2words(v, lang="ms")`. Confirmed against the live
-    /// interpreter.
+    /// `precision_override` (the `precision=` kwarg) sets the digit count, as
+    /// it does for the Base reading.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
-        _precision_override: Option<u32>,
+        precision_override: Option<u32>,
     ) -> Result<String> {
-        let int_part = match value {
-            // `int(float)` truncates toward zero. `.trunc()` first so the value
-            // is already integral, making the BigInt conversion exact at any
-            // magnitude — Python's `int(1e21)` is the exact integer of that
-            // double, not a saturated `i128`.
-            FloatValue::Float { value, .. } => {
-                BigInt::from_f64(value.trunc()).ok_or_else(|| {
-                    // Unreachable from the corpus: only NaN/±inf return None
-                    // here, and `int(float('inf'))` raises in Python too. Kept
-                    // as a loud error rather than a panic or a fabricated 0.
-                    N2WError::Value(format!(
-                        "cannot convert non-finite float {} to int",
-                        value
-                    ))
-                })?
-            }
-            // `int(Decimal)` truncates toward zero; `with_scale(0)` does exactly
-            // that — the same op currency.rs and floatpath.rs use for the
-            // Decimal `int()`.
-            FloatValue::Decimal { value, .. } => {
-                value.with_scale(0).as_bigint_and_exponent().0
-            }
-        };
-        Ok(int_to_cardinal(&int_part)?)
+        default_to_cardinal_float(self, value, precision_override)
     }
 
     // ---- currency -------------------------------------------------------
@@ -1104,19 +1074,20 @@ mod float_tests {
     use super::*;
     use std::str::FromStr;
 
-    /// Drive the float arm the way the binding does. `precision` is the value
+    /// Drive the float arm the way the binding does: whole values go to the
+    /// integer path, the rest to `to_cardinal_float`. `precision` is the value
     /// the live interpreter reports (`abs(Decimal(repr(v)).as_tuple().
-    /// exponent)`); MS ignores it, but it is carried faithfully anyway.
+    /// exponent)`).
     fn f(value: f64, precision: u32) -> String {
         LangMs::new()
-            .to_cardinal_float(&FloatValue::Float { value, precision }, None)
+            .cardinal_float_entry(&FloatValue::Float { value, precision }, None)
             .unwrap()
     }
 
     /// Drive the Decimal arm — exact arbitrary precision, never an f64 cast.
     fn d(s: &str, precision: u32) -> String {
         LangMs::new()
-            .to_cardinal_float(
+            .cardinal_float_entry(
                 &FloatValue::Decimal {
                     value: BigDecimal::from_str(s).unwrap(),
                     precision,
@@ -1126,94 +1097,79 @@ mod float_tests {
             .unwrap()
     }
 
-    /// Every `"to": "cardinal"` corpus row for `ms` whose `arg` has a dot,
-    /// verbatim. The fraction is always dropped; only the integer part speaks.
+    /// The corpus float rows. Python dropped every fraction ("kosong" for
+    /// 0.5); since #206 they read the decimal word and each digit.
     #[test]
     fn corpus_cardinal_float() {
         let rows: &[(f64, u32, &str)] = &[
             (0.0, 1, "kosong"),
-            (0.5, 1, "kosong"),
+            (0.5, 1, "kosong perpuluhan lima"),
             (1.0, 1, "satu"),
-            (1.5, 1, "satu"),
-            (2.25, 2, "dua"),
-            (3.14, 2, "tiga"),
-            (0.01, 2, "kosong"),
-            (0.1, 1, "kosong"),
-            (0.99, 2, "kosong"),
-            (1.01, 2, "satu"),
-            (12.34, 2, "dua belas"),
-            (99.99, 2, "sembilan puluh sembilan"),
-            (100.5, 1, "seratus"),
-            (1234.56, 2, "seribu dua ratus tiga puluh empat"),
-            // int(-0.5) == 0, so the sign is lost — no negword (unlike the base
-            // float path). int(-1.5) == -1, so that one keeps it.
-            (-0.5, 1, "kosong"),
-            (-1.5, 1, "negatif satu"),
-            (-12.34, 2, "negatif dua belas"),
-            // The two f64-artefact cases; irrelevant here since only int() is
-            // used, but pinned regardless.
-            (1.005, 3, "satu"),
-            (2.675, 3, "dua"),
+            (1.5, 1, "satu perpuluhan lima"),
+            (2.25, 2, "dua perpuluhan dua lima"),
+            (3.14, 2, "tiga perpuluhan satu empat"),
+            (0.01, 2, "kosong perpuluhan kosong satu"),
+            (0.1, 1, "kosong perpuluhan satu"),
+            (0.99, 2, "kosong perpuluhan sembilan sembilan"),
+            (1.01, 2, "satu perpuluhan kosong satu"),
+            (12.34, 2, "dua belas perpuluhan tiga empat"),
+            (99.99, 2, "sembilan puluh sembilan perpuluhan sembilan sembilan"),
+            (100.5, 1, "seratus perpuluhan lima"),
+            (1234.56, 2, "seribu dua ratus tiga puluh empat perpuluhan lima enam"),
+            // int(-0.5) == 0 carried no sign in Python; the negword is now
+            // prepended as in the Base reading.
+            (-0.5, 1, "negatif kosong perpuluhan lima"),
+            (-1.5, 1, "negatif satu perpuluhan lima"),
+            (-12.34, 2, "negatif dua belas perpuluhan tiga empat"),
+            // The two f64-artefact cases, rescued by float2tuple.
+            (1.005, 3, "satu perpuluhan kosong kosong lima"),
+            (2.675, 3, "dua perpuluhan enam tujuh lima"),
         ];
         for (v, p, want) in rows {
             assert_eq!(f(*v, *p), *want, "float {}", v);
         }
     }
 
-    /// Every `"to": "cardinal_dec"` corpus row for `ms`, verbatim.
+    /// The corpus Decimal rows, read exactly (issue #603).
     #[test]
     fn corpus_cardinal_dec() {
-        assert_eq!(d("0.01", 2), "kosong");
-        assert_eq!(d("1.10", 2), "satu");
-        assert_eq!(d("12.345", 3), "dua belas");
-        // The trillion-scale exact-Decimal case (issue #603): `.99` truncated,
-        // full 14-digit integer spelled.
+        assert_eq!(d("0.01", 2), "kosong perpuluhan kosong satu");
+        assert_eq!(d("1.10", 2), "satu perpuluhan satu kosong");
+        assert_eq!(d("12.345", 3), "dua belas perpuluhan tiga empat lima");
         assert_eq!(
             d("98746251323029.99", 2),
             "sembilan puluh lapan trilion tujuh ratus empat puluh enam bilion \
              dua ratus lima puluh satu juta tiga ratus dua puluh tiga ribu \
-             dua puluh sembilan"
+             dua puluh sembilan perpuluhan sembilan sembilan"
         );
-        assert_eq!(d("0.001", 3), "kosong");
+        assert_eq!(d("0.001", 3), "kosong perpuluhan kosong kosong satu");
     }
 
     /// Extra sign / magnitude coverage beyond the corpus.
     #[test]
     fn extra_float_and_decimal() {
         assert_eq!(f(-0.0, 1), "kosong");
-        assert_eq!(d("-0.5", 1), "kosong");
-        assert_eq!(d("-12.34", 2), "negatif dua belas");
+        assert_eq!(d("-0.5", 1), "negatif kosong perpuluhan lima");
+        assert_eq!(d("-12.34", 2), "negatif dua belas perpuluhan tiga empat");
         assert_eq!(d("5.00", 2), "lima");
         assert_eq!(d("1000.00", 2), "seribu");
         assert_eq!(d("-98746251323029.99", 2).split(' ').next().unwrap(), "negatif");
-        // Integer-valued teen Decimals: Python's dict lookup succeeds without
-        // the fallback, but the answer is identical either way.
         assert_eq!(d("12.00", 2), "dua belas");
-        assert_eq!(d("19.99", 2), "sembilan belas");
+        assert_eq!(d("19.99", 2), "sembilan belas perpuluhan sembilan sembilan");
     }
 
-    /// The `precision=` kwarg cannot change MS output — its `to_cardinal` never
-    /// reads `self.precision`.
+    /// The `precision=` kwarg sets the digit count, as for the Base reading.
     #[test]
-    fn precision_override_is_ignored() {
+    fn precision_override_sets_the_digit_count() {
         let ms = LangMs::new();
-        for p in [None, Some(0), Some(1), Some(5)] {
-            assert_eq!(
-                ms.to_cardinal_float(&FloatValue::Float { value: 12.34, precision: 2 }, p)
-                    .unwrap(),
-                "dua belas"
-            );
-            assert_eq!(
-                ms.to_cardinal_float(
-                    &FloatValue::Decimal {
-                        value: BigDecimal::from_str("12.345").unwrap(),
-                        precision: 3
-                    },
-                    p
-                )
-                .unwrap(),
-                "dua belas"
-            );
-        }
+        let v = FloatValue::Float { value: 12.34, precision: 2 };
+        assert_eq!(
+            ms.to_cardinal_float(&v, Some(1)).unwrap(),
+            "dua belas perpuluhan tiga"
+        );
+        assert_eq!(
+            ms.to_cardinal_float(&v, None).unwrap(),
+            "dua belas perpuluhan tiga empat"
+        );
     }
 }

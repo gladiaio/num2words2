@@ -108,12 +108,14 @@
 //!
 //! For **integer** input below the 10^14 ceiling none of the four in-scope
 //! methods can raise: there is no table lookup that can miss and no `int()`
-//! parse. From the ceiling up every method raises `OverflowError` (#203). The `try/except BaseException` wrappers around
-//! Python's `to_cardinal`/`to_ordinal`/`to_ordinal_num` are a float-truncation
-//! fallback (e.g. `to_cardinal(12.34)` raises `KeyError` on `teens[12.34]`,
-//! is caught, and retries as `int(12.34)` → "பன்னிரண்டு"); floats are out of
-//! scope, so on the integer path those handlers are unreachable. `to_year` has
-//! no such wrapper at all.
+//! parse. From the ceiling up every method raises `OverflowError` (#203). The
+//! `try/except BaseException` wrappers around Python's
+//! `to_cardinal`/`to_ordinal`/`to_ordinal_num` are a float-truncation fallback
+//! (e.g. `to_cardinal(12.34)` raises `KeyError` on `teens[12.34]`, is caught,
+//! and retries as `int(12.34)` → "பன்னிரண்டு"); on the integer path those
+//! handlers are unreachable. The cardinal no longer truncates a float: it is
+//! read with "புள்ளி" and each fractional digit (gladiaio/num2words2#206; see
+//! [`LangTa::to_cardinal_float`]). `to_year` has no such wrapper at all.
 //!
 //! # State
 //!
@@ -122,7 +124,7 @@
 
 use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{default_to_cardinal_float, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -455,7 +457,7 @@ impl Lang for LangTa {
         Ok(int_to_cardinal(value)?)
     }
 
-    /// TA's float/Decimal cardinal path — **pure truncation toward zero**.
+    /// TA's float/Decimal cardinal path.
     ///
     /// TA overrides `to_cardinal` (not `to_cardinal_float`), and its whole body
     /// is:
@@ -469,53 +471,22 @@ impl Lang for LangTa {
     ///         return self._int_to_cardinal(int(n))
     /// ```
     ///
-    /// Handed a **non-integer** `float`/`Decimal`, `_int_to_word` strips every
-    /// scale with `n %= ...` (which preserves the fraction) and then always
-    /// reaches a `self.tens[...]`/`self.ones[...]` list index or a
-    /// `self.teens[...]` dict key with a non-integer value, raising TypeError or
-    /// KeyError. The blanket `except BaseException` retries with `int(n)`, which
-    /// truncates toward zero. A **whole** float/Decimal either raises the same
-    /// way (`self.ones[1.0]` is still a TypeError) or succeeds and returns the
-    /// identical string, because the lookups that can succeed are int-equal
-    /// (`15.0 == 15`, `hash(15.0) == hash(15)`, `hundreds_special[100.0]` hits).
-    /// So the method collapses in every case to `_int_to_cardinal(int(n))`.
+    /// A non-integer raised inside `_int_to_word` and the retry truncated it,
+    /// so in Python the fraction was dropped entirely (`2.5` -> "இரண்டு") and
+    /// `-0.5` lost its sign. Fixed (gladiaio/num2words2#206): the value is read
+    /// like `Num2Word_Base.to_cardinal_float` — the integer part, the decimal
+    /// word "புள்ளி" (TA's own `pointword`), then each fractional digit:
+    /// `2.5` -> "இரண்டு புள்ளி ஐந்து". Whole values never get here (the
+    /// default `cardinal_float_entry` sends them to the integer path).
     ///
-    /// Consequences, all corpus-verified:
-    /// * the fraction is dropped entirely — `pointword` ("புள்ளி") is never
-    ///   emitted (`12.34` -> "பன்னிரண்டு", `99.99` -> "தொண்ணூறு ஒன்பது");
-    /// * a value that truncates to 0 loses its sign, because `int(-0.5) == 0`
-    ///   and `_int_to_cardinal(0)` prepends no negword (`-0.5` -> "பூஜ்ஜியம்",
-    ///   whereas `-1.5` -> "கழித்தல் ஒன்று").
-    ///
-    /// The `Float`/`Decimal` split is load-bearing: the cardinal path applies
-    /// `int()` directly to the value (no `float()` round-trip — unlike the
-    /// currency fractional-cents branch), so a Decimal like
-    /// `98746251323029.99` truncates exactly to `98746251323029`. Routing that
-    /// through f64 first could truncate to a different integer.
-    ///
-    /// `precision_override` is ignored: TA's `to_cardinal` accepts no
-    /// `precision` argument, and a truncation cannot depend on one.
+    /// `precision_override` (the `precision=` kwarg) sets the digit count, as
+    /// it does for the Base reading.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
-        _precision_override: Option<u32>,
+        precision_override: Option<u32>,
     ) -> Result<String> {
-        let truncated = match value {
-            // int(float): `.trunc()` does the toward-zero part; from_f64 of an
-            // already-integral f64 is exact at any magnitude (and reproduces
-            // the f64 artefacts, since the raw double crossed the boundary).
-            // trunc(-0.5) == -0.0 -> BigInt 0, so the sign is dropped, matching
-            // Python's int(-0.5) == 0.
-            FloatValue::Float { value, .. } => {
-                BigInt::from_f64(value.trunc()).unwrap_or_else(BigInt::zero)
-            }
-            // int(Decimal): with_scale(0) truncates toward zero, exactly as
-            // Decimal.__int__ does — no float round-trip on this path.
-            FloatValue::Decimal { value, .. } => {
-                value.with_scale(0).as_bigint_and_exponent().0
-            }
-        };
-        Ok(int_to_cardinal(&truncated)?)
+        default_to_cardinal_float(self, value, precision_override)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
@@ -1044,61 +1015,56 @@ mod tests {
     #[test]
     fn corpus_cardinal_float() {
         let l = LangTa::new();
-        // (raw f64, repr-derived precision, expected)
+        // (raw f64, repr-derived precision, expected). Python dropped every
+        // fraction (0.5 -> "பூஜ்ஜியம்"); since #206 it is read after "புள்ளி".
         let cases: &[(f64, u32, &str)] = &[
             (0.0, 1, "பூஜ்ஜியம்"),
-            (0.5, 1, "பூஜ்ஜியம்"),
+            (0.5, 1, "பூஜ்ஜியம் புள்ளி ஐந்து"),
             (1.0, 1, "ஒன்று"),
-            (1.5, 1, "ஒன்று"),
-            (2.25, 2, "இரண்டு"),
-            (3.14, 2, "மூன்று"),
-            (0.01, 2, "பூஜ்ஜியம்"),
-            (0.1, 1, "பூஜ்ஜியம்"),
-            (0.99, 2, "பூஜ்ஜியம்"),
-            (1.01, 2, "ஒன்று"),
-            (12.34, 2, "பன்னிரண்டு"),
-            (99.99, 2, "தொண்ணூறு ஒன்பது"),
-            (100.5, 1, "நூறு"),
-            (1234.56, 2, "ஆயிரம் இருநூறு முப்பது நான்கு"),
-            (-0.5, 1, "பூஜ்ஜியம்"),
-            (-1.5, 1, "கழித்தல் ஒன்று"),
-            (-12.34, 2, "கழித்தல் பன்னிரண்டு"),
-            (1.005, 3, "ஒன்று"),
-            (2.675, 3, "இரண்டு"),
+            (1.5, 1, "ஒன்று புள்ளி ஐந்து"),
+            (2.25, 2, "இரண்டு புள்ளி இரண்டு ஐந்து"),
+            (3.14, 2, "மூன்று புள்ளி ஒன்று நான்கு"),
+            (0.01, 2, "பூஜ்ஜியம் புள்ளி பூஜ்ஜியம் ஒன்று"),
+            (0.1, 1, "பூஜ்ஜியம் புள்ளி ஒன்று"),
+            (0.99, 2, "பூஜ்ஜியம் புள்ளி ஒன்பது ஒன்பது"),
+            (1.01, 2, "ஒன்று புள்ளி பூஜ்ஜியம் ஒன்று"),
+            (12.34, 2, "பன்னிரண்டு புள்ளி மூன்று நான்கு"),
+            (99.99, 2, "தொண்ணூறு ஒன்பது புள்ளி ஒன்பது ஒன்பது"),
+            (100.5, 1, "நூறு புள்ளி ஐந்து"),
+            (1234.56, 2, "ஆயிரம் இருநூறு முப்பது நான்கு புள்ளி ஐந்து ஆறு"),
+            (-0.5, 1, "கழித்தல் பூஜ்ஜியம் புள்ளி ஐந்து"),
+            (-1.5, 1, "கழித்தல் ஒன்று புள்ளி ஐந்து"),
+            (-12.34, 2, "கழித்தல் பன்னிரண்டு புள்ளி மூன்று நான்கு"),
+            (1.005, 3, "ஒன்று புள்ளி பூஜ்ஜியம் பூஜ்ஜியம் ஐந்து"),
+            (2.675, 3, "இரண்டு புள்ளி ஆறு ஏழு ஐந்து"),
         ];
         for (v, p, want) in cases {
             let fv = FloatValue::Float { value: *v, precision: *p };
-            assert_eq!(l.to_cardinal_float(&fv, None).unwrap(), *want, "float {}", v);
+            assert_eq!(l.cardinal_float_entry(&fv, None).unwrap(), *want, "float {}", v);
         }
     }
 
-    /// Decimal cardinal path (`"to": "cardinal_dec"` corpus rows) — exact
-    /// truncation toward zero, never routed through f64.
+    /// Decimal cardinal path (`"to": "cardinal_dec"` corpus rows) — exact,
+    /// never routed through f64 (#603), and no longer truncated (#206).
     #[test]
     fn corpus_cardinal_decimal() {
         use std::str::FromStr;
         let l = LangTa::new();
         let cases: &[(&str, u32, &str)] = &[
-            ("0.01", 2, "பூஜ்ஜியம்"),
-            ("1.10", 2, "ஒன்று"),
-            ("12.345", 3, "பன்னிரண்டு"),
-            (
-                "98746251323029.99",
-                2,
-                "தொண்ணூறு எட்டு இலட்சம் எழுபது நான்கு ஆயிரம் அறுநூறு இருபது ஐந்து கோடி பதின்மூன்று இலட்சம் இருபது மூன்று ஆயிரம் இருபது ஒன்பது",
-            ),
-            ("0.001", 3, "பூஜ்ஜியம்"),
-            // Negative Decimal truncates toward zero: int(Decimal("-1.5")) == -1.
-            ("-1.5", 1, "கழித்தல் ஒன்று"),
-            // Truncates to zero -> no negword, like the float -0.5 row.
-            ("-0.5", 1, "பூஜ்ஜியம்"),
+            ("0.01", 2, "பூஜ்ஜியம் புள்ளி பூஜ்ஜியம் ஒன்று"),
+            ("1.10", 2, "ஒன்று புள்ளி ஒன்று பூஜ்ஜியம்"),
+            ("12.345", 3, "பன்னிரண்டு புள்ளி மூன்று நான்கு ஐந்து"),
+            ("98746251323029.99", 2, "தொண்ணூறு எட்டு இலட்சம் எழுபது நான்கு ஆயிரம் அறுநூறு இருபது ஐந்து கோடி பதின்மூன்று இலட்சம் இருபது மூன்று ஆயிரம் இருபது ஒன்பது புள்ளி ஒன்பது ஒன்பது"),
+            ("0.001", 3, "பூஜ்ஜியம் புள்ளி பூஜ்ஜியம் பூஜ்ஜியம் ஒன்று"),
+            ("-1.5", 1, "கழித்தல் ஒன்று புள்ளி ஐந்து"),
+            ("-0.5", 1, "கழித்தல் பூஜ்ஜியம் புள்ளி ஐந்து"),
         ];
         for (s, p, want) in cases {
             let fv = FloatValue::Decimal {
                 value: BigDecimal::from_str(s).unwrap(),
                 precision: *p,
             };
-            assert_eq!(l.to_cardinal_float(&fv, None).unwrap(), *want, "decimal {}", s);
+            assert_eq!(l.cardinal_float_entry(&fv, None).unwrap(), *want, "decimal {}", s);
         }
     }
 
