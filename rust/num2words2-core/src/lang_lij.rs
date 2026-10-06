@@ -1001,17 +1001,16 @@ impl Lang for LangLij {
     ///
     /// Three things make it diverge sharply from `default_to_currency`:
     ///
-    /// 1. **`parse_currency_parts(val)` is called with no keyword arguments**,
-    ///    so the *module* defaults apply — `is_int_with_cents=True`,
-    ///    `keep_precision=False`, `divisor=100`. Base passes
-    ///    `is_int_with_cents=False` and branches on `isinstance(val, int)` to
-    ///    suppress cents for true ints; LIJ does neither. A plain `int` is
-    ///    therefore read as a **count of cents**: `to_currency(100)` is "un
-    ///    euro e zero citti" and `to_currency(1)` is "zero euro e un citto",
-    ///    not "un euro". The `Int`/`Decimal` split still matters for how the
-    ///    value is split, but not for whether cents appear — LIJ always prints
-    ///    them, so `has_decimal` is unused here (`Decimal("5")` and
-    ///    `Decimal("5.00")` both give "çinque dòllai e zero citti").
+    /// 1. ~~**`parse_currency_parts(val)` is called with no keyword
+    ///    arguments**~~, so in Python the *module* default
+    ///    `is_int_with_cents=True` applied and a plain `int` was read as a
+    ///    **count of cents**: `to_currency(42)` was "zero euro e quarantedoî
+    ///    citti" while `42.0` and `"42"` gave "quarantedoî euro e zero citti"
+    ///    — the old upstream convention savoirfairelinux/num2words#426 fixed
+    ///    everywhere else. Fixed (gladiaio/num2words2#161): an `int` is a
+    ///    count of units, so all three agree. LIJ always prints the cents
+    ///    segment, so `has_decimal` is unused here (`5` and `Decimal("5.00")`
+    ///    both give "çinque dòllai e zero citti").
     /// 2. **The divisor is hardcoded to 100**, ignoring `CURRENCY_PRECISION`
     ///    entirely — moot for LIJ, whose table is empty, but it means adding a
     ///    3-decimal code to `CURRENCY_FORMS` would silently mis-split it.
@@ -1031,8 +1030,9 @@ impl Lang for LangLij {
         // resolve it to LIJ's own `separator=" e"` before the ported body.
         let separator = separator.unwrap_or(self.default_separator());
 
-        // `parse_currency_parts(val)` — bare call, module defaults. See (1).
-        let (left, right, is_negative) = parse_currency_parts(val, true, false, 100);
+        // Python called `parse_currency_parts(val)` bare, so an int was read
+        // as cents; it is a count of units here, like 42.0 and "42" (1, #161).
+        let (left, right, is_negative) = parse_currency_parts(val, false, false, 100);
 
         // The forms lookup precedes the negword read, so an unknown code
         // raises NotImplementedError even for a negative value: the corpus has
