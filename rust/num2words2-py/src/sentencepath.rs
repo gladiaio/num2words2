@@ -44,6 +44,13 @@
 //! spaced, is kept as written ("10:30pm" -> "ten thirty pm", #178). The
 //! English month-first date pattern takes a 1-2 digit day only, so the year
 //! in "1st May 2024" is no longer read as an ordinal day ("May 2024th").
+//!
+//! Also deliberate (#183): German `N.` is an ordinal only when no digit
+//! follows the dot. A Uhr time `14.30 Uhr` / `14:30 Uhr` reads "vierzehn Uhr
+//! dreißig" ("14.00 Uhr" -> "vierzehn Uhr"), and any other dotted digit run
+//! (`1.5`, `3.10.2024`, `Version 2.10`) is left as written: German writes
+//! decimals with a comma, so `1.5` has no standard reading, and the ordinal
+//! pass used to turn it into "Erste5".
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -275,6 +282,7 @@ struct Res {
     year: Regex,
     currency: Regex,
     clock: Regex,
+    uhr: Regex,
 }
 
 impl Res {
@@ -322,6 +330,7 @@ impl Res {
             // The trailing boundary is checked in code: a glued "pm" (#178)
             // has no `\b` before it.
             clock: re(r"\b(\d{1,2}):(\d{2})"),
+            uhr: re(r"\b(\d{1,2})[.:](\d{2})\s*Uhr\b"),
         }
     }
 
@@ -406,6 +415,8 @@ enum Typ {
     /// English clock time `H:MM` as (hour, minute, am/pm suffix as
     /// written, e.g. "pm", "PM", "p.m.").
     Time(u32, u32, Option<String>),
+    /// German clock time `H.MM Uhr` / `H:MM Uhr` as (hour, minute) (#183).
+    UhrTime(u32, u32),
 }
 
 struct Ext {
@@ -514,8 +525,8 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
 /// grouping qualify, with [`parse_grouped`]'s rules and the language's
 /// [`number_notation`] (so `1,000` counts only in `1,000.5` languages, `1.000`
 /// only in `1.000,5` ones, #177, and `192.168.1.1` or `1,2,3` never match;
-/// a dot not followed by exactly three digits, as in de "1. Mai", is left to
-/// the ordinal pass); the
+/// a dot not followed by exactly three digits is left to the later passes:
+/// de "1. Mai" is an ordinal, de "1.5" is kept as written, #183); the
 /// token must not touch an ASCII letter/digit on either side, like pass 7.
 /// ASCII spaces are not taken as separators in running text ("between
 /// 2 100 and"), only the no-break/thin spaces and apostrophes.
@@ -723,6 +734,53 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
+    // 2d. German "14.30 Uhr" / "14:30 Uhr" -> "vierzehn Uhr dreißig"; any
+    // other dotted digit run ("1.5", "3.10.2024") is claimed and left as
+    // written (#183). German decimals use a comma, so "1.5" has no standard
+    // reading, and the ordinal pass would read "1." and glue on the "5".
+    if norm_lang(lang) == "de" {
+        for m in r.uhr.captures_iter(t.s) {
+            let g0 = m.get(0).unwrap();
+            let (s, e) = t.span(g0.start(), g0.end());
+            let h: u32 = m[1].parse().unwrap_or(99);
+            let mi: u32 = m[2].parse().unwrap_or(99);
+            let after_sep = s > 0 && matches!(t.chars[s - 1], '.' | ':');
+            if h > 23 || mi > 59 || after_sep || overlap(&used, s, e) {
+                continue;
+            }
+            exts.push(Ext {
+                start: s,
+                end: e,
+                text: t.slice(s, e),
+                val: Val::I(BigInt::from(h)),
+                typ: Typ::UhrTime(h, mi),
+            });
+            mark(&mut used, s, e);
+        }
+        let mut i = 0;
+        while i < n {
+            if !t.chars[i].is_ascii_digit() || (i > 0 && t.chars[i - 1].is_ascii_alphanumeric()) {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < n && t.chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            let mut end = j;
+            while end + 1 < n && t.chars[end] == '.' && t.chars[end + 1].is_ascii_digit() {
+                end += 1;
+                while end < n && t.chars[end].is_ascii_digit() {
+                    end += 1;
+                }
+            }
+            if end > j && !overlap(&used, i, end) {
+                mark(&mut used, i, end);
+            }
+            i = end;
+        }
+    }
+
     // 3. Standalone ordinals (registry-driven) — before dates. The ordinal
     // surface form owns its full span (digit + suffix); the date pass then
     // only fires where no ordinal was consumed. The integer is the first
@@ -732,6 +790,11 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
             if overlap(&used, s, e) {
+                continue;
+            }
+            // de "1." is an ordinal only when no digit follows the dot
+            // ("1.5" is not "Erste5", #183).
+            if g0.as_str().ends_with('.') && e < n && t.chars[e].is_ascii_digit() {
                 continue;
             }
             let grp = (1..m.len())
@@ -1084,6 +1147,19 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 0 => format!("{} hundred", hour),
                 m if m < 10 => format!("{} oh {}", hour, l.to_cardinal(&BigInt::from(m))?),
                 m => format!("{} {}", hour, l.to_cardinal(&BigInt::from(m))?),
+            })
+        }
+        Typ::UhrTime(h, minute) => {
+            // "14.30 Uhr" -> "vierzehn Uhr dreißig", "14.00 Uhr" ->
+            // "vierzehn Uhr"; the hour 1 is "ein Uhr", not "eins Uhr" (#183).
+            let l = ctx.lang()?;
+            let hour = match *h {
+                1 => "ein".to_string(),
+                h => l.to_cardinal(&BigInt::from(h))?,
+            };
+            Ok(match *minute {
+                0 => format!("{} Uhr", hour),
+                m => format!("{} Uhr {}", hour, l.to_cardinal(&BigInt::from(m))?),
             })
         }
         Typ::Year => {
