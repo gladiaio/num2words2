@@ -608,10 +608,11 @@ impl Lang for LangEt {
     /// which diverges from `base.to_cardinal_float` in several load-bearing
     /// ways:
     ///
-    /// * **Digits render through `self.ones`, not `to_cardinal`.** A `0` digit
-    ///   is `self.ones[0]` — the empty filler string — so `0.01` becomes
-    ///   "null koma  üks" (two spaces) and `1.005` "üks koma   viis" (three),
-    ///   both corpus-pinned. Base would speak "null" for each zero.
+    /// * **Digits render through `self.ones`, not `to_cardinal`.** In Python a
+    ///   `0` digit is `self.ones[0]` — the empty filler string — so `0.05`
+    ///   became "null koma  viis" (two spaces), indistinguishable from `0.5`
+    ///   once the spaces collapse. The port says "null" for a zero digit, as
+    ///   Base does (gladiaio/num2words2#205): "null koma null viis".
     /// * **The sign is prepended whenever `n < 0`**, with `pre = abs(pre)` —
     ///   not only when `pre == 0` as Base does. It uses the raw `negword`
     ///   ("miinus ", trailing space) directly, mirroring `self.negword`.
@@ -672,15 +673,15 @@ impl Lang for LangEt {
             let pad = precision.saturating_sub(post_str.len());
             let padded = format!("{}{}", "0".repeat(pad), post_str);
 
-            // `for digit in post_str: result += " " + self.ones[int(digit)]`.
-            // `self.ones[0]` is the empty filler, so a `0` digit adds a
-            // bare space — the source of the extra gaps above.
+            // `for digit in post_str: result += " " + self.ones[int(digit)]`,
+            // except that `self.ones[0]` is the empty filler: a `0` digit
+            // reads "null" (#205).
             for ch in padded.chars() {
                 let d = ch.to_digit(10).ok_or_else(|| {
                     N2WError::Value(format!("non-digit {:?} in fraction", ch))
                 })? as usize;
                 result.push(' ');
-                result.push_str(ONES[d]);
+                result.push_str(if d == 0 { "null" } else { ONES[d] });
             }
         }
 
@@ -879,18 +880,13 @@ impl Lang for LangEt {
             if has_fractional_cents {
                 // `self.to_cardinal(float(right)) if right > 0 else "null"`.
                 //
-                // OUT OF SCOPE per the porting contract, and **known to
-                // diverge**: ET overrides `to_cardinal`'s float path with its
-                // own (`float2tuple` + `pointword` + `self.ones[digit]`),
-                // whereas `cardinal_from_decimal`'s default routes to Base's
+                // ET overrides `to_cardinal`'s float path with its own
+                // (`float2tuple` + `pointword` + `self.ones[digit]`), whereas
+                // `cardinal_from_decimal`'s default routes to Base's
                 // `to_cardinal_float`, which renders each digit via
-                // `to_cardinal`. They agree on digits 1-9 but not on 0: ET's
-                // `self.ones[0]` is the empty filler string, so Python emits a
-                // run of spaces where this emits "null" — `to_currency(1.01005)`
-                // is "üks euro ja üks koma   viis senti" in Python. No corpus
-                // row reaches this branch (every arg has <= 2 decimals).
-                // Flagged rather than hand-rolled, since the float cardinal path
-                // is a later phase.
+                // `to_cardinal`. Python's ET emitted a run of spaces for a 0
+                // digit (`to_currency(1.01005)` was "üks euro ja üks koma   viis
+                // senti"); both now say "null" (#205), so they agree.
                 if right.is_positive() {
                     self.cardinal_from_decimal(&right)?
                 } else {
@@ -973,10 +969,10 @@ mod float_tests {
         assert_eq!(f(&l, 2.25, 2), "kaks koma kaks viis");
         assert_eq!(f(&l, 0.1, 1), "null koma üks");
         // f64-artefact + leading-zero-in-fraction rows (extra spaces on 0):
-        assert_eq!(f(&l, 1.005, 3), "üks koma   viis");
+        assert_eq!(f(&l, 1.005, 3), "üks koma null null viis");
         assert_eq!(f(&l, 2.675, 3), "kaks koma kuus seitse viis");
-        assert_eq!(f(&l, 0.01, 2), "null koma  üks");
-        assert_eq!(f(&l, 1.01, 2), "üks koma  üks");
+        assert_eq!(f(&l, 0.01, 2), "null koma null üks");
+        assert_eq!(f(&l, 1.01, 2), "üks koma null üks");
         assert_eq!(f(&l, 0.99, 2), "null koma üheksa üheksa");
         assert_eq!(f(&l, 99.99, 2), "üheksakümmend üheksa koma üheksa üheksa");
         assert_eq!(f(&l, 100.5, 1), "ükssada koma viis");

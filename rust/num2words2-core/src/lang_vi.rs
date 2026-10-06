@@ -122,8 +122,10 @@
 //! 14. **The `" phẩy "` tail counts *hundredths*, not a fraction.** `12.5`
 //!     prints "mười hai phẩy năm mươi" — "twelve point fifty" — because
 //!     `"%.2f"` pads to `"12.50"` and the tail is `vietnam_number(50)`.
-//!     Likewise `0.01` → "không phẩy một" ("zero point one"). Corpus rows
-//!     `0.5` and `0.01` pin both.
+//!     Python likewise read `0.01` as "không phẩy một" ("zero point one"),
+//!     and `0.05` the same as `0.5` without its "mươi"; the leading zero now
+//!     reads "không" (gladiaio/num2words2#205): `0.01` is "không phẩy không
+//!     một". Values are still rounded to two places.
 //!
 //! 15. ~~**`str_to_number` does not exist**~~ — fixed
 //!     (gladiaio/num2words2#157). Same `object` ancestry, same plain
@@ -263,6 +265,18 @@ impl LangVi {
             return format!("{} {}", dcap, a);
         }
         dcap.to_string()
+    }
+
+    /// The two `"%.2f"` hundredths digits after "phẩy", read as a number
+    /// (bug #14). Python read `int("05")`, so 0.05 said "không phẩy năm",
+    /// like 0.5 minus its "mươi"; a leading zero digit now reads "không"
+    /// first (gladiaio/num2words2#205): 0.05 is "không phẩy không năm".
+    fn hundredths(&self, val: u32) -> String {
+        if val < 10 {
+            format!("{} {}", TO_19[0], self.convert_nn(val))
+        } else {
+            self.convert_nn(val)
+        }
     }
 
     /// Port of `_convert_nnn`. Callers only ever pass `0 <= val < 1000`, so
@@ -455,7 +469,7 @@ impl LangVi {
                 ))
             })?;
             if frac_val > 0 {
-                final_result = format!("{} phẩy {}", final_result, self.convert_nn(frac_val));
+                final_result = format!("{} phẩy {}", final_result, self.hundredths(frac_val));
             }
         }
         if is_negative {
@@ -528,7 +542,7 @@ impl LangVi {
                     })?;
                     if frac_val > 0 {
                         final_result =
-                            format!("{} phẩy {}", final_result, self.convert_nn(frac_val));
+                            format!("{} phẩy {}", final_result, self.hundredths(frac_val));
                     }
                 }
                 if is_negative {
@@ -856,10 +870,10 @@ mod tests {
             (1.5, "một phẩy năm mươi"),
             (2.25, "hai phẩy hai mươi lăm"),
             (3.14, "ba phẩy mười bốn"),
-            (0.01, "không phẩy một"),
+            (0.01, "không phẩy không một"),
             (0.1, "không phẩy mười"),
             (0.99, "không phẩy chín mươi chín"),
-            (1.01, "một phẩy một"),
+            (1.01, "một phẩy không một"),
             (12.34, "mười hai phẩy ba mươi bốn"),
             (99.99, "chín mươi chín phẩy chín mươi chín"),
             (100.5, "một trăm phẩy năm mươi"),
@@ -885,7 +899,7 @@ mod tests {
     #[test]
     fn decimal_cardinals_match_python() {
         for (s, want) in [
-            ("0.01", "không phẩy một"),
+            ("0.01", "không phẩy không một"),
             ("1.10", "một phẩy mười"),
             // float(Decimal("12.345")) is 12.34500000…06 → "%.2f" → "12.35".
             ("12.345", "mười hai phẩy ba mươi lăm"),

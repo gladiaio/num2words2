@@ -272,7 +272,7 @@ class Num2WordsHATest(TestCase):
         )
         self.assertEqual(
             num2words(100.01, lang="ha"),
-            "ɗari wajen tiriliyan dubu goma dubu biyar ɗari sha shida",
+            "ɗari wajen sifiri tiriliyan dubu goma dubu biyar ɗari sha shida",
         )
         self.assertEqual(num2words(100.5, lang="ha"), "ɗari wajen biyar")
         self.assertEqual(
@@ -286,7 +286,7 @@ class Num2WordsHATest(TestCase):
         )
         self.assertEqual(
             num2words(10000.01, lang="ha"),
-            "dubu goma wajen tiriliyan dubu goma dubu ɗari biyu sha takwas ɗari biyu saba'in da tara",
+            "dubu goma wajen sifiri tiriliyan dubu goma dubu ɗari biyu sha takwas ɗari biyu saba'in da tara",
         )
         self.assertEqual(num2words(-0.5, lang="ha"), "ban sifiri wajen biyar")
         self.assertEqual(num2words(-1.5, lang="ha"), "ban ɗaya wajen biyar")

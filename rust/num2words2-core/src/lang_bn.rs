@@ -176,20 +176,18 @@
 //!
 //! ## Further faithfully reproduced Python bugs (float path)
 //!
-//! 11. **`int()` eats the fraction's leading zeros.** `parse_number` recovers
-//!     the digit run after the "." and then calls `int()` on it, collapsing
-//!     "01" to 1 and "005" to 5 — the same class of bug as [`parse_paisa`]'s,
-//!     but from a bare `int()` rather than a `[:2]`. So `0.01` → "শূন্য দশমিক
-//!     এক" ("zero point *one*") and `1.005` → "এক দশমিক পাঁচ" ("one point
-//!     *five*"). Both are corpus rows; `Decimal("0.001")` likewise → "এক".
+//! 11. ~~**`int()` eats the fraction's leading zeros.**~~ `parse_number`
+//!     recovers the digit run after the "." and then calls `int()` on it,
+//!     collapsing "01" to 1 and "005" to 5, so in Python `0.01` read
+//!     "শূন্য দশমিক এক" ("zero point *one*") and `0.05` read like `0.5`. Fixed
+//!     (gladiaio/num2words2#205): the port reads the digit run itself, so
+//!     `0.05` is "শূন্য দশমিক শূন্য পাঁচ".
 //!
-//! 12. **An interior zero digit emits a bare double space.** `AKOK[0]` is `""`
-//!     and `_dosomik_to_bengali_word` appends `" " + AKOK[d]` per digit, so a
-//!     0 contributes a lone space: `1.102` → `'এক দশমিক এক  দুই'` (two spaces).
-//!     `.strip()` only saves the ends, so `Decimal("1.10")` → decimal_part 10
-//!     → " এক " → stripped to "এক দশমিক এক" (a corpus row), while an interior
-//!     zero survives. `0.1 + 0.2` → decimal_part 30000000000000004 → sixteen
-//!     spaces mid-string. Interpreter-verified.
+//! 12. ~~**An interior zero digit emits a bare double space.**~~ `AKOK[0]` is
+//!     `""`, so in Python `1.102` read `'এক দশমিক এক  দুই'`. Fixed with 11:
+//!     every zero digit reads "শূন্য" ("এক দশমিক এক শূন্য দুই"); trailing zeros
+//!     of a Decimal (`Decimal("1.10")`) are still dropped, as Python's strip
+//!     did.
 //!
 //! 13. **The 1e-7 cliff, and a `ValueError` just past it.** `parse_number`
 //!     splits `str(fraction)` on "." — but `str(Decimal)` switches to
@@ -587,20 +585,25 @@ fn parse_paisa(number: &BigDecimal) -> Result<(BigInt, u32)> {
 /// Unlike [`parse_paisa`] there is no `* 100` / `[:2]` fix-up — the digit run
 /// goes straight into `int()`, which is what eats the leading zeros (module
 /// bug 11) and what chokes on a scientific tail (module bug 13).
-fn parse_number(number: &BigDecimal) -> Result<(BigInt, BigInt)> {
+fn parse_number(number: &BigDecimal) -> Result<(BigInt, BigInt, String)> {
     // int(number) — truncation, and `number` is non-negative here.
     let int_part = number.with_scale(0).as_bigint_and_exponent().0;
 
-    let decimal_part = match frac_after_dot(number) {
+    let (decimal_part, digits) = match frac_after_dot(number) {
         // `dosomik_str = 0`, the int — so `int(dosomik_str)` is `int(0)`.
-        None => BigInt::zero(),
-        // `int(dosomik_str)`: leading zeros are silently dropped (bug 11).
-        Some(s) => BigInt::from_str(&s).map_err(|_| {
-            // int("5E-7") → ValueError, Python's message verbatim (bug 13).
-            N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
-        })?,
+        None => (BigInt::zero(), String::new()),
+        // `int(dosomik_str)` validates the run (and in Python dropped its
+        // leading zeros, bug 11); the digit string itself is kept for
+        // reading, so 0.05 no longer reads like 0.5.
+        Some(s) => (
+            BigInt::from_str(&s).map_err(|_| {
+                // int("5E-7") → ValueError, Python's message verbatim (bug 13).
+                N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
+            })?,
+            s,
+        ),
     };
-    Ok((int_part, decimal_part))
+    Ok((int_part, decimal_part, digits))
 }
 
 /// `Decimal(str(value))` for an `f64` — the float arm of `str_to_number`.
@@ -759,18 +762,19 @@ impl LangBn {
     /// ```
     ///
     /// Every digit contributes a leading space, so the result always starts
-    /// with one — that is what separates it from the "দশমিক" before it. A zero
-    /// digit hits `AKOK[0] == ""` and contributes a *bare* space, which is
-    /// module bug 12. Callers only reach here with `decimal_part > 0`, so
-    /// `to_string()` is a plain digit run with no sign.
-    fn dosomik_to_bengali_word(&self, number: &BigInt) -> String {
+    /// with one — that is what separates it from the "দশমিক" before it.
+    /// Python read `str(int(digits))`, dropping the leading zeros (bug 11),
+    /// and a zero digit hit `AKOK[0] == ""`, leaving a bare space (bug 12).
+    /// The port reads the digit run itself, minus insignificant trailing
+    /// zeros, and says "শূন্য" for every zero in it (gladiaio/num2words2#205).
+    /// Callers only reach here with `decimal_part > 0`, so the run holds a
+    /// non-zero digit.
+    fn dosomik_to_bengali_word(&self, digits: &str) -> String {
         let mut word = String::new();
-        for ch in number.to_string().chars() {
-            let d = ch
-                .to_digit(10)
-                .expect("decimal_part is a non-negative BigInt, so all digits");
+        for ch in digits.trim_end_matches('0').chars() {
+            let d = ch.to_digit(10).expect("parse_number validated the digit run");
             word.push(' ');
-            word.push_str(AKOK[d as usize]);
+            word.push_str(if d == 0 { ZERO_WORD } else { AKOK[d as usize] });
         }
         word
     }
@@ -995,7 +999,7 @@ impl Lang for LangBn {
 
         // `number, decimal_part = self.parse_number(number)` — Python rebinds
         // `number` to the integer part here.
-        let (number, decimal_part) = parse_number(&number)?;
+        let (number, decimal_part, digits) = parse_number(&number)?;
         self.check_max(&number)?;
 
         // `if decimal_part > 0:` — note `> 0`, not "is there a fraction". A
@@ -1005,7 +1009,7 @@ impl Lang for LangBn {
             Some(format!(
                 "{}{}",
                 DOSHOMIK,
-                self.dosomik_to_bengali_word(&decimal_part)
+                self.dosomik_to_bengali_word(&digits)
             ))
         } else {
             None
@@ -1192,10 +1196,10 @@ mod float_tests {
         assert_eq!(f(1.5), "এক দশমিক পাঁচ");
         assert_eq!(f(2.25), "দুই দশমিক দুই পাঁচ");
         assert_eq!(f(3.14), "তিন দশমিক এক চার");
-        assert_eq!(f(0.01), "শূন্য দশমিক এক");
+        assert_eq!(f(0.01), "শূন্য দশমিক শূন্য এক");
         assert_eq!(f(0.1), "শূন্য দশমিক এক");
         assert_eq!(f(0.99), "শূন্য দশমিক নয় নয়");
-        assert_eq!(f(1.01), "এক দশমিক এক");
+        assert_eq!(f(1.01), "এক দশমিক শূন্য এক");
         assert_eq!(f(12.34), "বারো দশমিক তিন চার");
         assert_eq!(f(99.99), "নিরানব্বই দশমিক নয় নয়");
         assert_eq!(f(100.5), "একশত দশমিক পাঁচ");
@@ -1203,44 +1207,45 @@ mod float_tests {
         assert_eq!(f(-0.5), "ঋণাত্মক শূন্য দশমিক পাঁচ");
         assert_eq!(f(-1.5), "ঋণাত্মক এক দশমিক পাঁচ");
         assert_eq!(f(-12.34), "ঋণাত্মক বারো দশমিক তিন চার");
-        assert_eq!(f(1.005), "এক দশমিক পাঁচ");
+        assert_eq!(f(1.005), "এক দশমিক শূন্য শূন্য পাঁচ");
         assert_eq!(f(2.675), "দুই দশমিক ছয় সাত পাঁচ");
     }
 
     /// Every `"lang": "bn", "to": "cardinal_dec"` corpus row.
     #[test]
     fn corpus_cardinal_dec() {
-        assert_eq!(d("0.01"), "শূন্য দশমিক এক");
+        assert_eq!(d("0.01"), "শূন্য দশমিক শূন্য এক");
         assert_eq!(d("1.10"), "এক দশমিক এক");
         assert_eq!(d("12.345"), "বারো দশমিক তিন চার পাঁচ");
         assert_eq!(
             d("98746251323029.99"),
             "আটানব্বই লাখ চুয়াত্তর হাজার ছয়শত পঁচিশ কোটি তেরো লাখ তেইশ হাজার উনত্রিশ দশমিক নয় নয়"
         );
-        assert_eq!(d("0.001"), "শূন্য দশমিক এক");
+        assert_eq!(d("0.001"), "শূন্য দশমিক শূন্য শূন্য এক");
     }
 
-    /// Module bug 11: `int()` on the digit run drops the fraction's leading
-    /// zeros, so 0.01 and 0.001 both read as "point one".
+    /// Module bug 11 (fixed, #205): Python's `int()` on the digit run dropped
+    /// the fraction's leading zeros, so 0.05 read like 0.5.
     #[test]
-    fn leading_zeros_are_eaten() {
-        assert_eq!(f(0.01), f(0.1));
-        assert_eq!(d("0.001"), d("0.1"));
-        assert_eq!(f(1.005), "এক দশমিক পাঁচ");
-        assert_eq!(f(3.001), "তিন দশমিক এক");
+    fn leading_zeros_are_kept() {
+        assert_ne!(f(0.01), f(0.1));
+        assert_ne!(f(0.05), f(0.5));
+        assert_eq!(f(0.05), "শূন্য দশমিক শূন্য পাঁচ");
+        assert_eq!(f(1.005), "এক দশমিক শূন্য শূন্য পাঁচ");
+        assert_eq!(f(3.001), "তিন দশমিক শূন্য শূন্য এক");
     }
 
-    /// Module bug 12: `AKOK[0] == ""`, so an interior zero digit leaves a bare
-    /// double space that `.strip()` cannot reach.
+    /// Module bug 12 (fixed, #205): `AKOK[0] == ""` left a bare double space
+    /// for an interior zero digit; it now reads "শূন্য".
     #[test]
-    fn interior_zero_double_space() {
-        assert_eq!(f(1.102), "এক দশমিক এক  দুই");
-        assert_eq!(f(1.507), "এক দশমিক পাঁচ  সাত");
+    fn interior_zero_reads_zero() {
+        assert_eq!(f(1.102), "এক দশমিক এক শূন্য দুই");
+        assert_eq!(f(1.507), "এক দশমিক পাঁচ শূন্য সাত");
         // A *trailing* zero digit strips away instead — the corpus "1.10" row.
         assert_eq!(d("1.10"), "এক দশমিক এক");
         assert_eq!(d("0.10"), "শূন্য দশমিক এক");
         // 0.1 + 0.2 == 0.30000000000000004 -> fifteen interior zeros.
-        assert_eq!(f(0.1 + 0.2), "শূন্য দশমিক তিন                চার");
+        assert_eq!(f(0.1 + 0.2), format!("শূন্য দশমিক তিন{} চার", " শূন্য".repeat(15)));
     }
 
     /// The float path is decimal-string based, so the f64 artefacts that
@@ -1255,7 +1260,7 @@ mod float_tests {
     /// is no "." to split on — or worse, a garbage tail for int().
     #[test]
     fn sci_notation_cliff() {
-        assert_eq!(f(1e-5), "শূন্য দশমিক এক");
+        assert_eq!(f(1e-5), "শূন্য দশমিক শূন্য শূন্য শূন্য শূন্য এক");
         assert_eq!(f(1e-7), "শূন্য");
         assert_eq!(f(5e-324), "শূন্য");
         match f_err(1.5e-7) {

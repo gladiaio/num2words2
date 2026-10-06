@@ -1019,8 +1019,10 @@ impl Lang for LangUzCyr {
     /// Both halves are rendered as **whole numbers**, not digit by digit:
     /// `int(left)` is the repr's integer part (trunc-toward-zero), and
     /// `int(right)` is the fractional digits read as a single integer
-    /// (leading zeros dropped, so `0.01` → "бир", `Decimal("1.10")` → "ўн",
-    /// `1.005` → "беш" — indistinguishable from `1.5`).
+    /// (`Decimal("1.10")` → "ўн"). Python's `int()` also dropped the leading
+    /// zeros, so `1.005` read "беш", indistinguishable from `1.5`; the port
+    /// reads each leading zero as "нол" first (gladiaio/num2words2#205), so
+    /// `0.01` → "нол вергул нол бир" and `1.005` → "бир вергул нол нол беш".
     ///
     /// The digits come from a byte-exact reconstruction of `str(number)`
     /// ([`py_float_repr`] / [`py_decimal_str`]) — NOT from
@@ -1069,7 +1071,17 @@ impl Lang for LangUzCyr {
                 let l = parse_int(left)?;
                 let left_words = self.int2word(&l, false)?;
                 let r = parse_int(right)?;
-                let right_words = self.int2word(&r, false)?;
+                let mut right_words = self.int2word(&r, false)?;
+                // int(right) drops leading zeros, so 0.05 read like 0.5 in
+                // Python; each one is read as "нол" first (#205). A zero
+                // fraction ("5.0", Decimal "5.00") stays a single "нол".
+                if !r.is_zero() {
+                    let zeros = right.len() - right.trim_start_matches('0').len();
+                    let zero_word = self.int2word(&BigInt::zero(), false)?;
+                    for _ in 0..zeros {
+                        right_words = format!("{} {}", zero_word, right_words);
+                    }
+                }
                 // u'%s %s %s' % (left_words, pointword, right_words)
                 Ok(format!("{} {} {}", left_words, POINTWORD, right_words))
             }

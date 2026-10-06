@@ -117,6 +117,11 @@
 //! ("ɗaya wajen biyar"), taken exactly from the Decimal with trailing zeros
 //! dropped so `Decimal("1.50")` agrees with `1.5`.
 //!
+//! **Leading zeros.** Both arms word the fractional digits as one integer, and
+//! Python's `int()` dropped their leading zeros, so `0.05` read exactly like
+//! `0.5` ("sifiri wajen biyar"). Each leading zero is now read as "sifiri"
+//! first (gladiaio/num2words2#205): `0.05` is "sifiri wajen sifiri biyar".
+//!
 //! **Currency fractional cents.** HA's `to_currency` builds a `Decimal` minor
 //! unit and calls `to_cardinal(float(minor_units))` → `float_to_words`. The
 //! Rust currency code delegates that to `cardinal_from_decimal`, which is
@@ -418,10 +423,20 @@ impl LangHa {
                 decimal_str
             ))
         })?;
+        // int() dropped the leading zeros, so 0.05 read like 0.5 (#205).
+        result.push_str(&self.leading_zeros(&decimal_str));
         // At most 17 significant digits, so this stays clear of the stack
         // depth the #203 ceiling guards against; read it unchecked.
         result.push_str(&self.int_to_hausa(&decimal_num));
         Ok(result)
+    }
+
+    /// One "sifiri " per leading zero of the fractional digit run, which the
+    /// Python reading (`int(digits)` worded as one number) dropped, so 0.05
+    /// read exactly like 0.5 (gladiaio/num2words2#205).
+    fn leading_zeros(&self, digits: &str) -> String {
+        let zeros = digits.len() - digits.trim_start_matches('0').len();
+        format!("{} ", ONES[0]).repeat(zeros)
     }
 
     /// Port of `Num2Word_HA.to_cardinal` for a `Decimal` argument.
@@ -457,14 +472,18 @@ impl LangHa {
                 value: value.clone(),
                 precision,
             });
+            // `post` padded back to `precision` digits keeps its leading
+            // zeros (#205).
+            let digits = format!("{:0>width$}", post.to_string(), width = precision as usize);
             let ten = BigInt::from(10);
             while !post.is_zero() && (&post % &ten).is_zero() {
                 post /= &ten;
             }
             Ok(format!(
-                "{} {} {}",
+                "{} {} {}{}",
                 self.to_cardinal(&pre)?,
                 self.pointword(),
+                self.leading_zeros(&digits),
                 self.to_cardinal(&post)?
             ))
         }
@@ -808,10 +827,10 @@ mod float_tests {
             (1.5, 1, "ɗaya wajen biyar"),
             (2.25, 2, "biyu wajen ashirin da biyar"),
             (3.14, 2, "uku wajen tiriliyan dubu sha huɗu sha biyu"),
-            (0.01, 2, "sifiri wajen ɗaya"),
+            (0.01, 2, "sifiri wajen sifiri ɗaya"),
             (0.1, 1, "sifiri wajen ɗaya"),
             (0.99, 2, "sifiri wajen casa'in da tara"),
-            (1.01, 2, "ɗaya wajen tiriliyan dubu goma da tara"),
+            (1.01, 2, "ɗaya wajen sifiri tiriliyan dubu goma da tara"),
             (12.34, 2, "sha biyu wajen tiriliyan dubu talatin da uku ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara tamanin da shida"),
             (99.99, 2, "casa'in da tara wajen tiriliyan dubu tara ɗari takwas casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara arba'in da tara"),
             (100.5, 1, "ɗari wajen biyar"),
@@ -823,7 +842,7 @@ mod float_tests {
             (-12.34, 2, "ban sha biyu wajen tiriliyan dubu talatin da uku ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara tamanin da shida"),
             // The f64-artefact pair: 1.005 - 1 == 0.004999999999999893 and
             // 2.675 - 2 == 0.6749999999999998, worded whole.
-            (1.005, 3, "ɗaya wajen tiriliyan dubu huɗu ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari takwas casa'in da uku"),
+            (1.005, 3, "ɗaya wajen sifiri sifiri tiriliyan dubu huɗu ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari takwas casa'in da uku"),
             (2.675, 3, "biyu wajen tiriliyan dubu shida ɗari bakwai arba'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara casa'in da takwas"),
         ];
         for &(v, p, want) in rows {
@@ -846,10 +865,10 @@ mod float_tests {
     #[test]
     fn corpus_cardinal_dec() {
         let rows = [
-            ("0.01", "sifiri wajen ɗaya"),
+            ("0.01", "sifiri wajen sifiri ɗaya"),
             ("1.10", "ɗaya wajen ɗaya"),
             ("12.345", "sha biyu wajen ɗari uku arba'in da biyar"),
-            ("0.001", "sifiri wajen ɗaya"),
+            ("0.001", "sifiri wajen sifiri sifiri ɗaya"),
         ];
         for (s, want) in rows {
             let prec = s.split_once('.').map_or(0, |(_, frac)| frac.len() as u32);

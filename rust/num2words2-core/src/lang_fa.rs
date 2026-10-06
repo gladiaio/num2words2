@@ -60,9 +60,11 @@
 //!
 //! # The "نیم" (half) quirk and `farsiFracBig` overflow
 //!
-//! `fractional(number, level)` returns bare "نیم" (half) whenever `number == 5`
-//! — *regardless of level*. So `0.5`, `0.05`, `0.005`, `1.005` and `2.005` all
-//! render a "half": `0.05` → "نیم", `2.005` → "دو و نیم". Faithful Python bug.
+//! Python's `fractional(number, level)` returns bare "نیم" (half) whenever
+//! `number == 5` — *regardless of level* — so `0.05`, `0.005` and `2.005` all
+//! read as a "half", the same words as `0.5`. Fixed
+//! (gladiaio/num2words2#205): only `level == 1` (x.5) is "نیم"; `0.05` is
+//! "پنج صدم" (five hundredths) and `2.005` "دو و پنج هزارم".
 //!
 //! `farsiFracBig` has only four entries (10^0/10^3/10^6/10^9 scale). The index
 //! is `level // 3`, so `level >= 12` (a Decimal with >= 12 fractional digits)
@@ -320,8 +322,9 @@ fn maxval_ceiling() -> &'static BigInt {
 /// `level % 3` ∈ {0,1,2}); `farsiFracBig[ld3]` is not — `ld3 = level // 3 >= 4`
 /// (i.e. `level >= 12`) is Python's `IndexError`, reproduced.
 fn fractional(number: &BigInt, level: u32) -> Result<String> {
-    // if number == 5: return "نیم" — regardless of level. Faithful bug.
-    if number == &BigInt::from(5) {
+    // Python: `if number == 5: return "نیم"` — regardless of level, so 0.05
+    // and 0.005 read "half" too. Only one tenth-place 5 is a half (#205).
+    if number == &BigInt::from(5) && level == 1 {
         return Ok(HALF_WORD.to_string());
     }
     let x = cardinal_pos(number)?;

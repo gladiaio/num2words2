@@ -255,7 +255,7 @@ class Num2WordsSLTest(TestCase):
         self.assertEqual(
             num2words(99.99, lang="sl"), "devetindevetdeset vejica devetindevetdeset"
         )
-        self.assertEqual(num2words(100.01, lang="sl"), "sto vejica ena")
+        self.assertEqual(num2words(100.01, lang="sl"), "sto vejica nič ena")
         self.assertEqual(num2words(100.5, lang="sl"), "sto vejica pet")
         self.assertEqual(
             num2words(123.45, lang="sl"), "sto triindvajset vejica petinštirideset"
@@ -265,7 +265,7 @@ class Num2WordsSLTest(TestCase):
             num2words(1234.56, lang="sl"),
             "tisoč dvesto štiriintrideset vejica šestinpetdeset",
         )
-        self.assertEqual(num2words(10000.01, lang="sl"), "deset tisoč vejica ena")
+        self.assertEqual(num2words(10000.01, lang="sl"), "deset tisoč vejica nič ena")
         self.assertEqual(num2words(-0.5, lang="sl"), "minus nič vejica pet")
         self.assertEqual(num2words(-1.5, lang="sl"), "minus ena vejica pet")
         self.assertEqual(num2words(-10.5, lang="sl"), "minus deset vejica pet")

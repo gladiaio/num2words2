@@ -269,7 +269,7 @@ class Num2WordsETTest(TestCase):
         self.assertEqual(
             num2words(99.99, lang="et"), "üheksakümmend üheksa koma üheksa üheksa"
         )
-        self.assertEqual(num2words(100.01, lang="et"), "ükssada koma  üks")
+        self.assertEqual(num2words(100.01, lang="et"), "ükssada koma null üks")
         self.assertEqual(num2words(100.5, lang="et"), "ükssada koma viis")
         self.assertEqual(
             num2words(123.45, lang="et"), "ükssada kakskümmend kolm koma neli viis"
@@ -279,7 +279,7 @@ class Num2WordsETTest(TestCase):
             num2words(1234.56, lang="et"),
             "tuhat kakssada kolmkümmend neli koma viis kuus",
         )
-        self.assertEqual(num2words(10000.01, lang="et"), "kümme tuhat koma  üks")
+        self.assertEqual(num2words(10000.01, lang="et"), "kümme tuhat koma null üks")
         self.assertEqual(num2words(-0.5, lang="et"), "miinus null koma viis")
         self.assertEqual(num2words(-1.5, lang="et"), "miinus üks koma viis")
         self.assertEqual(num2words(-10.5, lang="et"), "miinus kümme koma viis")

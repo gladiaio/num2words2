@@ -672,7 +672,10 @@ impl Lang for LangSl {
     ///    fractional string digit by digit, SL emits it whole:
     ///    `self.to_cardinal(int(post_str))`. So `12.34` is "dvanajst vejica
     ///    štiriintrideset" (34), never "... tri štiri"; `12.345` is
-    ///    "dvanajst vejica tristo petinštirideset" (345).
+    ///    "dvanajst vejica tristo petinštirideset" (345). Python's `int()`
+    ///    also dropped leading zeros, so `0.05` read exactly like `0.5`; the
+    ///    port reads each leading zero as "nič" (gladiaio/num2words2#205):
+    ///    `0.05` is "nič vejica nič pet".
     ///
     /// 2. **Always float-casts, even Decimal.** Python does
     ///    `self.float2tuple(float(value))` unconditionally, so the exact-Decimal
@@ -732,11 +735,19 @@ impl Lang for LangSl {
         if precision > 0 {
             out.push(self.title(self.pointword()));
             // self.to_cardinal(int(post_str)) — the whole fraction, one number.
-            // post_str is all digits, so the parse cannot fail; 0 on the empty
-            // string mirrors nothing reachable but keeps this total.
-            let post_num =
-                BigInt::parse_bytes(post_str.as_bytes(), 10).unwrap_or_else(BigInt::zero);
-            out.push(self.to_cardinal(&post_num)?);
+            // Python's int() dropped the leading zeros, so 0.05 read like 0.5
+            // ("nič vejica pet"); each one is now read as "nič" first
+            // (gladiaio/num2words2#205): "nič vejica nič pet".
+            let digits = post_str.trim_start_matches('0');
+            for _ in 0..post_str.len() - digits.len() {
+                out.push(self.to_cardinal(&BigInt::zero())?);
+            }
+            if !digits.is_empty() {
+                // All ASCII digits, so the parse cannot fail.
+                let post_num =
+                    BigInt::parse_bytes(digits.as_bytes(), 10).unwrap_or_else(BigInt::zero);
+                out.push(self.to_cardinal(&post_num)?);
+            }
         }
 
         Ok(out.join(" "))
@@ -1176,10 +1187,10 @@ mod tests {
             (1.5, "ena vejica pet"),
             (2.25, "dve vejica petindvajset"),
             (3.14, "tri vejica štirinajst"),
-            (0.01, "nič vejica ena"),
+            (0.01, "nič vejica nič ena"),
             (0.1, "nič vejica ena"),
             (0.99, "nič vejica devetindevetdeset"),
-            (1.01, "ena vejica ena"),
+            (1.01, "ena vejica nič ena"),
             (12.34, "dvanajst vejica štiriintrideset"),
             (99.99, "devetindevetdeset vejica devetindevetdeset"),
             (100.5, "sto vejica pet"),
@@ -1188,7 +1199,7 @@ mod tests {
             (-1.5, "minus ena vejica pet"),
             (-12.34, "minus dvanajst vejica štiriintrideset"),
             // f64-artefact cases: 1.005 -> post 5 (padded "005"), 2.675 -> 675.
-            (1.005, "ena vejica pet"),
+            (1.005, "ena vejica nič nič pet"),
             (2.675, "dve vejica šeststo petinsedemdeset"),
         ] {
             assert_eq!(cardinal_float(f), want, "{}", f);
@@ -1201,7 +1212,7 @@ mod tests {
     #[test]
     fn corpus_cardinal_dec() {
         for (s, want) in [
-            ("0.01", "nič vejica ena"),
+            ("0.01", "nič vejica nič ena"),
             ("1.10", "ena vejica ena"),
             ("12.345", "dvanajst vejica tristo petinštirideset"),
             (
@@ -1210,7 +1221,7 @@ mod tests {
                  enainpetdeset milijon tristo triindvajset tisoč devetindvajset vejica \
                  osemindevetdeset",
             ),
-            ("0.001", "nič vejica ena"),
+            ("0.001", "nič vejica nič nič ena"),
         ] {
             assert_eq!(cardinal_dec(s), want, "{}", s);
         }
