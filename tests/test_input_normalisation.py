@@ -234,7 +234,12 @@ def test_malformed_numeric_strings_raise(s):
 
 def test_well_formed_and_text_strings_unchanged():
     assert num2words("1_000") == "one thousand"
-    assert num2words("H2O") == "H2O"
+    # Text goes to the sentence converter, not the malformed-number check:
+    # it names the token it cannot read (errors='raise', the default) or
+    # returns it as written (errors='ignore', #228).
+    with pytest.raises(ValueError, match="cannot convert 'H2O'"):
+        num2words("H2O")
+    assert num2words("H2O", errors="ignore") == "H2O"
 
 
 @pytest.mark.parametrize("lang", ["hr", "kk", "kz", "lt", "lv", "sk", "sr",
