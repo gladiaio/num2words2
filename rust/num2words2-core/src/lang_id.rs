@@ -38,12 +38,10 @@
 //!    `"satu"` is special-cased to `"pertama"`, so `to_ordinal(1000000)` is
 //!    `"kesatu juta"` rather than anything idiomatic. Corpus-confirmed.
 //! 4. `str_to_number` returns a `Decimal` and `Num2Word_ID` has **neither**
-//!    `to_cheque` nor `to_fraction` (it inherits from nothing), so the
-//!    dispatcher's `getattr(converter, ...)` raises `AttributeError` before
-//!    any argument is even looked at — which is why the corpus records
-//!    `AttributeError` for every `cheque:*` and `fraction` row, `"1/0"`
-//!    included (no ZeroDivisionError: the lookup fails before any division).
-//!    See [`Lang::to_cheque`] and [`Lang::to_fraction`] below.
+//!    `to_cheque` nor `to_fraction` (it inherits from nothing), so Python
+//!    raised `AttributeError` for both. The port raises NotImplementedError
+//!    instead: ID has no fraction rules (#217) and no cheque rules (#223);
+//!    "1/0" raises ZeroDivisionError like every other language.
 //! 5. **`verify_ordinal` rejects floats and negatives with the same broken
 //!    `%`-format TypeError as bug 2** — `errmsg_floatord` also carries no
 //!    `%s`. So `to_ordinal(2.5)`, `to_ordinal(-3.0)` and
@@ -756,28 +754,15 @@ impl Lang for LangId {
             Ok(ParsedNumber::Inf { negative: true }) => Err(N2WError::Value(
                 "invalid literal for int() with base 10: 'I'".into(),
             )),
-            // Successful parses are served natively; the `to="fraction"`
-            // AttributeError (Num2Word_ID has no to_fraction) is produced by
-            // the binding's fraction arm, which probes to_fraction(1,1).
+            // Successful parses are served natively.
             other => other,
         }
     }
 
     // ---- fractions ---------------------------------------------------------
 
-    /// Like `to_cheque`, `Num2Word_ID` defines **no** `to_fraction` and
-    /// inherits none (its MRO is `[Num2Word_ID, object]`), so both the
-    /// dispatcher's `"n/d"` string branch (`converter.to_fraction(n, d)`)
-    /// and `to="fraction"` (`getattr(converter, "to_fraction")`) raise
-    /// `AttributeError` at the attribute lookup, before any argument is
-    /// inspected. `"1/0"` therefore raises AttributeError too — never
-    /// ZeroDivisionError, which the trait default would produce. The message
-    /// is the interpreter's own, reproduced verbatim.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_ID' object has no attribute 'to_fraction'".to_string(),
-        ))
-    }
+    // `Num2Word_ID` had no `to_fraction` (AttributeError). ID has no fraction
+    // rules, so the trait default raises NotImplementedError (#217).
 
     // ---- currency -------------------------------------------------------
     //

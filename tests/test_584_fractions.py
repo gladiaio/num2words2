@@ -133,5 +133,43 @@ class TestFractionEdgeCases(unittest.TestCase):
         self.assertIn("dollar", out)
 
 
+class TestUnsupportedFractions(unittest.TestCase):
+    """#217: no more "ordinal + s" fallback ('два третийs', '三 第四s')."""
+
+    LANGS = ["ru", "zh", "ja", "tr", "cs", "nl", "pl", "bn", "dv", "id",
+             "vi", "zh_TW", "rm", "sv"]
+
+    def test_unsupported_languages_raise(self):
+        for lang in self.LANGS:
+            for frac in ("1/2", "2/3", "-1/2"):
+                with self.assertRaisesRegex(
+                        NotImplementedError,
+                        "lang='%s' does not support to='fraction'" % lang):
+                    num2words(frac, lang=lang)
+
+    def test_zero_denominator_is_zero_division_everywhere(self):
+        for lang in self.LANGS + ["en", "de", "fr", "ca"]:
+            with self.assertRaises(ZeroDivisionError):
+                num2words("1/0", lang=lang)
+
+    def test_non_string_input_is_type_error(self):
+        from decimal import Decimal
+        for value in (5, 1.5, Decimal("1.5"), "5", "1.5"):
+            with self.assertRaisesRegex(TypeError, "'numerator/denominator'"):
+                num2words(value, lang="en", to="fraction")
+
+    def test_en_power_of_ten(self):
+        self.assertEqual(num2words("1/100"), "one hundredth")
+        self.assertEqual(num2words("3/1000"), "three thousandths")
+        self.assertEqual(num2words("1/200"), "one two hundredth")
+
+    def test_ca(self):
+        self.assertEqual(num2words("1/2", lang="ca"), "un mig")
+        self.assertEqual(num2words("2/3", lang="ca"), "dos terços")
+        self.assertEqual(num2words("3/4", lang="ca"), "tres quarts")
+        self.assertEqual(num2words("2/5", lang="ca"), "dos cinquens")
+        self.assertEqual(num2words("1/10", lang="ca"), "un desè")
+
+
 if __name__ == "__main__":
     unittest.main()

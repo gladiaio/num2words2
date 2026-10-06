@@ -958,6 +958,6 @@ impl Lang for LangRmVallader {
     /// Base's generic reading ("<n> <ordinal>s") is not Romansh, so this is a
     /// clear NotImplementedError instead (#157).
     fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(crate::lang_rm::unsupported("rm_vallader", "fractions"))
+        Err(crate::lang_rm::unsupported("rm_vallader", "to='fraction'"))
     }
 }

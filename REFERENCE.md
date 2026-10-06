@@ -151,6 +151,9 @@ num2words(1.234, to='cheque', currency='BHD')   # composes with 3-decimal
 Pass `'n/d'` strings to produce a spoken fraction. Idiomatic forms for
 common denominators are implemented per language; everything else uses
 the ordinal-as-noun pattern with the language's natural plural rule.
+Languages without fraction rules raise `NotImplementedError`
+(`lang='ru' does not support to='fraction'`), and any input other than an
+`'n/d'` string raises `TypeError`.
 
 ```python
 num2words('1/3')                # 'one third'
@@ -169,9 +172,11 @@ num2words('-3/4')               # 'minus three quarters'
 | `it` | mezzo | -o → -i |
 | `pt`, `pt_BR` | meio / terço | -s |
 | `de` | halb + Drittel/Viertel/...el | invariant; "ein" for 1 |
-| others | ordinal + "s" (fallback) | — |
+| `ca` | mig / terç / quart, else the -è partitive | -è → -ens, else -s |
+| others | none: raise `NotImplementedError` | — |
 
-Edge cases: `'0/3'` → "zero", `'1/1'` → "one", `'1/0'` → `ZeroDivisionError`,
+Edge cases: `'0/3'` → "zero", `'1/1'` → "one", `'1/100'` → "one hundredth",
+`'1/0'` → `ZeroDivisionError` in every language,
 `'1/-3'` and `'-1/3'` both → "minus one third".
 
 ---

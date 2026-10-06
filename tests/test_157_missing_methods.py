@@ -56,8 +56,11 @@ def test_negative_currency_and_fraction_use_the_minus_word(lang, minus):
         out = num2words(x, lang=lang, to="currency")
         assert out.startswith(minus + " ")
         assert out[len(minus) + 1:] == num2words(-x, lang=lang, to="currency")
-    assert num2words("-3/4", lang=lang) == minus + " " + num2words(
-        "3/4", lang=lang)
+    # None of the three has fraction rules: they raise instead of the old
+    # "ordinal + s" fallback (#217).
+    with pytest.raises(NotImplementedError,
+                       match="lang='%s' does not support to='fraction'" % lang):
+        num2words("-3/4", lang=lang)
 
 
 def test_fa_lij_negative_int_currency():

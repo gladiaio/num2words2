@@ -976,17 +976,8 @@ impl Lang for LangBn {
 
     // ---- fractions ------------------------------------------------------
 
-    /// `Num2Word_BN` defines **no** `to_fraction` and inherits none (it has no
-    /// base class), so both the dispatcher's `"n/d"` string branch
-    /// (`converter.to_fraction(n, d)`) and `to="fraction"` raise
-    /// `AttributeError` at the attribute lookup, before any argument is
-    /// inspected — `"1/0"` is AttributeError too, never ZeroDivisionError.
-    /// The message is the interpreter's own, reproduced verbatim.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_BN' object has no attribute 'to_fraction'".to_string(),
-        ))
-    }
+    // `Num2Word_BN` had no `to_fraction` (AttributeError). BN has no fraction
+    // rules, so the trait default raises NotImplementedError (#217).
 
     /// `Num2Word_BN.to_cardinal` for float / `Decimal` input.
     ///

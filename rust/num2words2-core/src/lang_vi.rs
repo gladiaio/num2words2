@@ -151,12 +151,9 @@
 //!     uses the shared `Decimal(value)` parse every other language has, so
 //!     "12" reads like 12 and "1.5" like `Decimal("1.5")`.
 //!
-//! 16. **`to_fraction` does not exist.** The dispatcher's "n/d"
-//!     string route (`converter.to_fraction(num_int, den_int)`) and the
-//!     `to="fraction"` mode both fail on the attribute lookup — *before*
-//!     the values are examined, so "1/0" is an AttributeError, never a
-//!     ZeroDivisionError, and every `fraction2` corpus row is
-//!     AttributeError regardless of the operands.
+//! 16. **`to_fraction` does not exist** in Python (AttributeError). VI has
+//!     no fraction rules, so it now raises NotImplementedError like every
+//!     language without them, and "1/0" ZeroDivisionError (#217).
 
 use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use std::sync::OnceLock;
@@ -244,7 +241,7 @@ fn type_error(msg: impl Into<String>) -> N2WError {
 /// `Num2Word_VI` inherits from `object`, so a missing method is a plain
 /// attribute-lookup failure — not a deliberate `NotImplementedError`. Three
 /// call sites reach it: `to_cardinal_float` (bug #10), `to_cheque`
-/// (bug #11) and `to_fraction` (bug #16). (`str_to_number`, bug #15, is
+/// (bug #11). (`str_to_number`, bug #15, is
 /// fixed.)
 fn missing_attr(name: &str) -> N2WError {
     N2WError::Attribute(format!(
@@ -855,15 +852,8 @@ impl Lang for LangVi {
         }
     }
 
-    /// `Num2Word_VI` has no `to_fraction` either (bug #16).
-    ///
-    /// Both the "n/d" fraction-string route and `to="fraction"` fail on
-    /// `converter.to_fraction` before the operands are looked at — hence
-    /// `_numerator`/`_denominator` untouched, and "1/0" is an
-    /// AttributeError, never a ZeroDivisionError.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(missing_attr("to_fraction"))
-    }
+    // `Num2Word_VI` had no `to_fraction` (AttributeError, bug #16). VI has no
+    // fraction rules, so the trait default raises NotImplementedError (#217).
 
     // ---- currency -------------------------------------------------------
     //

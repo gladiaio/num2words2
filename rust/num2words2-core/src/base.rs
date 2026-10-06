@@ -413,8 +413,9 @@ pub trait Lang {
 
     // ---- fractions -----------------------------------------------------
 
-    /// `Num2Word_Base.to_fraction` (issue #584). EN/DE/ES/FR/IT/PT and the
-    /// aero profiles override with idiomatic forms (half/quarter/Drittel).
+    /// `to='fraction'` (issue #584). EN/DE/ES/FR/IT/PT/CA and the aero
+    /// profiles override with idiomatic forms (half/quarter/Drittel); every
+    /// other language raises NotImplementedError (#217).
     fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
         default_to_fraction(self, numerator, denominator)
     }
@@ -678,10 +679,24 @@ pub fn year_float_error(value: &FloatValue) -> N2WError {
     ))
 }
 
-/// Python's `Num2Word_Base.to_fraction`.
+/// `NotImplementedError` for a `to=` mode a language has no rules for. The
+/// binder prefixes `lang='xx' ` (the core does not know the language key),
+/// giving `lang='ru' does not support to='fraction'`.
+pub fn unsupported_mode(to: &str) -> N2WError {
+    N2WError::NotImplemented(format!("does not support to='{}'", to))
+}
+
+/// `to_fraction` for a language without its own fraction rules.
+///
+/// Python's `Num2Word_Base.to_fraction` read "n ordinal" and pluralised with
+/// an English "s" in every language ("два третийs", "三 第四s"; #217). A
+/// fraction reading is language grammar (Russian "две третьих", Dutch "twee
+/// derde"), not something a generic rule can build from the ordinal, so a
+/// language without rules raises — as rm already did — rather than invent a
+/// plural. A zero denominator still raises ZeroDivisionError first.
 pub fn default_to_fraction<L: Lang + ?Sized>(
-    lang: &L,
-    numerator: &BigInt,
+    _lang: &L,
+    _numerator: &BigInt,
     denominator: &BigInt,
 ) -> Result<String> {
     if denominator.is_zero() {
@@ -689,24 +704,7 @@ pub fn default_to_fraction<L: Lang + ?Sized>(
             "denominator must not be zero".into(),
         ));
     }
-    if denominator.is_one() || numerator.is_zero() {
-        return lang.to_cardinal(numerator);
-    }
-    let is_negative = numerator.is_negative() ^ denominator.is_negative();
-    let abs_n = numerator.abs();
-    let abs_d = denominator.abs();
-    let sign = if is_negative {
-        format!("{} ", lang.negword().trim())
-    } else {
-        String::new()
-    };
-    let num_word = lang.to_cardinal(&abs_n)?;
-    let mut den_word = lang.to_ordinal(&abs_d)?;
-    if !abs_n.is_one() {
-        // Python appends a bare "s"; languages override for real plurals.
-        den_word.push('s');
-    }
-    Ok(format!("{}{} {}", sign, num_word, den_word))
+    Err(unsupported_mode("fraction"))
 }
 
 /// Python's `splitnum`. Returns `None` where Python falls off the loop and

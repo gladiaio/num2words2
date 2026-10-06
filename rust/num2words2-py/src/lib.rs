@@ -92,6 +92,27 @@ fn declined(lang: &str, to: &str, kwargs: Option<&Bound<'_, PyDict>>) -> PyErr {
     }
 }
 
+/// Name the language in a core "does not support to='...'" raise: the core
+/// does not know its own key, so `base::unsupported_mode` leaves the prefix
+/// to the binder (`lang='ru' does not support to='fraction'`).
+fn name_lang(lang: &str, e: N2WError) -> N2WError {
+    match e {
+        N2WError::NotImplemented(m) if m.starts_with("does not support") => {
+            N2WError::NotImplemented(format!("lang='{}' {}", lang, m))
+        }
+        other => other,
+    }
+}
+
+/// `to='fraction'` takes a "numerator/denominator" string; any other input
+/// is a caller error (#217).
+fn fraction_type_error(got: &str) -> N2WError {
+    N2WError::Type(format!(
+        "to='fraction' expects a 'numerator/denominator' string, got {}",
+        got
+    ))
+}
+
 // The Rust-core-declines signal. NOT a NotImplementedError subclass: the
 // shim catches THIS to fall back to the original Python converter, while a
 // genuine NotImplementedError (Welsh >100, unknown Japanese counter) is left
@@ -241,7 +262,22 @@ fn to_year(lang: &str, value: BigInt) -> PyResult<Option<String>> {
 
 #[pyfunction]
 fn to_fraction(lang: &str, numerator: BigInt, denominator: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_fraction(&numerator, &denominator))
+    finish(fraction_core(need_lang(lang)?, lang, &numerator, &denominator))
+}
+
+/// "n/d": a zero denominator is ZeroDivisionError in every language, ahead
+/// of a language's "does not support to='fraction'" (#217).
+fn fraction_core(
+    l: &'static (dyn Lang + Sync),
+    lang: &str,
+    n: &BigInt,
+    d: &BigInt,
+) -> Result<String, N2WError> {
+    use bigdecimal::num_traits::Zero;
+    if d.is_zero() {
+        return Err(N2WError::ZeroDivision("denominator must not be zero".into()));
+    }
+    l.to_fraction(n, d).map_err(|e| name_lang(lang, e))
 }
 
 /// `value` is `str(val)` from the Python side and `is_int` says whether the
@@ -503,7 +539,7 @@ fn from_string_core(
                 // let the original raise it.
                 return Ok((1, None));
             }
-            return finish(l.to_fraction(&n, &d)).map(|r| (0, r));
+            return finish(fraction_core(l, lang, &n, &d)).map(|r| (0, r));
         }
     }
 
@@ -691,17 +727,8 @@ fn int_mode(
                 kw,
             )
         }
-        // Python: getattr(converter, "to_fraction")(number) — TypeError
-        // (missing denominator) when the class has the method, AttributeError
-        // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
-        // AttributeError, so probe with the cheap (1,1) call (denominator==1
-        // short-circuits to to_cardinal(1) everywhere else).
-        "fraction" => match l.to_fraction(&BigInt::from(1), &BigInt::from(1)) {
-            Err(e @ N2WError::Attribute(_)) => Err(e),
-            _ => Err(N2WError::Type(
-                "to_fraction() missing 1 required positional argument: 'denominator'".into(),
-            )),
-        },
+        // A plain number string ("5", "1.5") is not a fraction (#217).
+        "fraction" => Err(fraction_type_error("a plain number")),
         other => Err(N2WError::Fallback(other.to_string())),
     }
 }
@@ -755,17 +782,8 @@ fn dec_mode(
             )
         }
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        // Python: getattr(converter, "to_fraction")(number) — TypeError
-        // (missing denominator) when the class has the method, AttributeError
-        // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
-        // AttributeError, so probe with the cheap (1,1) call (denominator==1
-        // short-circuits to to_cardinal(1) everywhere else).
-        "fraction" => match l.to_fraction(&BigInt::from(1), &BigInt::from(1)) {
-            Err(e @ N2WError::Attribute(_)) => Err(e),
-            _ => Err(N2WError::Type(
-                "to_fraction() missing 1 required positional argument: 'denominator'".into(),
-            )),
-        },
+        // A plain number string ("5", "1.5") is not a fraction (#217).
+        "fraction" => Err(fraction_type_error("a plain number")),
         other => Err(N2WError::Fallback(other.to_string())),
     }
 }
@@ -858,19 +876,6 @@ fn currency_core(
         l.to_currency_kw(&v, currency, cents, separator, adjective, kw)
     };
     opt(r)
-}
-
-/// `to='fraction'` with a non-string number. The shim probed
-/// `_RUST.to_fraction(lang, 1, 1)`: an `AttributeError` (BN/ID/DV have no
-/// `to_fraction`) re-raises, anything else becomes the missing-`denominator`
-/// `TypeError`.
-fn fraction_probe(l: &'static (dyn Lang + Sync)) -> N2WError {
-    match l.to_fraction(&BigInt::from(1), &BigInt::from(1)) {
-        Err(e @ N2WError::Attribute(_)) => e,
-        _ => N2WError::Type(
-            "to_fraction() missing 1 required positional argument: 'denominator'".into(),
-        ),
-    }
 }
 
 // --- Argument classification for the unified `num2words` entry -------------
@@ -1300,7 +1305,8 @@ fn num2words(
 
     // fraction
     if to == "fraction" {
-        return Err(map_err(fraction_probe(l)));
+        let tname = number.get_type().name()?.to_string();
+        return Err(map_err(fraction_type_error(&tname)));
     }
 
     Err(declined(lang, to, kwargs))

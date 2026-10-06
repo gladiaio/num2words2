@@ -1278,42 +1278,9 @@ impl Lang for LangZhTw {
         self.to_year(&i)
     }
 
-    /// `Num2Word_Base.to_fraction`, which ZH_TW inherits — with the Python
-    /// crash it exhibits reproduced verbatim. The sign line is
-    ///
-    /// ```python
-    /// sign = "%s " % self.negword.strip() if is_negative else ""
-    /// ```
-    ///
-    /// and ZH_TW's `negword` is the nested tuple `(("負",), ("ㄈㄨˋ",))`, so a
-    /// **negative** fraction dies with
-    /// `AttributeError: 'tuple' object has no attribute 'strip'` before any
-    /// word is rendered. Positive fractions never touch `negword` and render
-    /// through the base recipe: `to_fraction(3, 4)` == "三 第四s" (the bare
-    /// "s" plural is Python's own).
-    fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
-        if denominator.is_zero() {
-            return Err(N2WError::ZeroDivision(
-                "denominator must not be zero".into(),
-            ));
-        }
-        if denominator == &BigInt::one() || numerator.is_zero() {
-            return self.to_cardinal(numerator);
-        }
-        let is_negative = numerator.is_negative() ^ denominator.is_negative();
-        if is_negative {
-            // self.negword.strip() — negword is a tuple here, not a str.
-            return Err(N2WError::Attribute(
-                "'tuple' object has no attribute 'strip'".into(),
-            ));
-        }
-        let num_word = self.to_cardinal(&numerator.abs())?;
-        let mut den_word = self.to_ordinal(&denominator.abs())?;
-        if numerator.abs() != BigInt::one() {
-            den_word.push('s'); // Python's bare "s" plural.
-        }
-        Ok(format!("{} {}", num_word, den_word))
-    }
+    // ZH_TW inherited Base's fraction recipe ("三 第四s"; a negative fraction
+    // crashed on the tuple negword). It has no fraction rules, so the trait
+    // default raises NotImplementedError (#217).
 
     // ---- currency -------------------------------------------------------
     //

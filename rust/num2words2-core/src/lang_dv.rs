@@ -193,15 +193,10 @@
 //!
 //! # Fraction
 //!
-//! `Num2Word_DV` has no `to_fraction` — like `to_cheque`, the dispatcher's
-//! attribute lookup fails, so every fraction-corpus row and every "n/d"
-//! string (whatever `to=` says) is `AttributeError`, including `"1/0"`,
-//! which dies on lookup before any division could raise ZeroDivisionError.
-//! Known gap: `to='fraction'` with a *plain* numeric string ("5", "1.5")
-//! cannot be reproduced from this file — the pyo3 shim's `dec_mode`
-//! hardcodes the base-class TypeError (`to_fraction() missing 1 required
-//! positional argument`) for that combination and never consults the
-//! language, while Python raises AttributeError on the `getattr`.
+//! `Num2Word_DV` has no `to_fraction` (Python raised AttributeError). DV has
+//! no fraction rules, so `to='fraction'` and "n/d" strings raise
+//! NotImplementedError, and "1/0" ZeroDivisionError, like every language
+//! without fraction rules (#217).
 //!
 //! # Grammatical kwargs
 //!
@@ -1164,15 +1159,8 @@ impl Lang for LangDv {
         }
     }
 
-    /// Like `to_cheque`, `Num2Word_DV` defines no `to_fraction` and inherits
-    /// none, so the dispatcher's attribute lookup raises `AttributeError`
-    /// before the arguments are even parsed — `to_fraction("1", "0")` never
-    /// reaches a division, so no ZeroDivisionError either.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_DV' object has no attribute 'to_fraction'".into(),
-        ))
-    }
+    // `Num2Word_DV` had no `to_fraction` (AttributeError). DV has no fraction
+    // rules, so the trait default raises NotImplementedError (#217).
 
     /// `to_currency(self, value, currency="ރުފިޔާ", cents="ލާރި")`.
     ///
@@ -1754,10 +1742,15 @@ mod float_tests {
         ));
         assert!(matches!(l.str_to_number("1e3"), Ok(ParsedNumber::Dec(_))));
 
-        // to_fraction: AttributeError on lookup, even for 1/0.
+        // to_fraction: no fraction rules (#217) — NotImplementedError, and
+        // ZeroDivisionError for 1/0.
+        assert!(matches!(
+            l.to_fraction(&BigInt::from(2), &BigInt::from(3)),
+            Err(N2WError::NotImplemented(_))
+        ));
         assert!(matches!(
             l.to_fraction(&BigInt::from(1), &BigInt::from(0)),
-            Err(N2WError::Attribute(_))
+            Err(N2WError::ZeroDivision(_))
         ));
 
         // nominal= kwarg (the kwargs corpus rows).
