@@ -172,3 +172,21 @@ class Num2WordsPLTest(TestCase):
         self.assertEqual(
             num2words(-10.25, lang="pl"), "minus dziesięć przecinek dwa pięć"
         )
+
+    def test_ordinal_scale_words_past_miliard(self):
+        # gladiaio/num2words2#174: KeyError('4') from 10**12.
+        self.assertEqual(num2words(10**12, lang="pl", to="ordinal"), "bilionowy")
+        self.assertEqual(
+            num2words(2 * 10**12, lang="pl", to="ordinal"), "dwubilionowy"
+        )
+        self.assertEqual(num2words(10**15, lang="pl", to="ordinal"), "biliardowy")
+        self.assertEqual(num2words(10**18, lang="pl", to="ordinal"), "trylionowy")
+        self.assertEqual(
+            num2words(10**24, lang="pl", to="ordinal"), "kwadrylionowy"
+        )
+        self.assertEqual(num2words(10**63, lang="pl", to="ordinal"), "decyliardowy")
+        self.assertEqual(
+            num2words(10**12 + 10**9, lang="pl", to="ordinal"), "bilion miliardowy"
+        )
+        with self.assertRaises(OverflowError):
+            num2words(10**66, lang="pl", to="ordinal")

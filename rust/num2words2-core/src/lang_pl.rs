@@ -33,7 +33,11 @@
 //!    `HUNDREDS_ORDINALS[8][1]` "ośiemset" → "osiemset",
 //!    `HUNDREDS_ORDINALS[5][1]` "pięcset" → "pięćset", and
 //!    `prefixes_ordinal[3]` "milairdowy" → "miliardowy" — so
-//!    `to_ordinal(10**9)` == "miliardowy".
+//!    `to_ordinal(10**9)` == "miliardowy". Python's `prefixes_ordinal`
+//!    stopped there, so a value ending in four or more zero groups
+//!    (`to_ordinal(10**12)`) raised `KeyError: 4`; fixed (#174): past
+//!    "miliardowy" the port forms the scale noun + "owy" ("bilionowy",
+//!    "trylionowy", …, "decyliardowy").
 //! 4. `to_ordinal(0)` returned an `IndexError` upstream (the `while last == 0`
 //!    loop pops the only fragment, then indexes an empty list); PR #668 fixes
 //!    it to "zerowy", adopted here.
@@ -177,7 +181,9 @@ const HUNDREDS_ORDINALS: [(&str, &str); 10] = [
 ];
 
 /// `prefixes_ordinal`, keys 1..=3 only. Index 0 is absent in Python and
-/// unreachable (guarded by `level > 0`); index >= 4 is a `KeyError`.
+/// unreachable (guarded by `level > 0`); index >= 4 was a `KeyError` in
+/// Python (#174) and is now derived from `THOUSANDS`, see
+/// [`LangPl::prefix_ordinal`].
 const PREFIXES_ORDINAL: [&str; 4] = [
     "",
     "tysięczny",
@@ -447,6 +453,18 @@ impl LangPl {
             .ok_or_else(|| key_error(i.to_string()))
     }
 
+    /// `prefixes_ordinal[level]`. Python's table stops at 3 ("miliardowy")
+    /// and raised `KeyError` from 10^12 (#174). Past it the adjective is the
+    /// scale noun + "owy", the pattern the table itself follows
+    /// ("milion" → "milionowy"): "bilionowy", "biliardowy", "trylionowy", …
+    /// up to "decyliardowy" (10^63), the last scale word below MAXVAL.
+    fn prefix_ordinal(&self, level: usize) -> Result<String> {
+        if let Some(p) = PREFIXES_ORDINAL.get(level).filter(|_| level >= 1) {
+            return Ok(p.to_string());
+        }
+        Ok(format!("{}owy", self.thousands_at(level)?[0]))
+    }
+
     /// Port of `Num2Word_PL.pluralize`.
     ///
     /// ```python
@@ -694,9 +712,9 @@ impl Lang for LangPl {
     /// Port of `Num2Word_PL.to_ordinal`.
     ///
     /// `if number % 1 != 0: raise NotImplementedError()` is unreachable for
-    /// integers, so it is not modelled. Raises `KeyError` for level >= 4
-    /// (>= 10^12), `TypeError` for every negative (#155), and
-    /// `OverflowError` for values >= 10^66 (#159).
+    /// integers, so it is not modelled. Raises `TypeError` for every
+    /// negative (#155) and `OverflowError` for values >= 10^66 (#159).
+    /// Python's `KeyError` for level >= 4 (>= 10^12) is fixed (#174).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         verify_ordinal(value)?;
         // PR savoirfairelinux/num2words#668: splitbyx("0") yields a single
@@ -738,13 +756,7 @@ impl Lang for LangPl {
             output.push(' ');
         }
         if level > 0 {
-            // prefixes_ordinal has keys 1..=3; level >= 4 → KeyError.
-            let p = PREFIXES_ORDINAL
-                .get(level)
-                .filter(|_| level >= 1)
-                .copied()
-                .ok_or_else(|| key_error(level.to_string()))?;
-            output.push_str(p);
+            output.push_str(&self.prefix_ordinal(level)?);
         }
         Ok(output)
     }
