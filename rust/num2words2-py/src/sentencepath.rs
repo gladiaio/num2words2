@@ -13,8 +13,9 @@
 //!   * every inner `num2words(...)` call reproduces the dispatcher's typed
 //!     routing: ints take the integer path, floats take the float path with
 //!     `precision = abs(Decimal(str(v)).as_tuple().exponent)`;
-//!   * `convert_number`'s try/except laddering (currency -> cardinal,
-//!     year -> cardinal, anything -> English cardinal) is reproduced, with
+//!   * `convert_number`'s try/except laddering (year -> cardinal,
+//!     anything -> English cardinal; currency is the exception, #230) is
+//!     reproduced, with
 //!     one refinement: a core error that means "hook not ported yet"
 //!     (NotImplemented without Python's "Currency code ..." message) aborts
 //!     the whole conversion instead, so the shim falls back to the original
@@ -81,6 +82,14 @@
 //! languages. Every other run — `25.12.2023`, `2023-12-25`, `192.168.1.1`,
 //! `v2.0.1`, phone numbers — is left as written rather than read as one
 //! decimal with the rest glued on.
+//!
+//! Also deliberate (#230): a currency amount the language cannot name (no
+//! word for the code, ko "€5") is left as written instead of being read as
+//! a bare number, which made £ and ¥ indistinguishable. `R$`, `US$`, `C$`,
+//! `A$` … are their own dollars rather than USD with the letters glued on,
+//! a symbol after the number (`5€`, `5 €`) counts like one before it, and a
+//! glued percentage (`50%`) is left as written — no converter has a percent
+//! word.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -285,6 +294,7 @@ struct Res {
     dates: Vec<(&'static str, Vec<DatePat>)>,
     year: Regex,
     currency: Regex,
+    amount: Regex,
     clock: Regex,
     uhr: Regex,
 }
@@ -333,6 +343,7 @@ impl Res {
             dates,
             year: re(r"\b(19\d{2}|20\d{2}|2100)\b"),
             currency: re(r"([$€£¥]\s*)(\d+(?:[.,]\d+)?)"),
+            amount: re(r"\d+(?:[.,]\d+)?"),
             // The trailing boundary is checked in code: a glued "pm" (#178)
             // has no `\b` before it.
             clock: re(r"\b(\d{1,2}):(\d{2})"),
@@ -449,7 +460,9 @@ enum Typ {
     OrdinalDate,
     DateNumber,
     Year,
-    Currency(char),
+    /// A currency amount and its ISO code; `None` (a symbol whose code is
+    /// unknown, e.g. `Z$`) leaves the token as written (#230).
+    Currency(Option<&'static str>),
     Number,
     /// English clock time `H:MM` as (hour, minute, am/pm suffix as
     /// written, e.g. "pm", "PM", "p.m.").
@@ -663,6 +676,81 @@ fn is_part_sep(c: char) -> bool {
     c == '.' || c == ',' || (c != ' ' && is_space_group_sep(c))
 }
 
+/// The currency symbol before a number starting at char `i` (`$5`, `€ 5`,
+/// `R$ 3,50`): (start of the token, ISO code). A letter-prefixed dollar is
+/// that country's dollar (`R$` BRL, `US$` USD, `C$` CAD, `A$` AUD, …), not
+/// USD with the letters glued onto the words; any other letter run before
+/// the symbol gives `None`, which leaves the token as written (#230).
+fn currency_before(chars: &[char], i: usize) -> Option<(usize, Option<&'static str>)> {
+    let mut k = i;
+    while k > 0 && chars[k - 1].is_whitespace() {
+        k -= 1;
+    }
+    let sym = *chars.get(k.checked_sub(1)?)?;
+    let code = symbol_code(sym)?;
+    let mut p = k - 1;
+    while p > 0 && chars[p - 1].is_ascii_alphabetic() {
+        p -= 1;
+    }
+    if p == k - 1 {
+        return Some((p, Some(code)));
+    }
+    let prefix: String = chars[p..k - 1].iter().collect();
+    let code = match (sym, prefix.as_str()) {
+        _ if p > 0 && chars[p - 1].is_alphanumeric() => None,
+        ('$', "US") => Some("USD"),
+        ('$', "R") => Some("BRL"),
+        ('$', "C" | "CA") => Some("CAD"),
+        ('$', "A" | "AU") => Some("AUD"),
+        ('$', "NZ") => Some("NZD"),
+        ('$', "HK") => Some("HKD"),
+        ('$', "S") => Some("SGD"),
+        ('$', "MX") => Some("MXN"),
+        _ => None,
+    };
+    Some((p, code))
+}
+
+/// A currency symbol after a number ending at char `e` (`5€`, `5 €`):
+/// (end of the token, ISO code). The symbol must end the word and must not
+/// open the next amount (`5 $10`).
+fn currency_after(chars: &[char], e: usize) -> Option<(usize, &'static str)> {
+    let n = chars.len();
+    let mut k = e;
+    if k < n && matches!(chars[k], ' ' | '\u{00A0}' | '\u{202F}') {
+        k += 1;
+    }
+    let code = symbol_code(*chars.get(k)?)?;
+    let mut after = k + 1;
+    // The symbol ends the word: whitespace or punctuation follows ("5 €₹"
+    // is not an amount).
+    let ends = |c: char| {
+        c.is_whitespace()
+            || (c.is_ascii_punctuation() && !matches!(c, '$' | '%'))
+            || matches!(c, '»' | '”' | '’' | '…')
+    };
+    if after < n && !ends(chars[after]) {
+        return None;
+    }
+    while after < n && chars[after].is_whitespace() {
+        after += 1;
+    }
+    if after < n && chars[after].is_ascii_digit() {
+        return None;
+    }
+    Some((k + 1, code))
+}
+
+fn symbol_code(c: char) -> Option<&'static str> {
+    match c {
+        '$' => Some("USD"),
+        '€' => Some("EUR"),
+        '£' => Some("GBP"),
+        '¥' => Some("JPY"),
+        _ => None,
+    }
+}
+
 /// An am/pm marker right after a clock time ending at char `at` (#178):
 /// optional whitespace, then `am`/`pm`/`a.m.`/`p.m.` in any case, not
 /// followed by a letter or digit. Returns the end of the marker and the
@@ -752,17 +840,29 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
         match grouped_token(&t.chars, i, lang) {
             Some((e, canonical)) if !overlap(&used, i, e) => {
-                // `[$€£¥]\s*` immediately before the number.
-                let mut k = i;
-                while k > 0 && t.chars[k - 1].is_whitespace() {
-                    k -= 1;
+                // A currency symbol right before or after the number
+                // ("$1,000", "5 000 000 €", #230); "1,000%" is left as
+                // written.
+                if e < n && t.chars[e] == '%' {
+                    mark(&mut used, i, e + 1);
+                    i = e + 1;
+                    continue;
                 }
-                let sym = (k > 0 && !canonical.starts_with('-'))
-                    .then(|| t.chars[k - 1])
-                    .filter(|c| matches!(c, '$' | '€' | '£' | '¥'));
-                let (s, typ) = match sym {
-                    Some(c) if !overlap(&used, k - 1, i) => (k - 1, Typ::Currency(c)),
-                    _ => (i, Typ::Number),
+                let neg = canonical.starts_with('-');
+                let cur = (!neg)
+                    .then(|| currency_before(&t.chars, i))
+                    .flatten()
+                    .filter(|&(k, _)| !overlap(&used, k, i))
+                    .map(|(k, code)| (k, e, code))
+                    .or_else(|| {
+                        (!neg)
+                            .then(|| currency_after(&t.chars, e))
+                            .flatten()
+                            .map(|(k, code)| (i, k, Some(code)))
+                    });
+                let (s, e, typ) = match cur {
+                    Some((s, e, code)) => (s, e, Typ::Currency(code)),
+                    None => (i, e, Typ::Number),
                 };
                 let val = match typ {
                     Typ::Currency(_) => Val::F(pyfloat(&canonical)?),
@@ -1053,28 +1153,51 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
-    // 6. Currency.
+    // 6. Currency: a symbol before the number ("$5", "R$ 3,50"), then
+    // after it ("5€", "5 €", #230). A percentage glued to its number
+    // ("50%") is claimed and left as written: no converter has a word for
+    // it.
     for m in r.currency.captures_iter(t.s) {
-        let g0 = m.get(0).unwrap();
-        let (s, e) = t.span(g0.start(), g0.end());
+        let g2 = m.get(2).unwrap();
+        let (i, e) = t.span(g2.start(), g2.end());
+        let Some((s, code)) = currency_before(&t.chars, i) else {
+            continue;
+        };
         if !overlap(&used, s, e) {
-            let v = pyfloat(m.get(2).unwrap().as_str())?;
-            let sym = m
-                .get(1)
-                .unwrap()
-                .as_str()
-                .trim()
-                .chars()
-                .next()
-                .unwrap_or('$');
+            let v = pyfloat(g2.as_str())?;
             exts.push(Ext {
                 start: s,
                 end: e,
-                text: g0.as_str().to_string(),
+                text: t.slice(s, e),
                 val: Val::F(v),
-                typ: Typ::Currency(sym),
+                typ: Typ::Currency(code),
             });
             mark(&mut used, s, e);
+        }
+    }
+    for m in r.amount.captures_iter(t.s) {
+        let g0 = m.get(0).unwrap();
+        let (s, e) = t.span(g0.start(), g0.end());
+        let c = &t.chars;
+        let num_sep = |k: usize| matches!(c[k], '-' | '.' | ',');
+        if (s > 0 && (c[s - 1].is_ascii_alphanumeric() || num_sep(s - 1)))
+            || overlap(&used, s, e)
+        {
+            continue;
+        }
+        if e < n && c[e] == '%' {
+            mark(&mut used, s, e + 1);
+            continue;
+        }
+        if let Some((end, code)) = currency_after(c, e) {
+            exts.push(Ext {
+                start: s,
+                end,
+                text: t.slice(s, end),
+                val: Val::F(pyfloat(g0.as_str())?),
+                typ: Typ::Currency(Some(code)),
+            });
+            mark(&mut used, s, end);
         }
     }
 
@@ -1333,21 +1456,10 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 Err(_) => l.to_cardinal(val.i()),
             }
         }
-        Typ::Currency(sym) => {
-            let l = ctx.lang()?;
-            let code = match sym {
-                '$' => "USD",
-                '€' => "EUR",
-                '£' => "GBP",
-                '¥' => "JPY",
-                _ => "USD",
-            };
-            match currency_conv(l, val.f(), code) {
-                Ok(s) => Ok(s),
-                Err(e) if is_bail(&e) => Err(e),
-                // Python: fall back to the plain cardinal (float path).
-                Err(_) => cardinal_float(l, val.f()),
-            }
+        Typ::Currency(code) => {
+            // `convert` leaves the token as written when this fails (#230).
+            let code = code.ok_or_else(|| N2WError::Value("unknown currency".into()))?;
+            currency_conv(ctx.lang()?, val.f(), code)
         }
         Typ::Number => {
             let (neg, num) = split_sign(val)?;
@@ -1593,7 +1705,17 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
     // Replace from end to beginning to preserve positions.
     let mut result: Vec<char> = text.chars().collect();
     for e in exts.iter().rev() {
-        let mut converted = convert_number(&ctx, &e.val, &e.typ)?;
+        let mut converted = match &e.typ {
+            // An amount the language cannot name (no word for the code, or
+            // an unknown symbol) is left as written: the bare number would
+            // drop the unit, and £ and ¥ would read the same (#230).
+            Typ::Currency(_) => match convert_inner(&ctx, &e.val, &e.typ) {
+                Ok(s) => s,
+                Err(err) if is_bail(&err) => return Err(err),
+                Err(_) => continue,
+            },
+            _ => convert_number(&ctx, &e.val, &e.typ)?,
+        };
 
         // Brazilian Portuguese: a US-style '.' decimal in the token is
         // pronounced "ponto", not the default "vírgula". Pure Python reaches

@@ -13,7 +13,7 @@ from num2words2 import num2words, num2words_sentence
     [
         ("3.50 dollars, Python 3.10", "en",
          "Three point five zero dollars, Python three point one zero"),
-        ("3,50 €", "fr", "Trois virgule cinq zéro €"),
+        ("3,50 m", "fr", "Trois virgule cinq zéro m"),
         ("Es kostet 3,50 Euro", "de", "Es kostet drei Komma fünf null Euro"),
         ("1,234.50 x", "en",
          "One thousand, two hundred and thirty-four point five zero x"),
@@ -168,4 +168,32 @@ def test_ranges_and_sequences(text, lang, expected):
     ],
 )
 def test_space_grouped_thousands(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #230: currency symbols ------------------------------------------------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        # No word for the code in this language: the token stays as written.
+        ("Pay £3.50 or ¥100.", "nb", "Pay £3.50 or ¥100."),
+        ("¥100 x", "ru", "¥100 x"),
+        ("€5", "ko", "€5"),
+        # Letter-prefixed dollars are their own currency, never glued.
+        ("Custa R$ 3,50", "pt_BR", "Custa três reais e cinquenta centavos"),
+        ("US$ 5", "en", "Five dollars, zero cents"),
+        ("Z$10", "en", "Z$10"),
+        ("x€5", "en", "x€5"),
+        # Symbol after the number; '%' has no word anywhere, so it is kept.
+        ("€5 or 5€, 50% or 2.5%", "en",
+         "Five euros, zero cents or five euros, zero cents, 50% or 2.5%"),
+        ("5€", "fr", "Cinq euros et zéro centime"),
+        ("5,50 € x", "de", "Fünf Euro und fünfzig Cent x"),
+        ("1 234,50 €", "fr",
+         "Mille deux cent trente-quatre euros et cinquante centimes"),
+        ("Test 5 €₹¥", "en", "Test five €₹¥"),
+    ],
+)
+def test_currency_symbols(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
