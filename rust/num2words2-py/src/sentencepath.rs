@@ -51,11 +51,19 @@
 //! (`1.5`, `3.10.2024`, `Version 2.10`) is left as written: German writes
 //! decimals with a comma, so `1.5` has no standard reading, and the ordinal
 //! pass used to turn it into "Erste5".
+//!
+//! Also deliberate (#234): a plain or grouped number is read from its digits
+//! as written, like `num2words("3.50")` — the integer path when whole, the
+//! `Decimal` path otherwise — instead of through a Python float, which
+//! dropped trailing zeros ("3.50" -> "three point five", "3.10" -> "three
+//! point one").
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use bigdecimal::num_traits::FromPrimitive;
+use std::str::FromStr;
+
+use bigdecimal::BigDecimal;
 use num2words2_core::base::Lang;
 use num2words2_core::strnum::{is_space_group_sep, number_notation, parse_grouped, Grouped};
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
@@ -401,6 +409,10 @@ impl<'a> Text<'a> {
 enum Val {
     F(f64),
     I(BigInt),
+    /// A number as written, canonicalised to ASCII (`-5`, `3.50`): read
+    /// through the integer path when whole, else as a `Decimal`, so the
+    /// digits are kept as written (#234).
+    D(String),
 }
 
 enum Typ {
@@ -681,11 +693,15 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                     Some(c) if !overlap(&used, k - 1, i) => (k - 1, Typ::Currency(c)),
                     _ => (i, Typ::Number),
                 };
+                let val = match typ {
+                    Typ::Currency(_) => Val::F(pyfloat(&canonical)?),
+                    _ => Val::D(canonical),
+                };
                 exts.push(Ext {
                     start: s,
                     end: e,
                     text: t.slice(s, e),
-                    val: Val::F(pyfloat(&canonical)?),
+                    val,
                     typ,
                 });
                 mark(&mut used, s, e);
@@ -923,12 +939,11 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     for (s, e) in plain_number_spans(&t.chars) {
         if !overlap(&used, s, e) {
             let text = t.slice(s, e);
-            let v = pyfloat(&text)?;
             exts.push(Ext {
                 start: s,
                 end: e,
+                val: Val::D(text.replace(',', ".")),
                 text,
-                val: Val::F(v),
                 typ: Typ::Number,
             });
             mark(&mut used, s, e);
@@ -1006,6 +1021,7 @@ impl Val {
     fn f(&self) -> f64 {
         match self {
             Val::F(v) => *v,
+            Val::D(s) => s.parse().unwrap_or(0.0),
             Val::I(_) => 0.0, // unreachable by construction
         }
     }
@@ -1013,7 +1029,7 @@ impl Val {
     fn i(&self) -> &BigInt {
         match self {
             Val::I(n) => n,
-            Val::F(_) => unreachable_bigint(), // unreachable by construction
+            _ => unreachable_bigint(), // unreachable by construction
         }
     }
 }
@@ -1028,6 +1044,19 @@ fn unreachable_bigint() -> &'static BigInt {
 fn cardinal_float(l: &(dyn Lang + Sync), v: f64) -> Result<String, N2WError> {
     let (_, prec) = py_float_repr(v)?;
     l.cardinal_float_entry(&FloatValue::Float { value: v, precision: prec }, None)
+}
+
+/// `num2words("3.50", lang=...)`: a whole number takes the integer path, a
+/// decimal the `Decimal` path, which keeps its digits as written ("three
+/// point five zero", #234). `s` is canonical ASCII (`-?\d+(\.\d+)?`).
+fn cardinal_str(l: &(dyn Lang + Sync), s: &str) -> Result<String, N2WError> {
+    if !s.contains('.') {
+        return l.to_cardinal(&pyint(s)?);
+    }
+    let value = BigDecimal::from_str(s)
+        .map_err(|_| N2WError::Fallback("sentence: decimal parse".into()))?;
+    let precision = value.as_bigint_and_exponent().1.unsigned_abs() as u32;
+    l.cardinal_float_entry(&FloatValue::Decimal { value, precision }, None)
 }
 
 /// `num2words(v, to="ordinal", lang=...)` with a float.
@@ -1055,6 +1084,7 @@ fn fallback_en(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
     match val {
         Val::I(n) => ctx.en.to_cardinal(n),
         Val::F(v) => cardinal_float(ctx.en, *v),
+        Val::D(s) => cardinal_str(ctx.en, s),
     }
 }
 
@@ -1064,6 +1094,7 @@ fn cardinal_own(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
     match val {
         Val::I(n) => l.to_cardinal(n),
         Val::F(v) => cardinal_float(l, *v),
+        Val::D(s) => cardinal_str(l, s),
     }
 }
 
@@ -1188,6 +1219,10 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             }
         }
         Typ::Number => {
+            let num = match val {
+                Val::D(s) => s.as_str(),
+                _ => return Err(N2WError::Fallback("sentence: number value".into())),
+            };
             let v = val.f();
             let l = ctx.lang()?;
             if v < 0.0 {
@@ -1199,10 +1234,8 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                     cardinal_float(l, v.abs())?
                 };
                 Ok(format!("{} {}", negative_word(ctx.raw), w))
-            } else if v == v.trunc() {
-                let n = BigInt::from_f64(v).ok_or_else(|| {
-                    N2WError::Overflow("cannot convert float infinity to integer".into())
-                })?;
+            } else if !num.contains('.') {
+                let n = pyint(num)?;
                 if ctx.ord_mode {
                     l.to_ordinal(&n)
                 } else {
@@ -1211,7 +1244,7 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             } else if ctx.ord_mode {
                 ordinal_float(l, v)
             } else {
-                cardinal_float(l, v)
+                cardinal_str(l, num)
             }
         }
     }
