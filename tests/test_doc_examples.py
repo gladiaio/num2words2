@@ -25,11 +25,16 @@ Collected from README.rst, README_num2words2.md, REFERENCE.md and the CLI
   in a fenced python block; ``print(expr)  # output`` compares ``str()``;
 * ``$ num2words2 ARGS`` followed by the printed lines (shell blocks).
 
+An output comment naming a built-in exception (``# ValueError`` or
+``# ValueError: message``) expects the call to raise it; the message, when
+given, must be the start of ``str(exc)``.
+
 A block preceded by a ``<!-- doc-examples: skip -->`` (Markdown) or
 ``.. doc-examples: skip`` (reST) comment is not checked.
 """
 
 import ast
+import builtins
 import io
 import os
 import re
@@ -57,6 +62,7 @@ FENCE = re.compile(r"^\s*```(\w*)\s*$")
 CLI = re.compile(r"^\s*\$ num2words2 (.+)$")
 EPILOG_CLI = re.compile(r"^\s*num2words2 (.+)$")
 CALL = re.compile(r"[A-Za-z_]\w*\(")
+RAISES = re.compile(r"^([A-Z]\w*(?:Error|Exception))(?::\s*(.*))?$")
 
 
 def _split_comment(line):
@@ -191,6 +197,13 @@ def test_doc_example(kind, code, comment):
         )
         if comment:
             assert result.stdout.strip() == comment
+        return
+    raises = RAISES.match(comment)
+    if raises and isinstance(getattr(builtins, raises.group(1), None), type):
+        with pytest.raises(getattr(builtins, raises.group(1))) as info:
+            eval(code, dict(NAMESPACE, num2words2=num2words2))
+        if raises.group(2):
+            assert str(info.value).startswith(raises.group(2))
         return
     value = eval(code, dict(NAMESPACE, num2words2=num2words2))
     if kind == "print":
