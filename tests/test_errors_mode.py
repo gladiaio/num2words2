@@ -5,8 +5,8 @@ import pytest
 
 from num2words2 import num2words, num2words_sentence
 
-
 # --- num2words(): errors="raise" by default ---------------------------------
+
 
 def test_mixed_text_still_converts():
     # #83: text with numbers goes through the sentence converter.

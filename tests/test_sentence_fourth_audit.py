@@ -5,8 +5,8 @@ import pytest
 
 from num2words2 import num2words, num2words_sentence
 
-
 # --- #234 / #194: decimals keep their digits as written -------------------
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
