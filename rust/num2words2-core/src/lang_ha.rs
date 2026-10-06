@@ -110,13 +110,12 @@
 //! recursion as the integer path, but the leaf lookups `ONES`/`TEENS`/`TENS`
 //! are plain dicts with integer keys. A `Decimal` that equals an integer
 //! (`Decimal("5") == 5`, same hash) resolves and yields the ordinary cardinal;
-//! a **fractional** `Decimal` reaches one of those dicts with a non-integer key
-//! and raises `KeyError`. Every `cardinal_dec` corpus row is fractional, so all
-//! five raise `KeyError` (e.g. `98746251323029.99` bottoms out at
-//! `ONES[Decimal('9.99')]`). Reproduced as [`N2WError::Key`]: the fraction
-//! always propagates down to a leaf, so a non-integral positive Decimal is
-//! *always* a `KeyError` before any string is built — raising immediately is
-//! observably identical.
+//! in Python a **fractional** `Decimal` — and so every numeric string such as
+//! "1.5" — reached one of those dicts with a non-integer key and raised
+//! `KeyError`. Fixed (gladiaio/num2words2#156): a fractional Decimal now reads
+//! like the float, the fractional digits worded as one integer
+//! ("ɗaya wajen biyar"), taken exactly from the Decimal with trailing zeros
+//! dropped so `Decimal("1.50")` agrees with `1.5`.
 //!
 //! **Currency fractional cents.** HA's `to_currency` builds a `Decimal` minor
 //! unit and calls `to_cardinal(float(minor_units))` → `float_to_words`. The
@@ -129,7 +128,7 @@
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -421,8 +420,8 @@ impl LangHa {
     /// and calls `_int_to_hausa(Decimal)`. An integral Decimal resolves through
     /// the integer-keyed `ONES`/`TEENS`/`TENS` dicts (Python hashes
     /// `Decimal("5")` like `5`) and yields the ordinary cardinal; a fractional
-    /// Decimal reaches a leaf lookup with a non-integer key → `KeyError`. See
-    /// the module docs for why the fraction always reaches a leaf.
+    /// Decimal reached a leaf lookup with a non-integer key → `KeyError`; it
+    /// now reads like `float_to_words` (module docs, #156).
     fn cardinal_decimal(&self, value: &BigDecimal) -> Result<String> {
         if value.is_zero() {
             return Ok(ONES[0].to_string());
@@ -442,7 +441,22 @@ impl LangHa {
         if (value - truncated.clone()).is_zero() {
             Ok(self.int_to_hausa(&truncated.as_bigint_and_exponent().0))
         } else {
-            Err(N2WError::Key(format!("{}", value)))
+            // `float_to_words`' shape: the fractional digits as one integer.
+            let precision = value.as_bigint_and_exponent().1.max(0) as u32;
+            let (pre, mut post) = float2tuple(&FloatValue::Decimal {
+                value: value.clone(),
+                precision,
+            });
+            let ten = BigInt::from(10);
+            while !post.is_zero() && (&post % &ten).is_zero() {
+                post /= &ten;
+            }
+            Ok(format!(
+                "{} {} {}",
+                self.to_cardinal(&pre)?,
+                self.pointword(),
+                self.to_cardinal(&post)?
+            ))
         }
     }
 }
@@ -887,18 +901,23 @@ mod float_tests {
         assert_eq!(f(1.0, 1), "ɗaya");
     }
 
-    /// Every `"to": "cardinal_dec"` corpus row for `ha` — Decimal input. HA
-    /// funnels a Decimal into `_int_to_hausa`, whose integer-keyed dict lookups
-    /// raise `KeyError` on the fractional part. All five are fractional.
+    /// Every `"to": "cardinal_dec"` corpus row for `ha` — Decimal input.
+    /// Python raised `KeyError` for all five (fractional Decimal into the
+    /// integer-keyed dicts); since #156 they read like a float, from the exact
+    /// digits (so without the f64 artefacts of the float arm).
     #[test]
     fn corpus_cardinal_dec() {
-        for s in ["0.01", "1.10", "12.345", "98746251323029.99", "0.001"] {
+        let rows = [
+            ("0.01", "sifiri wajen ɗaya"),
+            ("1.10", "ɗaya wajen ɗaya"),
+            ("12.345", "sha biyu wajen ɗari uku arba'in da biyar"),
+            ("0.001", "sifiri wajen ɗaya"),
+        ];
+        for (s, want) in rows {
             let prec = s.split_once('.').map_or(0, |(_, frac)| frac.len() as u32);
-            match d(s, prec) {
-                Err(N2WError::Key(_)) => {}
-                other => panic!("Decimal {s} → {other:?}, expected KeyError"),
-            }
+            assert_eq!(d(s, prec).unwrap(), want, "Decimal {s}");
         }
+        assert!(d("98746251323029.99", 2).unwrap().ends_with(" wajen casa'in da tara"));
     }
 
     /// An integral Decimal is not a `KeyError`: its dict keys resolve like the

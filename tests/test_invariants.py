@@ -130,13 +130,13 @@ NATIVE_ENGLISH_LOOKALIKES = set()
 ALLOW = {
     # gladiaio/num2words2#157, #158, #155
     "exceptions": {
-        "az", "bg", "ce", "cy", "dv", "fa", "ha", "hy", "lij", "rm",
-        "rm_puter", "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader",
-        "sn", "sr_Latn", "vi",
+        "az", "bg", "ce", "cy", "dv", "fa", "hy", "lij", "rm", "rm_puter",
+        "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader", "sn",
+        "sr_Latn", "vi",
     },
     # gladiaio/num2words2#160
     "hygiene": {
-        "ar", "ca", "cy", "da", "dk", "dv", "es", "es_CO", "es_CR", "es_GT",
+        "ar", "ca", "da", "dk", "dv", "es", "es_CO", "es_CR", "es_GT",
         "es_HN", "es_NI", "es_VE", "fa", "fi", "ha", "hi", "hu", "hy", "is",
         "nl", "pt", "pt_BR", "sq", "sv", "te", "tr", "uz_Cyrl", "uz_cyr",
     },
@@ -148,8 +148,8 @@ ALLOW = {
     },
     # gladiaio/num2words2#156 (pt_BR differs on purpose, see #92)
     "parity": {
-        "bg", "bn", "ce", "cy", "dv", "et", "ha", "pt_BR", "rm", "rm_puter",
-        "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader", "sn", "vi",
+        "dv", "pt_BR", "rm", "rm_puter", "rm_surmiran", "rm_sursilv",
+        "rm_sutsilv", "rm_vallader", "vi",
     },
     "maxval": set(),
 }

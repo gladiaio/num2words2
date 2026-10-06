@@ -102,8 +102,12 @@
 //! CY's `isinstance(number, float)` guard fires for **every** float, whole
 //! values included: `to_cardinal(1.0)` is "un pwynt dim", never "un". So
 //! [`Lang::cardinal_float_entry`] is overridden to skip the base default's
-//! whole-value shortcut entirely — floats always take [`LangCy::float_to_words`],
-//! Decimals always take the integer branch ([`LangCy::decimal_to_cardinal`]).
+//! whole-value shortcut entirely — floats always take [`LangCy::float_to_words`].
+//! Python sent every Decimal (and so every numeric string) down the integer
+//! branch, which floored the fraction away: `"1.5"` was "un" and `"0.1"` was
+//! "" (gladiaio/num2words2#156). A fractional Decimal now reads like a float
+//! from its exact digits ([`LangCy::decimal_to_words`]); a whole one keeps the
+//! integer branch ([`LangCy::decimal_to_cardinal`]).
 //! `to_year` is Base's `to_cardinal(value)`, so the default
 //! `year_float_entry` (→ `cardinal_float_entry`) is already right.
 //!
@@ -259,9 +263,11 @@
 //!   because Base looks `CURRENCY_FORMS` up before it touches `negword`.
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, pow10_big, strictly_negative, Kwargs, KwVal, Lang, N2WError, Result,
+};
 use crate::currency::{CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
@@ -1078,6 +1084,26 @@ impl LangCy {
         }
     }
 
+    /// `float_to_words` for a fractional `Decimal`, from its exact digits
+    /// (#156): the truncated integer part, " pwynt ", then one cardinal per
+    /// fractional digit, "meinws " in front of a negative.
+    fn decimal_to_words(&self, value: &FloatValue) -> Result<String> {
+        let (pre, post) = float2tuple(value);
+        let prefix = self.to_cardinal_full(&pre.abs(), false, "masc", false)?;
+        let digits = format!("{:0>width$}", post, width = value.precision() as usize);
+        let mut parts: Vec<String> = Vec::new();
+        for c in digits.chars() {
+            let d = c.to_digit(10).expect("float2tuple yields decimal digits");
+            parts.push(self.to_cardinal_full(&BigInt::from(d), false, "masc", false)?);
+        }
+        let result = format!("{} pwynt {}", prefix, parts.join(" "));
+        if strictly_negative(value) {
+            Ok(format!("meinws {}", result))
+        } else {
+            Ok(result)
+        }
+    }
+
     /// Python's `Num2Word_CY.to_cardinal(<Decimal>)`.
     ///
     /// A `Decimal` is **not** a `float`, so the `isinstance(number, float)`
@@ -1268,6 +1294,8 @@ impl Lang for LangCy {
     ) -> Result<String> {
         match value {
             FloatValue::Float { value, precision } => self.float_to_words(*value, *precision),
+            // Python floored a fractional Decimal away (#156).
+            FloatValue::Decimal { value: d, .. } if !d.is_integer() => self.decimal_to_words(value),
             FloatValue::Decimal { value, .. } => self.decimal_to_cardinal(value, false),
         }
     }

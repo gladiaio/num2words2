@@ -98,14 +98,17 @@
 //! `to_ordinal_num` on a negative raises `TypeError` → [`N2WError::Type`],
 //! carrying `Num2Word_Base.errmsg_negord` verbatim. The `KeyError` paths
 //! ([`N2WError::Key`]) model Python's dict lookups faithfully. Under the
-//! default `clazz`/`case` they are unreachable from *integer* input, but the
-//! Decimal arm of the float path reaches them constantly — every `cardinal_dec`
-//! row in the corpus is a `KeyError` (see [`LangCe::cardinal_decimal`]).
+//! default `clazz`/`case` they are unreachable from *integer* input. Python's
+//! Decimal arm reached them constantly — every fractional `Decimal` (and so
+//! every numeric string like "1.5") was a `KeyError`, since a Decimal skips
+//! the float branch (see [`LangCe::cardinal_decimal`]). Fixed
+//! (gladiaio/num2words2#156): a fractional Decimal now reads like the float,
+//! from its exact digits ([`LangCe::cardinal_decimal_fraction`]).
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, Kwargs, KwVal, Lang, N2WError, Result};
+use crate::base::{check_maxval, strictly_negative, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
-use crate::floatpath::FloatValue;
+use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
@@ -956,6 +959,25 @@ impl LangCe {
         Ok(result)
     }
 
+    /// The float branch's reading for a *fractional* `Decimal` (#156): Python
+    /// sent it into the integer branches, where it died with `KeyError`.
+    /// Same shape as [`LangCe::cardinal_float`], with the digits taken
+    /// exactly from the Decimal instead of a float repr.
+    fn cardinal_decimal_fraction(&self, value: &FloatValue) -> Result<String> {
+        let (pre, post) = float2tuple(value);
+        let entires = self.cardinal(&pre.abs(), DEFAULT_CLAZZ, "abs")?;
+        let mut postfix: Vec<String> = Vec::new();
+        for c in format!("{:0>w$}", post, w = value.precision() as usize).chars() {
+            let digit = c.to_digit(10).expect("float2tuple yields decimal digits");
+            postfix.push(self.cardinal(&BigInt::from(digit), DEFAULT_CLAZZ, "abs")?);
+        }
+        let result = format!("{} {} {}", entires, DECIMALPOINT, postfix.join(" "));
+        if strictly_negative(value) {
+            return Ok(format!("{} {}", NEGWORD, result));
+        }
+        Ok(result)
+    }
+
     /// `Num2Word_CE.to_cardinal` reached with a `Decimal`.
     ///
     /// There is no Decimal branch. `isinstance(number, float)` is False for a
@@ -1201,7 +1223,11 @@ impl Lang for LangCe {
             // from `str(abs_number)`, not from `float2tuple`.
             FloatValue::Float { value, .. } => self.cardinal_float(*value),
             // A Decimal fails `isinstance(number, float)` and falls through into
-            // the integer branches, running on Decimal arithmetic.
+            // the integer branches, running on Decimal arithmetic — which
+            // KeyErrors on a fraction, so that reads like a float (#156).
+            FloatValue::Decimal { value: d, .. } if !d.is_integer() => {
+                self.cardinal_decimal_fraction(value)
+            }
             FloatValue::Decimal { value, .. } => self.cardinal_decimal(value, DEFAULT_CLAZZ, "abs"),
         }
     }
@@ -1818,36 +1844,35 @@ mod tests {
     #[test]
     fn decimal_arm_matches_python() {
         let cases: &[(&str, E)] = &[
-        ("0.01", Raises("KeyError: Decimal('0.01')")),
-        ("1.10", Raises("KeyError: Decimal('1.10')")),
-        ("12.345", Raises("KeyError: Decimal('12.345')")),
-        ("98746251323029.99", Raises("KeyError: Decimal('9.99')")),
-        ("0.001", Raises("KeyError: Decimal('0.001')")),
+        ("0.01", Words("ноль а ноль цхьаъ")),
+        ("1.10", Words("цхьаъ а цхьаъ ноль")),
+        ("12.345", Words("шийтта а кхоъ диъ пхиъ")),
+        ("98746251323029.99", Words("дезткъе берхӀитта биллион ворхӀ бӀе шовзткъе ялх миллиард ши бӀе шовзткъе цхьайтта миллион кхо бӀе ткъе кхо эзар ткъе исс а исс исс")),
+        ("0.001", Words("ноль а ноль ноль цхьаъ")),
         ("5", Words("пхиъ")),
-        ("-12.34", Raises("KeyError: Decimal('12.34')")),
+        ("-12.34", Words("минус шийтта а кхоъ диъ")),
         ("80.00", Words("дезткъа")),
-        ("0.0000001", Raises("KeyError: Decimal('1E-7')")),
-        ("5.5", Raises("KeyError: Decimal('5.5')")),
-        ("20.5", Raises("KeyError: Decimal('0.5')")),
+        ("0.0000001", Words("ноль а ноль ноль ноль ноль ноль ноль цхьаъ")),
+        ("5.5", Words("пхиъ а пхиъ")),
+        ("20.5", Words("ткъа а пхиъ")),
         ("1E+2", Words("бӀе")),
-        ("323029.99", Raises("KeyError: Decimal('9.99')")),
-        ("29.99", Raises("KeyError: Decimal('9.99')")),
+        ("323029.99", Words("кхо бӀе ткъе кхо эзар ткъе исс а исс исс")),
+        ("29.99", Words("ткъе исс а исс исс")),
         ("-0.00", Words("ноль")),
         ("1e34", Raises("OverflowError: abs(1e+34) must be less than 10000000000000000000000000000000000.")),
         ("0", Words("ноль")),
-        ("19.999", Raises("KeyError: Decimal('19.999')")),
-        ("1000000.5", Raises("KeyError: Decimal('0.5')")),
-        ("999.5", Raises("KeyError: Decimal('19.5')")),
+        ("19.999", Words("ткъайесна а исс исс исс")),
+        ("1000000.5", Words("цхьа миллион а пхиъ")),
+        ("999.5", Words("исс бӀе дезткъе ткъайесна а пхиъ")),
         ];
         let l = LangCe::new();
         for (s, want) in cases {
             let value = BigDecimal::from_str(s).unwrap();
-            // `precision` is `abs(exponent)` on the Python side and unread here,
-            // exactly as in Python; the arm never consults it.
-            let v = FloatValue::Decimal {
-                value,
-                precision: 0,
-            };
+            // `precision` is `abs(exponent)`, as the binding passes it. Python
+            // KeyError'd on every fractional value; since #156 it reads like
+            // the float.
+            let precision = value.as_bigint_and_exponent().1.max(0) as u32;
+            let v = FloatValue::Decimal { value, precision };
             let got = show(l.to_cardinal_float(&v, None));
             assert_eq!(got, want.want(), "Decimal({:?})", s);
         }

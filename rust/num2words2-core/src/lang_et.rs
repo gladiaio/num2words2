@@ -609,73 +609,66 @@ impl Lang for LangEt {
     /// padding loop reads it, clobbering any override the `num2words` wrapper
     /// set — issue #580 has no effect on ET's float path.
     ///
-    /// A **`Decimal`** never enters the float branch in Python, because
-    /// `isinstance(n, float)` is False for `Decimal`, so `to_cardinal` falls
-    /// straight through to `_int_to_cardinal(int(n))`: it truncates toward zero
-    /// and drops the fraction entirely. Hence `Decimal("12.345")` ==
-    /// "kaksteist" and `Decimal("0.01")` == "null" (both corpus rows).
+    /// A **`Decimal`** never entered the float branch in Python, because
+    /// `isinstance(n, float)` is False for `Decimal`: `to_cardinal` truncated
+    /// it, so `Decimal("12.345")` (and the string "12.345") was "kaksteist"
+    /// (gladiaio/num2words2#156). A fractional Decimal now takes the same
+    /// branch as a float, fed from `float2tuple`'s exact Decimal arm.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
         // Ignored on purpose — see the doc above.
         _precision_override: Option<u32>,
     ) -> Result<String> {
-        match value {
-            FloatValue::Decimal { value: dec, .. } => {
-                // `_int_to_cardinal(int(Decimal))` — `with_scale(0)` truncates
-                // toward zero, exactly as Python's `int(Decimal)` does.
-                let pre = dec.with_scale(0).as_bigint_and_exponent().0;
-                Ok(self.int_to_cardinal(&pre))
-            }
-            FloatValue::Float { value: f, precision } => {
-                // Python only takes the fractional branch when `n != int(n)`;
-                // an integer-valued float drops to `_int_to_cardinal(int(n))`.
-                // `float2tuple` yields `pre == int(n)` there (and `post == 0`),
-                // reusing its `f64 -> i128` conversion.
-                let (pre, post) = float2tuple(value);
-                if *f == f.trunc() {
-                    return Ok(self.int_to_cardinal(&pre));
-                }
+        // Python only takes the fractional branch when `n != int(n)`; an
+        // integer-valued value drops to `_int_to_cardinal(int(n))`.
+        // `float2tuple` yields `pre == int(n)` there (and `post == 0`).
+        let (pre, post) = float2tuple(value);
+        let whole = match value {
+            FloatValue::Float { value: f, .. } => *f == f.trunc(),
+            FloatValue::Decimal { value: d, .. } => d.is_integer(),
+        };
+        if whole {
+            return Ok(self.int_to_cardinal(&pre));
+        }
 
-                let precision = *precision as usize;
-                let mut pre = pre;
-                let mut result = String::new();
+        let precision = value.precision() as usize;
+        let mut pre = pre;
+        let mut result = String::new();
 
-                // `if n < 0: result = self.negword; pre = abs(pre)`.
-                if *f < 0.0 {
-                    result.push_str(NEGWORD);
-                    pre = pre.abs();
-                }
-                result.push_str(&self.int_to_cardinal(&pre));
+        // `if n < 0: result = self.negword; pre = abs(pre)`.
+        if strictly_negative(value) {
+            result.push_str(NEGWORD);
+            pre = pre.abs();
+        }
+        result.push_str(&self.int_to_cardinal(&pre));
 
-                if precision > 0 {
-                    // `result += " " + self.pointword` (raw, no title).
-                    result.push(' ');
-                    result.push_str(self.pointword());
+        if precision > 0 {
+            // `result += " " + self.pointword` (raw, no title).
+            result.push(' ');
+            result.push_str(self.pointword());
 
-                    // `post_str = "0"*(precision-len) + post_str`. A negative
-                    // repeat count is "" in Python, so an over-long post is
-                    // spoken in full rather than truncated.
-                    let post_str = post.to_string();
-                    let pad = precision.saturating_sub(post_str.len());
-                    let padded = format!("{}{}", "0".repeat(pad), post_str);
+            // `post_str = "0"*(precision-len) + post_str`. A negative
+            // repeat count is "" in Python, so an over-long post is
+            // spoken in full rather than truncated.
+            let post_str = post.to_string();
+            let pad = precision.saturating_sub(post_str.len());
+            let padded = format!("{}{}", "0".repeat(pad), post_str);
 
-                    // `for digit in post_str: result += " " + self.ones[int(digit)]`.
-                    // `self.ones[0]` is the empty filler, so a `0` digit adds a
-                    // bare space — the source of the extra gaps above.
-                    for ch in padded.chars() {
-                        let d = ch.to_digit(10).ok_or_else(|| {
-                            N2WError::Value(format!("non-digit {:?} in fraction", ch))
-                        })? as usize;
-                        result.push(' ');
-                        result.push_str(ONES[d]);
-                    }
-                }
-
-                // `return result.strip()`.
-                Ok(result.trim().to_string())
+            // `for digit in post_str: result += " " + self.ones[int(digit)]`.
+            // `self.ones[0]` is the empty filler, so a `0` digit adds a
+            // bare space — the source of the extra gaps above.
+            for ch in padded.chars() {
+                let d = ch.to_digit(10).ok_or_else(|| {
+                    N2WError::Value(format!("non-digit {:?} in fraction", ch))
+                })? as usize;
+                result.push(' ');
+                result.push_str(ONES[d]);
             }
         }
+
+        // `return result.strip()`.
+        Ok(result.trim().to_string())
     }
 
     /// `to_ordinal(float/Decimal)`. Python:
