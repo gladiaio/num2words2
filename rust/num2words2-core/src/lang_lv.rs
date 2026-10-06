@@ -662,7 +662,11 @@ impl Lang for LangLv {
             "0".repeat(precision.saturating_sub(post_str.len())),
             post_str
         );
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
 
         let mut decimal_part = String::new();
         for _ in 0..leading_zero_count {
@@ -688,9 +692,9 @@ impl Lang for LangLv {
     ///
     /// * a **visible point** (any finite float below 1e16, or a Decimal with
     ///   positive scale) takes the fractional branch even for whole values —
-    ///   `5.0` -> "pieci komats nulle nulle" (one "nulle" per leading zero of
-    ///   the fractional string plus `_int2word(0)`), `Decimal("5.00")` ->
-    ///   three "nulle".
+    ///   `5.0` -> "pieci komats nulle" (one "nulle" per
+    ///   fractional digit written; Python added one more, #237),
+    ///   `Decimal("5.00")` -> two "nulle".
     /// * **no point** funnels the whole string into `int(n)`: plain digit
     ///   Decimals reach the integer path, while exponent forms (`str(1e16) ==
     ///   "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and inf/nan raise

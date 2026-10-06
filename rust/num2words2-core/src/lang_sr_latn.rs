@@ -436,9 +436,10 @@ fn int2word(number: &BigInt, feminine: bool) -> Result<String> {
 /// ```
 ///
 /// The fraction is one whole number, not a digit sequence (`2.675` reads
-/// "675"), and every leading fraction zero becomes a "нула" word — `right ==
-/// "0"` (from `1.0`) counts as one leading zero *and* `int("0") == 0`, hence
-/// the doubled "нула нула"; `Decimal("5.00")`'s `right == "00"` triples it.
+/// "675"), and every leading fraction zero becomes a "нула" word. An
+/// all-zero `right` reads one "нула" per digit written (Python counted
+/// `"0"` from `1.0` as a leading zero *and* `int("0")`, doubling it; fixed,
+/// gladiaio/num2words2#237).
 /// The `else` arm is where exponent-form strings die: `int("1e+16")` /
 /// `int("1E+2")` raise ValueError with Python's exact message (see
 /// [`parse_bigint`]).
@@ -454,7 +455,11 @@ fn cardinal_float_str(value: &FloatValue, feminine: bool) -> Result<String> {
     } {
         let is_negative = n.starts_with('-');
         // leading_zero_count = len(right) - len(right.lstrip("0"))
-        let leading = right.chars().take_while(|&c| c == '0').count();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading = right.chars().take_while(|&c| c == '0').count()
+            .min(right.len().saturating_sub(1));
         let left_int = parse_bigint(&left)?;
         let right_int = parse_bigint(&right)?;
 
@@ -789,9 +794,9 @@ impl Lang for LangSrLatn {
     /// `to_cardinal(float/Decimal)` — the FULL entry, whole values included.
     ///
     /// SR branches on `"." in str(number)`, so a whole value with a visible
-    /// point still takes the float grammar: `5.0` -> "pet zapeta nula nula",
-    /// `Decimal("5.00")` -> "pet zapeta nula nula nula", `-0.0` -> "minus
-    /// nula zapeta nula nula". A pointless string falls to `int(n)`:
+    /// point still takes the float grammar: `5.0` -> "pet zapeta nula",
+    /// `Decimal("5.00")` -> "pet zapeta nula nula", `-0.0` -> "minus
+    /// nula zapeta nula". A pointless string falls to `int(n)`:
     /// `Decimal("5")` -> "pet", but `1e+16` / `Decimal("1E+2")` raise
     /// ValueError. The base default (whole -> int path) would get every one
     /// of those wrong, hence this override.

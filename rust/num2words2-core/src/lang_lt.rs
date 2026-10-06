@@ -735,7 +735,11 @@ impl Lang for LangLt {
             let left = &n[..dot];
             let right = &n[dot + 1..];
             // leading_zero_count = len(right) - len(right.lstrip("0"))
-            let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+            // The final int(right) word already says one zero, so an all-zero
+            // fraction gets len - 1 leading zeros: exactly the digits written
+            // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+            let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+                .min(right.len().saturating_sub(1));
             // decimal_part = (ZERO[0] + " ") * leading_zero_count
             //                + self._int2word(int(right))
             let decimal_part = format!(
@@ -762,9 +766,9 @@ impl Lang for LangLt {
     ///
     /// * a **visible point** (any finite float below 1e16, or a Decimal with
     ///   positive scale) takes the fractional branch even for whole values —
-    ///   `5.0` -> "penki kablelis nulis nulis" (one "nulis" per leading zero
-    ///   of the fractional string plus `_int2word(0)`), `Decimal("5.00")` ->
-    ///   three "nulis".
+    ///   `5.0` -> "penki kablelis nulis" (one "nulis" per
+    ///   fractional digit written; Python added one more, #237),
+    ///   `Decimal("5.00")` -> two "nulis".
     /// * **no point** funnels the whole string into `int(n)`: plain digit
     ///   Decimals reach the integer path, while exponent forms (`str(1e16) ==
     ///   "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and inf/nan raise
@@ -1365,9 +1369,9 @@ mod tests {
     fn cardinal_float_corpus_rows() {
         let lt = LangLt::new();
         let rows: Vec<(FloatValue, &str)> = vec![
-            (flt(0.0, 1), "nulis kablelis nulis nulis"),
+            (flt(0.0, 1), "nulis kablelis nulis"), // #237
             (flt(0.5, 1), "nulis kablelis penki"),
-            (flt(1.0, 1), "vienas kablelis nulis nulis"),
+            (flt(1.0, 1), "vienas kablelis nulis"),
             (flt(1.5, 1), "vienas kablelis penki"),
             (flt(2.25, 2), "du kablelis dvidešimt penki"),
             (flt(3.14, 2), "trys kablelis keturiolika"),
@@ -1421,10 +1425,11 @@ mod tests {
         let lt = LangLt::new();
         // str(Decimal("5")) == "5" -> no "." -> integer branch.
         assert_eq!(lt.to_cardinal_float(&dec("5", 0), None).unwrap(), "penki");
-        // str(Decimal("5.00")) == "5.00" -> right "00" -> two leading zeros + 0.
+        // str(Decimal("5.00")) == "5.00" -> right "00" -> one zero per digit
+        // written (#237: Python said three).
         assert_eq!(
             lt.to_cardinal_float(&dec("5.00", 2), None).unwrap(),
-            "penki kablelis nulis nulis nulis"
+            "penki kablelis nulis nulis"
         );
         // str(Decimal("1.100")) == "1.100" -> right "100" -> int("100") == 100.
         assert_eq!(
@@ -1462,11 +1467,11 @@ mod tests {
     fn cardinal_float_messy_reprs() {
         let lt = LangLt::new();
         let rows: Vec<(FloatValue, &str)> = vec![
-            (flt(10.0, 1), "dešimt kablelis nulis nulis"),
+            (flt(10.0, 1), "dešimt kablelis nulis"),
             (flt(0.25, 2), "nulis kablelis dvidešimt penki"),
             (flt(123.456, 3), "vienas šimtas dvidešimt trys kablelis keturi šimtai penkiasdešimt šeši"),
             (flt(1000000.001, 3), "vienas milijonas kablelis nulis nulis vienas"),
-            (flt(3.0, 1), "trys kablelis nulis nulis"),
+            (flt(3.0, 1), "trys kablelis nulis"),
             (flt(0.0001, 4), "nulis kablelis nulis nulis nulis vienas"),
             (flt(-0.01, 2), "minus nulis kablelis nulis vienas"),
             // 0.1 + 0.2 == 0.30000000000000004 in IEEE-754 (precision 17).

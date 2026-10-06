@@ -567,6 +567,10 @@ pub trait Lang {
         false
     }
 
+    /// No longer called: the dispatcher reads every negative zero as zero,
+    /// without "minus" (gladiaio/num2words2#237). Kept so the existing
+    /// overrides still compile.
+    ///
     /// Render `Decimal('-0.0')` for mode `to`, which BigDecimal cannot
     /// represent (it has no signed zero). `None` — the default — means the
     /// value coincides with float `-0.0`, so the binding's `Float{-0.0}`

@@ -35,7 +35,7 @@
 //! story, and it differs from Base semantics in every direction at once:
 //!
 //!   * A **whole float keeps its ".0" tail**: `str(5.0)` is "5.0", so
-//!     `to_cardinal(5.0)` is "pet zarez nula nula" (the "0" fractional digit
+//!     `to_cardinal(5.0)` is "pet zarez nula" (the "0" fractional digit
 //!     is counted both as a leading zero and by `_int2word(0)` — see
 //!     [`LangHr::cardinal_float_textual`]), never Base's whole-value "pet".
 //!     [`Lang::cardinal_float_entry`] is therefore overridden to send *every*
@@ -49,7 +49,7 @@
 //!     facto float ceiling, and it is a *ValueError*, unlike the int path's
 //!     10^33 `OverflowError`.
 //!   * `str(-0.0)` is "-0.0", so **negative zero renders the negword**:
-//!     "minus nula zarez nula nula" (corpus-pinned for float and Decimal
+//!     "minus nula zarez nula" (corpus-pinned for float and Decimal
 //!     alike; the binding smuggles `Decimal("-0.0")` in as an f64 `-0.0`
 //!     because `BigDecimal` cannot carry the sign of zero).
 //!
@@ -847,14 +847,15 @@ impl LangHr {
     ///   `1.10` → "jedan zarez deset" (not "... jedan nula"), `2.675` → "dva
     ///   zarez šesto sedamdeset pet" (no `674.999…` binary-residue rescue is
     ///   ever needed — the repr string carries "675" directly).
-    /// * A `"0"` fractional digit is counted **both** as a leading zero and by
-    ///   `int2word(0)`, so `1.0` → "jedan zarez nula nula" and
-    ///   `Decimal("10.00")` → "deset zarez nula nula nula".
+    /// * An all-zero fraction reads one "nula" per digit written, so `1.0` →
+    ///   "jedan zarez nula" and `Decimal("10.00")` → "deset zarez nula nula"
+    ///   (Python counted a `"0"` both as a leading zero and by `int2word(0)`,
+    ///   adding one; fixed, gladiaio/num2words2#237).
     ///
     /// `str(number)` is reconstructed per variant:
     /// * `Float` → [`python_repr_f64`], exact — including the exponent form
     ///   ("1e+16") whose `int()` failure is HR's float ceiling, and "-0.0"
-    ///   whose sign survives into "minus nula zarez nula nula". One carve-out:
+    ///   whose sign survives into "minus nula zarez nula". One carve-out:
     ///   the shim smuggles a *Decimal* negative zero in as f64 `-0.0` (the
     ///   sign of zero doesn't fit a `BigDecimal`), so a zero whose `precision`
     ///   isn't repr's fixed 1 is re-expanded to the Decimal's own string
@@ -905,7 +906,11 @@ impl LangHr {
 
         // leading_zero_count = len(right) - len(right.lstrip("0"))
         // (byte counts are char counts: reprs are pure ASCII).
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
 
         // int(left), int(right) — a fractional token carrying an exponent
         // ("5e-05" from repr(1.5e-05)) raises ValueError, exactly as Python.
@@ -989,8 +994,8 @@ impl Lang for LangHr {
     ///
     /// HR's `to_cardinal` is textual over `str(number)`, so *every*
     /// float/Decimal takes the same branch: a visible "." means the decimal
-    /// grammar even for whole values (`5.0` → "pet zarez nula nula",
-    /// `Decimal("5.00")` → "pet zarez nula nula nula"), no "." means `int(n)`
+    /// grammar even for whole values (`5.0` → "pet zarez nula",
+    /// `Decimal("5.00")` → "pet zarez nula nula"), no "." means `int(n)`
     /// (`Decimal("5")` → "pet"; exponent forms "1e+16"/"1E+2" → ValueError).
     /// Base's whole-value shortcut never applies — see the module docs.
     fn cardinal_float_entry(
@@ -1037,7 +1042,7 @@ impl Lang for LangHr {
     // year_float_entry: HR does not override to_year, so a float year is
     // Base's `self.to_cardinal(value)` — the trait default already delegates
     // to `cardinal_float_entry`, picking up the override above (year 5.0 →
-    // "pet zarez nula nula", year 1e16 → ValueError; both corpus-pinned).
+    // "pet zarez nula", year 1e16 → ValueError; both corpus-pinned).
     //
     // ordinal_num_float_entry: Base's to_ordinal_num returns the value
     // unchanged and the dispatcher str()s it — the trait default echoes the

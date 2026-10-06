@@ -115,8 +115,10 @@
 //!    `to_cardinal(-(10**51))` sails past the overflow guard and then trips an
 //!    `assert` deep inside (see 4).
 //! 3. **`to_ordinal` never calls `validate_number`.** `to_ordinal(10**51)`
-//!    therefore raises `AssertionError` where `to_cardinal(10**51)` raises the
-//!    intended `OverflowError`.
+//!    therefore raised `AssertionError` where `to_cardinal(10**51)` raises the
+//!    intended `OverflowError`, after seconds of work for 10**10000. Fixed
+//!    (gladiaio/num2words2#237): [`to_ordinal_impl`] checks the ceiling up
+//!    front, so every ordinal mode raises `OverflowError` at `maxval('ar')`.
 //! 4. **Bare `assert`s guard the group tables**, so out-of-range groups raise
 //!    `AssertionError` rather than the commented-out `OverflowError` the
 //!    author intended (the dead `raise OverflowError` blocks are still in the
@@ -903,6 +905,8 @@ fn ar_py_num_str(value: &FloatValue) -> String {
 }
 
 fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<String> {
+    // The cardinal's ceiling, checked before any work (#237).
+    validate_number(number)?;
     let pick = |pair: &(&'static str, &'static str)| if feminine { pair.1 } else { pair.0 };
     let one = BigInt::from(1u8);
     let nineteen = BigInt::from(19u8);

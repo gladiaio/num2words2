@@ -1249,7 +1249,11 @@ impl LangUk {
 
         // leading_zero_count = len(right) - len(right.lstrip("0")); `right` is
         // all ASCII digits, so byte length equals char count.
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
         // int(right) — leading zeros are inert, "00" parses to 0.
         let right_int = parse_int(&right)?;
 
@@ -1408,7 +1412,7 @@ impl Lang for LangUk {
     ///
     /// `Num2Word_UK.to_cardinal` is *string-driven*: `n = str(number)`, then
     /// `"." in n` decides. A whole float still reprs with a point ("5.0"), so
-    /// it takes the float branch and renders "п'ять кома нуль нуль" — never
+    /// it takes the float branch and renders "п'ять кома нуль" — never
     /// the bare integer path the trait default would pick. Values whose
     /// `str()` carries no point (`Decimal("5")`, but also the exponent-form
     /// reprs "1e+16" / "1E+2") fall into `int(n)`, which raises `ValueError`
@@ -1471,7 +1475,7 @@ impl Lang for LangUk {
     // year_float_entry: `Num2Word_UK` inherits `Num2Word_Base.to_year`
     // (`return self.to_cardinal(value)`), and the trait default routes back
     // through `cardinal_float_entry` above — so "5.0" years also read
-    // "п'ять кома нуль нуль", exactly as Python's do.
+    // "п'ять кома нуль", exactly as Python's do.
 
     /// `converter.str_to_number` — Base's `Decimal(value)`. `Decimal("Infinity")`
     /// parses fine in Python; the failure happens *next*, inside UK's own
@@ -1779,9 +1783,9 @@ mod float_tests {
     fn corpus_floats() {
         // Every "lang":"uk","to":"cardinal" corpus row whose arg has a dot.
         // (value, precision) — precision is Python's repr fractional-digit count.
-        assert_eq!(card_float(0.0, 1), "нуль кома нуль нуль");
+        assert_eq!(card_float(0.0, 1), "нуль кома нуль"); // #237
         assert_eq!(card_float(0.5, 1), "нуль кома п'ять");
-        assert_eq!(card_float(1.0, 1), "один кома нуль нуль");
+        assert_eq!(card_float(1.0, 1), "один кома нуль"); // #237
         assert_eq!(card_float(1.5, 1), "один кома п'ять");
         assert_eq!(card_float(2.25, 2), "два кома двадцять п'ять");
         assert_eq!(card_float(3.14, 2), "три кома чотирнадцять");

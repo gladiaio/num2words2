@@ -15,8 +15,8 @@ use num2words2_core::base::{
 };
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
-    has_py_digit, number_notation, parse_grouped, python_decimal_str, python_int_parse,
-    Grouped, ParsedNumber,
+    has_py_digit, is_malformed_number, number_notation, parse_grouped, python_decimal_str,
+    python_int_parse, Grouped, ParsedNumber,
 };
 use num2words2_core::N2WError;
 use num2words2_core::{CurrencyValue, FloatValue};
@@ -312,25 +312,10 @@ fn float_value(value: f64, precision: u32, decimal_str: &str) -> Result<FloatVal
         Ok(FloatValue::Float { value, precision })
     } else {
         let d = BigDecimal::from_str(decimal_str).map_err(|e| N2WError::Value(e.to_string()))?;
-        use bigdecimal::num_traits::Zero;
-        // BigDecimal cannot carry Decimal("-0.0")'s sign. For zero, both
-        // float2tuple arms produce pre=0/post=0, so demoting to the float
-        // arm with a signed zero is behaviourally identical — except in the
-        // languages that render the two differently, which declare it and
-        // get the Python fallback (byte-correct by construction).
-        // Neg-zero Decimal is handled by the caller (which knows `to`) via
-        // `neg_zero_decimal`; here it simply demotes to a signed-zero float,
-        // exact wherever the language does not distinguish the two.
-        if d.is_zero() && decimal_str.trim_start().starts_with('-') {
-            return Ok(FloatValue::Float { value: -0.0, precision });
-        }
+        // BigDecimal has no signed zero, so Decimal('-0.0') reads as zero
+        // (#237).
         Ok(FloatValue::Decimal { value: d, precision })
     }
-}
-
-/// `Decimal('-0.0')`: a zero-valued decimal string with a leading minus.
-fn is_neg_zero_decimal(decimal_str: &str, value: f64) -> bool {
-    !decimal_str.is_empty() && value == 0.0 && decimal_str.trim_start().starts_with('-')
 }
 
 /// Float/Decimal input across all four int modes, kwargs included.
@@ -374,14 +359,8 @@ fn to_float_core(
     precision_override: Option<u32>,
     kw: &Kwargs,
 ) -> Result<Option<String>, N2WError> {
-    // Decimal('-0.0') the language renders specially (BigDecimal can't hold
-    // the sign) — serve it natively before the demotion to Float{-0.0}.
-    if is_neg_zero_decimal(decimal_str, value) && kw.is_empty() {
-        if let Some(res) = l.neg_zero_decimal(to) {
-            return opt(res);
-        }
-    }
-    let v = float_value(value, precision, decimal_str)?;
+    // A negative zero reads as zero, without "minus" (#237).
+    let v = float_value(value + 0.0, precision, decimal_str)?;
     // The integer modes take an integral value of any input type as that
     // integer — 1999.0, Decimal('1999.0') and '1999' read like 1999
     // (gladiaio/num2words2#213); the language never sees the float form.
@@ -567,6 +546,12 @@ fn from_string_core(
                 Grouped::Invalid(msg) => return Err(map_err(N2WError::Value(msg))),
                 Grouped::NotGrouped => {
                     if catchable {
+                        if is_malformed_number(s) {
+                            return Err(map_err(N2WError::Value(format!(
+                                "cannot read {:?} as a number",
+                                s.trim()
+                            ))));
+                        }
                         if has_py_digit(s) {
                             // The dispatcher routes a mixed text+digit string to
                             // num2words_sentence — now the Rust sentence converter,
@@ -1080,8 +1065,16 @@ fn num2words(
         let decimal_cls = py.import("decimal")?.getattr("Decimal")?;
         number.is_instance(&decimal_cls)?
     };
-    let normalised: Bound<'_, PyAny> = if is_str || is_decimal {
+    // -0.0 / Decimal('-0') read as zero, without "minus", in every
+    // language (#237): '-0.0' as a string already did.
+    let normalised: Bound<'_, PyAny> = if is_str {
         number.clone()
+    } else if is_decimal {
+        if number.call_method0("is_zero")?.is_truthy()? {
+            number.call_method0("copy_abs")?
+        } else {
+            number.clone()
+        }
     } else if is_float || !number.hasattr("__index__")? {
         if !is_float && !number.hasattr("__float__")? {
             return Err(PyTypeError::new_err(format!(
@@ -1090,7 +1083,8 @@ fn num2words(
             )));
         }
         is_float = true;
-        PyFloat::new(py, number.extract::<f64>()?).into_any()
+        // `+ 0.0` turns -0.0 into 0.0 and leaves every other value alone.
+        PyFloat::new(py, number.extract::<f64>()? + 0.0).into_any()
     } else {
         py.import("operator")?.getattr("index")?.call1((number,))?
     };

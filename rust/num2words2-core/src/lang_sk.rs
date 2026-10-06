@@ -858,9 +858,9 @@ impl Lang for LangSk {
     ///     `int(right)` runs through `_int2word`, so `Decimal("1.10")` →
     ///     "jeden celých desať" (ten), not "…jeden nula". Each leading zero of
     ///     `right` prepends a bare "nula "; SK does **not** rstrip trailing zeros
-    ///     (unlike CS), so a float `1.0` (repr "1.0") → "jeden celých nula nula"
-    ///     (one leading-zero "nula" + `int2word(0)` "nula") and `Decimal("1.00")`
-    ///     → "jeden celých nula nula nula".
+    ///     (unlike CS), so a float `1.0` (repr "1.0") → "jeden celých nula"
+    ///     and `Decimal("1.00")` → "jeden celých nula nula": one "nula" per
+    ///     digit written (Python added one more, gladiaio/num2words2#237).
     ///   * `precision` / `precision_override` are **ignored**. SK's Python
     ///     `to_cardinal` takes no `precision` kwarg and never reads
     ///     `self.precision`, so the `precision=` override the dispatcher stashes
@@ -909,7 +909,11 @@ impl Lang for LangSk {
 
             // leading_zero_count = len(right) - len(right.lstrip("0")) — the
             // count of leading '0' chars. SK does not rstrip the fraction.
-            let leading_zero_count = right.chars().take_while(|c| *c == '0').count();
+            // The final int(right) word already says one zero, so an all-zero
+            // fraction gets len - 1 leading zeros: exactly the digits written
+            // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+            let leading_zero_count = right.chars().take_while(|c| *c == '0').count()
+                .min(right.len().saturating_sub(1));
 
             // decimal_part = (ZERO[0] + " ") * leading_zero_count
             //                + self._int2word(int(right))

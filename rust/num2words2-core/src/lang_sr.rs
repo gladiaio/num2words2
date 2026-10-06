@@ -42,7 +42,7 @@
 //! ([`Lang::cardinal_float_entry`]) is overridden to send **every**
 //! float/Decimal — whole values included — through the string algorithm:
 //! `to_cardinal(5.0)` reads `str(5.0)` == "5.0", finds the ".", and renders
-//! "пет запета нула нула" where the base default would say "пет". Values
+//! "пет запета нула" where the base default would say "пет". Values
 //! whose Python string form has *no* "." fall to `int(n)`:
 //!
 //! * `Decimal("5")`, `Decimal("500")` — plain digits, integer path.
@@ -739,9 +739,10 @@ impl LangSr {
     ///    irrelevant: it reads `repr(2.675)` == "2.675" and parses "675".
     /// 2. **Leading fraction zeros become "нула" words.** `0.01` splits to
     ///    `right == "01"`, one leading zero, so `int("01") == 1` is prefixed
-    ///    by a single "нула": "нула запета нула један". `right == "0"`
-    ///    (from `1.0`) counts as one leading zero *and* `int("0") == 0` ->
-    ///    "нула", giving the doubled "нула нула".
+    ///    by a single "нула": "нула запета нула један". An all-zero `right`
+    ///    reads one "нула" per digit written ("0" from `1.0` -> "нула");
+    ///    Python counted it as a leading zero *and* `int("0")`, doubling it
+    ///    (fixed, gladiaio/num2words2#237).
     ///
     /// The `else` arm is where the exponent-form strings die: `int("1e+16")`
     /// / `int("1E+2")` raise ValueError with Python's exact message.
@@ -773,7 +774,11 @@ impl LangSr {
 
                 // leading_zero_count = len(right) - len(right.lstrip("0")). A
                 // fully-zero `right` counts every char, matching lstrip("0")=="".
-                let leading_zero_count = right.chars().take_while(|&c| c == '0').count();
+                // The final int(right) word already says one zero, so an all-zero
+                // fraction gets len - 1 leading zeros: exactly the digits written
+                // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+                let leading_zero_count = right.chars().take_while(|&c| c == '0').count()
+                    .min(right.len().saturating_sub(1));
 
                 // decimal_part = (ZERO[0] + " ") * leading_zero_count
                 //                + self._int2word(int(right), feminine)
@@ -887,8 +892,8 @@ impl Lang for LangSr {
     ///
     /// SR overrides `to_cardinal` itself and branches on `"." in str(number)`,
     /// so a whole value with a visible point still takes the float grammar:
-    /// `5.0` -> "пет запета нула нула", `Decimal("5.00")` -> "пет запета нула
-    /// нула нула", `-0.0` -> "минус нула запета нула нула". A pointless string
+    /// `5.0` -> "пет запета нула", `Decimal("5.00")` -> "пет запета нула
+    /// нула", `-0.0` -> "минус нула запета нула". A pointless string
     /// falls to `int(n)`: `Decimal("5")` -> "пет", but `1e+16` / `Decimal("1E+2")`
     /// raise ValueError. The base default (whole -> int path) would get every
     /// one of those wrong, hence this override.
@@ -930,7 +935,7 @@ impl Lang for LangSr {
     // `year_float_entry` is deliberately NOT overridden: Base's `to_year` is
     // `self.to_cardinal(value)`, and the trait default routes through the
     // overridden `cardinal_float_entry` above — so `to_year(5.0)` == "пет
-    // запета нула нула" and `to_year(1e+16)` raises ValueError, as pinned.
+    // запета нула" and `to_year(1e+16)` raises ValueError, as pinned.
     // `ordinal_num_float_entry` stays at the default too: SR never defines
     // `to_ordinal_num`, and the dispatcher's getattr fallback echoes
     // `str(value)` — exactly the default's repr echo.

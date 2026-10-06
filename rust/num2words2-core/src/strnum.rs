@@ -402,6 +402,33 @@ pub fn parse_grouped(s: &str, notation: Notation) -> Grouped {
     Grouped::Number { canonical, decimal_comma: decimal == Some(',') }
 }
 
+/// A single token that is plainly meant as a number but is not one Python's
+/// `Decimal()` (or [`parse_grouped`]) accepts: only ASCII digits, `_` and
+/// `.` after an optional sign ("1__0", "_1", "1_000_", "1..2"), or a
+/// `0x`/`0o`/`0b` literal ("0x10"). The dispatcher raises `ValueError` for
+/// these instead of handing them to the sentence converter, which read
+/// "1__0" as "One__zero" (gladiaio/num2words2#237). Anything with other
+/// letters ("H2O", "1st", "10%") is still text.
+pub fn is_malformed_number(s: &str) -> bool {
+    let t = s.trim();
+    let body = t.strip_prefix(['+', '-']).unwrap_or(t);
+    if !body.bytes().any(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    if body.bytes().all(|b| b.is_ascii_digit() || b == b'_' || b == b'.') {
+        return true;
+    }
+    let lower = body.to_ascii_lowercase();
+    let radix = |p: &str, ok: fn(u8) -> bool| {
+        lower.strip_prefix(p).is_some_and(|r| {
+            !r.is_empty() && r.bytes().all(|b| ok(b) || b == b'_')
+        })
+    };
+    radix("0x", |b| b.is_ascii_hexdigit())
+        || radix("0o", |b| (b'0'..=b'7').contains(&b))
+        || radix("0b", |b| b == b'0' || b == b'1')
+}
+
 /// Python's `int(str)` — used by the "n/d" fraction-string branch. Accepts
 /// surrounding whitespace, a sign, PEP-515 underscores and Unicode digits;
 /// no dot, no exponent.
@@ -467,6 +494,22 @@ pub fn python_decimal_str(d: &BigDecimal) -> String {
     }
     let (i, f) = digits.split_at(point as usize);
     format!("{}{}.{}", sign, i, f)
+}
+
+#[cfg(test)]
+mod malformed_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_numbers() {
+        for s in ["0x10", "0X1F", "0b101", "0o17", "1__0", "_1", "1_000_", "-_1",
+                  "1..2", " 1__0 "] {
+            assert!(is_malformed_number(s), "{}", s);
+        }
+        for s in ["H2O", "1st", "10%", "abc", "1-2", "5 kg", "x1", "0xZZ", "", "_"] {
+            assert!(!is_malformed_number(s), "{}", s);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -182,7 +182,7 @@ fn overflow_error(n: &BigInt) -> N2WError {
 /// The suffix-selection tail of `Num2Word_KZ.to_ordinal`, shared by the
 /// integer path and the float/Decimal entry (Python has one method; its
 /// `cardinal = self.to_cardinal(number)` call is virtual over the input type,
-/// so the same character inspection runs on "бес" and on "бес бүтін нөл нөл"
+/// so the same character inspection runs on "бес" and on "бес бүтін нөл"
 /// alike).
 ///
 /// Python indexes `cardinal[-1]` unguarded. `to_cardinal` of a non-zero value
@@ -538,7 +538,11 @@ impl Lang for LangKk {
             post_digits
         );
         // leading_zero_count = len(right) - len(right.lstrip("0")).
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
 
         // int(left): Python strips the sign from the string first, so `left` is
         // the integer part of the *absolute* value; the sign is carried
@@ -577,9 +581,9 @@ impl Lang for LangKk {
     ///
     /// * a **visible point** (any finite float below 1e16, or a Decimal with
     ///   positive scale) takes the fractional branch even for whole values —
-    ///   `5.0` -> "бес бүтін нөл нөл", `Decimal("5.00")` -> "бес бүтін нөл нөл
-    ///   нөл" (one "нөл" per leading zero of the fractional string plus
-    ///   `_int2word(0)`).
+    ///   `5.0` -> "бес бүтін нөл", `Decimal("5.00")` -> "бес бүтін нөл нөл"
+    ///   (one "нөл" per fractional digit written; Python added an extra one,
+    ///   gladiaio/num2words2#237).
     /// * **no point** funnels the whole string into `int(n)`: plain digit
     ///   Decimals ("5", "100") reach the integer path, while exponent forms
     ///   (`str(1e16) == "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and

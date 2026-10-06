@@ -206,3 +206,58 @@ def test_non_finite_values_raise_clear_errors():
         with pytest.raises(ValueError, match="cannot convert Infinity to"):
             num2words(x, to="currency")
         assert _call(x) == _call("inf")
+
+
+# ---- #237: input edge cases ------------------------------------------------
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_negative_zero_reads_as_zero(lang):
+    for to in ("cardinal", "ordinal", "ordinal_num", "year", "currency"):
+        for neg, pos in ((-0.0, 0.0), ("-0.0", "0.0"),
+                         (Decimal("-0.0"), Decimal("0.0")),
+                         (Decimal("-0"), Decimal("0")), ("-0", "0")):
+            assert _call(neg, lang=lang, to=to) == _call(pos, lang=lang, to=to)
+
+
+def test_negative_zero_examples():
+    assert num2words(-0.0, lang="cs") == num2words("-0.0", lang="cs") \
+        == "nula čárka nula"
+    assert num2words(Decimal("-0"), lang="pl") == "zero"
+
+
+@pytest.mark.parametrize("s", ["0x10", "0b101", "1__0", "_1", "1_000_", "-_1",
+                               "1..2"])
+def test_malformed_numeric_strings_raise(s):
+    with pytest.raises(ValueError, match="as a number"):
+        num2words(s)
+
+
+def test_well_formed_and_text_strings_unchanged():
+    assert num2words("1_000") == "one thousand"
+    assert num2words("H2O") == "H2O"
+
+
+@pytest.mark.parametrize("lang", ["hr", "kk", "kz", "lt", "lv", "sk", "sr",
+                                  "sr_Cyrl", "sr_Latn", "uk"])
+def test_all_zero_fraction_reads_the_digits_written(lang):
+    zero = num2words(0, lang=lang)
+    one_zero = num2words(1.0, lang=lang)
+    assert one_zero.split().count(zero) == 1
+    assert num2words("1.0", lang=lang) == one_zero
+    assert num2words(Decimal("1.000"), lang=lang).split().count(zero) == 3
+    # Leading zeros before a non-zero digit are unchanged.
+    assert num2words(Decimal("1.05"), lang=lang).split().count(zero) == 1
+
+
+def test_uk_all_zero_fraction():
+    assert num2words(1.0, lang="uk") == "один кома нуль"
+
+
+def test_ar_ordinal_overflow_is_checked_up_front():
+    from num2words2 import maxval
+    m = maxval("ar")
+    for to in ("ordinal", "ordinal_num"):
+        for x in (m, 10**10000):
+            with pytest.raises(OverflowError):
+                num2words(x, lang="ar", to=to)
+        assert num2words(m - 1, lang="ar", to=to)
