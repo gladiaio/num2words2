@@ -45,3 +45,18 @@ def test_sr_latn_currency_code_and_cheque():
         num2words(1234.56, lang="sr_Latn", to="cheque", currency="EUR")
         == "HILJADA DVESTA TRIDESET ČETIRI AND 56/100 EVRA"
     )
+
+
+def test_sr_latn_currency_feminine_unit():
+    # gladiaio/num2words2#188
+    assert num2words(21, lang="sr_Latn", to="currency", currency="RUB") == (
+        "dvadeset jedna rublja"
+    )
+    assert num2words(2.02, lang="sr_Latn", to="currency", currency="RUB") == (
+        "dve rublje, dve kopejke"
+    )
+    assert num2words(2, lang="sr_Latn", to="currency", currency="EUR") == "dva evra"
+    assert (
+        num2words(21.5, lang="sr_Latn", to="cheque", currency="RUB")
+        == "DVADESET JEDNA AND 50/100 RUBLJI"
+    )

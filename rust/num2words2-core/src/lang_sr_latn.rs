@@ -75,6 +75,11 @@
 //! 7. **`to_cheque` printed a stringified `bool` where the currency name
 //!    belongs (fixed, #176).** See [`build_currency_forms`]; the port now
 //!    takes the "many" form: "DVANAEST AND 50/100 EVRA".
+//! 8. **Feminine units took a masculine numeral (fixed, #188).** Base's
+//!    `_money_verbose` and SR's int shortcut both call `to_cardinal` with
+//!    `feminine=False`, so 21 RUB was "dvadeset jedan rublja". The port reads
+//!    the unit's gender flag like `_cents_verbose` reads the subunit's:
+//!    "dvadeset jedna rublja", "dve rublje" (see `lang_sr`'s quirk 10).
 //!
 //! # Not a bug, but load-bearing: the four-element currency tuples
 //!
@@ -889,8 +894,7 @@ impl Lang for LangSrLatn {
     // is already mirrored by the trait defaults, so it is deliberately absent
     // here:
     //
-    // * `_money_verbose` → `self.to_cardinal(number)`, which dispatches to the
-    //   SR_LATN override and so already returns Latin.
+    // * `_money_verbose` is overridden below (bug 8, #188), not inherited.
     // * `_cents_terse`   → `CURRENCY_PRECISION.get(currency, 100)` is 100 for
     //   every code, so the default's `"%02d"` width is right.
     // * `CURRENCY_PRECISION` is `{}` (never rebound), so `currency_precision`
@@ -989,6 +993,20 @@ impl Lang for LangSrLatn {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// Base's `_money_verbose` (`self.to_cardinal(number)`, Latin), with the
+    /// units word agreeing with the unit's gender flag `[0][-1]` (bug 8,
+    /// #188): "dvadeset jedna rublja". Cheques read it too.
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = int2word(number, false)?;
+        let feminine = self
+            .currency_forms
+            .get(currency)
+            .and_then(|f| f.unit.last())
+            .map_or(false, |flag| flag.as_str() == "True");
+        let words = if feminine { crate::lang_sr::feminine_last(&words) } else { words };
+        Ok(cyrl_to_latn(&words))
+    }
+
     /// `Num2Word_SR._cents_verbose`:
     /// `self._int2word(number, self.CURRENCY_FORMS[currency][1][-1])`.
     ///
@@ -1057,7 +1075,8 @@ impl Lang for LangSrLatn {
             // non-negative, so `_int2word` never prepends its own "минус".
             // A `left >= 10**33` still raises KeyError from `scale`, exactly as
             // Python does: the int arm has no ceiling of its own.
-            words.push(self.to_cardinal(&left)?);
+            // Python: always masculine; the port agrees with the unit (bug 8).
+            words.push(self.money_verbose(&left, currency)?);
 
             words.push(Lang::pluralize(self, &left, &forms.unit)?);
 

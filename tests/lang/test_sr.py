@@ -104,7 +104,7 @@ class Num2WordsSRTest(TestCase):
         )
         self.assertEqual(
             num2words(-2, lang="sr", to="cheque", currency="RUB"),
-            "MINUS ДВА AND 00/100 РУБЉИ",
+            "MINUS ДВЕ AND 00/100 РУБЉИ",
         )
 
     def test_to_currency(self):
@@ -131,18 +131,18 @@ class Num2WordsSRTest(TestCase):
             "два евра, пет центи",
         )
         self.assertEqual(
-            num2words(2, lang="sr", to="currency", currency="RUB"), "два рубље"
+            num2words(2, lang="sr", to="currency", currency="RUB"), "две рубље"
         )
         self.assertEqual(
             num2words(2.01, lang="sr", to="currency", currency="RUB"),
-            "два рубље, једна копејка",
+            "две рубље, једна копејка",
         )
         self.assertEqual(
             num2words(2.02, lang="sr", to="currency", currency="RUB"),
-            "два рубље, две копејке",
+            "две рубље, две копејке",
         )
         self.assertEqual(
-            "два рубље, пет копејки",
+            "две рубље, пет копејки",
             num2words(2.05, lang="sr", to="currency", currency="RUB"),
         )
         self.assertEqual(
@@ -169,7 +169,7 @@ class Num2WordsSRTest(TestCase):
             num2words(21.21, lang="sr", to="currency", currency="EUR"),
         )
         self.assertEqual(
-            "двадесет један рубља, двадесет једна копејка",
+            "двадесет једна рубља, двадесет једна копејка",
             num2words(21.21, lang="sr", to="currency", currency="RUB"),
         )
         self.assertEqual(
@@ -185,11 +185,11 @@ class Num2WordsSRTest(TestCase):
             num2words(10111, lang="sr", to="currency", currency="EUR", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет један рубља",  # masculine numeral: lang_sr.rs quirk 10
+            "десет хиљада сто двадесет једна рубља",  # feminine unit (#188)
             num2words(10121, lang="sr", to="currency", currency="RUB", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет два рубље",  # masculine numeral: lang_sr.rs quirk 10
+            "десет хиљада сто двадесет две рубље",  # feminine unit (#188)
             num2words(10122, lang="sr", to="currency", currency="RUB", separator=" i"),
         )
         self.assertEqual(
@@ -210,6 +210,30 @@ class Num2WordsSRTest(TestCase):
                 cents=False,
                 currency="EUR",
             ),
+        )
+
+    def test_currency_feminine_unit(self):
+        # gladiaio/num2words2#188: рубља is feminine; only the units word
+        # agrees (scale words keep their own gender). EUR/RSD stay masculine.
+        cases = [
+            (1, "RUB", "једна рубља"),
+            (21, "RUB", "двадесет једна рубља"),
+            (22, "RUB", "двадесет две рубље"),
+            (-21, "RUB", "минус двадесет једна рубља"),
+            ("21", "RUB", "двадесет једна рубља"),
+            (21.0, "RUB", "двадесет једна рубља, нула копејки"),
+            ("22.02", "RUB", "двадесет две рубље, две копејке"),
+            (2000001, "RUB", "два милиона једна рубља"),
+            (21, "EUR", "двадесет један евро"),
+            (22, "RSD", "двадесет два динара"),
+        ]
+        for value, cur, want in cases:
+            self.assertEqual(
+                num2words(value, lang="sr", to="currency", currency=cur), want
+            )
+        self.assertEqual(
+            num2words(21.5, lang="sr", to="cheque", currency="RUB"),
+            "ДВАДЕСЕТ ЈЕДНА AND 50/100 РУБЉИ",
         )
 
     def test_negative_decimals(self):

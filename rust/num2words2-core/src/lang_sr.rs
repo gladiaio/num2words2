@@ -147,12 +147,15 @@
 //!    `else: "динара"` — the last two arms are byte-identical, so the elif can
 //!    never change the output. Moot since #176: the port uses
 //!    [`LangSr::pluralize`] on the table's forms instead.
-//! 10. **`_money_verbose` drops the unit's gender.** It is `Num2Word_Base`'s,
-//!    i.e. `self.to_cardinal(number)`, which passes `feminine=False`. So a
-//!    feminine unit still gets a masculine numeral: `to_currency(1.0, "RUB")`
-//!    == "један рубља, нула копејки" — "једна рубља" would be the correct
-//!    Serbian. Only `_cents_verbose` consults the flag, so the *cents* half is
-//!    gendered correctly ("нула копејки", "једна пара"). Verified live.
+//! 10. **`_money_verbose` dropped the unit's gender (fixed, #188).** It is
+//!    `Num2Word_Base`'s, i.e. `self.to_cardinal(number)`, which passes
+//!    `feminine=False`, and the int shortcut did the same. So a feminine unit
+//!    got a masculine numeral: `to_currency(21, "RUB")` == "двадесет један
+//!    рубља". [`LangSr::money_verbose`] now reads the unit tuple's gender flag
+//!    (as `_cents_verbose` already did for the subunit) and the int path goes
+//!    through it: "двадесет једна рубља", "две рубље". Only the units word is
+//!    re-gendered ([`feminine_last`]); scale words keep their own gender
+//!    ("два милиона").
 //! 11. **`to_cheque` printed the gender flag as the currency name (fixed,
 //!    #176).** `Num2Word_Base.to_cheque` takes `cr1[-1]` as "the plural
 //!    form", but SR's `cr1` is a 4-tuple whose last element is the gender
@@ -558,6 +561,28 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m
 }
 
+/// Swap a final masculine `ONES` word for its feminine form ("двадесет
+/// један" → "двадесет једна", "два" → "две"); shared with `sr_Latn`.
+///
+/// `_int2word`'s own `feminine` flag would also feminize the ones word of
+/// every higher chunk ("две милиона"), which is wrong for the masculine
+/// scale words. The last token of `_int2word` is a `ONES` word exactly when
+/// the units chunk ends in one, so swapping that token genders the units
+/// alone (#188). Takes and returns Cyrillic.
+pub(crate) fn feminine_last(cyr: &str) -> String {
+    let (head, last) = match cyr.rsplit_once(' ') {
+        Some((h, l)) => (Some(h), l),
+        None => (None, cyr),
+    };
+    match ONES.iter().skip(1).find(|(m, _)| *m == last) {
+        Some((_, f)) => match head {
+            Some(h) => format!("{} {}", h, f),
+            None => f.to_string(),
+        },
+        None => cyr.to_string(),
+    }
+}
+
 /// `Num2Word_Base.to_cheque` for SR's 4-tuple forms, shared with `sr_Latn`.
 ///
 /// Identical to `currency::default_to_cheque` except for the unit word:
@@ -959,7 +984,8 @@ impl Lang for LangSr {
     //
     // `Num2Word_SR` overrides exactly three things on this surface —
     // `CURRENCY_FORMS`, `pluralize` and `_cents_verbose` — plus `to_currency`
-    // for its int shortcut. Everything else (`_money_verbose`, `_cents_terse`,
+    // for its int shortcut. `_money_verbose` is overridden here too, to honour
+    // the unit's gender flag (quirk 10, #188). Everything else (`_cents_terse`,
     // `to_cheque`, and the whole float path) is `Num2Word_Base`'s, which the
     // trait defaults already mirror, so it is deliberately not overridden:
     //
@@ -968,8 +994,6 @@ impl Lang for LangSr {
     //     Python (`if adjective and currency in self.CURRENCY_ADJECTIVES`).
     //   * `currency_precision` — `CURRENCY_PRECISION` is `{}`; every code takes
     //     the `.get(code, 100)` default of 100.
-    //   * `money_verbose` — Base's `self.to_cardinal(number)`, i.e. masculine
-    //     forms regardless of the unit's gender flag (quirk 10).
     //   * `cents_terse` — Base's `"%0*d"`, width `len("100") - 1` == 2.
     //   * `to_cheque` — Base's, except for the unit word (quirk 11, #176);
     //     see [`sr_to_cheque`].
@@ -1027,6 +1051,19 @@ impl Lang for LangSr {
     /// `Num2Word_Base.to_cheque` with the unit word fixed — quirk 11.
     fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
         sr_to_cheque(self, val, currency)
+    }
+
+    /// Base's `_money_verbose` (`self.to_cardinal(number)`), with the units
+    /// word agreeing with the unit's gender flag `[0][-1]` (quirk 10, #188):
+    /// "двадесет једна рубља", "две рубље"; EUR/RSD stay masculine.
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        let feminine = self
+            .currency_forms
+            .get(currency)
+            .and_then(|f| f.unit.last())
+            .map_or(false, |flag| flag.as_str() == "True");
+        Ok(if feminine { feminine_last(&words) } else { words })
     }
 
     /// Port of `Num2Word_SR._cents_verbose(number, currency)`:
@@ -1096,9 +1133,9 @@ impl Lang for LangSr {
                 // `self.negword`. Same text, but kept distinct on purpose.
                 words.push("минус".to_string());
             }
-            // `left` is already `abs(val)`, so this is `self.to_cardinal(left)`
-            // with `feminine=False` — masculine, like the float path (quirk 10).
-            words.push(self.to_cardinal(&left)?);
+            // `left` is already `abs(val)`. Python: `self.to_cardinal(left)`,
+            // always masculine; the port agrees with the unit (quirk 10, #188).
+            words.push(self.money_verbose(&left, currency)?);
             words.push(Lang::pluralize(self, &left, &forms.unit)?);
 
             return Ok(words.join(" "));
