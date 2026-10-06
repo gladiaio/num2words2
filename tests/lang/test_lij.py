@@ -414,6 +414,7 @@ class Num2WordsLIJTest(TestCase):
     def test_unk_currency(self):
         with self.assertRaises(NotImplementedError):
             num2words(1, lang="lij", to="currency", currency="XTS")
+
     def test_currency_int_is_units_not_cents(self):
         # gladiaio/num2words2#161: an int was read as a count of cents
         # (42 -> "zero euro e quarantedoî citti").
