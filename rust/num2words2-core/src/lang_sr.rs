@@ -133,36 +133,33 @@
 //!
 //! # Faithfully reproduced Python quirks (currency)
 //!
-//! 8. **`to_currency` ignores `currency=` entirely for `int` input, and can
-//!    never raise `NotImplementedError` there.** SR's override intercepts
-//!    `isinstance(val, int)` *before* any `CURRENCY_FORMS` lookup and appends a
-//!    hardcoded "динар"/"динара". So `to_currency(1, currency="JPY")` ==
-//!    "један динар", and even a nonexistent code succeeds:
-//!    `to_currency(1, currency="ZZZ")` == "један динар" (verified live). Only
-//!    the float/Decimal path reaches `Num2Word_Base.to_currency` and its
-//!    `KeyError` -> `NotImplementedError`. The corpus pins both halves: every
-//!    `currency:{USD,GBP,JPY,KWD,BHD,INR,CNY,CHF}` int row returns dinars while
-//!    every float row of the same code raises.
-//! 9. **The `elif` in that dinar rule is dead code.** Python writes
+//! 8. **`to_currency` ignored `currency=` for `int` input (fixed, #176).**
+//!    SR's Python override intercepts `isinstance(val, int)` *before* any
+//!    `CURRENCY_FORMS` lookup and appends a hardcoded "динар"/"динара", so
+//!    `to_currency(1, currency="EUR")` was "један динар" and even a
+//!    nonexistent code succeeded. The port looks the code up first — an
+//!    unknown code raises `NotImplementedError`, as on the float path — and
+//!    picks the unit with [`LangSr::pluralize`]: "један евро", "пет евра".
+//!    RSD is unchanged ("динара" is both its few and many form).
+//! 9. **The `elif` in Python's dinar rule was dead code.** Python writes
 //!    `if left % 10 == 1 and left % 100 != 11: "динар"` /
 //!    `elif 2 <= left % 10 <= 4 and not (12 <= left % 100 <= 14): "динара"` /
 //!    `else: "динара"` — the last two arms are byte-identical, so the elif can
-//!    never change the output. Collapsed to a single `else` here; see
-//!    [`LangSr::to_currency`].
+//!    never change the output. Moot since #176: the port uses
+//!    [`LangSr::pluralize`] on the table's forms instead.
 //! 10. **`_money_verbose` drops the unit's gender.** It is `Num2Word_Base`'s,
 //!    i.e. `self.to_cardinal(number)`, which passes `feminine=False`. So a
 //!    feminine unit still gets a masculine numeral: `to_currency(1.0, "RUB")`
 //!    == "један рубља, нула копејки" — "једна рубља" would be the correct
 //!    Serbian. Only `_cents_verbose` consults the flag, so the *cents* half is
 //!    gendered correctly ("нула копејки", "једна пара"). Verified live.
-//! 11. **`to_cheque` prints the gender flag as the currency name.**
-//!    `Num2Word_Base.to_cheque` does `cr1, _cr2 = self.CURRENCY_FORMS[currency]`
-//!    then `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, intending "the
-//!    plural form". SR's `cr1` is a 4-tuple, so `cr1[-1]` is the trailing
-//!    **bool**, which `"%s"` renders as `False`/`True` and `.upper()` shouts:
-//!    `to_cheque(1234.56, "EUR")` ==
-//!    "ХИЉАДА ДВЕСТА ТРИДЕСЕТ ЧЕТИРИ AND 56/100 FALSE", and RUB (flag `True`)
-//!    ends in "TRUE". Pinned by the corpus; reproduced exactly.
+//! 11. **`to_cheque` printed the gender flag as the currency name (fixed,
+//!    #176).** `Num2Word_Base.to_cheque` takes `cr1[-1]` as "the plural
+//!    form", but SR's `cr1` is a 4-tuple whose last element is the gender
+//!    **bool**, so Python printed "ДВАНАЕСТ AND 50/100 FALSE" (RUB: "TRUE").
+//!    [`LangSr::to_cheque`] takes the "many" form (index 2) instead:
+//!    "ДВАНАЕСТ AND 50/100 ЕВРА". The "AND"/"MINUS" words stay English, as
+//!    in every other language's cheque format.
 //!
 //! # Fractional cents (`cardinal_from_decimal`) — closed by dynamic dispatch
 //!
@@ -192,6 +189,7 @@ use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result
 use crate::currency::{default_to_currency, parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
+use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
@@ -525,15 +523,12 @@ fn feminine_kwarg(kw: &Kwargs) -> Result<bool> {
 /// * `Num2Word_SR._cents_verbose` reads `CURRENCY_FORMS[cur][1][-1]` and uses
 ///   it as the `feminine` argument — its intended purpose.
 /// * `Num2Word_Base.to_cheque` reads `cr1[-1]` believing it is the plural unit
-///   name, and interpolates it into a `"%s"` — quirk 11. Python renders the
-///   bool as the text `False`/`True`, which `.upper()` then shouts.
+///   name — quirk 11, fixed (#176) by [`LangSr::to_cheque`], which reads the
+///   "many" form at index 2 instead.
 ///
-/// `CurrencyForms` stores `Vec<String>`, so keeping the flag as the exact text
-/// Python's `"%s"` produces reproduces the cheque bug through the *unmodified*
-/// `currency::default_to_cheque` (which takes `forms.unit.last()`), while
-/// [`LangSr::cents_verbose`] recovers the boolean by comparing against
-/// `"True"`. Storing a real `bool` would need a parallel table and a
-/// `to_cheque` override to reprint it — more code, same bytes.
+/// `CurrencyForms` stores `Vec<String>`, so the flag is kept as the text
+/// `"True"`/`"False"` and [`LangSr::cents_verbose`] recovers the boolean by
+/// comparing against `"True"`.
 ///
 /// The arity is load-bearing beyond that: [`LangSr::pluralize`] indexes 0..=2,
 /// so dropping the third form would silently change output.
@@ -561,6 +556,41 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
         ),
     );
     m
+}
+
+/// `Num2Word_Base.to_cheque` for SR's 4-tuple forms, shared with `sr_Latn`.
+///
+/// Identical to `currency::default_to_cheque` except for the unit word:
+/// Base takes `cr1[-1]`, which for SR is the gender flag ("FALSE"/"TRUE"),
+/// so this takes the "many" form at index 2 — "ДВАНАЕСТ AND 50/100 ЕВРА"
+/// (quirk 11, #176).
+pub(crate) fn sr_to_cheque<L: Lang + ?Sized>(
+    lang: &L,
+    val: &BigDecimal,
+    currency: &str,
+) -> Result<String> {
+    let forms = lang.currency_forms(currency).ok_or_else(|| {
+        N2WError::NotImplemented(format!(
+            "Currency code \"{}\" not implemented for \"{}\"",
+            currency,
+            lang.lang_name()
+        ))
+    })?;
+    let is_negative = val.is_negative();
+    let abs_val = val.abs();
+    let whole = abs_val.with_scale(0).as_bigint_and_exponent().0;
+    // SR's CURRENCY_PRECISION is empty, so the divisor is always 100.
+    let sub = ((&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(100))
+        .with_scale(0)
+        .as_bigint_and_exponent()
+        .0;
+    let words = lang.money_verbose(&whole, currency)?;
+    let unit = forms
+        .unit
+        .get(2)
+        .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
+    let sign = if is_negative { "MINUS " } else { "" };
+    Ok(format!("{}{} AND {:0>2}/100 {}", sign, words, sub.to_string(), unit).to_uppercase())
 }
 
 pub struct LangSr {
@@ -941,7 +971,8 @@ impl Lang for LangSr {
     //   * `money_verbose` — Base's `self.to_cardinal(number)`, i.e. masculine
     //     forms regardless of the unit's gender flag (quirk 10).
     //   * `cents_terse` — Base's `"%0*d"`, width `len("100") - 1` == 2.
-    //   * `to_cheque` — Base's, bool-as-unit-name bug and all (quirk 11).
+    //   * `to_cheque` — Base's, except for the unit word (quirk 11, #176);
+    //     see [`sr_to_cheque`].
 
     fn lang_name(&self) -> &str {
         "Num2Word_SR"
@@ -993,6 +1024,11 @@ impl Lang for LangSr {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// `Num2Word_Base.to_cheque` with the unit word fixed — quirk 11.
+    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
+        sr_to_cheque(self, val, currency)
+    }
+
     /// Port of `Num2Word_SR._cents_verbose(number, currency)`:
     /// `self._int2word(number, self.CURRENCY_FORMS[currency][1][-1])`.
     ///
@@ -1023,9 +1059,9 @@ impl Lang for LangSr {
     /// separator=",", adjective=False)`.
     ///
     /// Only the `isinstance(val, int)` shortcut is SR's own; every other value
-    /// is handed to `super().to_currency(...)` unchanged. That shortcut never
-    /// touches `CURRENCY_FORMS`, so it neither honours `currency=` nor raises
-    /// for an unknown code — quirk 8.
+    /// is handed to `super().to_currency(...)` unchanged. In Python that
+    /// shortcut never touched `CURRENCY_FORMS`; the port looks the code up
+    /// (quirk 8, #176).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1040,6 +1076,15 @@ impl Lang for LangSr {
         let separator = separator.unwrap_or(self.default_separator());
 
         if let CurrencyValue::Int(_) = val {
+            // Python never looked the code up here (quirk 8, #176); the port
+            // does, so an unknown code raises like the float path.
+            let forms = self.currency_forms.get(currency).ok_or_else(|| {
+                N2WError::NotImplemented(format!(
+                    "Currency code \"{}\" not implemented for \"{}\"",
+                    currency,
+                    self.lang_name()
+                ))
+            })?;
             // parse_currency_parts(val, is_int_with_cents=False). `right` is
             // always 0 on this path and Python discards it; the divisor is
             // likewise unused, so 100 just mirrors the Python default.
@@ -1052,26 +1097,9 @@ impl Lang for LangSr {
                 words.push("минус".to_string());
             }
             // `left` is already `abs(val)`, so this is `self.to_cardinal(left)`
-            // with `feminine=False` — the masculine "један динар", never "једна".
+            // with `feminine=False` — masculine, like the float path (quirk 10).
             words.push(self.to_cardinal(&left)?);
-
-            // Python:
-            //     if left % 10 == 1 and left % 100 != 11:   -> "динар"
-            //     elif 2 <= left % 10 <= 4 and not (12 <= left % 100 <= 14):
-            //                                               -> "динара"
-            //     else:                                     -> "динара"
-            // The elif and the else emit the same word, so the elif cannot
-            // affect the result and is collapsed here (quirk 9). `left` is
-            // non-negative, so `%` and `mod_floor` agree; `mod_floor` is used
-            // to match Python's operator rather than rely on that.
-            let unit = if left.mod_floor(&BigInt::from(10)).is_one()
-                && left.mod_floor(&BigInt::from(100)) != BigInt::from(11)
-            {
-                "динар"
-            } else {
-                "динара"
-            };
-            words.push(unit.to_string());
+            words.push(Lang::pluralize(self, &left, &forms.unit)?);
 
             return Ok(words.join(" "));
         }

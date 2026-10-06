@@ -64,18 +64,17 @@
 //!    (no replacement value contains a Cyrillic codepoint, so nothing
 //!    cascades) and converts the trailing "и" → "i". Mirrored exactly in
 //!    [`LangSrLatn::to_ordinal`] rather than short-circuited.
-//! 6. **`to_currency` ignores the currency code entirely for `int` input.**
-//!    `Num2Word_SR.to_currency` intercepts `isinstance(val, int)` before
-//!    delegating to Base and hardcodes "динар"/"динара", so *every* code —
-//!    including ones with no `CURRENCY_FORMS` entry — renders as dinars and
-//!    nothing raises. `cents`, `separator` and `adjective` are dropped on that
-//!    path too. The corpus pins all of it: `currency:JPY 100` → "sto dinara",
-//!    `currency:CHF 1` → "jedan dinar". Only the *float* path reaches
-//!    `Num2Word_Base.to_currency` and can raise `NotImplementedError`, which is
-//!    why every code has successful int rows and NotImplementedError float rows.
-//! 7. **`to_cheque` prints a stringified `bool` where the currency name
-//!    belongs.** See [`build_currency_forms`] — this is the reason the forms
-//!    table carries a fourth `"True"`/`"False"` element.
+//! 6. **`to_currency` ignored the currency code for `int` input (fixed,
+//!    #176).** `Num2Word_SR.to_currency` intercepts `isinstance(val, int)`
+//!    before delegating to Base and hardcodes "динар"/"динара", so in Python
+//!    *every* code — including ones with no `CURRENCY_FORMS` entry — rendered
+//!    as dinars (`currency:JPY 100` → "sto dinara"). The port looks the code
+//!    up: EUR says "jedan evro", an unknown code raises `NotImplementedError`
+//!    like the float path. `cents`, `separator` and `adjective` are still
+//!    dropped on the int path.
+//! 7. **`to_cheque` printed a stringified `bool` where the currency name
+//!    belongs (fixed, #176).** See [`build_currency_forms`]; the port now
+//!    takes the "many" form: "DVANAEST AND 50/100 EVRA".
 //!
 //! # Not a bug, but load-bearing: the four-element currency tuples
 //!
@@ -98,6 +97,7 @@ use crate::base::{check_maxval, pow10_big, Kwargs, KwVal, Lang, N2WError, Result
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
+use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
@@ -644,23 +644,10 @@ fn cyrl_to_latn(s: &str) -> String {
 ///    cent" (masculine).
 /// 2. `Num2Word_Base.to_cheque` does
 ///    `unit = cr1[-1] if isinstance(cr1, tuple) else cr1`, meaning that for a
-///    4-tuple it picks the **bool** instead of the plural noun and interpolates
-///    it: `"%s AND %s %s" % (words, "56/100", False)`, then `.upper()`. The
-///    corpus pins the result verbatim:
-///
-///    ```text
-///    cheque:EUR 1234.56 -> "HILJADA DVESTA TRIDESET ČETIRI AND 56/100 FALSE"
-///    cheque:RUB -2.00   -> "MINUS DVA AND 00/100 TRUE"
-///    ```
-///
-///    RUB yielding "TRUE" where EUR yields "FALSE" is what proves the slot is
-///    read positionally, not by type. Storing `"False"`/`"True"` puts the right
-///    string where `currency::default_to_cheque`'s `forms.unit.last()` looks,
-///    so `to_cheque` needs no override at all.
-///
-/// **Truncating these to three forms would compile, pass a reading, and
-/// silently emit "... AND 56/100 EVRA" — a corpus failure.** `pluralize` only
-/// ever indexes 0..=2, so the fourth element never leaks into the plural path.
+///    4-tuple Python picks the **bool** instead of the plural noun:
+///    "HILJADA DVESTA TRIDESET ČETIRI AND 56/100 FALSE". Fixed (#176): the
+///    shared `lang_sr::sr_to_cheque` reads the "many" form at index 2, so the
+///    cheque ends in "EVRA". The fourth element only feeds `cents_verbose`.
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert(
@@ -914,8 +901,8 @@ impl Lang for LangSrLatn {
     // * `CURRENCY_ADJECTIVES` is `{}`, so `currency_adjective` stays `None` and
     //   `adjective=True` is a no-op — matching `if adjective and currency in
     //   self.CURRENCY_ADJECTIVES`.
-    // * `to_cheque` is Base's; see `build_currency_forms` for why the default
-    //   reproduces its bool-instead-of-noun bug without an override.
+    // * `to_cheque` is Base's except for the unit word (bug 7, #176): it goes
+    //   through the shared `lang_sr::sr_to_cheque`.
 
     /// `self.__class__.__name__` for the NotImplementedError message. The
     /// raise sites live in `base.py` and `lang_SR.py`, but the *instance* is a
@@ -947,6 +934,12 @@ impl Lang for LangSrLatn {
 
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
+    }
+
+    /// `Num2Word_Base.to_cheque` with the "many" form as the unit word instead
+    /// of the gender flag (bug 7, #176). The cardinal already arrives Latin.
+    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
+        crate::lang_sr::sr_to_cheque(self, val, currency)
     }
 
     /// `Num2Word_SR.pluralize(number, forms)` — the Slavic one / few / many
@@ -1037,6 +1030,15 @@ impl Lang for LangSrLatn {
         let separator = separator.unwrap_or(self.default_separator());
 
         if let CurrencyValue::Int(v) = val {
+            // Python never looked the code up here (bug 6, #176); the port
+            // does, so an unknown code raises like the float path.
+            let forms = self.currency_forms.get(currency).ok_or_else(|| {
+                N2WError::NotImplemented(format!(
+                    "Currency code \"{}\" not implemented for \"{}\"",
+                    currency,
+                    self.lang_name()
+                ))
+            })?;
             // parse_currency_parts(val, is_int_with_cents=False) reduces to
             // `(abs(val), 0, val < 0)` — the divisor is never consulted.
             let is_negative = v.is_negative();
@@ -1057,23 +1059,10 @@ impl Lang for LangSrLatn {
             // Python does: the int arm has no ceiling of its own.
             words.push(self.to_cardinal(&left)?);
 
-            // Python's `elif 2 <= left % 10 <= 4 and not (12 <= left % 100 <= 14)`
-            // and its `else` both append "динара", so the elif is dead and the
-            // whole cascade collapses to this. Note 11 -> "динара" (the
-            // `% 100 != 11` guard) but 21 -> "динар".
-            let one_dinar = left.mod_floor(&BigInt::from(10)).is_one()
-                && left.mod_floor(&BigInt::from(100)) != BigInt::from(11);
-            let unit = if one_dinar {
-                "динар"
-            } else {
-                "динара"
-            };
-            words.push(unit.to_string());
+            words.push(Lang::pluralize(self, &left, &forms.unit)?);
 
-            // `currency`, `cents`, `separator` and `adjective` are all dropped
-            // on this path — an unknown code raises nothing and still says
-            // dinars. Bug 6.
-            let _ = (currency, cents, separator, adjective);
+            // `cents`, `separator` and `adjective` are dropped on this path.
+            let _ = (cents, separator, adjective);
             return Ok(cyrl_to_latn(&words.join(" ")));
         }
 

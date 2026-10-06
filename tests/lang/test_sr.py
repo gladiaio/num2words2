@@ -81,15 +81,41 @@ class Num2WordsSRTest(TestCase):
         self.assertEqual(num2words(100, lang="sr", to="ordinal"), "стоти")
         self.assertEqual(num2words(1000, lang="sr", to="ordinal"), "хиљадити")
 
+    def test_currency_code_and_cheque(self):
+        # gladiaio/num2words2#176: the int path ignored currency= (always
+        # dinars, never NotImplementedError) and the cheque printed the
+        # gender flag ("FALSE") as the unit.
+        self.assertEqual(
+            num2words(0, lang="sr", to="currency", currency="EUR"), "нула евра"
+        )
+        self.assertEqual(
+            num2words(21, lang="sr", to="currency", currency="EUR"),
+            "двадесет један евро",
+        )
+        for code in ("JPY", "USD", "ZZZ"):
+            with self.assertRaises(NotImplementedError):
+                num2words(1, lang="sr", to="currency", currency=code)
+        self.assertEqual(
+            num2words(12.5, lang="sr", to="cheque"), "ДВАНАЕСТ AND 50/100 ДИНАРА"
+        )
+        self.assertEqual(
+            num2words(12.5, lang="sr", to="cheque", currency="EUR"),
+            "ДВАНАЕСТ AND 50/100 ЕВРА",
+        )
+        self.assertEqual(
+            num2words(-2, lang="sr", to="cheque", currency="RUB"),
+            "MINUS ДВА AND 00/100 РУБЉИ",
+        )
+
     def test_to_currency(self):
         self.assertEqual(
-            num2words(1, lang="sr", to="currency", currency="EUR"), "један динар"
+            num2words(1, lang="sr", to="currency", currency="EUR"), "један евро"
         )
         self.assertEqual(
-            num2words(2, lang="sr", to="currency", currency="EUR"), "два динара"
+            num2words(2, lang="sr", to="currency", currency="EUR"), "два евра"
         )
         self.assertEqual(
-            num2words(5, lang="sr", to="currency", currency="EUR"), "пет динара"
+            num2words(5, lang="sr", to="currency", currency="EUR"), "пет евра"
         )
         self.assertEqual(
             num2words(2.01, lang="sr", to="currency", currency="EUR"),
@@ -105,7 +131,7 @@ class Num2WordsSRTest(TestCase):
             "два евра, пет центи",
         )
         self.assertEqual(
-            num2words(2, lang="sr", to="currency", currency="RUB"), "два динара"
+            num2words(2, lang="sr", to="currency", currency="RUB"), "два рубље"
         )
         self.assertEqual(
             num2words(2.01, lang="sr", to="currency", currency="RUB"),
@@ -155,23 +181,23 @@ class Num2WordsSRTest(TestCase):
             num2words(1234.56, lang="sr", to="currency", currency="RUB"),
         )
         self.assertEqual(
-            "десет хиљада сто једанаест динара",
+            "десет хиљада сто једанаест евра",
             num2words(10111, lang="sr", to="currency", currency="EUR", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет један динар",
+            "десет хиљада сто двадесет један рубља",
             num2words(10121, lang="sr", to="currency", currency="RUB", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет два динара",
+            "десет хиљада сто двадесет два рубље",
             num2words(10122, lang="sr", to="currency", currency="RUB", separator=" i"),
         )
         self.assertEqual(
-            "десет хиљада сто двадесет један динар",
+            "десет хиљада сто двадесет један евро",
             num2words(10121, lang="sr", to="currency", currency="EUR", separator=" i"),
         )
         self.assertEqual(
-            "минус милион двеста педесет једна хиљада деветсто осамдесет пет динара",
+            "минус милион двеста педесет једна хиљада деветсто осамдесет пет евра",
             num2words(-1251985, lang="sr", to="currency", currency="EUR", cents=False),
         )
         self.assertEqual(
