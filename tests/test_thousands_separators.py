@@ -92,7 +92,8 @@ def test_sentence_reads_grouped_numbers_whole(text, lang, expected):
 def test_sentence_non_grouping_separators_untouched():
     # Lists, versions and IP addresses are not thousands grouping.
     assert num2words_sentence("Items 1,2,3") == "Items one point two,three"
-    assert "one hundred and ninety-two" in num2words_sentence("IP: 192.168.1.1")
+    # Three or more dotted groups are left as written (#229).
+    assert num2words_sentence("IP: 192.168.1.1") == "IP: 192.168.1.1"
     assert num2words_sentence("1st, 2nd, and 3rd place") == (
         "First, second, and third place")
 

@@ -70,6 +70,14 @@
 //! to ASCII before extraction, as `num2words("١٢٣")` does, and every other
 //! numeric character (`m²`, `½`) is plain text — a digit glued to one is left
 //! as written instead of failing the whole call.
+//!
+//! Also deliberate (#229): digit groups joined by '-' or '.' are claimed
+//! before the ordinal/plain passes. A two-group range (`1990-2000`, Y > X,
+//! not a `555-1234` phone number) reads "X to Y" in English, where a bare
+//! hyphen would make a compound ("ninety-two thousand"), and "X - Y" in other
+//! languages. Every other run — `25.12.2023`, `2023-12-25`, `192.168.1.1`,
+//! `v2.0.1`, phone numbers — is left as written rather than read as one
+//! decimal with the rest glued on.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -444,6 +452,9 @@ enum Typ {
     Time(u32, u32, Option<String>),
     /// German clock time `H.MM Uhr` / `H:MM Uhr` as (hour, minute) (#183).
     UhrTime(u32, u32),
+    /// A numeric range `X-Y` (#229) as (to, joined with "to"): en reads
+    /// "X to Y", other languages "X - Y".
+    Range(BigInt, bool),
 }
 
 struct Ext {
@@ -840,6 +851,77 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
+    // 2e. Digit groups joined by '-' or '.' (#229), which the later passes
+    // would read as one compound number ("1990-2000" -> "...ninety-two
+    // thousand") or a decimal with the rest glued on ("192.168.1.1"). A
+    // two-group dash run that looks like a range (Y > X, no leading zero,
+    // not a 3-4 phone number) is read "X to Y" in English and "X - Y"
+    // elsewhere; every other run — dates (25.12.2023, 2023-12-25), IP
+    // addresses, versions (v2.0.1), phone numbers (555-1234) — is claimed
+    // and left as written.
+    let mut i = 0;
+    while i < n {
+        let c = &t.chars;
+        if !c[i].is_ascii_digit() || (i > 0 && c[i - 1].is_ascii_digit()) {
+            i += 1;
+            continue;
+        }
+        let digits_from = |mut k: usize| {
+            while k < n && c[k].is_ascii_digit() {
+                k += 1;
+            }
+            k
+        };
+        let mut groups = vec![(i, digits_from(i))];
+        let mut j = groups[0].1;
+        let sep = (j + 1 < n && matches!(c[j], '-' | '.') && c[j + 1].is_ascii_digit())
+            .then(|| c[j]);
+        if let Some(sp) = sep {
+            while j + 1 < n && c[j] == sp && c[j + 1].is_ascii_digit() {
+                let k = digits_from(j + 1);
+                groups.push((j + 1, k));
+                j = k;
+            }
+        }
+        let end = j;
+        let enough = match sep {
+            Some('-') => groups.len() >= 2,
+            _ => groups.len() >= 3,
+        };
+        // Inside a longer numeric token ("1.5-3", "-5-3", "1-2.5"): leave it
+        // to the other passes.
+        let num_sep = |k: usize| matches!(c[k], '-' | '.' | ',');
+        let mid_token = (i > 0 && num_sep(i - 1))
+            || (end + 1 < n && num_sep(end) && c[end + 1].is_ascii_digit());
+        if !enough || mid_token || overlap(&used, i, end) {
+            i = end;
+            continue;
+        }
+        let glued = (i > 0 && c[i - 1].is_alphanumeric())
+            || (end < n && c[end].is_alphanumeric());
+        let range = (sep == Some('-') && groups.len() == 2 && !glued)
+            .then(|| {
+                let txt = |(a, b): (usize, usize)| t.slice(a, b);
+                let (x, y) = (txt(groups[0]), txt(groups[1]));
+                let lead0 = |g: &str| g.len() > 1 && g.starts_with('0');
+                let phone = x.len() == 3 && y.len() == 4;
+                let (xv, yv) = (pyint(&x).ok()?, pyint(&y).ok()?);
+                (!lead0(&x) && !lead0(&y) && !phone && yv > xv).then_some((xv, yv))
+            })
+            .flatten();
+        if let Some((xv, yv)) = range {
+            exts.push(Ext {
+                start: i,
+                end,
+                text: t.slice(i, end),
+                val: Val::I(xv),
+                typ: Typ::Range(yv, norm_lang(lang) == "en"),
+            });
+        }
+        mark(&mut used, i, end);
+        i = end;
+    }
+
     // 3. Standalone ordinals (registry-driven) — before dates. The ordinal
     // surface form owns its full span (digit + suffix); the date pass then
     // only fires where no ordinal was consumed. The integer is the first
@@ -1219,6 +1301,11 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 0 => format!("{} Uhr", hour),
                 m => format!("{} Uhr {}", hour, l.to_cardinal(&BigInt::from(m))?),
             })
+        }
+        Typ::Range(y, to) => {
+            let l = ctx.lang()?;
+            let (x, y) = (l.to_cardinal(val.i())?, l.to_cardinal(y)?);
+            Ok(if *to { format!("{} to {}", x, y) } else { format!("{} - {}", x, y) })
         }
         Typ::Year => {
             let l = ctx.lang()?;

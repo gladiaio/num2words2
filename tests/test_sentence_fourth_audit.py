@@ -124,3 +124,29 @@ def test_arabic_decimal_separator_both_entry_points():
     expected = num2words("12.5", lang="ar")
     assert num2words_sentence("١٢٫٥", lang="ar") == expected
     assert num2words("١٢٫٥", lang="ar") == expected
+
+
+# --- #229: ranges, phone numbers and dotted sequences ---------------------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("years 1990-2000", "en",
+         "years one thousand, nine hundred and ninety to two thousand"),
+        ("pages 10-20.", "en", "pages ten to twenty."),
+        ("Jahre 1990-2000", "de",
+         "Jahre eintausendneunhundertneunzig - zweitausend"),
+        # Left as written: phone numbers, Y <= X, ISO and dotted dates,
+        # IP addresses, versions, glued letters.
+        ("call 555-1234", "en", "call 555-1234"),
+        ("score 3-2", "en", "score 3-2"),
+        ("2023-12-25", "en", "2023-12-25"),
+        ("25.12.2023", "ru", "25.12.2023"),
+        ("192.168.1.1", "en", "192.168.1.1"),
+        ("v2.0.1", "en", "v2.0.1"),
+        ("10-20km", "en", "10-20km"),
+        ("version 3.10", "en", "version three point one zero"),
+    ],
+)
+def test_ranges_and_sequences(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
