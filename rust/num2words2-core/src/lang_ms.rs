@@ -43,11 +43,13 @@
 //!
 //! # More faithfully reproduced Python bugs (currency)
 //!
-//! 6. **`parse_currency_parts(n)` is called bare**, so `is_int_with_cents`
-//!    keeps its `True` default and an `int` is read as *minor* units:
-//!    `to_currency(100, "EUR")` is "satu euro" — one euro, not a hundred — and
-//!    `to_currency(1, "EUR")` is "kosong euro satu sen". The corpus pins all of
-//!    `0`, `1`, `2`, `100` and `1000000` ("sepuluh ribu euro").
+//! 6. ~~**`parse_currency_parts(n)` is called bare**~~, so in Python
+//!    `is_int_with_cents` kept its `True` default and an `int` was read as
+//!    *minor* units: `to_currency(42)` was "kosong ringgit empat puluh dua
+//!    sen" while `42.0` said "empat puluh dua ringgit" — the old upstream
+//!    convention savoirfairelinux/num2words#426 removed everywhere else.
+//!    Fixed (gladiaio/num2words2#171, as #161 for LIJ): an `int` is a count of
+//!    units, so `100` is "seratus euro" and int, float and str agree.
 //! 7. **There is no `has_decimal` guard.** The cents segment is gated on
 //!    `right > 0` alone, so a whole float prints no subunit: `1.0` is "satu
 //!    euro" where `Num2Word_Base` would append a zero-cents segment.
@@ -694,7 +696,7 @@ impl Lang for LangMs {
         // integer quotient would need 29+ digits — signals InvalidOperation.
         // The handler swallows it and MS returns the bare number:
         //
-        //     to_currency(10**26 - 1, "MYR") == "sembilan ratus sembilan ..."
+        //     to_currency(10**26 - 1, "MYR") == "sembilan puluh sembilan ..."
         //     to_currency(10**26,     "MYR") == "100000000000000000000000000 MYR"
         //
         // The threshold is exact for ints: below it `n * 100` needs at most 28
@@ -761,12 +763,13 @@ impl Lang for LangMs {
         };
 
         // Python calls `parse_currency_parts(n)` bare, so every default in
-        // currency.py stands: is_int_with_cents=True (bug 6 — this is what
-        // makes int 100 one euro), keep_precision=False (bug 9), divisor=100
-        // (bug 11). Note `keep_precision` is False even when
-        // has_fractional_cents is True — MS computes that flag for its own
-        // branch below and never forwards it, unlike Num2Word_Base.
-        let (left, right, is_negative) = parse_currency_parts(val, true, false, 100);
+        // currency.py stands except is_int_with_cents: Python's True read an
+        // int as cents (bug 6, #171); it is a count of units here, like 42.0.
+        // keep_precision=False (bug 9), divisor=100 (bug 11). Note
+        // `keep_precision` is False even when has_fractional_cents is True —
+        // MS computes that flag for its own branch below and never forwards
+        // it, unlike Num2Word_Base.
+        let (left, right, is_negative) = parse_currency_parts(val, false, false, 100);
 
         let forms = self.currency_forms.get(currency).ok_or_else(|| {
             N2WError::NotImplemented(format!(
@@ -951,55 +954,56 @@ mod tests {
 
     // ---- currency -------------------------------------------------------
 
-    /// Frozen-corpus rows, verbatim — all 36 that MS's table serves.
+    /// Frozen-corpus rows — all 36 that MS's table serves; int rows corrected
+    /// for #171.
     #[test]
     fn corpus_currency() {
-        // Bugs 6 and 7 are both visible here: int 100 is *one* euro, and the
-        // float 1.0 prints no cents.
+        // Bug 7 is visible here: the float 1.0 prints no cents. Int rows are
+        // corrected for bug 6 (#171): an int is units, not cents.
         for (arg, want) in [
             ("0", "kosong euro"),
-            ("1", "kosong euro satu sen"),
-            ("2", "kosong euro dua sen"),
-            ("100", "satu euro"),
+            ("1", "satu euro"),
+            ("2", "dua euro"),
+            ("100", "seratus euro"),
             ("12.34", "dua belas euro tiga puluh empat sen"),
             ("0.01", "kosong euro satu sen"),
             ("1.0", "satu euro"),
             ("99.99", "sembilan puluh sembilan euro sembilan puluh sembilan sen"),
             ("1234.56", "seribu dua ratus tiga puluh empat euro lima puluh enam sen"),
             ("-12.34", "negatif dua belas euro tiga puluh empat sen"),
-            ("1000000", "sepuluh ribu euro"),
+            ("1000000", "satu juta euro"),
             ("0.5", "kosong euro lima puluh sen"),
         ] {
             assert_eq!(cur(arg, "EUR").unwrap(), want, "EUR {}", arg);
         }
         for (arg, want) in [
             ("0", "kosong dolar"),
-            ("1", "kosong dolar satu sen"),
-            ("2", "kosong dolar dua sen"),
-            ("100", "satu dolar"),
+            ("1", "satu dolar"),
+            ("2", "dua dolar"),
+            ("100", "seratus dolar"),
             ("12.34", "dua belas dolar tiga puluh empat sen"),
             ("0.01", "kosong dolar satu sen"),
             ("1.0", "satu dolar"),
             ("99.99", "sembilan puluh sembilan dolar sembilan puluh sembilan sen"),
             ("1234.56", "seribu dua ratus tiga puluh empat dolar lima puluh enam sen"),
             ("-12.34", "negatif dua belas dolar tiga puluh empat sen"),
-            ("1000000", "sepuluh ribu dolar"),
+            ("1000000", "satu juta dolar"),
             ("0.5", "kosong dolar lima puluh sen"),
         ] {
             assert_eq!(cur(arg, "USD").unwrap(), want, "USD {}", arg);
         }
         for (arg, want) in [
             ("0", "kosong paun"),
-            ("1", "kosong paun satu peni"),
-            ("2", "kosong paun dua peni"),
-            ("100", "satu paun"),
+            ("1", "satu paun"),
+            ("2", "dua paun"),
+            ("100", "seratus paun"),
             ("12.34", "dua belas paun tiga puluh empat peni"),
             ("0.01", "kosong paun satu peni"),
             ("1.0", "satu paun"),
             ("99.99", "sembilan puluh sembilan paun sembilan puluh sembilan peni"),
             ("1234.56", "seribu dua ratus tiga puluh empat paun lima puluh enam peni"),
             ("-12.34", "negatif dua belas paun tiga puluh empat peni"),
-            ("1000000", "sepuluh ribu paun"),
+            ("1000000", "satu juta paun"),
             ("0.5", "kosong paun lima puluh peni"),
         ] {
             assert_eq!(cur(arg, "GBP").unwrap(), want, "GBP {}", arg);
@@ -1031,14 +1035,13 @@ mod tests {
         }
     }
 
-    /// Bug 6: an int is minor units, so the sign rides on `left`/`right` split
-    /// out of `divmod(abs(n), 100)`.
+    /// Negative ints are units (bug 6 fixed, #171); the sign is said once.
     #[test]
     fn currency_negative_ints() {
-        assert_eq!(cur("-1", "MYR").unwrap(), "negatif kosong ringgit satu sen");
-        assert_eq!(cur("-100", "MYR").unwrap(), "negatif satu ringgit");
-        assert_eq!(cur("-101", "MYR").unwrap(), "negatif satu ringgit satu sen");
-        assert_eq!(cur("-1000000", "MYR").unwrap(), "negatif sepuluh ribu ringgit");
+        assert_eq!(cur("-1", "MYR").unwrap(), "negatif satu ringgit");
+        assert_eq!(cur("-100", "MYR").unwrap(), "negatif seratus ringgit");
+        assert_eq!(cur("-101", "MYR").unwrap(), "negatif seratus satu ringgit");
+        assert_eq!(cur("-1000000", "MYR").unwrap(), "negatif satu juta ringgit");
     }
 
     /// Bug 9: the fractional-cents branch always says "kosong".
@@ -1082,7 +1085,7 @@ mod tests {
     #[test]
     fn currency_decimal_context_limit_on_ints() {
         // 10**26 - 1: still inside the context, so still words.
-        assert!(cur("99999999999999999999999999", "MYR").unwrap().starts_with("sembilan ratus"));
+        assert!(cur("99999999999999999999999999", "MYR").unwrap().starts_with("sembilan puluh"));
         assert_eq!(
             cur("100000000000000000000000000", "MYR").unwrap(),
             "100000000000000000000000000 MYR"
