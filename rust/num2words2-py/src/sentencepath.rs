@@ -56,7 +56,9 @@
 //! as written, like `num2words("3.50")` — the integer path when whole, the
 //! `Decimal` path otherwise — instead of through a Python float, which
 //! dropped trailing zeros ("3.50" -> "three point five", "3.10" -> "three
-//! point one").
+//! point one"). Negative numbers and temperatures are read the same way, so
+//! `-5` is "minus five" in every language, not the float path's "minus five
+//! point zero" that the original produced through `abs(float)` (#225).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -638,12 +640,12 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         let g0 = m.get(0).unwrap();
         let (s, e) = t.span(g0.start(), g0.end());
         if !overlap(&used, s, e) {
-            let v = pyfloat(m.get(1).unwrap().as_str())?;
+            let v = m.get(1).unwrap().as_str().replace(',', ".");
             exts.push(Ext {
                 start: s,
                 end: e,
                 text: g0.as_str().to_string(),
-                val: Val::F(v),
+                val: Val::D(v),
                 typ: Typ::TempSymbol,
             });
             mark(&mut used, s, e);
@@ -656,12 +658,12 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
             if !overlap(&used, s, e) {
-                let v = pyfloat(m.get(1).unwrap().as_str())?;
+                let v = m.get(1).unwrap().as_str().replace(',', ".");
                 exts.push(Ext {
                     start: s,
                     end: e,
                     text: g0.as_str().to_string(),
-                    val: Val::F(v),
+                    val: Val::D(v),
                     typ: Typ::TempWord,
                 });
                 mark(&mut used, s, e);
@@ -1059,6 +1061,17 @@ fn cardinal_str(l: &(dyn Lang + Sync), s: &str) -> Result<String, N2WError> {
     l.cardinal_float_entry(&FloatValue::Decimal { value, precision }, None)
 }
 
+/// A [`Val::D`] split into (is negative, magnitude). "-0" is not negative.
+fn split_sign(val: &Val) -> Result<(bool, &str), N2WError> {
+    match val {
+        Val::D(s) => match s.strip_prefix('-') {
+            Some(m) => Ok((m.chars().any(|c| c.is_ascii_digit() && c != '0'), m)),
+            None => Ok((false, s.as_str())),
+        },
+        _ => Err(N2WError::Fallback("sentence: number value".into())),
+    }
+}
+
 /// `num2words(v, to="ordinal", lang=...)` with a float.
 fn ordinal_float(l: &(dyn Lang + Sync), v: f64) -> Result<String, N2WError> {
     let (_, prec) = py_float_repr(v)?;
@@ -1115,37 +1128,27 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
         Typ::TempSymbol => {
             let (temp_word, celsius_word) =
                 temp_words(ctx.raw).unwrap_or(("degrees", "Celsius"));
-            let v = val.f();
+            let (neg, num) = split_sign(val)?;
             let l = ctx.lang()?;
-            if v < 0.0 {
-                let neg = negative_word(ctx.raw);
+            if neg {
                 Ok(format!(
                     "{} {} {} {}",
-                    neg,
-                    cardinal_float(l, v.abs())?,
+                    negative_word(ctx.raw),
+                    cardinal_str(l, num)?,
                     temp_word,
                     celsius_word
                 ))
             } else {
-                Ok(format!(
-                    "{} {} {}",
-                    cardinal_float(l, v)?,
-                    temp_word,
-                    celsius_word
-                ))
+                Ok(format!("{} {} {}", cardinal_str(l, num)?, temp_word, celsius_word))
             }
         }
         Typ::TempWord => {
-            let v = val.f();
+            let (neg, num) = split_sign(val)?;
             let l = ctx.lang()?;
-            if v < 0.0 {
-                Ok(format!(
-                    "{} {}",
-                    negative_word(ctx.raw),
-                    cardinal_float(l, v.abs())?
-                ))
+            if neg {
+                Ok(format!("{} {}", negative_word(ctx.raw), cardinal_str(l, num)?))
             } else {
-                cardinal_float(l, v)
+                cardinal_str(l, num)
             }
         }
         Typ::Ordinal => ctx.lang()?.to_ordinal(val.i()),
@@ -1219,21 +1222,14 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             }
         }
         Typ::Number => {
-            let num = match val {
-                Val::D(s) => s.as_str(),
-                _ => return Err(N2WError::Fallback("sentence: number value".into())),
-            };
+            let (neg, num) = split_sign(val)?;
             let v = val.f();
             let l = ctx.lang()?;
-            if v < 0.0 {
-                // abs() keeps the float type, so even -7 renders through
-                // the float path (ru: "семь целых ноль десятых").
-                let w = if ctx.ord_mode {
-                    ordinal_float(l, v.abs())?
-                } else {
-                    cardinal_float(l, v.abs())?
-                };
-                Ok(format!("{} {}", negative_word(ctx.raw), w))
+            if neg {
+                // A negative is read like num2words(-7): an integer stays on
+                // the integer path (ru "минус семь", not "минус семь целых
+                // ноль десятых", #225).
+                Ok(format!("{} {}", negative_word(ctx.raw), cardinal_str(l, num)?))
             } else if !num.contains('.') {
                 let n = pyint(num)?;
                 if ctx.ord_mode {

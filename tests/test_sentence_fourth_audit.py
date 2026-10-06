@@ -30,3 +30,21 @@ def test_decimal_matches_num2words_string(lang):
     if lang == "pt_BR":
         expected = expected.replace("vírgula", "ponto")
     assert word == expected
+
+
+# --- #225: negatives and temperatures take the integer path ---------------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("-5 x", "ru", "Минус пять x"),
+        ("-5 x", "cs", "Mínus pět x"),
+        ("-5 x", "id", "Minus lima x"),
+        ("25°C", "ru", "Двадцать пять градусов Цельсия"),
+        ("-5°C", "ru", "Минус пять градусов Цельсия"),
+        ("-5 x", "en", "Minus five x"),
+        ("-0 x", "en", "Zero x"),
+    ],
+)
+def test_negative_integers_not_read_as_decimals(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
