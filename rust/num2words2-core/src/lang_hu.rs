@@ -28,21 +28,16 @@
 //! This is a port, not a rewrite. Everything below is what the interpreter
 //! actually emits, confirmed against the frozen corpus:
 //!
-//! 1. **The `partial_ords` suffix-stripping doubles the "m".** `partial_ords`
-//!    maps the *bare stems* `"illió" -> "milliomod"` and
-//!    `"illiárd" -> "milliárdod"`, but `to_ordinal` strips only the matched
-//!    stem (5 resp. 7 chars) and splices in a replacement that re-adds its own
-//!    leading `m`. The `m` of `millió` is left behind, so
-//!    `to_ordinal(10**6)` == `"egym" + "milliomod" + "ik"` ==
-//!    **"egymmilliomodik"** (note the `mm`), and `to_ordinal(10**9)` ==
-//!    **"egymmilliárdodik"**. Corpus-confirmed.
-//! 2. **Every mega/giga scale collapses onto *million* wording.** Because the
-//!    keys are the bare stems, `billió`/`trillió`/… all match `"illió"` and
-//!    get `"milliomod"`. So `to_ordinal(10**12)` (cardinal `"egybillió"`) ==
-//!    **"egybmilliomodik"** — the `b` of `billió` survives and the ordinal
-//!    claims *million*. Likewise `to_ordinal(10**18)` == "egytrmilliomodik",
-//!    `to_ordinal(10**15)` == "egybmilliárdodik",
-//!    `to_ordinal(10**21)` == "egytrmilliárdodik". All corpus-confirmed.
+//! 1. *(Fixed, #248.)* `partial_ords` mapped the bare stems `"illió"` ->
+//!    `"milliomod"` and `"illiárd"` -> `"milliárdod"`, re-adding an `m` the
+//!    strip had left behind: `to_ordinal(10**6)` was "egymmilliomodik". The
+//!    replacements are now the bare stems too (`"illiomod"`, `"illiárdod"`),
+//!    so 10**6 == "egymilliomodik" and 10**9 == "egymilliárdodik".
+//! 2. *(Fixed, #248, by the same change.)* Every mega/giga scale used to
+//!    collapse onto *million* wording ("egybmilliomodik" for 10**12). With
+//!    stem-for-stem replacement each scale keeps its own prefix: 10**12 ==
+//!    "egybilliomodik", 10**15 == "egybilliárdodik", 10**18 ==
+//!    "egytrilliomodik".
 //! 3. **`to_ordinal` never calls `verify_ordinal`**, so negatives are happily
 //!    ordinalised: `to_ordinal(-1)` == "mínusz első". Only `to_ordinal_num`
 //!    verifies, and there a negative raises `TypeError`.
@@ -219,7 +214,7 @@ const LOW_BASE: [&str; 9] = [
 /// `"illió"`, which is why `to_ordinal(1000001)` ("egymillió-egy") matches on
 /// the trailing "egy" and yields the *sane* "egymillió-egyedik", while
 /// `to_ordinal(1000000)` ("egymillió") falls through to `"illió"` and yields
-/// the broken "egymmilliomodik" (bug 1). Likewise `"száz"` precedes `"ezer"`,
+/// "egymilliomodik" (bug 1, fixed in #248). Likewise `"száz"` precedes `"ezer"`,
 /// so "ezerszáz" ordinalises on "száz" → "ezerszázadik".
 const PARTIAL_ORDS: [(&str, &str); 23] = [
     ("nulla", "nullad"),
@@ -243,9 +238,10 @@ const PARTIAL_ORDS: [(&str, &str); 23] = [
     ("kilencven", "kilencvened"),
     ("száz", "század"),
     ("ezer", "ezred"),
-    // Bare stems, not "millió"/"milliárd" — the source of bugs 1 and 2.
-    ("illió", "milliomod"),
-    ("illiárd", "milliárdod"),
+    // Bare stems on both sides, so every scale keeps its own prefix
+    // (Python re-added an "m" here: bugs 1 and 2, fixed in #248).
+    ("illió", "illiomod"),
+    ("illiárd", "illiárdod"),
 ];
 
 fn pow10(n: u32) -> BigInt {

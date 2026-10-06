@@ -25,14 +25,15 @@
 //! This is a port, not a rewrite. Every item below looks wrong and is exactly
 //! what Python emits — each is pinned by a `bench/corpus.jsonl` row.
 //!
-//! 1. **`to_ordinal(n)` for `n > 100` just glues an `s` onto the cardinal.**
-//!    `_int_to_ordinal` special-cases only 0, <10, 10, <20, <100, 100 and 1000;
-//!    everything else falls through to `self._int_to_cardinal(n) + "s"`. This
-//!    produces non-words: `to_ordinal(101)` == "ükssada ükss",
-//!    `to_ordinal(111)` == "ükssada üksteists", `to_ordinal(2000)` ==
-//!    "kaks tuhats", `to_ordinal(10**12)` == "üks triljons". Note 110 →
-//!    "ükssada kümmes" only *looks* right; it is the same `+ "s"` rule landing
-//!    on "kümme" by luck.
+//! 1. *(Fixed, #248.)* Python glued an `s` onto the cardinal for every
+//!    `n > 100` outside its special cases ("ükssada ükss", "ükssada
+//!    üksteists"). The port now builds standard Estonian compound ordinals:
+//!    every component but the last in the genitive, the last one ordinal —
+//!    101 == "saja esimene", 121 == "saja kahekümne esimene", 200 ==
+//!    "kahesajas", 1001 == "tuhande esimene", 2021 == "kahe tuhande
+//!    kahekümne esimene", 10**6 == "miljones". Round thousands from 2000
+//!    and other round values from 10**6 up ("kaks tuhats", "üks triljons")
+//!    still take the `+ "s"` fallback; that remains a known gap.
 //! 2. ~~**`to_ordinal` on negatives is Python list indexing, not arithmetic.**~~
 //!    Fixed (gladiaio/num2words2#155). `_int_to_ordinal` checks `n == 0`
 //!    then `n < 10`, and every negative passed `n < 10`, reaching
@@ -41,14 +42,11 @@
 //!    `-10..=-1` and raised `IndexError` below that. The port now raises
 //!    Base's `errmsg_negord` `TypeError` for every negative, like most
 //!    languages, and so does the truncating float entry (`-0.5`, `-1.5`).
-//! 3. **Compound ordinals 21..99 use the *cardinal* tens stem.** The `else` arm
-//!    of the `n < 100` branch is `self.tens[t] + " " + self.ordinals_ones[o]`,
-//!    so `to_ordinal(21)` == "kakskümmend esimene" (Estonian wants the genitive
-//!    "kahekümne esimene"). Kept verbatim.
-//! 4. **`ordinals_tens[4]` is "nelikümnes", not "neljakümnes".** Its neighbours
-//!    all use the genitive stem ("kahekümnes", "kolmekümnes", "viiekümnes"), so
-//!    index 4 is a typo in the table. `to_ordinal(40)` == "nelikümnes" is
-//!    corpus-confirmed. Kept verbatim.
+//! 3. *(Fixed, #248.)* Compound ordinals 21..99 used the *cardinal* tens
+//!    stem ("kakskümmend esimene"); they now use the genitive, "kahekümne
+//!    esimene".
+//! 4. *(Fixed, #248.)* `ordinals_tens[4]` was the typo "nelikümnes"; it is
+//!    now "neljakümnes", like its genitive-stem neighbours.
 //! 5. **Above 10^12 the trillions branch recurses into itself**, so the scale
 //!    word repeats instead of naming a higher scale: `10**15` ==
 //!    "tuhat triljonit", `10**18` == "üks miljon triljonit", `10**21` ==
@@ -154,9 +152,8 @@ const TENS: [&str; 10] = [
     "kaheksakümmend",
     "üheksakümmend",
 ];
-
-/// `self.ordinals_ones` — index 0 is an empty filler that becomes reachable via
-/// Python's negative indexing; see bug 2 and [`ordinal_ones_at`].
+/// `self.ordinals_ones`. Index 0 is an empty filler, once reachable via
+/// Python's negative indexing (bug 2, fixed in #155); never read now.
 const ORDINALS_ONES: [&str; 10] = [
     "",
     "esimene",
@@ -170,20 +167,77 @@ const ORDINALS_ONES: [&str; 10] = [
     "üheksas",
 ];
 
-/// `self.ordinals_tens`. Index 4 is "nelikümnes" — a typo in the Python table
-/// (bug 4), preserved verbatim.
+/// `self.ordinals_tens`. Index 4 was the typo "nelikümnes" in Python (bug 4,
+/// fixed in #248).
 const ORDINALS_TENS: [&str; 10] = [
     "",
     "kümnes",
     "kahekümnes",
     "kolmekümnes",
-    "nelikümnes",
+    "neljakümnes",
     "viiekümnes",
     "kuuekümnes",
     "seitsmekümnes",
     "kaheksakümnes",
     "üheksakümnes",
 ];
+
+/// Genitive of 1..=9, the stem of every non-final component of a compound
+/// ordinal ("kahekümne esimene", "kahesajas"; #248). Index 0 is unused.
+const GEN_ONES: [&str; 10] = [
+    "", "ühe", "kahe", "kolme", "nelja", "viie", "kuue", "seitsme", "kaheksa", "üheksa",
+];
+
+/// Genitive of `1..=99`.
+fn gen_below_100(r: usize) -> String {
+    match r {
+        1..=9 => GEN_ONES[r].to_string(),
+        10 => "kümne".to_string(),
+        11..=19 => format!("{}teistkümne", GEN_ONES[r - 10]),
+        _ if r % 10 == 0 => format!("{}kümne", GEN_ONES[r / 10]),
+        _ => format!("{}kümne {}", GEN_ONES[r / 10], GEN_ONES[r % 10]),
+    }
+}
+
+/// Genitive of the hundreds digit `h` in 1..=9: "saja", "kahesaja", ….
+fn gen_hundreds(h: usize) -> String {
+    if h == 1 {
+        "saja".to_string()
+    } else {
+        format!("{}saja", GEN_ONES[h])
+    }
+}
+
+/// Genitive of `1..=999`.
+fn gen_below_1000(m: usize) -> String {
+    let (h, r) = (m / 100, m % 100);
+    match (h, r) {
+        (0, _) => gen_below_100(r),
+        (_, 0) => gen_hundreds(h),
+        _ => format!("{} {}", gen_hundreds(h), gen_below_100(r)),
+    }
+}
+
+/// Ordinal of `1..=99`: genitive tens + ordinal ones for compounds.
+fn ord_below_100(r: usize) -> String {
+    match r {
+        1..=9 => ORDINALS_ONES[r].to_string(),
+        10 => "kümnes".to_string(),
+        11..=19 => TEENS_ORDINALS[r - 11].to_string(),
+        _ if r % 10 == 0 => ORDINALS_TENS[r / 10].to_string(),
+        _ => format!("{}kümne {}", GEN_ONES[r / 10], ORDINALS_ONES[r % 10]),
+    }
+}
+
+/// Ordinal of `1..=999`: "sajas", "kahesajas", "saja kahekümne esimene".
+fn ord_below_1000(m: usize) -> String {
+    let (h, r) = (m / 100, m % 100);
+    match (h, r) {
+        (0, _) => ord_below_100(r),
+        (_, 0) => format!("{}s", gen_hundreds(h)),
+        _ => format!("{} {}", gen_hundreds(h), ord_below_100(r)),
+    }
+}
 
 /// The `teens_map` literal inside `_int_to_word`, indexed by `n - 11`.
 const TEENS: [&str; 9] = [
@@ -270,14 +324,6 @@ fn index_form(forms: &[String], singular: bool) -> Result<&str> {
         .get(if singular { 0 } else { 1 })
         .map(String::as_str)
         .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
-}
-
-/// `self.ordinals_ones[n]`. `_int_to_ordinal` rejects negatives first
-/// (#155), so callers only reach here with `0 <= n < 10`.
-fn ordinal_ones_at(n: &BigInt) -> Result<&'static str> {
-    n.to_usize()
-        .and_then(|i| ORDINALS_ONES.get(i).copied())
-        .ok_or_else(|| N2WError::Index("list index out of range".into()))
 }
 
 pub struct LangEt {
@@ -390,39 +436,30 @@ impl LangEt {
         // Every negative would satisfy `n < 10` and wrap around in the list
         // index below (bug 2, #155): reject it like Base's verify_ordinal.
         verify_ordinal(n)?;
-        if *n < big(10) {
-            return ordinal_ones_at(n).map(|s| s.to_string());
-        }
-
-        if *n == big(10) {
-            return Ok("kümnes".to_string());
-        }
-
-        if *n < big(20) {
-            let i = n.to_usize().expect("bounded to 11..=19");
-            return Ok(TEENS_ORDINALS[i - 11].to_string());
-        }
-
-        if *n < big(100) {
-            let v = n.to_usize().expect("bounded to 20..=99");
-            let (tens_val, ones_val) = (v / 10, v % 10);
-            return Ok(if ones_val == 0 {
-                ORDINALS_TENS[tens_val].to_string()
+        // Compound ordinals: genitive components + ordinal last (#248).
+        if let Some(v) = n.to_usize().filter(|v| *v < 1_000_000) {
+            if v < 1000 {
+                return Ok(ord_below_1000(v));
+            }
+            let (k, low) = (v / 1000, v % 1000);
+            let head = if k == 1 {
+                "tuhande".to_string()
             } else {
-                // Cardinal tens stem + ordinal ones (bug 3).
-                format!("{} {}", TENS[tens_val], ORDINALS_ONES[ones_val])
-            });
+                format!("{} tuhande", gen_below_1000(k))
+            };
+            if low != 0 {
+                return Ok(format!("{} {}", head, ord_below_1000(low)));
+            }
+            if k == 1 {
+                return Ok("tuhandes".to_string());
+            }
         }
 
-        if *n == big(100) {
-            return Ok("sajas".to_string());
+        if *n == big(1_000_000) {
+            return Ok("miljones".to_string());
         }
 
-        if *n == big(1000) {
-            return Ok("tuhandes".to_string());
-        }
-
-        // Everything else: cardinal + "s" (bug 1).
+        // Round values without a rule: cardinal + "s" (bug 1, known gap).
         Ok(format!("{}s", self.int_to_cardinal(n)?))
     }
 

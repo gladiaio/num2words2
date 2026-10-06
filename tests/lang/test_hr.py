@@ -214,7 +214,7 @@ class Num2WordsHRTest(TestCase):
         self.assertEqual(num2words(5, lang="hr", to="ordinal"), "peti")
         self.assertEqual(num2words(10, lang="hr", to="ordinal"), "deseti")
         self.assertEqual(num2words(100, lang="hr", to="ordinal"), "stoti")
-        self.assertEqual(num2words(21, lang="hr", to="ordinal"), "dvadeset jedani")
+        self.assertEqual(num2words(21, lang="hr", to="ordinal"), "dvadeset prvi")
 
     def test_complex_numbers(self):
         # Test some complex number conversions

@@ -41,29 +41,25 @@
 //!    input. The transliteration of a numeral is the identity, so the port
 //!    returns what `sr` returns: the number itself (`1` → "1", `-1` → "-1",
 //!    `1.5` → "1.5").
-//! 2. **`to_ordinal` just glues "и" onto the cardinal** for anything outside
-//!    its small lookup dict (Python's own comment: "This is a simplified
-//!    implementation"). This produces non-words throughout, and they are the
-//!    expected output: `to_ordinal(200)` == "dvestai", `to_ordinal(2000)` ==
-//!    "dve hiljadei", `to_ordinal(42)` == "četrdeset dvai",
-//!    `to_ordinal(0)` == "nulai", `to_ordinal(10**9)` == "milijardai".
-//! 3. **Negative ordinals are cheerfully produced**, unlike most languages
-//!    which raise: `to_ordinal(-1)` == "minus jedani". `verify_ordinal` is
-//!    never called anywhere in this chain.
+//! 2. *(Fixed, #248.)* Python glued "и" onto the cardinal outside its
+//!    small dict ("dvestai", "četrdeset dvai"). The ordinal is now built in
+//!    Cyrillic by `lang_sr`'s `ordinal_cyrl` (last word inflected) and
+//!    transliterated: 42 == "četrdeset drugi", 200 == "dvestoti", 0 ==
+//!    "nulti", 10**6 == "milioniti". Round thousands and larger round values
+//!    still take the "и" fallback ("dve hiljadei"), a known gap.
+//! 3. *(Fixed, #248.)* A negative ordinal is "minus" + the ordinal
+//!    (`to_ordinal(-1)` == "minus prvi"); `verify_ordinal` is still never
+//!    called, so it does not raise.
 //! 4. **`_int2word` drops `feminine` when recursing for negatives**
 //!    (`self._int2word(abs(number))` omits the argument, so it silently
 //!    resets to `False`). Out of scope for the four modes here — `to_cardinal`
 //!    only ever passes `feminine=False` — but reproduced anyway in
 //!    [`int2word`] so the bug is preserved if the parameter is ever threaded
 //!    through.
-//! 5. **`to_ordinal` transliterates twice.** `Num2Word_SR.to_ordinal` calls
-//!    `self.to_cardinal(num)`, which dynamically dispatches to the *SR_LATN*
-//!    override — so the cardinal is already Latin. It appends the Cyrillic
-//!    "и", and the `SR_LATN.to_ordinal` wrapper then re-runs `cyrl_to_latn`
-//!    over the whole string. The second pass is a no-op on the Latin part
-//!    (no replacement value contains a Cyrillic codepoint, so nothing
-//!    cascades) and converts the trailing "и" → "i". Mirrored exactly in
-//!    [`LangSrLatn::to_ordinal`] rather than short-circuited.
+//! 5. *(Superseded by #248.)* Python's `to_ordinal` transliterated twice
+//!    (a Latin cardinal plus a Cyrillic "и", re-run through `cyrl_to_latn`).
+//!    The port now builds the whole ordinal in Cyrillic and transliterates
+//!    it once — see bug 2.
 //! 6. **`to_currency` ignored the currency code for `int` input (fixed,
 //!    #176).** `Num2Word_SR.to_currency` intercepts `isinstance(val, int)`
 //!    before delegating to Base and hardcodes "динар"/"динара", so in Python
@@ -105,7 +101,7 @@ use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
+use num_traits::{FromPrimitive, One, Signed, Zero};
 use std::collections::HashMap;
 
 const ZERO: &str = "нула";
@@ -491,46 +487,6 @@ fn cardinal_float_str(value: &FloatValue, feminine: bool) -> Result<String> {
     }
 }
 
-/// The ordinal lookup table from `Num2Word_SR.to_ordinal` (Cyrillic).
-///
-/// Sparse on purpose: 1..=20, the round tens, 100 and 1000. Everything else
-/// falls through to the cardinal + "и" path (bug 2).
-fn ordinal_word(value: &BigInt) -> Option<&'static str> {
-    let n = value.to_u32()?;
-    Some(match n {
-        1 => "први",
-        2 => "други",
-        3 => "трећи",
-        4 => "четврти",
-        5 => "пети",
-        6 => "шести",
-        7 => "седми",
-        8 => "осми",
-        9 => "девети",
-        10 => "десети",
-        11 => "једанаести",
-        12 => "дванаести",
-        13 => "тринаести",
-        14 => "четрнаести",
-        15 => "петнаести",
-        16 => "шеснаести",
-        17 => "седамнаести",
-        18 => "осамнаести",
-        19 => "деветнаести",
-        20 => "двадесети",
-        30 => "тридесети",
-        40 => "четрдесети",
-        50 => "педесети",
-        60 => "шездесети",
-        70 => "седамдесети",
-        80 => "осамдесети",
-        90 => "деведесети",
-        100 => "стоти",
-        1000 => "хиљадити",
-        _ => return None,
-    })
-}
-
 // --- lang_SR_LATN.py -----------------------------------------------------
 
 /// `_CYRL_TO_LATN` / `cyrl_to_latn` — Serbian Cyrillic → Gaj's Latin.
@@ -741,14 +697,9 @@ impl Lang for LangSrLatn {
     /// str(number)` guard in Python can never fire for the BigInt we are
     /// handed, so it is elided.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        if let Some(word) = ordinal_word(value) {
-            return Ok(cyrl_to_latn(word));
-        }
-        // Python: `cardinal = self.to_cardinal(num)` dispatches to the SR_LATN
-        // override, so this is already Latin; "и" is Cyrillic; the outer
-        // wrapper transliterates the concatenation. Bug 5 — kept verbatim.
-        let cardinal = self.to_cardinal(value)?;
-        Ok(cyrl_to_latn(&format!("{}{}", cardinal, "и")))
+        // Built in Cyrillic, then transliterated once (#248).
+        let cyrl = crate::lang_sr::ordinal_cyrl(value, &|v| int2word(v, false))?;
+        Ok(cyrl_to_latn(&cyrl))
     }
 
     // `to_ordinal_num` (int and float/Decimal): the trait defaults, i.e. what
@@ -810,8 +761,8 @@ impl Lang for LangSrLatn {
 
     /// `to_ordinal(float/Decimal)`. `SR.to_ordinal` opens with
     /// `num = int(number)` — `int()` of the *value*, truncation toward zero —
-    /// so `2.5` -> 2 -> "drugi", `-1.5` -> -1 -> "minus jedani", `0.5` ->
-    /// 0 -> "nulai", and `1e+16` *succeeds* ("deset bilijardii") where the
+    /// so `2.5` -> 2 -> "drugi", `-1.5` -> -1 -> "minus prvi", `0.5` ->
+    /// 0 -> "nulti", and `1e+16` *succeeds* ("deset bilijardii") where the
     /// cardinal raises ValueError.
     ///
     /// The `except (ValueError, TypeError): return str(number)` guard can

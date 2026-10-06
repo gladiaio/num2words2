@@ -77,20 +77,16 @@
 //! This is a port, not a rewrite. All of the following are exactly what
 //! Python emits; none are "fixed" here:
 //!
-//! 1. **`to_ordinal` is a lookup table plus a naive "и" suffix.** Only the
-//!    keys 1..=20, 30, 40, ..., 90, 100 and 1000 have real ordinal words.
-//!    Every other input falls through to `self.to_cardinal(num) + "и"`,
-//!    which produces non-words. Verified against the corpus:
-//!    `to_ordinal(0)` == "нулаи", `to_ordinal(21)` == "двадесет једани",
-//!    `to_ordinal(1100)` == "хиљада стои", `to_ordinal(2000)` ==
-//!    "две хиљадеи", `to_ordinal(10**9)` == "милијардаи". The Python source
-//!    even flags itself: "This is a simplified implementation".
-//! 2. **Negative ordinals are suffixed, not rejected.** `to_ordinal(-1)` ==
-//!    "минус једани". `Num2Word_Base` has an `errmsg_negord` message, but SR
-//!    never consults it, so no error is raised. (Contrast `lang_PL`, which
-//!    crashes with `ValueError` on every negative ordinal — SR does not,
-//!    because `_int2word` takes `abs()` *before* the string is chunked, so
-//!    the "-" never reaches `splitbyx`/`get_digits`.)
+//! 1. *(Fixed, #248.)* Python tabled only 1..=20, the round tens, 100 and
+//!    1000 and glued "и" onto the cardinal for the rest ("двадесет
+//!    једани"). Compound ordinals now inflect their last word
+//!    ([`crate::compound_ordinal`]): 21 == "двадесет први", 101 == "сто
+//!    први", 1100 == "хиљада стоти", 200 == "двестоти", 0 == "нулти",
+//!    10**6 == "милионити". Round thousands and larger round values other
+//!    than 10**6 (2000, 10**9, …) still take Python's "и" fallback ("две
+//!    хиљадеи"); that remains a known gap.
+//! 2. *(Fixed, #248.)* A negative ordinal is "минус" + the ordinal
+//!    (`to_ordinal(-1)` == "минус први"); SR still never raises for it.
 //! 3. **`pluralize` treats `n % 100 == 10` as a teen.** The guard is
 //!    `if number % 100 < 10 or number % 100 > 20`, so a remainder of exactly
 //!    10 falls to the `else` and takes form 2. Hence `to_cardinal(10**10)`
@@ -290,6 +286,12 @@ const SCALE: [(&str, &str, &str, bool); 11] = [
     ("квинтилион", "квинтилиона", "квинтилиона", false), // 10^30
 ];
 
+/// Ordinal hundreds 100..=900 (#248). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "стоти", "двестоти", "тристоти", "четиристоти", "петстоти", "шестстоти", "седамстоти",
+    "осамстоти", "деветстоти",
+];
+
 /// The `ordinals` dict local to `to_ordinal`, in Python's insertion order.
 ///
 /// Note the gaps: 21..=29, 31..=39, ..., and everything above 100 except
@@ -330,8 +332,7 @@ const ORDINALS: [(i64, &str); 30] = [
 /// Python's `num in ordinals` → `ordinals[num]`.
 ///
 /// The `(0, "")` padding row in [`ORDINALS`] is skipped explicitly: 0 is *not*
-/// a key in Python's dict (`to_ordinal(0)` == "нулаи", not ""), so matching it
-/// would be a behaviour change.
+/// a key in Python's dict; [`ordinal_cyrl`] handles 0 ("нулти", #248).
 fn ordinal_word(num: &BigInt) -> Option<&'static str> {
     let n = num.to_i64()?;
     if n == 0 {
@@ -341,6 +342,38 @@ fn ordinal_word(num: &BigInt) -> Option<&'static str> {
         .iter()
         .find(|(k, _)| *k == n)
         .map(|(_, w)| *w)
+}
+
+/// `to_ordinal` in Cyrillic, shared with `lang_sr_latn` (which
+/// transliterates the result). `cardinal` renders the Cyrillic cardinal.
+pub(crate) fn ordinal_cyrl(
+    value: &BigInt,
+    cardinal: &dyn Fn(&BigInt) -> Result<String>,
+) -> Result<String> {
+    if value.is_negative() {
+        return Ok(format!("{} {}", NEGWORD, ordinal_cyrl(&value.abs(), cardinal)?));
+    }
+    if value.is_zero() {
+        return Ok("нулти".to_string());
+    }
+    if let Some(word) = ordinal_word(value) {
+        return Ok(word.to_string());
+    }
+    // Propagates the MAXVAL OverflowError for huge inputs (#159).
+    let card = cardinal(value)?;
+    if let Some(n) = value.to_u64() {
+        if n == 1_000_000 {
+            return Ok("милионити".to_string());
+        }
+        let small = |v: u64| ordinal_word(&BigInt::from(v));
+        if let Some(word) =
+            crate::compound_ordinal::last_word_ordinal(n, &card, small, Some(&HUNDREDS_ORD))
+        {
+            return Ok(word);
+        }
+    }
+    // Python's "simplified implementation" fallback (known gap, see quirk 1).
+    Ok(format!("{}и", card))
 }
 
 /// `SCALE[idx]`. Missing keys are Python's `KeyError` (unreachable since the
@@ -858,15 +891,10 @@ impl Lang for LangSr {
     ///
     /// Python's `try: num = int(number) / except (ValueError, TypeError):
     /// return str(number)` guard cannot trigger for a `BigInt`, so it is
-    /// omitted. Everything outside the small `ordinals` table gets the naive
-    /// "и" suffix — quirks 1 and 2.
+    /// omitted. Outside the small `ordinals` table the last word of the
+    /// cardinal is inflected (#248) — quirks 1 and 2.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        if let Some(word) = ordinal_word(value) {
-            return Ok(word.to_string());
-        }
-        // Propagates the MAXVAL OverflowError for huge inputs (#159).
-        let cardinal = self.to_cardinal(value)?;
-        Ok(format!("{}и", cardinal))
+        ordinal_cyrl(value, &|v| self.to_cardinal(v))
     }
 
     /// The raw float grammar — [`LangSr::cardinal_float_str`] with
@@ -907,7 +935,7 @@ impl Lang for LangSr {
 
     /// `to_ordinal(float/Decimal)`. Python's `to_ordinal` opens with
     /// `num = int(number)` — `int()` of the *value*, truncation toward zero —
-    /// so `2.5` -> 2 -> "други", `-1.5` -> -1 -> "минус једани", and `1e+16`
+    /// so `2.5` -> 2 -> "други", `-1.5` -> -1 -> "минус први", and `1e+16`
     /// *succeeds* ("десет билијардии") where the cardinal raises ValueError.
     ///
     /// The `except (ValueError, TypeError): return str(number)` guard can

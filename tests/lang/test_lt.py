@@ -81,7 +81,7 @@ class Num2WordsLTTest(TestCase):
         self.assertEqual(num2words(7, lang="lt", to="ordinal"), "septintas")
         self.assertEqual(num2words(15, lang="lt", to="ordinal"), "penkioliktas")
         self.assertEqual(num2words(100, lang="lt", to="ordinal"), "šimtasis")
-        self.assertEqual(num2words(21, lang="lt", to="ordinal"), "dvidešimt vienasas")
+        self.assertEqual(num2words(21, lang="lt", to="ordinal"), "dvidešimt pirmas")
 
     def test_to_currency(self):
         # Test all available currency forms.

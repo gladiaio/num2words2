@@ -26,18 +26,18 @@
 //! This is a port, not a rewrite. Every item below is wrong-looking Slovak but
 //! is exactly what Python emits, confirmed against the frozen corpus:
 //!
-//! 1. **`to_ordinal` glues a bare "ý" onto the cardinal** for any number
-//!    outside its 29-entry lookup table. The comment in Python calls this "a
-//!    simplified implementation"; the results are not Slovak words:
-//!    `to_ordinal(0)` == "nulaý", `to_ordinal(25)` == "dvadsať päťý",
-//!    `to_ordinal(200)` == "dvestoý", `to_ordinal(10**6)` == "milióný",
-//!    `to_ordinal(10**9)` == "miliardaý". The suffix is appended to the whole
-//!    string, so a multi-word cardinal only inflects its *last* word.
-//! 2. **Negative ordinals produce "mínus …ý"** rather than raising. Unlike
-//!    `lang_PL`, SK's `to_cardinal` strips the sign *before* the digits reach
-//!    `splitbyx`/`get_digits`, so no `ValueError` is ever triggered:
-//!    `to_ordinal(-1)` == "mínus jedený". Base's `verify_ordinal` (which would
-//!    reject negatives with a `TypeError`) is never called.
+//! 1. *(Fixed, #248.)* Python glued a bare "ý" onto the cardinal for any
+//!    number outside its 29-entry table ("dvadsať päťý", "dvestoý",
+//!    "milióný"). Compound ordinals are now built component by component,
+//!    as in `lang_cs.rs`: 21 == "dvadsiaty prvý", 101 == "stý prvý", 200 ==
+//!    "dvojstý", 1001 == "tisíci prvý", 2021 == "dvojtisíci dvadsiaty
+//!    prvý", 10**6 == "miliónty", 0 == "nultý". Thousands with a multiplier
+//!    above 9 stay cardinal before a lower part ("dvanásť tisíc prvý");
+//!    round values the tables do not reach (10 000, 2·10^6, …) still take
+//!    Python's cardinal + "ý" fallback.
+//! 2. *(Fixed, #248.)* Negative ordinals are "mínus" + the ordinal
+//!    (`to_ordinal(-1)` == "mínus prvý"), no longer "mínus jedený". They
+//!    still do not raise.
 //! 3. **Thousands are written detached and mis-pluralized.** `_int2word`
 //!    joins chunk words with spaces, so 2000 == "dve tisíc" (idiomatic Slovak
 //!    is "dvetisíc"), and `pluralize` keys off the whole 3-digit chunk rather
@@ -141,7 +141,7 @@ use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, One, Signed, Zero};
+use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
 const ZERO: &str = "nula";
@@ -233,8 +233,8 @@ const THOUSANDS: [[&str; 3]; 11] = [
 
 /// The `ordinals` dict local to `Num2Word_SK.to_ordinal`.
 ///
-/// 29 entries: 1..=20, the round tens 30..=90, 100 and 1000. Everything else
-/// falls through to the "cardinal + ý" path (bug 1). Keys are `u32` because
+/// 29 entries: 1..=20, the round tens 30..=90, 100 and 1000.
+/// [`ordinal_below_1000`] composes the rest from it (#248). Keys are `u32` because
 /// the table's own domain is tiny; the *input* stays `BigInt` and is compared
 /// by value, so a huge or negative argument simply misses every entry — which
 /// is exactly Python's `num in ordinals`.
@@ -269,6 +269,42 @@ const ORDINALS: [(u32, &str); 29] = [
     (100, "stý"),
     (1000, "tisíci"),
 ];
+
+/// Ordinal hundreds 100..=900 (#248). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "stý", "dvojstý", "trojstý", "štvorstý", "päťstý", "šesťstý", "sedemstý", "osemstý",
+    "deväťstý",
+];
+
+/// Combining prefix for 2..=9 thousand ("dvojtisíci"). Index 0 and 1 unused.
+const MULT_PREFIX: [&str; 10] = [
+    "", "", "dvoj", "troj", "štvor", "päť", "šesť", "sedem", "osem", "deväť",
+];
+
+fn ordinal_table(n: u64) -> Option<&'static str> {
+    ORDINALS.iter().find(|(k, _)| u64::from(*k) == n).map(|(_, w)| *w)
+}
+
+/// Ordinal of `1..=999` with every component ordinal: 21 → "dvadsiaty prvý",
+/// 101 → "stý prvý" (#248).
+fn ordinal_below_1000(n: u64) -> String {
+    debug_assert!(n > 0 && n < 1000);
+    let mut parts: Vec<&str> = Vec::new();
+    if n >= 100 {
+        parts.push(HUNDREDS_ORD[(n / 100) as usize]);
+    }
+    let r = n % 100;
+    if r != 0 {
+        match ordinal_table(r) {
+            Some(w) => parts.push(w),
+            None => {
+                parts.push(ordinal_table(r / 10 * 10).expect("round tens are tabled"));
+                parts.push(ordinal_table(r % 10).expect("units are tabled"));
+            }
+        }
+    }
+    parts.join(" ")
+}
 
 // --- Python exception encoding -------------------------------------------
 //
@@ -695,8 +731,8 @@ impl Lang for LangSk {
     /// ```
     ///
     /// `int()` truncates toward zero, so `to_ordinal(2.5)` == "druhý",
-    /// `to_ordinal(-1.5)` == "mínus jedený" (int is -1), and `-0.0` -> 0 ->
-    /// "nulaý" with **no** minus. Exponent forms convert fine — `int(1e16)`
+    /// `to_ordinal(-1.5)` == "mínus prvý" (int is -1), and `-0.0` -> 0 ->
+    /// "nultý" with **no** minus. Exponent forms convert fine — `int(1e16)`
     /// == 10**16, whose cardinal + "ý" is "desať biliárdý", and
     /// `Decimal("1E+2")` -> 100 -> "stý" — unlike the cardinal path, where
     /// the string algorithm raises ValueError on them. The `except` guard
@@ -809,18 +845,47 @@ impl Lang for LangSk {
     /// The `try: int(number) except (ValueError, TypeError): return str(number)`
     /// guard cannot fire for an integer argument and is not modelled.
     ///
-    /// Table hit → the proper Slovak ordinal. Table miss → cardinal + "ý",
-    /// which is what Python calls "a simplified implementation" and what the
-    /// corpus pins: "nulaý", "dvadsať päťý", "milióný", "mínus jedený"
-    /// (bugs 1 and 2).
+    /// Table hit → the proper Slovak ordinal. Python glued "ý" onto the
+    /// cardinal for the rest; compounds are now built component by
+    /// component (#248), see the module header for the remaining fallback.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        for (k, word) in ORDINALS.iter() {
-            if value == &BigInt::from(*k) {
-                return Ok(word.to_string());
-            }
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
         }
-        let cardinal = self.to_cardinal(value)?;
-        Ok(format!("{}ý", cardinal))
+        let n = match value.to_u64() {
+            Some(n) => n,
+            None => return Ok(format!("{}ý", self.to_cardinal(value)?)),
+        };
+        if n == 0 {
+            return Ok("nultý".to_string());
+        }
+        if let Some(w) = ordinal_table(n) {
+            return Ok(w.to_string());
+        }
+        if n < 1000 {
+            return Ok(ordinal_below_1000(n));
+        }
+        let (high, low) = (n / 1000 * 1000, n % 1000);
+        let thousands = n / 1000;
+        let high_ord = match thousands {
+            1 => Some("tisíci".to_string()),
+            2..=9 => Some(format!("{}tisíci", MULT_PREFIX[thousands as usize])),
+            _ => None,
+        };
+        if low == 0 {
+            return Ok(match (high_ord, n) {
+                (Some(w), _) => w,
+                (None, 1_000_000) => "miliónty".to_string(),
+                (None, 1_000_000_000) => "miliardtý".to_string(),
+                // Known gap: no standard form tabled for this round value.
+                (None, _) => format!("{}ý", self.to_cardinal(value)?),
+            });
+        }
+        let head = match high_ord {
+            Some(w) => w,
+            None => self.to_cardinal(&BigInt::from(high))?,
+        };
+        Ok(format!("{} {}", head, ordinal_below_1000(low)))
     }
 
     /// Port of the non-integer path of `Num2Word_SK.to_cardinal`.

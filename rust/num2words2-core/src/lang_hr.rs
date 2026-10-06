@@ -55,8 +55,8 @@
 //!
 //! `to_ordinal`, by contrast, opens with `int(number)` — plain truncation
 //! toward zero — so floats lose their fraction *before* the table lookup:
-//! `to_ordinal(2.5)` == "drugi", `to_ordinal(0.5)` == "nulai",
-//! `to_ordinal(-1.5)` == "minus jedani", and `to_ordinal(1e16)` ==
+//! `to_ordinal(2.5)` == "drugi", `to_ordinal(0.5)` == "nulti",
+//! `to_ordinal(-1.5)` == "minus prvi", and `to_ordinal(1e16)` ==
 //! "deset bilijardii" (int(1e16) is exact, then cardinal + "i"). No
 //! ValueError here: `int(float)` succeeds where `int(str)` failed. See
 //! [`Lang::ordinal_float_entry`].
@@ -92,19 +92,17 @@
 //! This is a port, not a rewrite. The following all look wrong but are exactly
 //! what Python emits, verified against the interpreter and the frozen corpus:
 //!
-//! 1. **`to_ordinal` is a lookup table plus a naive `+ "i"` fallback.** Python
-//!    only tables 1..=20, the round tens 30..=90, 100 and 1000. *Every other*
-//!    input falls through to `self.to_cardinal(num) + "i"`, glueing an "i"
-//!    onto the last cardinal word with no grammar whatsoever. Hence the
-//!    corpus rows `to_ordinal(0)` == "nulai", `to_ordinal(42)` ==
-//!    "četrdeset dvai", `to_ordinal(200)` == "dvjestoi",
-//!    `to_ordinal(2000)` == "dvije tisućei", `to_ordinal(10000)` ==
-//!    "deset tisućai" and `to_ordinal(10**10)` == "deset milijardii" (note the
-//!    doubled "ii" — "milijardi" + "i"). The Python source calls this "a
-//!    simplified implementation". None of it is corrected here.
-//! 2. **`to_ordinal` of a negative works and produces nonsense.** Unlike most
-//!    modules HR never calls `verify_ordinal`, so no `TypeError` is raised for
-//!    negatives: `to_ordinal(-1)` == "minus jedani". Preserved.
+//! 1. *(Fixed, #248.)* Python tabled only 1..=20, the round tens, 100 and
+//!    1000, and glued "i" onto the cardinal for everything else ("četrdeset
+//!    dvai", "dvjestoi"). Compound ordinals now inflect their last word
+//!    ([`crate::compound_ordinal`]): 21 == "dvadeset prvi", 101 == "sto
+//!    prvi", 1001 == "tisuća prvi", 200 == "dvjestoti", 0 == "nulti",
+//!    10**6 == "milijunti". Round thousands and larger round values other
+//!    than 10**6 (2000, 10000, 10**10, …) still take Python's `+ "i"`
+//!    fallback ("dvije tisućei"); that remains a known gap.
+//! 2. *(Fixed, #248.)* A negative ordinal is "minus" + the ordinal
+//!    (`to_ordinal(-1)` == "minus prvi"). HR still never calls
+//!    `verify_ordinal`, so negatives do not raise.
 //! 3. **`SCALE[5]` is "bilijardu"**, an accusative form where every other
 //!    entry is nominative ("bilijarda" would be the pattern-consistent word).
 //!    The corpus confirms `to_cardinal(10**15)` == "bilijardu". Kept verbatim.
@@ -401,6 +399,12 @@ const ORDINALS: [(u32, &str); 29] = [
     (90, "devedeseti"),
     (100, "stoti"),
     (1000, "tisući"),
+];
+
+/// Ordinal hundreds 100..=900 (#248). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "stoti", "dvjestoti", "tristoti", "četiristoti", "petstoti", "šeststoti", "sedamstoti",
+    "osamstoti", "devetstoti",
 ];
 
 /// Python's `num in ordinals` / `ordinals[num]`.
@@ -1021,7 +1025,7 @@ impl Lang for LangHr {
     ///
     /// Python opens with `num = int(number)` — truncation toward zero — so the
     /// fraction is gone *before* the table lookup: `2.5` → "drugi", `0.5` →
-    /// "nulai", `-1.5` → "minus jedani", `-0.0` → "nulai" (int drops the zero's
+    /// "nulti", `-1.5` → "minus prvi", `-0.0` → "nulti" (int drops the zero's
     /// sign). `int(1e16)` succeeds (unlike the cardinal path's `int("1e+16")`),
     /// so `1e16` → "deset bilijardii". The `except (ValueError, TypeError)`
     /// arm is unreachable for the finite values this hook receives; the
@@ -1147,18 +1151,35 @@ impl Lang for LangHr {
     /// return str(number)`; a `BigInt` is already an integer, so that arm is
     /// unreachable and is not modelled.
     ///
-    /// Everything outside the 29-entry table falls through to
-    /// `to_cardinal(num) + "i"` — no `verify_ordinal`, so negatives pass
-    /// through and produce "minus jedani" rather than raising. See the module
-    /// docs.
+    /// Outside the 29-entry table, Python glued "i" onto the cardinal;
+    /// compounds now inflect their last word instead (#248, see the module
+    /// docs for the round values still on that fallback).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
+        }
+        if value.is_zero() {
+            return Ok("nulti".to_string());
+        }
         if let Some(word) = ordinal_lookup(value) {
             return Ok(word.to_string());
         }
-
-        // For other numbers, add 'i' suffix to the cardinal.
-        // Python's comment: "This is a simplified implementation".
         let cardinal = self.to_cardinal(value)?;
+        if let Some(n) = value.to_u64() {
+            if n == 1_000_000 {
+                return Ok("milijunti".to_string());
+            }
+            let small = |v: u64| ordinal_lookup(&BigInt::from(v));
+            if let Some(word) = crate::compound_ordinal::last_word_ordinal(
+                n,
+                &cardinal,
+                small,
+                Some(&HUNDREDS_ORD),
+            ) {
+                return Ok(word);
+            }
+        }
+        // Python's comment: "This is a simplified implementation".
         Ok(format!("{}i", cardinal))
     }
 

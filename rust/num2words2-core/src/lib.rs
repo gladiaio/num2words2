@@ -2,6 +2,7 @@
 // Language modules are discovered from src/lang_*.rs.
 
 pub mod base;
+pub mod compound_ordinal;
 pub mod currency;
 pub mod floatpath;
 pub mod presentation;
