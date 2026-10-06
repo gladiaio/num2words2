@@ -158,6 +158,13 @@
 //!     fractional segment disappear, while its positive twin reads out in full.
 //!     Floats are unaffected (`-x` is exact in f64). Only reachable from the
 //!     float/Decimal path, so it is modelled in [`to_cardinal_float`].
+//! 11. **A zero integer part was dropped (fixed, #175).** Python only spells
+//!     "صفر" when the whole number is zero, so `to_cardinal(0.5)` was
+//!     `"، خمسون"` (no integer word, a leading comma) and `0.001` was `""`;
+//!     `to_currency(0)` was a bare `"صفر"` with no unit. The port reads the
+//!     zero integer part like any other: "صفر ، خمسون" (as 1.5 is
+//!     "واحد ، خمسون"), "صفر" for `0.001`, and "صفر ريال" (as 0.5 is
+//!     "صفر ريال وخمسون هللة").
 //!
 //! # Float/Decimal ordinals, string NaN, and the grammatical kwargs
 //!
@@ -1240,11 +1247,11 @@ fn decimal_value(decimal_part: &str, part_precision: usize) -> String {
 
 /// `Decimal(self.number) == Decimal(0)`, the "صفر" test in `convert_to_arabic`.
 ///
-/// Must be asked of the *whole* `to_str` string rather than of
-/// `integer_value`: `to_str(0.001)` is `"0.001"`, whose integer part is 0 yet
-/// whose Decimal is non-zero, so Python does **not** return "صفر" (it returns
-/// the empty string). `to_str` never emits a sign or an exponent, so "all the
-/// digits are 0" is the whole test.
+/// Asked of the *whole* `to_str` string: `to_str(0.001)` is `"0.001"`, whose
+/// Decimal is non-zero, so Python does **not** return "صفر" (it returned the
+/// empty string; the callers now spell the zero integer part, #175).
+/// `to_str` never emits a sign or an exponent, so "all the digits are 0" is
+/// the whole test.
 fn number_str_is_zero(number: &str) -> bool {
     number.chars().all(|c| c == '0' || c == '.')
 }
@@ -1374,8 +1381,10 @@ fn convert_currency(number: &str, prefs: &CurrencyPrefs) -> Result<String> {
     };
 
     // --- convert_to_arabic ---
+    // Python returns a bare "صفر" here; the unit is added as for 0.5's
+    // "صفر ريال وخمسون هللة" (#175).
     if number_str_is_zero(number) {
-        return Ok(ZERO_WORD.to_string());
+        return Ok(format!("{} {}", ZERO_WORD, prefs.unit[0]));
     }
 
     // `self.isCurrencyNameFeminine = False` is set by `to_currency` before it
@@ -1494,8 +1503,8 @@ fn validate_number_float(x: f64) -> bool {
 //   * `self.separator = "،"` (Arabic comma U+060C) rather than `to_currency`'s
 //     "و", which takes the `" {} ".format(self.separator)` arm instead.
 //
-// So `0.5` is `"، خمسون"`: no integer part, a comma, then the fraction read as
-// a whole *two-digit number* ("fifty") — not as digits, and with no pointword
+// So `0.5` is `"صفر ، خمسون"`: the integer part (Python dropped a zero one,
+// #175), a comma, then the fraction read as a whole *two-digit number* ("fifty") — not as digits, and with no pointword
 // anywhere. `partPrecision` is pinned to 2, so the fraction is zero-padded or
 // **truncated** to exactly two digits: `12.345` and `12.34` are the same
 // string, and the third decimal is dropped, never rounded.
@@ -1842,8 +1851,9 @@ fn convert_cardinal_float(number: &str) -> Result<String> {
 
     // --- convert_to_arabic ---
     // Asked of the whole `to_str` string, not of `integer_value`: `0.001` has
-    // integer part 0 yet a non-zero Decimal, so Python does *not* say "صفر" —
-    // it returns "". Whereas `to_str(1e-10)` is literally "0.", which is zero.
+    // integer part 0 yet a non-zero Decimal, so Python does *not* say "صفر"
+    // here (it returned ""; see the zero integer part below, #175).
+    // `to_str(1e-10)` is literally "0.", which is zero.
     if number_str_is_zero(number) {
         return Ok(ZERO_WORD.to_string());
     }
@@ -1865,14 +1875,19 @@ fn convert_cardinal_float(number: &str) -> Result<String> {
     // left with an effect are the separator and the space before the subunit.
     let mut formatted = ret_val;
 
+    // Python leaves a zero integer part empty, so 0.5 was "، خمسون" and 0.001
+    // was "". Spell it, as the currency path does (#175): "صفر ، خمسون".
+    if integer_value.is_zero() {
+        formatted = ZERO_WORD.to_string();
+    }
+
     if decimal_value_num != 0 {
         // `formatted_number.rstrip()` before the separator, so the group loop's
         // trailing space does not double up (issue #53).
         formatted = formatted.trim_end().to_string();
         // `self.separator` is "،", not "و", so this takes the
         // `" {} ".format(self.separator)` arm — the space on *both* sides is
-        // why "واحد ، خمسون" has one around the comma and `0.5` alone yields a
-        // leading space that `.strip()` then removes.
+        // why "واحد ، خمسون" has one around the comma.
         formatted.push_str(" ، ");
         formatted.push_str(&decimal_string);
         formatted.push(' ');
@@ -2304,20 +2319,20 @@ mod tests {
     fn corpus_float_rows() {
         for (arg, out) in [
             ("0.0", "صفر"),
-            ("0.5", "، خمسون"),
+            ("0.5", "صفر ، خمسون"), // Python: "، خمسون" (#175)
             ("1.0", "واحد"),
             ("1.5", "واحد ، خمسون"),
             ("2.25", "اثنان ، خمس وعشرون"),
             ("3.14", "ثلاثة ، أربع عشرة"),
-            ("0.01", "، إحدى"),
-            ("0.1", "، عشر"),
-            ("0.99", "، تسع وتسعون"),
+            ("0.01", "صفر ، إحدى"),
+            ("0.1", "صفر ، عشر"),
+            ("0.99", "صفر ، تسع وتسعون"),
             ("1.01", "واحد ، إحدى"),
             ("12.34", "اثنا عشر ، أربع وثلاثون"),
             ("99.99", "تسعة وتسعون ، تسع وتسعون"),
             ("100.5", "مائة ، خمسون"),
             ("1234.56", "ألف ومئتان وأربعة وثلاثون ، ست وخمسون"),
-            ("-0.5", "سالب ، خمسون"),
+            ("-0.5", "سالب صفر ، خمسون"),
             ("-1.5", "سالب واحد ، خمسون"),
             ("-12.34", "سالب اثنا عشر ، أربع وثلاثون"),
             ("1.005", "واحد"),
@@ -2331,7 +2346,7 @@ mod tests {
     #[test]
     fn corpus_decimal_rows() {
         for (arg, out) in [
-            ("0.01", "، إحدى"),
+            ("0.01", "صفر ، إحدى"),
             ("1.10", "واحد ، عشر"),
             ("12.345", "اثنا عشر ، أربع وثلاثون"),
             // Issue #603: exact at trillion scale. A float() cast would round.
@@ -2339,7 +2354,7 @@ mod tests {
                 "98746251323029.99",
                 "ثمانية وتسعون تريليوناً وسبعمائة وستة وأربعون ملياراً ومئتان وواحد وخمسون مليوناً وثلاثمائة وثلاثة وعشرون ألفاً وتسعة وعشرون ، تسع وتسعون",
             ),
-            ("0.001", ""),
+            ("0.001", "صفر"), // Python: "" (#175)
         ] {
             assert_eq!(card(d(arg)), out, "Decimal {}", arg);
         }
@@ -2374,11 +2389,12 @@ mod tests {
         // ... and "0.", which Decimal("0.") reads back as zero.
         assert_eq!(card(f(1e-10)), "صفر");
         // Banker's rounding, the other trap: round(0.5) == 0, not 1.
-        assert_eq!(card(d("0.0000000005000000000000000000000000001")), "");
+        assert_eq!(card(d("0.0000000005000000000000000000000000001")), "صفر");
     }
 
     /// `0.001` has integer part 0 but a non-zero Decimal, so `convert_to_arabic`
-    /// does *not* say "صفر" — it returns the empty string.
+    /// does *not* take its "صفر" shortcut; Python returned the empty string,
+    /// the port spells the zero integer part (#175).
     #[test]
     fn zero_word_is_asked_of_the_whole_to_str_string() {
         assert_eq!(card(f(0.0)), "صفر");
@@ -2386,8 +2402,8 @@ mod tests {
         assert_eq!(card(d("0")), "صفر");
         assert_eq!(card(d("-0")), "صفر");
         assert_eq!(card(d("0.00")), "صفر");
-        assert_eq!(card(f(0.001)), "");
-        assert_eq!(card(d("0.001")), "");
+        assert_eq!(card(f(0.001)), "صفر");
+        assert_eq!(card(d("0.001")), "صفر");
     }
 
     /// Bug 1: `out.lstrip(minus)` strips a character *set*, so a negative loses
