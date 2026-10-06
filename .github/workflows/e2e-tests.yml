@@ -4,14 +4,21 @@ on:
   push:
     branches: [ master, main, develop ]
     paths:
+      # Every conversion runs in the Rust core, so a Rust-only change must
+      # run the E2E suite too.
       - 'num2words2/**'
+      - 'rust/**'
       - 'tests/**'
+      - 'pyproject.toml'
       - '.github/workflows/e2e-tests.yml'
   pull_request:
     branches: [ master, main ]
     paths:
       - 'num2words2/**'
+      - 'rust/**'
       - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/e2e-tests.yml'
   schedule:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'

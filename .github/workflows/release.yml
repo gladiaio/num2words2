@@ -108,9 +108,46 @@ jobs:
           path: dist/*.tar.gz
 
   # ---------------------------------------------------------------------------
+  # Run the test suite against the built slim wheels (what PyPI ships) before
+  # anything is published. Only the targets the runner can execute natively;
+  # the cross-compiled aarch64-linux and x86_64-macOS wheels are built from the
+  # same sources.
+  test-wheels:
+    name: Test slim wheel · ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,       target: aarch64-apple-darwin }
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-slim-${{ matrix.target }}
+          path: dist
+      - name: Install the wheel
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install --no-index --find-links dist num2words2
+          # Drop the source package so the tests import the installed wheel,
+          # not ./num2words2 (which has no compiled _rust extension).
+          rm -rf num2words2
+      - name: Run the test suite against the wheel
+        run: python -m pytest -q tests/
+
+  # ---------------------------------------------------------------------------
   publish-pypi:
     name: Publish slim wheels + sdist to PyPI
-    needs: [build, sdist]
+    needs: [build, sdist, test-wheels]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -134,7 +171,7 @@ jobs:
   # ---------------------------------------------------------------------------
   github-release:
     name: Attach all wheels to the GitHub Release
-    needs: [build, sdist]
+    needs: [build, sdist, test-wheels]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

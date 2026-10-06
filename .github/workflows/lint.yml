@@ -23,8 +23,14 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 isort black mypy
+        # Same versions as .pre-commit-config.yaml, so the hooks and CI agree.
+        pip install flake8 "isort==5.13.2" "black==23.12.1" mypy
 
+    # Not blocking yet: ~125 files under tests/ (and num2words2/__init__.py,
+    # __main__.py) predate the formatter. Making this step blocking needs a
+    # one-off `black num2words2 tests` reformat PR (plus a
+    # .git-blame-ignore-revs entry) landed on its own, so it does not
+    # conflict with in-flight changes; then drop continue-on-error.
     - name: Check code formatting with Black
       run: |
         black --check --diff num2words2 tests
@@ -40,8 +46,10 @@ jobs:
     - name: Check import sorting with isort
       run: |
         isort --check-only --diff num2words2 tests
-      continue-on-error: true
 
+    # Informational only: the package is a thin binder over the compiled
+    # num2words2._rust extension, which ships no type stubs yet (see #244),
+    # so mypy cannot check the calls that matter.
     - name: Type checking with mypy
       run: |
         mypy num2words2 --ignore-missing-imports
