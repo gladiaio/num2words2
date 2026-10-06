@@ -159,9 +159,9 @@ without cheque rules raise `NotImplementedError`
 
 ### `fraction`
 
-Pass `'n/d'` strings to produce a spoken fraction. Idiomatic forms for
-common denominators are implemented per language; everything else uses
-the ordinal-as-noun pattern with the language's natural plural rule.
+Pass `'n/d'` strings to produce a spoken fraction. Languages with fraction
+rules use idiomatic forms for common denominators and the ordinal-as-noun
+pattern with the language's natural plural rule for the rest.
 Languages without fraction rules raise `NotImplementedError`
 (`lang='ru' does not support to='fraction'`), and any input other than an
 `'n/d'` string raises `TypeError`.
