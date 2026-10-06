@@ -84,30 +84,20 @@
 //!    adjective=True)` == "öt dollars", while the float path *does* apply it:
 //!    `to_currency(-5.0, "USD", adjective=True)` == "mínusz öt US dollars,
 //!    nulla cents". Verified against the interpreter.
-//! 10. **Whole floats ride the integer branches, but `big_number_to_cardinal`
-//!    measures `len(str(value))` — and `str` of a float is not `str` of the
-//!    int.** Below 1e16 the repr carries a trailing `".0"` (two extra chars),
-//!    which the `digits % 3 == 0 → digits - 2` correction happens to absorb
-//!    for every 10**(3k), so `to_cardinal(10**15 as float)` still reads
-//!    "egybilliárd". At/above 1e16 the repr flips to exponent form
-//!    (`"1e+16"`, 5 chars) → `exp = 10**3`, and the head recursion
-//!    (`1e16 // 1000 == 1e13`) lands on a value whose repr grows back to
-//!    fixed notation (`"10000000000000.0"`, 16 chars) → `exp = 10**15 >
-//!    value`, where `rest = to_cardinal(value % exp, "")` re-enters with the
-//!    *same* value forever: **`RecursionError`**. `1e16`/`1e20`
-//!    corpus-confirmed; modelled by an explicit `value < exp` check in
-//!    [`LangHu::pyfloat_whole_cardinal`] rather than a real 1000-deep spin.
-//! 11. **`Decimal("1E+20")` → "százbilliárdezer".** Same short-repr trap
-//!    (`len("1E+20") == 5` → `exp = 10**3`), but decimal *divide-integer*
-//!    normalises the quotient to exponent 0, so the head is
-//!    `Decimal("100000000000000000")` whose plain 18-char str yields
-//!    `exp = 10**15` → "százbilliárd", then the top level appends its own
-//!    `cards[10**3]`: "százbilliárd" + "ezer". The ordinal strips the
-//!    trailing "ezer" → "százbilliárdezredik". Both corpus-confirmed. A
-//!    whole Decimal whose str is *longer* than its numeric digits (trailing
-//!    fractional zeros, `Decimal("1234567.000")`) keeps its exponent through
-//!    `%` (ideal exponent `min(e, 0)`), so there the recursion *is* infinite
-//!    → RecursionError, same guard.
+//! 10. ~~**Whole floats ride the integer branches, but
+//!    `big_number_to_cardinal` measures `len(str(value))`**~~ — on the float
+//!    repr, so at/above 1e16 the exponent form (`"1e+16"`) picked the wrong
+//!    scale and the recursion never ended (**`RecursionError`** for `1e16`,
+//!    `1e20`), and `1e21` read "egybilliárdezerezer".
+//! 11. ~~**`Decimal("1E+20")` → "százbilliárdezer".**~~ The same short-repr
+//!    trap on `str(Decimal)`; `Decimal("1234567.000")` recursed forever.
+//!    Both fixed (gladiaio/num2words2#212): a whole float/Decimal takes the
+//!    exact integer path, so `1e16` reads like `10**16`.
+//! 14. ~~**Four or more decimals raise `KeyError`.**~~ The fraction's
+//!    denominator was `partial_ords[cards[10 ** len(right)]]`, which only
+//!    exists for 1–3 digits: `0.0001` raised `KeyError: '10000'`, `0.123456`
+//!    `KeyError: "'millió'"`. Fixed (#212): "nulla egész egy tízezred",
+//!    "… milliomod"; see [`LangHu::fraction_denominator`].
 //! 12. **`to_ordinal` welcomes floats** (bug 3 — no `verify_ordinal`), so
 //!    `to_ordinal(-1.0)` == "mínusz első" and `to_ordinal(0.5)` runs the
 //!    fraction grammar through the suffix loop: "nulla egész öt tized" ends
@@ -187,8 +177,6 @@ use crate::base::{
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
-use crate::strnum::python_decimal_str;
-use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use std::collections::HashMap;
@@ -264,58 +252,6 @@ fn pow10(n: u32) -> BigInt {
     BigInt::from(10u8).pow(n)
 }
 
-/// Python `RecursionError` — HU's `to_cardinal` re-enters itself with
-/// unchanged arguments on some float/Decimal reprs (bugs 10/11) and the
-/// interpreter kills it at the recursion limit. Returned eagerly instead of
-/// actually spinning 1000 frames deep.
-fn recursion_error() -> N2WError {
-    N2WError::Custom {
-        module: "builtins",
-        class: "RecursionError",
-        msg: "maximum recursion depth exceeded".into(),
-    }
-}
-
-/// Python's `repr(float)` / `str(float)` for an f64.
-///
-/// Rust's `{}` shares the shortest-round-trip digit contract but *never*
-/// switches to exponent notation, so it cannot stand in above 1e16 (or below
-/// 1e-4). Rule: fixed notation for decimal exponent in `[-4, 16)` (whole
-/// values get a trailing ".0"), otherwise `<shortest mantissa>e±NN` with the
-/// exponent zero-padded to two digits. Non-finite values fall back to `{}`
-/// — callers only ever test those strings for a missing '.', so the
-/// inf/-inf/NaN vs Python inf/-inf/nan spelling difference is unobservable.
-fn py_float_repr(f: f64) -> String {
-    if !f.is_finite() {
-        return format!("{}", f);
-    }
-    // `{:e}` = shortest digits + decimal exponent, e.g. "1e16", "1.2345e19".
-    let sci = format!("{:e}", f);
-    let (mant, exp) = sci.split_once('e').expect("{:e} always has an exponent");
-    let exp: i32 = exp.parse().expect("{:e} exponent is an integer");
-    if !(-4..16).contains(&exp) {
-        return format!("{}e{}{:02}", mant, if exp < 0 { "-" } else { "+" }, exp.abs());
-    }
-    let s = format!("{}", f);
-    if s.contains('.') {
-        s
-    } else {
-        format!("{}.0", s)
-    }
-}
-
-/// CPython `float_floordiv`: `mod = fmod(x, y); div = (x - mod) / y;
-/// floor(div)` with a half-ulp correction. Positive operands only here.
-fn py_floordiv(x: f64, y: f64) -> f64 {
-    let m = x % y; // Rust `%` is fmod for finite operands
-    let div = (x - m) / y;
-    let mut fd = div.floor();
-    if div - fd > 0.5 {
-        fd += 1.0;
-    }
-    fd
-}
-
 /// Python's numeric `value < 0` — NOT the sign bit. `-0.0 < 0` is False, so
 /// [`FloatValue::is_negative`] (sign-bit aware, right for `str(value)`
 /// rendering) would wrongly send `-0.0` down the negative branches of
@@ -339,20 +275,6 @@ fn fv_neg(v: &FloatValue) -> FloatValue {
             value: -value.clone(),
             precision: *precision,
         },
-    }
-}
-
-/// Rebuild the `Decimal` a `(numeric value, scale)` pair stands for, so
-/// [`python_decimal_str`] renders Python's exact `str(value)`. `scale` is
-/// the BigDecimal convention (`-as_tuple().exponent`): 3 for
-/// `Decimal("12345.000")`, -20 for `Decimal("1E+20")`. Both directions are
-/// exact by construction — a whole value with scale `-k` is divisible by
-/// `10**k`.
-fn dec_repr(v: &BigInt, scale: i64) -> BigDecimal {
-    if scale >= 0 {
-        BigDecimal::new(v * pow10(scale as u32), scale)
-    } else {
-        BigDecimal::new(v / pow10((-scale) as u32), scale)
     }
 }
 
@@ -714,228 +636,62 @@ impl LangHu {
         format!("{}ik", out)
     }
 
+    /// The denominator of a decimal fraction with `n` digits: "tized",
+    /// "század", "ezred", "tízezred", "százezred", "milliomod",
+    /// "tízmilliomod", …, "milliárdod", "billiomod", ….
+    ///
+    /// Python looked up `partial_ords[cards[10 ** n]]`, which only exists for
+    /// n = 1, 2, 3: four or more decimals raised `KeyError` ('10000', then
+    /// "'millió'" because the `partial_ords` key is the bare stem "illió")
+    /// (gladiaio/num2words2#212). From n = 4 the word is "tíz"/"száz" + the
+    /// fraction form of the scale word for `10**(n - n % 3)`: "ezer" →
+    /// "ezred", "-ió" → "-iomod", "-árd" → "-árdod".
+    fn fraction_denominator(&self, n: usize) -> Result<String> {
+        match n {
+            0 => return Err(N2WError::Key(format!("{}", pow10(0)))),
+            1 => return Ok("tized".to_string()),
+            2 => return Ok("század".to_string()),
+            _ => {}
+        }
+        let prefix = ["", "tíz", "száz"][n % 3];
+        let k = n - n % 3;
+        let scale = if k == 3 {
+            "ezred".to_string()
+        } else {
+            let word = self.card(&pow10(k as u32))?;
+            if let Some(stem) = word.strip_suffix("ió") {
+                format!("{}iomod", stem)
+            } else if word.ends_with("árd") {
+                format!("{}od", word)
+            } else {
+                return Err(N2WError::Key(format!("'{}'", word)));
+            }
+        };
+        Ok(format!("{}{}", prefix, scale))
+    }
+
     /// `Num2Word_HU.to_cardinal(value, zero=...)` for a float/Decimal
     /// argument — the shared body of [`Lang::cardinal_float_entry`] and
     /// [`Lang::to_cardinal_float_kw`].
     ///
     /// Python's first branch is `if int(value) != value: return
     /// self.to_cardinal_float(value)` — note `zero` is dead on that path.
-    /// Whole values then ride the integer branchwork, but with float/Decimal
-    /// *arithmetic and reprs* (bugs 10/11), so they get their own faithful
-    /// recursions instead of a cast to BigInt.
+    /// Whole values then rode the integer branchwork with float/Decimal
+    /// arithmetic and reprs (bugs 10/11: 1e16 RecursionError, 1e21
+    /// "egybilliárdezerezer"); they now take the exact integer path, so
+    /// `1e16` reads like `10**16` (gladiaio/num2words2#212).
     fn hu_cardinal_any(
         &self,
         value: &FloatValue,
         precision_override: Option<u32>,
         zero: &str,
     ) -> Result<String> {
-        if value.as_whole_int().is_none() {
-            return self.to_cardinal_float(value, precision_override);
-        }
-        match value {
-            FloatValue::Float { value: f, .. } => self.pyfloat_whole_cardinal(*f, zero),
-            FloatValue::Decimal { value: d, .. } => {
-                let (v, scale) = {
-                    let scale = d.as_bigint_and_exponent().1;
-                    // Whole, so scale-0 truncation is exact.
-                    (d.with_scale(0).as_bigint_and_exponent().0, scale)
-                };
-                self.pydec_whole_cardinal(&v, scale, zero)
-            }
+        match value.as_whole_int() {
+            None => self.to_cardinal_float(value, precision_override),
+            Some(i) => self.to_cardinal_z(&i, zero),
         }
     }
 
-    /// `Num2Word_HU.to_cardinal` for a **whole float**. Every branch matches
-    /// [`LangHu::to_cardinal_z`] except that the arithmetic stays in f64
-    /// (Python never converts) and `big_number_to_cardinal` measures
-    /// `len(str(value))` on the *float* repr — the source of bug 10.
-    ///
-    /// All recursive arguments are whole floats again (`% 10`, `// 100`,
-    /// `% exp` of whole operands), so `int(value) != value` never fires
-    /// inside the recursion.
-    fn pyfloat_whole_cardinal(&self, f: f64, zero: &str) -> Result<String> {
-        if f < 0.0 {
-            // NB: recurses with the *default* zero, and -0.0 is not < 0.
-            return Ok(format!(
-                "{}{}",
-                NEGWORD,
-                self.pyfloat_whole_cardinal(-f, ZERO)?
-            ));
-        }
-        if f == 0.0 {
-            return Ok(zero.to_string());
-        }
-        if zero.is_empty() && f == 2.0 {
-            return Ok("két".to_string());
-        }
-        if f < 30.0 {
-            // Python: self.cards[value] — hash(5.0) == hash(5) hits the int key.
-            return self.card(&BigInt::from(f as i64));
-        }
-        if f < 100.0 {
-            // tens_to_cardinal: try self.cards[value] / except KeyError.
-            if let Some(w) = self.cards.get(&BigInt::from(f as i64)) {
-                return Ok(w.to_string());
-            }
-            let base = BigInt::from((py_floordiv(f, 10.0) * 10.0) as i64);
-            let head = self.card(&base)?;
-            // Bug 6: the `zero=""` context is *not* propagated here.
-            let rest = self.pyfloat_whole_cardinal(f % 10.0, ZERO)?;
-            return Ok(format!("{}{}", head, rest));
-        }
-        if f < 1000.0 {
-            // hundreds_to_cardinal.
-            let hundreds = py_floordiv(f, 100.0);
-            let mut prefix = "száz".to_string();
-            if hundreds != 1.0 {
-                prefix = format!("{}{}", self.pyfloat_whole_cardinal(hundreds, "")?, prefix);
-            }
-            let postfix = self.pyfloat_whole_cardinal(f % 100.0, "")?;
-            return Ok(format!("{}{}", prefix, postfix));
-        }
-        if f < 1e6 {
-            // thousands_to_cardinal.
-            let thousands = py_floordiv(f, 1000.0);
-            let mut prefix = "ezer".to_string();
-            if thousands != 1.0 {
-                prefix = format!("{}{}", self.pyfloat_whole_cardinal(thousands, "")?, prefix);
-            }
-            let postfix = self.pyfloat_whole_cardinal(f % 1000.0, "")?;
-            let sep = if f <= 2000.0 || postfix.is_empty() { "" } else { "-" };
-            return Ok(format!("{}{}{}", prefix, sep, postfix));
-        }
-
-        // big_number_to_cardinal, digits from the float repr (bug 10).
-        let slen = py_float_repr(f).len(); // repr is ASCII: bytes == chars
-        let d = if slen % 3 != 0 { slen } else { slen - 2 };
-        let exp_pow = (d / 3 * 3) as u32;
-        // Python coerces the int `exp` through float(); parsing the decimal
-        // string is that exact conversion (correctly rounded), where
-        // `10f64.powi` need not be.
-        let exp_int = pow10(exp_pow);
-        let exp_f: f64 = exp_int.to_string().parse().expect("10**n parses");
-        if f < exp_f {
-            // `rest = self.to_cardinal(value % exp, "")` == to_cardinal(value, "")
-            // — identical arguments, infinite recursion (bug 10).
-            return Err(recursion_error());
-        }
-        let m = f % exp_f;
-        let rest = self.pyfloat_whole_cardinal(m, "")?;
-        let head = self.pyfloat_whole_cardinal(py_floordiv(f, exp_f), "")?;
-        let scale = self.card(&exp_int)?;
-        let tail = if rest.is_empty() {
-            String::new()
-        } else {
-            format!("-{}", rest)
-        };
-        Ok(format!("{}{}{}", head, scale, tail))
-    }
-
-    /// `Num2Word_HU.to_cardinal` for a **whole Decimal**, tracked as
-    /// `(numeric value, scale)` so `str(value)` can be reproduced exactly
-    /// where `big_number_to_cardinal` reads it (bug 11).
-    ///
-    /// Decimal arithmetic facts the recursion relies on, all from the
-    /// General Decimal Arithmetic spec (verified on CPython):
-    /// * `value // exp` (divide-integer) delivers exponent **0** — the
-    ///   quotient's str is plain digits even when the input was `1E+20`.
-    /// * `value % exp` keeps the ideal exponent `min(e_value, 0)`, i.e.
-    ///   scale `max(scale, 0)` — trailing fractional zeros survive
-    ///   (`Decimal("12345.000") % 1000 == Decimal("345.000")`).
-    /// * Both ops raise `decimal.InvalidOperation`
-    ///   (`[<class 'decimal.DivisionImpossible'>]`) when a result needs more
-    ///   than the context's 28 digits. Modelled on the numeric digit counts
-    ///   (the coefficient-widening of a scaled remainder is ignored) — only
-    ///   reachable for ≥ 29-digit inputs the corpus never exercises.
-    /// * Dict lookups (`self.cards[value]`) hit int keys because
-    ///   `hash(Decimal("5.00")) == hash(5)` — modelled by looking up the
-    ///   numeric value.
-    fn pydec_whole_cardinal(&self, v: &BigInt, scale: i64, zero: &str) -> Result<String> {
-        if v.is_negative() {
-            // Negation keeps the exponent; recurses with the *default* zero.
-            return Ok(format!(
-                "{}{}",
-                NEGWORD,
-                self.pydec_whole_cardinal(&(-v), scale, ZERO)?
-            ));
-        }
-        if v.is_zero() {
-            return Ok(zero.to_string());
-        }
-        if zero.is_empty() && *v == BigInt::from(2) {
-            return Ok("két".to_string());
-        }
-        if *v < BigInt::from(30) {
-            return self.card(v);
-        }
-        if *v < BigInt::from(100) {
-            if let Some(w) = self.cards.get(v) {
-                return Ok(w.to_string());
-            }
-            let ten = BigInt::from(10);
-            let base = (v / &ten) * &ten; // divide-integer → exponent 0
-            let head = self.card(&base)?;
-            let rest = self.pydec_whole_cardinal(&(v % &ten), scale.max(0), ZERO)?;
-            return Ok(format!("{}{}", head, rest));
-        }
-        if *v < BigInt::from(1000) {
-            let hundred = BigInt::from(100);
-            let hundreds = v / &hundred;
-            let mut prefix = "száz".to_string();
-            if !hundreds.is_one() {
-                prefix = format!("{}{}", self.pydec_whole_cardinal(&hundreds, 0, "")?, prefix);
-            }
-            let postfix = self.pydec_whole_cardinal(&(v % &hundred), scale.max(0), "")?;
-            return Ok(format!("{}{}", prefix, postfix));
-        }
-        if *v < pow10(6) {
-            let k = BigInt::from(1000);
-            let thousands = v / &k;
-            let mut prefix = "ezer".to_string();
-            if !thousands.is_one() {
-                prefix = format!("{}{}", self.pydec_whole_cardinal(&thousands, 0, "")?, prefix);
-            }
-            let postfix = self.pydec_whole_cardinal(&(v % &k), scale.max(0), "")?;
-            let sep = if *v <= BigInt::from(2000) || postfix.is_empty() {
-                ""
-            } else {
-                "-"
-            };
-            return Ok(format!("{}{}{}", prefix, sep, postfix));
-        }
-
-        // big_number_to_cardinal, digits from str(Decimal) (bug 11).
-        let slen = python_decimal_str(&dec_repr(v, scale)).len(); // ASCII
-        let d = if slen % 3 != 0 { slen } else { slen - 2 };
-        let exp = pow10((d / 3 * 3) as u32);
-        let q = v / &exp;
-        let rem = v % &exp;
-        // Python evaluates `value % exp` first; it raises DivisionImpossible
-        // when the integer quotient or the (exact) remainder exceeds the
-        // context's 28-digit precision.
-        if q.to_string().len() > 28 || rem.to_string().len() > 28 {
-            return Err(N2WError::Custom {
-                module: "decimal",
-                class: "InvalidOperation",
-                msg: "[<class 'decimal.DivisionImpossible'>]".into(),
-            });
-        }
-        if q.is_zero() {
-            // str longer than the numeric digits (trailing fractional
-            // zeros) made exp overshoot: `value % exp` is `value` at the
-            // same scale — identical arguments, infinite recursion (bug 11).
-            return Err(recursion_error());
-        }
-        let rest = self.pydec_whole_cardinal(&rem, scale.max(0), "")?;
-        let head = self.pydec_whole_cardinal(&q, 0, "")?;
-        let scale_word = self.card(&exp)?;
-        let tail = if rest.is_empty() {
-            String::new()
-        } else {
-            format!("-{}", rest)
-        };
-        Ok(format!("{}{}{}", head, scale_word, tail))
-    }
 }
 
 impl Lang for LangHu {
@@ -1315,18 +1071,14 @@ impl Lang for LangHu {
     /// Consequences preserved here:
     /// * The `2.675`/`1.005` f64 artefacts never surface: Python reads the
     ///   repr string (`"2.675"` → right `"675"`), not `abs(value-pre)*10**p`.
-    ///   So the float arm renders [`py_float_repr`] and slices the string,
-    ///   rather than calling `float2tuple` — including the exponent-form
-    ///   corner (`1e-05` has no `.`), where the two-element unpack raises
-    ///   `ValueError`. The Decimal arm *can* reuse [`float2tuple`], whose
-    ///   Decimal branch is exact and equals `(int(left), int(right))`.
-    /// * `self.cards[10 ** len(right)]` is a plain lookup ([`LangHu::card`]),
-    ///   so a fractional length whose `10**n` is not a card (n == 4, 5, or
-    ///   ≥ 7) raises `KeyError` — `N2WError::Key`. The corpus only exercises
-    ///   n ∈ {1,2,3} (`tíz`/`száz`/`ezer` → `tized`/`század`/`ezred`).
-    /// * `self.partial_ords[word]` is likewise a direct subscript: a card word
-    ///   absent from `partial_ords` (e.g. `cards[10**6] == "millió"`, whose
-    ///   key is the bare stem `"illió"`) raises `KeyError` too. Reproduced.
+    ///   So the float arm slices the shortest-repr digits rather than calling
+    ///   `float2tuple` — positionally, so `1e-05` reads "nulla egész egy
+    ///   százezred" where Python's exponent-form repr failed to unpack. The
+    ///   Decimal arm reuses [`float2tuple`], whose Decimal branch is exact
+    ///   and equals `(int(left), int(right))`.
+    /// * The denominator comes from [`LangHu::fraction_denominator`]; Python's
+    ///   `partial_ords[cards[10 ** len(right)]]` raised `KeyError` from four
+    ///   decimals on (#212).
     /// * `precision_override` is ignored — Python's `to_cardinal_float(self,
     ///   value)` takes no precision argument, and nothing in the recursion
     ///   consults `self.precision`.
@@ -1352,12 +1104,13 @@ impl Lang for LangHu {
         // left, right = str(value).split(".")
         let (left_int, right_int, right_len): (BigInt, BigInt, usize) = match value {
             FloatValue::Float { value: f, .. } => {
-                // Python's repr, exponent form included — slicing it
-                // reproduces str(value).split(".") and crucially bypasses
-                // the float2tuple artefact heuristic HU never runs.
-                let s = py_float_repr(*f);
+                // The shortest-repr digits — this bypasses the float2tuple
+                // artefact heuristic HU never runs. Python split `str(value)`,
+                // whose exponent form (`1e-05`) has no "." and raised
+                // ValueError; Rust's Display has the same digits, always
+                // positional, and a non-whole value always has a ".".
+                let s = format!("{}", f);
                 let (left, right) = s.split_once('.').ok_or_else(|| {
-                    // Python: `left, right = ...split(".")` unpack fails.
                     N2WError::Value("not enough values to unpack (expected 2, got 1)".into())
                 })?;
                 let left_int = left.parse::<BigInt>().map_err(|_| {
@@ -1385,13 +1138,8 @@ impl Lang for LangHu {
             }
         };
 
-        // self.partial_ords[self.cards[10 ** len(right)]]
-        let card_word = self.card(&pow10(right_len as u32))?; // KeyError on miss
-        let ord_word = PARTIAL_ORDS
-            .iter()
-            .find(|&&(k, _)| k == card_word.as_str())
-            .map(|&(_, v)| v)
-            .ok_or_else(|| N2WError::Key(format!("'{}'", card_word)))?;
+        // Python: self.partial_ords[self.cards[10 ** len(right)]]
+        let ord_word = self.fraction_denominator(right_len)?;
 
         // to_cardinal(int(left)) + " egész " + to_cardinal(int(right)) + " " + ord
         Ok(format!(

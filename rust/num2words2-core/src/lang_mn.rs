@@ -128,10 +128,11 @@
 //!
 //! Python quirks in this branch, all reproduced:
 //!
-//! * **`int(right) == 0` returns before the `len(right) > 6` raise.** So
+//! * **`int(right) == 0` returns before the decimal-places check.** So
 //!   `Decimal("1.00000000")` is "нэг" (all-zero fraction, integer early
-//!   return) while `Decimal("1.10000000")` raises `NotImplementedError` (eight
-//!   non-zero decimal places). The early return is `_int2word(int(float(n)))`,
+//!   return). Python raised an empty `NotImplementedError` beyond six places
+//!   (`0.1234567`); the port reads up to eleven, "арван саяны" … "зуун
+//!   тэрбумын" (#212), and names the limit in the error past that. The early return is `_int2word(int(float(n)))`,
 //!   which re-casts through f64 and so is signed but lossy for huge integers.
 //! * **`str(value)` with no "." hits the integer `else` and its `int(str)`
 //!   raises `ValueError`** — `invalid literal for int() with base 10: '…'` —
@@ -289,21 +290,28 @@ const ORD_DUGAAR: &str = "дугаар";
 const ORD_DUGEER: &str = "дүгээр";
 
 /// `POINT_WORDS`: the connective between whole and fractional part, keyed on
-/// the **number of decimal places** (`len(right)`), 1..=6 in Python. Index 0 is
-/// a placeholder — the fractional branch is only reached with 1..=6 digits (a
-/// 0-digit fraction hits the integer `else`, and >6 raises). This is what makes
+/// the **number of decimal places** (`len(right)`). Python stops at 6 and
+/// raised an empty `NotImplementedError` beyond; the port continues the same
+/// pattern on the module's own scale words сая and тэрбум up to 11
+/// (gladiaio/num2words2#212). Index 0 is a placeholder — a 0-digit fraction
+/// hits the integer `else`. This is what makes
 /// the MN float path irreducible to Base's `pointword`: Base emits one
 /// `pointword` then each digit; MN emits *one* scale word chosen by digit count
 /// and the fraction as a whole number. So 0.5 is "аравны тав" (tenths + five),
 /// not "(.) тав".
-const POINT_WORDS: [&str; 7] = [
-    "",              // 0 unused
-    "аравны",        // 1  tenths
-    "зууны",         // 2  hundredths
-    "мянганы",       // 3  thousandths
-    "арван мянганы", // 4  ten-thousandths
-    "зуун мянганы",  // 5  hundred-thousandths
-    "саяны",         // 6  millionths
+const POINT_WORDS: [&str; 12] = [
+    "",               // 0 unused
+    "аравны",         // 1  tenths
+    "зууны",          // 2  hundredths
+    "мянганы",        // 3  thousandths
+    "арван мянганы",  // 4  ten-thousandths
+    "зуун мянганы",   // 5  hundred-thousandths
+    "саяны",          // 6  millionths
+    "арван саяны",    // 7  ten-millionths
+    "зуун саяны",     // 8  hundred-millionths
+    "тэрбумын",       // 9  billionths
+    "арван тэрбумын", // 10 ten-billionths
+    "зуун тэрбумын",  // 11 hundred-billionths
 ];
 
 // These mirror crashes in lang_MN.py, not deliberate raises: the exception
@@ -587,10 +595,15 @@ fn mn_to_cardinal_str(n: &str, all_suffixed: bool) -> Result<String> {
             return int2word(&f64_trunc_to_bigint(f)?, all_suffixed);
         }
 
-        // `fractional_length = len(right); if fractional_length > 6: raise
-        // NotImplementedError()` — empty message, matching the bare raise.
-        if right.len() > 6 {
-            return Err(N2WError::NotImplemented(String::new()));
+        // Python: `if fractional_length > 6: raise NotImplementedError()`,
+        // with an empty message, so 0.1234567 failed (#212). The table now
+        // runs to 11 places; past it the error says why.
+        if right.len() >= POINT_WORDS.len() {
+            return Err(N2WError::NotImplemented(format!(
+                "Mongolian decimals are read up to {} places, got {}",
+                POINT_WORDS.len() - 1,
+                right.len()
+            )));
         }
 
         let left_int = left
@@ -1314,18 +1327,17 @@ mod tests {
     /// Branch ordering and boundaries confirmed against the live interpreter.
     #[test]
     fn edge_cases() {
-        // int(right)==0 early return runs BEFORE the >6 raise.
+        // int(right)==0 early return runs BEFORE the decimal-places check.
         assert_eq!(dec("1.00000000", 8).unwrap(), "нэг");
         assert_eq!(dec("1.000000", 6).unwrap(), "нэг");
         assert_eq!(dec("12.000", 3).unwrap(), "арван хоёр");
-        // Non-zero fraction beyond six places raises NotImplementedError().
+        // Seven to eleven places read on (#212; Python raised an empty
+        // NotImplementedError beyond six).
+        assert_eq!(dec("1.10000000", 8).unwrap(), "нэг, зуун саяны арван сая");
+        assert!(f(1.1234567, 7).unwrap().starts_with("нэг, арван саяны нэг сая"));
         assert!(matches!(
-            dec("1.10000000", 8),
-            Err(N2WError::NotImplemented(m)) if m.is_empty()
-        ));
-        assert!(matches!(
-            f(1.1234567, 7),
-            Err(N2WError::NotImplemented(m)) if m.is_empty()
+            dec("0.123456789012", 12),
+            Err(N2WError::NotImplemented(m)) if !m.is_empty()
         ));
         // Signed zero: str(-0.0)=="-0.0" -> is_negative, but the zero-fraction
         // early return drops the sign, so "тэг".

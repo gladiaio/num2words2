@@ -66,9 +66,12 @@
 //! (gladiaio/num2words2#205): only `level == 1` (x.5) is "نیم"; `0.05` is
 //! "پنج صدم" (five hundredths) and `2.005` "دو و پنج هزارم".
 //!
-//! `farsiFracBig` has only four entries (10^0/10^3/10^6/10^9 scale). The index
-//! is `level // 3`, so `level >= 12` (a Decimal with >= 12 fractional digits)
-//! raises `IndexError: list index out of range` in Python. Reproduced.
+//! Python's `farsiFracBig` has only four entries (10^0/10^3/10^6/10^9 scale).
+//! The index is `level // 3`, so `level >= 12` (`0.1 + 0.2`, a Decimal with
+//! >= 12 fractional digits) raised `IndexError`. Fixed
+//! (gladiaio/num2words2#212): the table continues with تریلیونیم and
+//! تریلیاردیم, so up to 17 digits read; past that a `NotImplementedError`
+//! names the limit.
 //!
 //! # Faithfully reproduced Python bugs
 //!
@@ -157,9 +160,13 @@ const FARSI_BIG: [&str; 6] = [
 const FARSI_FRAC: [&str; 3] = ["", "دهم", "صدم"];
 
 /// `farsiFracBig`: the 1000^k fractional scale word, indexed by `level // 3`.
-/// Only four entries — a Decimal with >= 12 fractional digits indexes past the
-/// end and raises `IndexError` in Python (see [`fractional`]).
-const FARSI_FRAC_BIG: [&str; 4] = ["", "هزارم", "میلیونیم", "میلیاردیم"];
+/// Python's table has four entries, so 12+ fractional digits (`0.1 + 0.2`)
+/// raised `IndexError`. The port adds the ordinals of the two remaining
+/// `farsiBig` words, تریلیون and تریلیارد, so up to 17 digits read
+/// (gladiaio/num2words2#212).
+const FARSI_FRAC_BIG: [&str; 6] = [
+    "", "هزارم", "میلیونیم", "میلیاردیم", "تریلیونیم", "تریلیاردیم",
+];
 
 /// `fractional`'s `number == 5` special case: bare "half".
 const HALF_WORD: &str = "نیم";
@@ -188,8 +195,7 @@ const SEEN: char = 'س';
 
 /// Mirrors a *crash* in lang_FA.py, not a deliberate raise: `to_ordinal`
 /// indexes `r[-1]` on the empty string that `cardinalPos` returned for values
-/// >= 10^18 (bug 1, now an `OverflowError` first), and `fractional` indexes
-/// past `farsiFracBig`.
+/// >= 10^18 (bug 1, now an `OverflowError` first).
 fn index_error(msg: &str) -> N2WError {
     N2WError::Index(msg.to_string())
 }
@@ -319,8 +325,9 @@ fn maxval_ceiling() -> &'static BigInt {
 ///
 /// `number` is the fractional integer (`post`), always non-negative here.
 /// `level` is the precision. `farsiFrac[lm3]` is always in bounds (`lm3` is
-/// `level % 3` ∈ {0,1,2}); `farsiFracBig[ld3]` is not — `ld3 = level // 3 >= 4`
-/// (i.e. `level >= 12`) is Python's `IndexError`, reproduced.
+/// `level % 3` ∈ {0,1,2}); `farsiFracBig[ld3]` runs out at `level >= 18`,
+/// a `NotImplementedError` naming the limit (Python's `IndexError` hit at 12,
+/// #212).
 fn fractional(number: &BigInt, level: u32) -> Result<String> {
     // Python: `if number == 5: return "نیم"` — regardless of level, so 0.05
     // and 0.005 read "half" too. Only one tenth-place 5 is a half (#205).
@@ -332,9 +339,13 @@ fn fractional(number: &BigInt, level: u32) -> Result<String> {
     let ld3 = (level / 3) as usize;
     let lm3 = (level % 3) as usize;
     let frac = FARSI_FRAC[lm3];
-    let frac_big = *FARSI_FRAC_BIG
-        .get(ld3)
-        .ok_or_else(|| index_error("list index out of range"))?;
+    let frac_big = *FARSI_FRAC_BIG.get(ld3).ok_or_else(|| {
+        N2WError::NotImplemented(format!(
+            "Persian decimals are read up to {} places, got {}",
+            FARSI_FRAC_BIG.len() * 3 - 1,
+            level
+        ))
+    })?;
     // (farsiFrac[lm3] + " " + farsiFracBig[ld3]).strip()
     let ltext = format!("{} {}", frac, frac_big);
     let ltext = ltext.trim();
