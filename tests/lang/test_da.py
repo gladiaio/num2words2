@@ -510,3 +510,18 @@ class Num2WordsDATest(TestCase):
                 num2words(10**6, lang=lang, to="currency", currency="DKK"),
                 "en million kroner",
             )
+
+    def test_ordinal_scale_words_singular(self):
+        """gladiaio/num2words2#172: ordinals build on the singular scale word."""
+        for lang in ("da", "dk"):
+            self.assertEqual(num2words(10**6, lang=lang, to="ordinal"), "millionte")
+            self.assertEqual(num2words(10**9, lang=lang, to="ordinal"), "milliardte")
+            self.assertEqual(num2words(10**12, lang=lang, to="ordinal"), "billionte")
+            self.assertEqual(num2words(10**15, lang=lang, to="ordinal"), "billiardte")
+            self.assertEqual(
+                num2words(2 * 10**6, lang=lang, to="ordinal"), "to millionte"
+            )
+            self.assertEqual(
+                num2words(3 * 10**9, lang=lang, to="ordinal"), "tre milliardte"
+            )
+            self.assertEqual(num2words(10**6, lang=lang, to="ordinal_num"), "1000000te")

@@ -21,7 +21,8 @@
 //! read by `merge`, and reset to `False` afterwards. It changes `merge`'s
 //! `cnum == 1` arm: with the flag set, a leading "et" is dropped even above
 //! 10^6, so `to_cardinal(10**6)` == "en million" but the cardinal computed
-//! *inside* `to_ordinal(10**6)` is just "millioner" → "millionerte".
+//! *inside* `to_ordinal(10**6)` is just "millioner" (Python then emits
+//! "millionerte"; the port strips the plural, see bug 3 / #172).
 //!
 //! Two consequences:
 //!
@@ -58,9 +59,10 @@
 //! 3. **Plural millions — fixed (#163).** `MEGA_SUFFIX`/`GIGA_SUFFIX` are
 //!    plural, and Python emits 10^6 == "en millioner". The port strips the
 //!    "er" after "en" ("en million", "en milliard"), as upstream
-//!    savoirfairelinux/num2words#688 does. Ordinals are unchanged: the
-//!    ordflag path never prepends "en", so 10^6 still ordinalises to
-//!    "millionerte".
+//!    savoirfairelinux/num2words#688 does. Ordinals are fixed too (#172):
+//!    Python ordinalises the plural ("millionerte"); the port builds on the
+//!    singular stem, 10^6 → "millionte", 2·10^6 → "to millionte",
+//!    10^9 → "milliardte".
 //! 4. **Ordinal suffixes double up.** `to_ordinal` first rewrites a trailing
 //!    cardinal via `ords`, *then* appends "te"/"ende" by `value % 100`, with
 //!    no check that a rewrite happened. 30 has no `ords` entry ("tredive"
@@ -714,6 +716,15 @@ impl Lang for LangDa {
                 outword = format!("{}{}", &outword[..cut], rep);
                 break;
             }
+        }
+
+        // The scale words are stored plural ("millioner"/"milliarder"); the
+        // ordinal is built on the singular stem: "millionte", "to
+        // milliardte" (#172), the way "tusind" takes "te" directly. Only a
+        // value that ends on the scale word itself reaches here with that
+        // suffix, and `% 100 == 0` then appends "te".
+        if outword.ends_with("illioner") || outword.ends_with("illiarder") {
+            outword.truncate(outword.len() - 2);
         }
 
         // value is non-negative here, so % == mod_floor.
