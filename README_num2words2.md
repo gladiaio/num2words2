@@ -42,7 +42,7 @@ The original `num2words` library by Savoir-faire Linux became unmaintained and c
 - 3-decimal currencies (BHD, KWD, OMR, JOD, TND, LYD, IQD)
 - Bank-cheque format (`to='cheque'`)
 - Fractions: `num2words('1/3')` → `'one third'` (idiomatic forms in `en`/`fr`/`es`/`it`/`pt`/`de`)
-- Aviation/ICAO English (`en_Aero_ICAO` and friends), with FAA/USN/US_Army/NATO profiles plus per-context phraseology (altitude, flight level, heading, squawk, runway, frequency)
+- Aviation/ICAO English (`en_Aero_ICAO` and the FAA/USN/US_Army/NATO codes): numbers read digit by digit with the ICAO radiotelephony digits
 - Utility helpers: `maxval(lang)`, `group_digits()`, `num2words_sentence()`
 - Critical bug fixes for decimal handling, negative numbers, float conversions, Decimal/string precision at trillion scale
 - Optimized for modern AI/ML/speech applications
@@ -92,13 +92,9 @@ print(num2words(1234.56, to='cheque', currency='USD'))
 print(num2words(5.123, to='currency', currency='BHD'))
 # five dinars, one hundred and twenty-three fils
 
-# Aviation/ICAO digit-by-digit (new in v1.0.14, refined through v1.0.17)
+# Aviation/ICAO digit-by-digit (new in v1.0.14)
 print(num2words(5739, lang='en_Aero_ICAO'))   # fife seven tree niner
-from num2words2 import CONVERTER_CLASSES
-aero = CONVERTER_CLASSES['en_Aero_ICAO']
-print(aero.to_altitude(12500))   # wun too thousand fife hundred feet
-print(aero.to_squawk(7700))      # squawk seven seven zero zero
-print(aero.to_runway('27R'))     # runway too seven right
+print(num2words(127.5, lang='en_Aero_ICAO'))  # wun too seven decimal fife
 
 # Per-call options
 print(num2words(1234, lang='en', style='us'))    # one thousand, two hundred thirty-four (no 'and')
@@ -106,7 +102,7 @@ print(num2words(1, lang='ru', case='genitive')) # одного
 print(num2words(1, lang='he', gender='f'))       # אחת
 ```
 
-For the full feature reference (every mode, kwarg, language, and aviation method), see [REFERENCE.md](REFERENCE.md).
+For the full feature reference (every mode, kwarg, language, and the aviation codes), see [REFERENCE.md](REFERENCE.md).
 
 ### Command Line Interface
 
@@ -184,7 +180,7 @@ And many regional variations like es_CO (Colombian Spanish), pt_BR (Brazilian Po
 
 ## Migration from num2words
 
-`num2words2` is designed as a drop-in replacement for `num2words` with full backward compatibility.
+`num2words2` is designed as a drop-in replacement for the public `num2words` API (`num2words()` and its keyword arguments). The internal converter classes (`num2words.lang_*`, `CONVERTER_CLASSES`) are not part of `num2words2`; see the [migration guide](MIGRATION_GUIDE.md#scenario-3-converter-classes-num2wordslang_).
 
 ### 🤖 Automated Migration (Recommended)
 
@@ -206,6 +202,7 @@ The script will:
 - 🔍 Find all Python files with `num2words` imports
 - 💾 Create backups of original files
 - 🔄 Update imports to use `num2words2`
+- ⚠️ Warn about `num2words.lang_*` imports, which have no `num2words2` equivalent
 - 📝 Provide a detailed summary of changes
 
 ### 📝 Manual Migration

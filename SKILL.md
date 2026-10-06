@@ -172,11 +172,15 @@ def generate_currency_amounts():
 def generate_csv_tests():
     """Generate CSV file with test cases"""
     import csv
+
+    import num2words2
     with open('e2e_tests.csv', 'w', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['lang', 'number', 'type', 'expected'])
 
-        for lang in CONVERTER_CLASSES.keys():
+        # Every code the Rust core accepts (same list as
+        # `num2words2 --list-languages`).
+        for lang in num2words2._rust.supported_langs():
             for num in generate_test_numbers()['basic']:
                 try:
                     result = num2words(num, lang=lang)

@@ -67,7 +67,12 @@ The script handles common import patterns:
 |---|---|
 | `from num2words import num2words` | `from num2words2 import num2words` |
 | `import num2words` | `import num2words2 as num2words` |
-| `from num2words.lang_en import Num2Word_EN` | `from num2words2.lang_en import Num2Word_EN` |
+| `from num2words.lang_en import Num2Word_EN` | left unchanged, with a warning |
+
+`num2words2` does not ship the `lang_*` modules, the `Num2Word_*` classes or
+`CONVERTER_CLASSES`: every conversion runs in the Rust core. Rewrite such code
+with the public function, e.g. `Num2Word_EN().to_ordinal(42)` becomes
+`num2words(42, lang='en', to='ordinal')`.
 
 ## Gradual Migration
 
@@ -89,7 +94,7 @@ Run tests around these areas after migration:
 - ordinal behavior in each language
 - currency pluralization and subunits
 - unsupported language fallback behavior
-- any direct imports from language modules
+- any direct imports from language modules (not available; see above)
 
 `num2words2` adds behavior beyond the original package, including `cheque`, `fraction`, sentence conversion, expanded locale support, and aviation English.
 

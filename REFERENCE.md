@@ -2,7 +2,7 @@
 
 A single-page reference for everything `num2words2` exposes beyond the basic
 `num2words(value)` call: every conversion mode, per-call option, locale alias,
-utility function, and the aviation/ICAO subsystem.
+utility function, and the aviation/ICAO language codes.
 
 > **TL;DR for users coming from upstream `num2words`**: the public API is
 > compatible — the only required change is `from num2words2 import num2words`.
@@ -26,8 +26,7 @@ utility function, and the aviation/ICAO subsystem.
   - [`gender=`](#gender--grammatical-gender)
   - [`case=`](#case--grammatical-case)
 - [Aviation / ICAO English](#aviation--icao-english)
-  - [Service profiles](#service-profiles)
-  - [Phraseology methods](#phraseology-methods)
+  - [Service codes](#service-codes)
 - [Utility functions](#utility-functions)
   - [`maxval(lang)`](#maxvallang)
   - [`group_digits(value, locale=)`](#group_digitsvalue-locale)
@@ -333,72 +332,29 @@ Ordinals, fractions, currency, and cheque modes on `en_Aero_ICAO`
 delegate to plain English so output stays readable (`"one third"`, not
 `"wun treeth"`).
 
-### Service profiles
+### Service codes
 
-| Locale code | Class | Profile |
-|---|---|---|
-| `en_Aero_ICAO` | `Num2Word_EN_AERO` | ICAO |
-| `en_Aero_FAA` | `Num2Word_EN_AERO_FAA` | FAA |
-| `en_Aero_USN` | `Num2Word_EN_AERO_USN` | US Navy |
-| `en_Aero_US_Navy` | (alias for USN) | US Navy |
-| `en_Aero_US_Army` | `Num2Word_EN_AERO_US_Army` | US Army |
-| `en_Aero_NATO` | `Num2Word_EN_AERO_NATO` | NATO STANAG 1059 |
+| Locale code | Standard |
+|---|---|
+| `en_Aero_ICAO` | ICAO |
+| `en_Aero_FAA` | FAA |
+| `en_Aero_USN` | US Navy |
+| `en_Aero_US_Navy` | US Navy (same as `en_Aero_USN`) |
+| `en_Aero_US_Army` | US Army |
+| `en_Aero_NATO` | NATO STANAG 1059 |
 
 Modern services have all converged on the ICAO digit table for joint
 operations, so today **all six produce identical output**. They exist as
-separate named entry points so callers can document *which* standard
-they're targeting, and so future divergent variants (historical WW2-era
-US Navy, ITU/IMO maritime, tactical service deviations) can be added
-without breaking back-compat.
-
-Programmatic profile selection:
-
-```python
-from num2words2.lang_EN_AERO import Num2Word_EN_AERO
-Num2Word_EN_AERO(profile='FAA').to_cardinal(5739)   # 'fife seven tree niner'
-Num2Word_EN_AERO(profile='Klingon')                 # ValueError
-```
+separate language codes so callers can document *which* standard they're
+targeting.
 
 Back-compat aliases from v1.0.14: `en_AERO`, `en_aero`, `en-AERO`,
-`en-aero`, `en-x-aero-icao` (BCP 47 private-use form).
+`en-aero`, `en_aero_icao`, `en-x-aero-icao` (BCP 47 private-use form).
 
-### Phraseology methods
-
-These are aviation-only methods on the `Num2Word_EN_AERO` family, called
-directly via the converter instance (they don't fit the language-agnostic
-`to=` contract because their inputs and validation rules are
-domain-specific):
-
-```python
-from num2words2 import CONVERTER_CLASSES
-aero = CONVERTER_CLASSES['en_Aero_ICAO']
-```
-
-| Method | Example | Output |
-|---|---|---|
-| `to_altitude(value, unit='feet')` | `aero.to_altitude(5500)` | `'fife thousand fife hundred feet'` |
-| `to_altitude(value)` (≥ 10 000 ft) | `aero.to_altitude(12500)` | `'wun too thousand fife hundred feet'` |
-| `to_flight_level(value)` | `aero.to_flight_level(230)` | `'flight level too tree zero'` |
-| `to_heading(value)` | `aero.to_heading(30)` | `'heading zero tree zero'` |
-| `to_squawk(value)` | `aero.to_squawk(7700)` | `'squawk seven seven zero zero'` |
-| `to_runway(value)` | `aero.to_runway('27R')` | `'runway too seven right'` |
-| `to_runway(value)` | `aero.to_runway('09L')` | `'runway zero niner left'` |
-| `to_frequency(value)` | `aero.to_frequency(121.5)` | `'wun too wun decimal fife'` |
-| `to_frequency(value)` | `aero.to_frequency(118.025)` | `'wun wun ait decimal zero too fife'` |
-
-Conventions implemented:
-
-- **Altitude.** Below 10 000 ft, thousands portion is a single ICAO digit
-  + "thousand"; at 10 000 and above, thousands are read digit-by-digit
-  (FAA AIM 4-2-9). Hundreds are always single digit + "hundred".
-- **Flight level / heading / squawk.** Always three or four zero-padded
-  digits read individually.
-- **Heading 0** maps to **360** (north convention).
-- **Squawk** validates the 4-digit octal range (0–7777).
-- **Runway suffixes** L / R / C are spoken as "left" / "right" / "center"
-  (case-insensitive).
-- **Frequency** uses "decimal" for the radio mark; pass a string to
-  preserve trailing zeros that float literals lose.
+The aviation support is these language codes only: `num2words2` has no
+phraseology helpers (altitude, flight level, heading, squawk, runway,
+frequency) and no public converter classes. Compose such phrases from
+`num2words()` calls, e.g. `'squawk ' + num2words(7700, lang='en_Aero_ICAO')`.
 
 ---
 

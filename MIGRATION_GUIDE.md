@@ -61,7 +61,7 @@ The script handles these import patterns:
 |--------|-------|
 | `from num2words import num2words` | `from num2words2 import num2words` |
 | `import num2words` | `import num2words2 as num2words` |
-| `from num2words.lang_en import Num2Word_EN` | `from num2words2.lang_en import Num2Word_EN` |
+| `from num2words.lang_en import Num2Word_EN` | *(left unchanged, with a warning — see Scenario 3)* |
 
 ### Step 3: Manual Updates
 
@@ -199,21 +199,30 @@ def convert_number(n, lang='en'):
     return num2words.num2words(n, lang=lang)
 ```
 
-### Scenario 3: Submodule Imports
+### Scenario 3: Converter Classes (`num2words.lang_*`)
+
+`num2words2` runs every conversion in its Rust core and does **not** ship the
+`lang_*` modules or the `Num2Word_*` converter classes, and it has no
+`CONVERTER_CLASSES` table. The migration script leaves these imports alone
+and prints a warning for each one. Rewrite them to the public API:
 
 **Before:**
 ```python
 from num2words.lang_en import Num2Word_EN
 
 converter = Num2Word_EN()
+converter.to_ordinal(42)
 ```
 
 **After:**
 ```python
-from num2words2.lang_en import Num2Word_EN
+from num2words2 import num2words
 
-converter = Num2Word_EN()
+num2words(42, lang='en', to='ordinal')
 ```
+
+Every `to_<mode>()` method maps to `num2words(..., to='<mode>')`. To list the
+supported language codes, run `num2words2 --list-languages`.
 
 ### Scenario 4: Gradual Migration
 
@@ -379,10 +388,10 @@ Use this checklist to ensure complete migration:
 ## FAQ
 
 **Q: Is num2words2 compatible with the original num2words?**
-A: Yes, num2words2 is designed as a drop-in replacement with full backward compatibility.
+A: Yes for the public API: `num2words2` is a drop-in replacement for the `num2words()` function. The internal converter classes are not available (see Scenario 3).
 
 **Q: Will my existing code break?**
-A: No, the API is identical. Only the import statements need to change.
+A: Not if you use the public functions (`num2words`, `num2words_sentence`, ...): only the import statements need to change. Code that imports the converter classes (`num2words.lang_*`, `CONVERTER_CLASSES`) has to switch to `num2words(..., lang=..., to=...)`; see Scenario 3.
 
 **Q: Can I use both libraries simultaneously?**
 A: Not recommended as they may conflict. Choose one for your project.

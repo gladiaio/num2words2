@@ -8,6 +8,12 @@ This script helps migrate your codebase from num2words to num2words2 by:
 3. Updating imports to use num2words2
 4. Providing a summary of changes
 
+Only the public API (``num2words``, ``num2words_sentence``, ...) is
+rewritten. ``num2words.lang_*`` converter-class imports have no num2words2
+equivalent (every conversion runs in the Rust core), so they are left
+untouched and reported as warnings to rewrite by hand with
+``num2words(..., lang=..., to=...)``.
+
 Usage:
     python migrate_to_num2words2.py [directory]
 If no directory is specified, it will scan the current directory.
@@ -66,24 +72,67 @@ def check_file_for_num2words(file_path):
         return False, ""
 
 
-def migrate_file_content(content):
-    """Migrate the content of a file from num2words to num2words2."""
-    changes_made = []
+# Submodule imports (``from num2words.lang_en import Num2Word_EN``,
+# ``import num2words.lang_en``). num2words2 has no such modules, so rewriting
+# them would only trade an ImportError on num2words for one on num2words2.
+SUBMODULE_IMPORT = re.compile(
+    r"^.*(?:from\s+num2words\.[A-Za-z_]\w*\s+import|import\s+num2words\.[A-Za-z_]\w*).*$",
+    re.MULTILINE,
+)
 
-    # Pattern replacements - order matters!
+SUBMODULE_WARNING = (
+    "num2words2 has no converter-class modules (num2words.lang_*); "
+    "rewrite with num2words(..., lang=..., to=...) by hand"
+)
+
+
+# ``CONVERTER_CLASSES`` (the num2words registry of converter instances) is
+# not part of num2words2 either.
+CONVERTER_CLASSES_USE = re.compile(r"^.*\bCONVERTER_CLASSES\b.*$", re.MULTILINE)
+
+CONVERTER_CLASSES_WARNING = (
+    "num2words2 has no CONVERTER_CLASSES; use num2words(..., lang=...) and "
+    "`num2words2 --list-languages` for the supported codes"
+)
+
+
+def migrate_file_content(content):
+    """Migrate the content of a file from num2words to num2words2.
+
+    Returns ``(new_content, changes_made, warnings)``. ``warnings`` lists the
+    lines that import a ``num2words.lang_*`` submodule: they are left as is.
+    """
+    changes_made = []
+    warnings = [
+        f"  - line {content.count(chr(10), 0, m.start()) + 1}: "
+        f"{m.group(0).strip()}: {SUBMODULE_WARNING}"
+        for m in SUBMODULE_IMPORT.finditer(content)
+    ]
+
+    warnings += [
+        f"  - line {content.count(chr(10), 0, m.start()) + 1}: "
+        f"{m.group(0).strip()}: {CONVERTER_CLASSES_WARNING}"
+        for m in CONVERTER_CLASSES_USE.finditer(content)
+    ]
+
+    # Pattern replacements for the public API only. The ``import`` patterns
+    # are anchored at the start of a statement so they cannot match the
+    # ``import num2words`` inside an already rewritten
+    # ``from num2words2 import num2words``; the ``(?![\w.])`` lookahead keeps
+    # ``import num2words.lang_xx`` and ``import num2words2`` out of them.
     replacements = [
         (
-            r"from\s+num2words\.([a-zA-Z_][a-zA-Z0-9_]*)\s+import",
-            r"from num2words2.\1 import",
-            "Updated submodule import",
-        ),
-        (
-            r"from\s+num2words\s+import",
-            "from num2words2 import",
+            r"^([ \t]*)from[ \t]+num2words[ \t]+import",
+            r"\1from num2words2 import",
             "Updated import statement",
         ),
         (
-            r"(^|\s)import\s+num2words(?!\w)",
+            r"^([ \t]*)import[ \t]+num2words[ \t]+as[ \t]",
+            r"\1import num2words2 as ",
+            "Updated aliased import",
+        ),
+        (
+            r"^([ \t]*)import[ \t]+num2words(?![\w.])",
             r"\1import num2words2 as num2words",
             "Updated import with alias",
         ),
@@ -99,7 +148,7 @@ def migrate_file_content(content):
                 f"occurrence{'s' if len(matches) != 1 else ''})"
             )
 
-    return new_content, changes_made
+    return new_content, changes_made, warnings
 
 
 def create_backup(file_path):
@@ -116,14 +165,19 @@ def migrate_file(file_path, dry_run=False):
     if not has_imports:
         return None
 
-    new_content, changes = migrate_file_content(content)
+    new_content, changes, warnings = migrate_file_content(content)
 
-    if not changes:
+    if not changes and not warnings:
         return None
 
-    result = {"file": file_path, "changes": changes, "backup": None}
+    result = {
+        "file": file_path,
+        "changes": changes,
+        "warnings": warnings,
+        "backup": None,
+    }
 
-    if not dry_run:
+    if changes and not dry_run:
         # Create backup
         backup_path = create_backup(file_path)
         result["backup"] = backup_path
@@ -211,6 +265,8 @@ def main():
         print(f"📄 {result['file']}")
         for change in result["changes"]:
             print(change)
+        for warning in result["warnings"]:
+            print(f"⚠️ {warning.strip()}")
         if result["backup"]:
             print(f"  - Backup created: {result['backup']}")
         print()
@@ -231,7 +287,7 @@ def main():
     print()
     print(
         "📚 For more information, see: "
-        "https://github.com/jqueguiner/num2words#migration"
+        "https://github.com/gladiaio/num2words2/blob/main/MIGRATION_GUIDE.md"
     )
 
 
