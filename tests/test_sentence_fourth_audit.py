@@ -208,7 +208,7 @@ def test_currency_symbols(text, lang, expected):
         ("в 90-е годы", "ru", "в 90-е годы"),  # "-е" is ambiguous: kept
         ("5-летний", "ru", "5-летний"),
         ("1-й", "uk", "Перший"),
-        ("1. i 2. miejsce.", "pl", "Pierwszy i drugie miejsce."),
+        ("1. i 2. miejsce.", "pl", "Pierwsze i drugie miejsce."),
         ("Mam 3. Potem", "pl", "Mam trzy. Potem"),  # sentence end
         ("1. místo", "cs", "První místo"),
         ("1. maj", "da", "Første maj"),
@@ -280,6 +280,12 @@ def test_capitalisation_after_dot(text, lang, expected):
         ("1002. noc", "Tysiąc druga noc"),
         ("3. dzień", "Trzeci dzień"),
         ("1. maja", "Pierwszy maja"),  # dates stay masculine nominative
+        # Coordinated ordinals agree with the shared noun.
+        ("1. i 2. miejsce", "Pierwsze i drugie miejsce"),
+        ("1., 2. i 3. nagroda", "Pierwsza, druga i trzecia nagroda"),
+        # No noun after the chain: masculine.
+        ("1. i potem", "Pierwszy i potem"),
+        ("1. w domu", "Pierwszy w domu"),
     ],
 )
 def test_pl_ordinal_gender(text, expected):

@@ -283,6 +283,56 @@ fn pl_noun_gender(word: &str) -> PlGender {
     }
 }
 
+/// Index after `i` and any whitespace.
+fn skip_ws(c: &[char], mut i: usize) -> usize {
+    while i < c.len() && c[i].is_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+/// A pl dot ordinal `<digits>.` at `i`: the index after its dot.
+fn pl_ordinal_at(c: &[char], i: usize) -> Option<usize> {
+    let mut j = i;
+    while j < c.len() && c[j].is_ascii_digit() {
+        j += 1;
+    }
+    (j > i && j < c.len() && c[j] == '.').then_some(j + 1)
+}
+
+/// The noun a pl ordinal ending at `e` agrees with: the next word, or —
+/// past a chain of ordinals joined by commas or conjunctions ("1., 2. i 3.
+/// nagroda") — the word after the last one. `None` when no noun follows:
+/// a conjunction or preposition not followed by an ordinal, punctuation,
+/// a digit.
+fn pl_chain_noun(c: &[char], e: usize) -> Option<String> {
+    const CONJ: &[&str] = &["i", "oraz", "lub", "albo", "czy", "a"];
+    const PREP: &[&str] = &[
+        "w", "we", "na", "z", "ze", "do", "od", "po", "za", "o", "przy", "dla", "przez", "u",
+    ];
+    let mut j = skip_ws(c, e);
+    loop {
+        if j < c.len() && c[j] == ',' {
+            j = pl_ordinal_at(c, skip_ws(c, j + 1))?;
+            j = skip_ws(c, j);
+            continue;
+        }
+        let mut k = j;
+        while k < c.len() && c[k].is_alphabetic() {
+            k += 1;
+        }
+        let word: String = c[j..k].iter().collect::<String>().to_lowercase();
+        if word.is_empty() || PREP.contains(&word.as_str()) {
+            return None;
+        }
+        if CONJ.contains(&word.as_str()) {
+            j = skip_ws(c, pl_ordinal_at(c, skip_ws(c, k))?);
+            continue;
+        }
+        return Some(word);
+    }
+}
+
 /// A masculine Polish ordinal in gender `g`. Only the tens and units words
 /// inflect; hundreds and thousands stay ("sto dwudziesta pierwsza"), so the
 /// last (at most two) words ending in -y/-i take adjective endings.
@@ -1216,22 +1266,24 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                 OrdForm::Symbol if g0.as_str().contains('ª') => OrdKind::Fem,
                 OrdForm::Symbol => OrdKind::Masc,
                 OrdForm::Dot => {
+                    let pl = norm_lang(lang) == "pl";
                     let mut k = e;
                     while k < n && c[k].is_whitespace() {
                         k += 1;
                     }
-                    if k == e || k >= n || !c[k].is_lowercase() {
+                    // pl "1., 2. i 3. nagroda": a comma may follow when
+                    // another ordinal comes next.
+                    let comma_chain = pl && e < n && c[e] == ',' && pl_ordinal_at(c, skip_ws(c, e + 1)).is_some();
+                    if !comma_chain && (k == e || k >= n || !c[k].is_lowercase()) {
                         continue;
                     }
-                    if norm_lang(lang) == "pl" {
+                    if pl {
                         // Agree with the noun that follows ("2. miejsce" ->
-                        // "drugie miejsce"); a month keeps the masculine
-                        // date form ("1. maja" -> "pierwszy maja").
-                        let mut j = k;
-                        while j < n && c[j].is_alphabetic() {
-                            j += 1;
-                        }
-                        let word = t.slice(k, j);
+                        // "drugie miejsce"), past coordinated ordinals
+                        // ("1. i 2. miejsce" -> "pierwsze i drugie"); a
+                        // month keeps the masculine date form ("1. maja"
+                        // -> "pierwszy maja").
+                        let word = pl_chain_noun(c, e).unwrap_or_default();
                         let month = r.months_re(lang).is_some_and(|mr| {
                             Regex::new(&format!("(?i)^{}$", mr))
                                 .is_ok_and(|re| re.is_match(&word))
