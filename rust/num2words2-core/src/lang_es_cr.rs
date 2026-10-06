@@ -46,7 +46,7 @@
 //!    the top. It exists for "decimooctavo" -> "decimoctavo" (and
 //!    "vigesimooctavo" -> "vigesimoctavo"), but it is an unconditional global
 //!    replace, not a targeted fix.
-//! 4. **`to_ordinal(0)` == ""** (empty string), while `to_ordinal_num(0)` == "0º".
+//! 4. **`to_ordinal(0)`** raises ValueError here (Python returns `""`; #160). `to_ordinal_num(0)` == "0º".
 //! 5. **`errmsg_toobig` reads "deber ser inferior"**, not "debe ser inferior" —
 //!    a typo in the Python source, preserved verbatim in [`LangEsCr::to_cardinal`].
 //! 6. **`ords` keys 1e3..1e15 are Python floats** (`1e3`, `1e6`, …) yet are
@@ -123,13 +123,11 @@
 //!
 //! All verified against the interpreter:
 //!
-//! 7. **Double space after "menos" on negative integers.** `Num2Word_ES`'s
-//!    integer arm sets `minus_str = self.negword` — the *raw* value, trailing
-//!    space and all — then formats `"%s %s %s"` and calls `.strip()`, which only
-//!    trims the ends. `to_currency(-1, "EUR")` == `"menos  un euro"`. The float
-//!    arm goes through `Num2Word_Base`, which uses `"%s " % self.negword.strip()`
-//!    and yields a single space: `to_currency(-1.0, "EUR")` ==
-//!    `"menos un euro y cero céntimos"`. Same converter, two spacings.
+//! 7. **Double space after "menos" on negative integers (fixed, #160).**
+//!    `Num2Word_ES`'s integer arm sets `minus_str = self.negword` — the *raw*
+//!    value, trailing space and all — so Python gives `to_currency(-1, "EUR")`
+//!    == `"menos un euro"`. The port strips negword as the float arm does, so
+//!    both give a single space: `"menos un euro"`.
 //! 8. **`adjective=` is ignored on the integer arm.** `Num2Word_ES` never reads
 //!    `CURRENCY_ADJECTIVES` there, so `to_currency(2, "USD", adjective=True)` is
 //!    `"dos dólares"`, while the float `to_currency(12.34, "USD",
@@ -622,9 +620,9 @@ impl LangEsCr {
             };
             let cr1 = &forms.unit;
 
-            // `minus_str = self.negword if val < 0 else ""` — the raw negword,
-            // trailing space included. Quirk 7.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // `minus_str = self.negword if val < 0 else ""` — raw in Python,
+            // stripped here. Quirk 7 (fixed).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
             // Python computes this unconditionally and then throws it away when
             // abs_val == 1. It can raise OverflowError first, and the lookup
@@ -648,9 +646,7 @@ impl LangEsCr {
             // arm never reads CURRENCY_ADJECTIVES (quirk 8). It *is* honoured on
             // the float arm below.
             //
-            // `("%s %s %s" % (...)).strip()`: trim() matches strip() at the ends
-            // only, and must NOT collapse the interior double space that a
-            // negative minus_str introduces (quirk 7).
+            // `("%s %s %s" % (...)).strip()`: trim() matches strip() at the ends.
             return Ok(format!("{} {} {}", minus_str, money_str, currency_str)
                 .trim()
                 .to_string());
@@ -786,6 +782,7 @@ impl Lang for LangEsCr {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         self.to_ordinal_gender(value, "m")
     }
 
@@ -810,7 +807,8 @@ impl Lang for LangEsCr {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -853,6 +851,7 @@ impl Lang for LangEsCr {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         let gender = if kw.str("gender") == Some("f") { "f" } else { "m" };
         self.to_ordinal_gender(value, gender)
     }
@@ -1242,15 +1241,15 @@ mod tests {
         }
     }
 
-    /// Quirk 7: the integer arm's raw `negword` leaves a double space that
-    /// `.strip()` cannot reach, while the float arm's trimmed one does not.
+    /// Quirk 7 (fixed, #160): the integer arm no longer double-spaces the
+    /// minus word.
     #[test]
-    fn negative_int_double_space_but_float_single() {
+    fn negative_int_single_space() {
         let l = LangEsCr::new();
         for (val, want) in [
-            (int("-1"), "menos  un euro"),
-            (int("-2"), "menos  dos euros"),
-            (int("-21"), "menos  veintiun euros"),
+            (int("-1"), "menos un euro"),
+            (int("-2"), "menos dos euros"),
+            (int("-21"), "menos veintiun euros"),
         ] {
             assert_eq!(l.to_currency(&val, "EUR", true, None, false).unwrap(), want);
         }
@@ -1310,7 +1309,7 @@ mod tests {
             (int("1"), "un colón"),
             (int("2"), "dos colónes"),
             (int("0"), "cero colónes"),
-            (int("-3"), "menos  tres colónes"),
+            (int("-3"), "menos tres colónes"),
         ] {
             assert_eq!(l.to_currency(&val, cur, true, None, false).unwrap(), want);
         }

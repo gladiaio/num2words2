@@ -475,14 +475,9 @@ impl Lang for LangIs {
     ///
     /// 1. It indexes `cr1` directly instead of calling `pluralize`, so ints
     ///    escape the tuple leak that floats suffer.
-    /// 2. It uses `self.negword` **unstripped** where Base uses
-    ///    `self.negword.strip()` + `" "`. `negword` is `"mínus "`, so the
-    ///    `"%s %s %s"` template emits a *double* space:
-    ///    `to_currency(-12, currency="EUR")` == `"mínus  tólf evrur"`.
-    ///    Confirmed live. The trailing `.strip()` only cleans the ends, so the
-    ///    interior double space survives. No corpus row covers it (the only
-    ///    negative arg, `-12.34`, is a float and takes Base's single-space
-    ///    path), but it is the real behaviour.
+    /// 2. Python uses `self.negword` (`"mínus "`) **unstripped**, so the
+    ///    `"%s %s %s"` template emits a double space: `"mínus tólf evrur"`.
+    ///    Fixed here (#160): the port strips it and says `"mínus tólf evrur"`.
     /// 3. It ignores `adjective=` entirely — no `prefix_currency` call — so
     ///    `to_currency(2, currency="ISK", adjective=True)` == `"tveir krónur"`,
     ///    with no "íslenskar". Floats do apply the adjective.
@@ -506,7 +501,7 @@ impl Lang for LangIs {
             // re-raises the same miss as NotImplementedError, so an unknown
             // code still errors rather than falling back to anything.
             if let Some(forms) = self.currency_forms(currency) {
-                let minus_str = if v.is_negative() { self.negword() } else { "" };
+                let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
                 let abs_val = v.abs();
                 let money_str = self.to_cardinal(&abs_val)?;
 
@@ -959,16 +954,14 @@ mod tests {
             is_float: true,
         };
 
-        // 1. Negative *int* keeps IS's unstripped negword -> DOUBLE space.
-        //    (The corpus's only negative arg, -12.34, is a float and takes
-        //    Base's single-space path -- covered above.)
+        // 1. Negative *int*: single space after the minus word (#160).
         assert_eq!(
             l.to_currency(&int(-12), "EUR", true, None, false).unwrap(),
-            "mínus  tólf evrur"
+            "mínus tólf evrur"
         );
         assert_eq!(
             l.to_currency(&int(-1), "EUR", true, None, false).unwrap(),
-            "mínus  einn evra"
+            "mínus einn evra"
         );
 
         // 2. ISK, the default currency, is never exercised by the corpus.

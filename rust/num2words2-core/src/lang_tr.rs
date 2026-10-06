@@ -41,7 +41,9 @@
 //!   `to_ordinal(401607)` is "dörtyüzbinaltıyüzyedinci".
 //! * `verify_ordinal` does NOT raise on a non-integral value — it returns
 //!   `isordinal = False` and `to_ordinal` then returns its pristine `wrd`,
-//!   the empty string: `to_ordinal(0.5)` is `""`. Negatives are flagged by
+//!   the empty string: Python's `to_ordinal(0.5)` is `""`. The port raises
+//!   TypeError there instead, like every language whose ordinal rejects
+//!   fractions (#160); `to_ordinal_num` still sees the `""`. Negatives are flagged by
 //!   the *numeric* `abs(value) == value` (so -0.0 passes and reads
 //!   "sıfırıncı") and re-raised as `TypeError(errmsg_nonnum)`; the MAXVAL
 //!   check still applies to non-integral values, so a huge non-whole
@@ -1167,14 +1169,18 @@ impl Lang for LangTr {
     /// `to_ordinal(float/Decimal)`: `verify_ordinal` raises TypeError for
     /// numeric negatives (-0.0 passes and reads "sıfırıncı") and
     /// OverflowError above MAXVAL; a non-integral value merely clears
-    /// `isordinal`, so `to_ordinal(0.5)` returns the pristine `""`. Whole
+    /// `isordinal`, so Python's `to_ordinal(0.5)` returns the pristine `""`.
+    /// The port raises TypeError instead (#160). Whole
     /// values read the *exact* integer digits — no float round-trip, unlike
     /// to_cardinal.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.verify_ordinal_float(value)?;
         match value.as_whole_int() {
             Some(i) => self.to_ordinal_impl(&i),
-            None => Ok(String::new()),
+            None => Err(N2WError::Type(format!(
+                "Cannot treat float {} as ordinal.",
+                float_value_repr(value)
+            ))),
         }
     }
 
@@ -1501,9 +1507,9 @@ mod entry_and_kwargs_tests {
         assert_eq!(l().ordinal_float_entry(&fl(1e16)).unwrap(), "onkatrilyonuncu");
         // ORDINAL_TRIPLETS[6] lacks its suffix: cardinal == ordinal.
         assert_eq!(l().ordinal_float_entry(&fl(1e20)).unwrap(), "yüzkentilyon");
-        // Non-integral -> pristine "".
-        assert_eq!(l().ordinal_float_entry(&fl(0.5)).unwrap(), "");
-        assert_eq!(l().ordinal_float_entry(&fl(3.25)).unwrap(), "");
+        // Non-integral -> TypeError, not Python's pristine "" (#160).
+        assert!(matches!(l().ordinal_float_entry(&fl(0.5)), Err(N2WError::Type(_))));
+        assert!(matches!(l().ordinal_float_entry(&fl(3.25)), Err(N2WError::Type(_))));
         // Numeric negatives -> TypeError(errmsg_nonnum).
         assert!(matches!(
             l().ordinal_float_entry(&fl(-2.0)),

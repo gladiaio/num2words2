@@ -60,7 +60,8 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(35, lang="te"), "ముప్పై ఐదు")
         self.assertEqual(num2words(40, lang="te"), "నలభై")
         self.assertEqual(num2words(45, lang="te"), "నలభై అయిదు")
-        self.assertEqual(num2words(50, lang="te"), "యాభై ")
+        # 50 no longer carries a trailing space (#160).
+        self.assertEqual(num2words(50, lang="te"), "యాభై")
         self.assertEqual(num2words(55, lang="te"), "యాభై అయిదు")
         self.assertEqual(num2words(60, lang="te"), "అరవై")
         self.assertEqual(num2words(65, lang="te"), "అరవై అయిదు")
@@ -80,14 +81,14 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(111, lang="te"), "ఒకటి వందల పదకొండు")
         self.assertEqual(num2words(120, lang="te"), "ఒకటి వందల ఇరవై")
         self.assertEqual(num2words(125, lang="te"), "ఒకటి వందల ఇరవై అయిదు")
-        self.assertEqual(num2words(150, lang="te"), "ఒకటి వందల యాభై ")
+        self.assertEqual(num2words(150, lang="te"), "ఒకటి వందల యాభై")
         self.assertEqual(num2words(175, lang="te"), "ఒకటి వందల డెబ్బై అయిదు")
         self.assertEqual(num2words(199, lang="te"), "ఒకటి వందల తొంభై తొమ్మిది")
         self.assertEqual(num2words(200, lang="te"), "రెండు వంద")
         self.assertEqual(num2words(201, lang="te"), "రెండు వందల ఒకటి")
         self.assertEqual(num2words(210, lang="te"), "రెండు వందల పది")
         self.assertEqual(num2words(220, lang="te"), "రెండు వందల ఇరవై")
-        self.assertEqual(num2words(250, lang="te"), "రెండు వందల యాభై ")
+        self.assertEqual(num2words(250, lang="te"), "రెండు వందల యాభై")
         self.assertEqual(num2words(299, lang="te"), "రెండు వందల తొంభై తొమ్మిది")
         self.assertEqual(num2words(300, lang="te"), "మూడు వంద")
         self.assertEqual(num2words(333, lang="te"), "మూడు వందల ముప్పై మూడు")
@@ -153,7 +154,7 @@ class Num2WordsTETest(TestCase):
             num2words(12345, lang="te"), "పన్నెండు వేయి మూడు వందల నలభై అయిదు"
         )
         self.assertEqual(num2words(20000, lang="te"), "ఇరవై వేయి")
-        self.assertEqual(num2words(50000, lang="te"), "యాభై  వేయి")
+        self.assertEqual(num2words(50000, lang="te"), "యాభై వేయి")
         self.assertEqual(
             num2words(99999, lang="te"),
             "తొంభై తొమ్మిది వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
@@ -186,7 +187,7 @@ class Num2WordsTETest(TestCase):
             "పన్నెండు లక్ష ముప్పై నాలుగు వేయి అయిదు వందల అరవై ఏడు",
         )
         self.assertEqual(num2words(2000000, lang="te"), "ఇరవై లక్ష")
-        self.assertEqual(num2words(5000000, lang="te"), "యాభై  లక్ష")
+        self.assertEqual(num2words(5000000, lang="te"), "యాభై లక్ష")
         self.assertEqual(
             num2words(9999999, lang="te"),
             "తొంభై తొమ్మిది లక్ష తొంభై తొమ్మిది వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
@@ -227,7 +228,7 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(-10, lang="te"), "(-) పది")
         self.assertEqual(num2words(-11, lang="te"), "(-) పదకొండు")
         self.assertEqual(num2words(-20, lang="te"), "(-) ఇరవై")
-        self.assertEqual(num2words(-50, lang="te"), "(-) యాభై ")
+        self.assertEqual(num2words(-50, lang="te"), "(-) యాభై")
         self.assertEqual(num2words(-99, lang="te"), "(-) తొంభై తొమ్మిది")
         self.assertEqual(num2words(-100, lang="te"), "(-) ఒకటి వంద")
         self.assertEqual(num2words(-101, lang="te"), "(-) ఒకటి వందల ఒకటి")
@@ -243,33 +244,33 @@ class Num2WordsTETest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="te"), "సున్న బిందువు  ఒకటి")
-        self.assertEqual(num2words(0.5, lang="te"), "సున్న బిందువు  అయిదు")
-        self.assertEqual(num2words(0.9, lang="te"), "సున్న బిందువు  తొమ్మిది")
-        self.assertEqual(num2words(1.1, lang="te"), "ఒకటి బిందువు  ఒకటి")
-        self.assertEqual(num2words(1.5, lang="te"), "ఒకటి బిందువు  అయిదు")
-        self.assertEqual(num2words(2.5, lang="te"), "రెండు బిందువు  అయిదు")
-        self.assertEqual(num2words(3.14, lang="te"), "మూడు బిందువు  ఒకటి నాలుగు")
-        self.assertEqual(num2words(10.5, lang="te"), "పది బిందువు  అయిదు")
-        self.assertEqual(num2words(11.11, lang="te"), "పదకొండు బిందువు  ఒకటి ఒకటి")
-        self.assertEqual(num2words(20.2, lang="te"), "ఇరవై బిందువు  రెండు")
+        self.assertEqual(num2words(0.1, lang="te"), "సున్న బిందువు ఒకటి")
+        self.assertEqual(num2words(0.5, lang="te"), "సున్న బిందువు అయిదు")
+        self.assertEqual(num2words(0.9, lang="te"), "సున్న బిందువు తొమ్మిది")
+        self.assertEqual(num2words(1.1, lang="te"), "ఒకటి బిందువు ఒకటి")
+        self.assertEqual(num2words(1.5, lang="te"), "ఒకటి బిందువు అయిదు")
+        self.assertEqual(num2words(2.5, lang="te"), "రెండు బిందువు అయిదు")
+        self.assertEqual(num2words(3.14, lang="te"), "మూడు బిందువు ఒకటి నాలుగు")
+        self.assertEqual(num2words(10.5, lang="te"), "పది బిందువు అయిదు")
+        self.assertEqual(num2words(11.11, lang="te"), "పదకొండు బిందువు ఒకటి ఒకటి")
+        self.assertEqual(num2words(20.2, lang="te"), "ఇరవై బిందువు రెండు")
         self.assertEqual(
-            num2words(99.99, lang="te"), "తొంభై తొమ్మిది బిందువు  తొమ్మిది తొమ్మిది"
+            num2words(99.99, lang="te"), "తొంభై తొమ్మిది బిందువు తొమ్మిది తొమ్మిది"
         )
-        self.assertEqual(num2words(100.01, lang="te"), "ఒకటి వంద బిందువు  సున్న ఒకటి")
-        self.assertEqual(num2words(100.5, lang="te"), "ఒకటి వంద బిందువు  అయిదు")
+        self.assertEqual(num2words(100.01, lang="te"), "ఒకటి వంద బిందువు సున్న ఒకటి")
+        self.assertEqual(num2words(100.5, lang="te"), "ఒకటి వంద బిందువు అయిదు")
         self.assertEqual(
-            num2words(123.45, lang="te"), "ఒకటి వందల ఇరవై మూడు బిందువు  నాలుగు అయిదు"
+            num2words(123.45, lang="te"), "ఒకటి వందల ఇరవై మూడు బిందువు నాలుగు అయిదు"
         )
-        self.assertEqual(num2words(1000.5, lang="te"), "ఒకటి వేయి బిందువు  అయిదు")
+        self.assertEqual(num2words(1000.5, lang="te"), "ఒకటి వేయి బిందువు అయిదు")
         self.assertEqual(
             num2words(1234.56, lang="te"),
-            "ఒకటి వేయి రెండు వందల ముప్పై నాలుగు బిందువు  అయిదు ఆరు",
+            "ఒకటి వేయి రెండు వందల ముప్పై నాలుగు బిందువు అయిదు ఆరు",
         )
-        self.assertEqual(num2words(10000.01, lang="te"), "పది వేయి బిందువు  సున్న ఒకటి")
-        self.assertEqual(num2words(-0.5, lang="te"), "(-) సున్న బిందువు  అయిదు")
-        self.assertEqual(num2words(-1.5, lang="te"), "(-) ఒకటి బిందువు  అయిదు")
-        self.assertEqual(num2words(-10.5, lang="te"), "(-) పది బిందువు  అయిదు")
+        self.assertEqual(num2words(10000.01, lang="te"), "పది వేయి బిందువు సున్న ఒకటి")
+        self.assertEqual(num2words(-0.5, lang="te"), "(-) సున్న బిందువు అయిదు")
+        self.assertEqual(num2words(-1.5, lang="te"), "(-) ఒకటి బిందువు అయిదు")
+        self.assertEqual(num2words(-10.5, lang="te"), "(-) పది బిందువు అయిదు")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -298,7 +299,7 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(25, lang="te", ordinal=True), "ఇరవై అయిదువ")
         self.assertEqual(num2words(30, lang="te", ordinal=True), "ముప్పైవ")
         self.assertEqual(num2words(40, lang="te", ordinal=True), "నలభైవ")
-        self.assertEqual(num2words(50, lang="te", ordinal=True), "యాభై వ")
+        self.assertEqual(num2words(50, lang="te", ordinal=True), "యాభైవ")
         self.assertEqual(num2words(60, lang="te", ordinal=True), "అరవైవ")
         self.assertEqual(num2words(70, lang="te", ordinal=True), "డెబ్బైవ")
         self.assertEqual(num2words(80, lang="te", ordinal=True), "ఎనభైవ")
@@ -322,14 +323,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="AUD"),
-            "సున్న dollars, యాభై  cents",
+            "సున్న dollars, యాభై cents",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="AUD"), "ఒకటి dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="AUD"),
-            "ఒకటి dollar, యాభై  cents",
+            "ఒకటి dollar, యాభై cents",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="BYN"), "సున్న roubles"
@@ -340,14 +341,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="BYN"),
-            "సున్న roubles, యాభై  kopeks",
+            "సున్న roubles, యాభై kopeks",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="BYN"), "ఒకటి rouble"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="BYN"),
-            "ఒకటి rouble, యాభై  kopeks",
+            "ఒకటి rouble, యాభై kopeks",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="CAD"), "సున్న dollars"
@@ -358,14 +359,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="CAD"),
-            "సున్న dollars, యాభై  cents",
+            "సున్న dollars, యాభై cents",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="CAD"), "ఒకటి dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="CAD"),
-            "ఒకటి dollar, యాభై  cents",
+            "ఒకటి dollar, యాభై cents",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="EEK"), "సున్న kroons"
@@ -376,14 +377,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="EEK"),
-            "సున్న kroons, యాభై  senti",
+            "సున్న kroons, యాభై senti",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="EEK"), "ఒకటి kroon"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="EEK"),
-            "ఒకటి kroon, యాభై  senti",
+            "ఒకటి kroon, యాభై senti",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="EUR"), "సున్న euros"
@@ -394,14 +395,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="EUR"),
-            "సున్న euros, యాభై  cents",
+            "సున్న euros, యాభై cents",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="EUR"), "ఒకటి euro"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="EUR"),
-            "ఒకటి euro, యాభై  cents",
+            "ఒకటి euro, యాభై cents",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="GBP"), "సున్న pounds"
@@ -412,14 +413,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="GBP"),
-            "సున్న pounds, యాభై  pence",
+            "సున్న pounds, యాభై pence",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="GBP"), "ఒకటి pound"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="GBP"),
-            "ఒకటి pound, యాభై  pence",
+            "ఒకటి pound, యాభై pence",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="LTL"), "సున్న litas"
@@ -430,14 +431,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="LTL"),
-            "సున్న litas, యాభై  cents",
+            "సున్న litas, యాభై cents",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="LTL"), "ఒకటి litas"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="LTL"),
-            "ఒకటి litas, యాభై  cents",
+            "ఒకటి litas, యాభై cents",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="LVL"), "సున్న lats"
@@ -448,14 +449,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="LVL"),
-            "సున్న lats, యాభై  santims",
+            "సున్న lats, యాభై santims",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="LVL"), "ఒకటి lat"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="LVL"),
-            "ఒకటి lat, యాభై  santims",
+            "ఒకటి lat, యాభై santims",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="USD"), "సున్న dollars"
@@ -466,14 +467,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="USD"),
-            "సున్న dollars, యాభై  cents",
+            "సున్న dollars, యాభై cents",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="USD"), "ఒకటి dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="USD"),
-            "ఒకటి dollar, యాభై  cents",
+            "ఒకటి dollar, యాభై cents",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="RUB"), "సున్న roubles"
@@ -484,14 +485,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="RUB"),
-            "సున్న roubles, యాభై  kopeks",
+            "సున్న roubles, యాభై kopeks",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="RUB"), "ఒకటి rouble"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="RUB"),
-            "ఒకటి rouble, యాభై  kopeks",
+            "ఒకటి rouble, యాభై kopeks",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="SEK"), "సున్న kronor"
@@ -502,14 +503,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="SEK"),
-            "సున్న kronor, యాభై  öre",
+            "సున్న kronor, యాభై öre",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="SEK"), "ఒకటి krona"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="SEK"),
-            "ఒకటి krona, యాభై  öre",
+            "ఒకటి krona, యాభై öre",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="NOK"), "సున్న kroner"
@@ -520,14 +521,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="NOK"),
-            "సున్న kroner, యాభై  øre",
+            "సున్న kroner, యాభై øre",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="NOK"), "ఒకటి krone"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="NOK"),
-            "ఒకటి krone, యాభై  øre",
+            "ఒకటి krone, యాభై øre",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="PLN"), "సున్న zlotys"
@@ -538,14 +539,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="PLN"),
-            "సున్న zlotys, యాభై  groszy",
+            "సున్న zlotys, యాభై groszy",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="PLN"), "ఒకటి zloty"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="PLN"),
-            "ఒకటి zloty, యాభై  groszy",
+            "ఒకటి zloty, యాభై groszy",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="MXN"), "సున్న pesos"
@@ -556,14 +557,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="MXN"),
-            "సున్న pesos, యాభై  cents",
+            "సున్న pesos, యాభై cents",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="MXN"), "ఒకటి peso"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="MXN"),
-            "ఒకటి peso, యాభై  cents",
+            "ఒకటి peso, యాభై cents",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="RON"), "సున్న lei"
@@ -574,14 +575,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="RON"),
-            "సున్న lei, యాభై  bani",
+            "సున్న lei, యాభై bani",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="RON"), "ఒకటి leu"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="RON"),
-            "ఒకటి leu, యాభై  bani",
+            "ఒకటి leu, యాభై bani",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="INR"), "సున్న rupees"
@@ -592,14 +593,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="INR"),
-            "సున్న rupees, యాభై  paise",
+            "సున్న rupees, యాభై paise",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="INR"), "ఒకటి rupee"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="INR"),
-            "ఒకటి rupee, యాభై  paise",
+            "ఒకటి rupee, యాభై paise",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="HUF"), "సున్న forint"
@@ -610,14 +611,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="HUF"),
-            "సున్న forint, యాభై  fillér",
+            "సున్న forint, యాభై fillér",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="HUF"), "ఒకటి forint"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="HUF"),
-            "ఒకటి forint, యాభై  fillér",
+            "ఒకటి forint, యాభై fillér",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="ISK"), "సున్న krónur"
@@ -628,14 +629,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="ISK"),
-            "సున్న krónur, యాభై  aurar",
+            "సున్న krónur, యాభై aurar",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="ISK"), "ఒకటి króna"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="ISK"),
-            "ఒకటి króna, యాభై  aurar",
+            "ఒకటి króna, యాభై aurar",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="UZS"), "సున్న sums"
@@ -646,14 +647,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="UZS"),
-            "సున్న sums, యాభై  tiyins",
+            "సున్న sums, యాభై tiyins",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="UZS"), "ఒకటి sum"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="UZS"),
-            "ఒకటి sum, యాభై  tiyins",
+            "ఒకటి sum, యాభై tiyins",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="SAR"), "సున్న riyals"
@@ -664,14 +665,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="SAR"),
-            "సున్న riyals, యాభై  halalas",
+            "సున్న riyals, యాభై halalas",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="SAR"), "ఒకటి riyal"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="SAR"),
-            "ఒకటి riyal, యాభై  halalas",
+            "ఒకటి riyal, యాభై halalas",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="JPY"), "సున్న yen"
@@ -682,14 +683,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="JPY"),
-            "సున్న yen, యాభై  sen",
+            "సున్న yen, యాభై sen",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="JPY"), "ఒకటి yen"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="JPY"),
-            "ఒకటి yen, యాభై  sen",
+            "ఒకటి yen, యాభై sen",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="KRW"), "సున్న won"
@@ -700,14 +701,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="KRW"),
-            "సున్న won, యాభై  jeon",
+            "సున్న won, యాభై jeon",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="KRW"), "ఒకటి won"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="KRW"),
-            "ఒకటి won, యాభై  jeon",
+            "ఒకటి won, యాభై jeon",
         )
         self.assertEqual(
             num2words(0, lang="te", to="currency", currency="NGN"), "సున్న naira"
@@ -718,14 +719,14 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="NGN"),
-            "సున్న naira, యాభై  kobo",
+            "సున్న naira, యాభై kobo",
         )
         self.assertEqual(
             num2words(1, lang="te", to="currency", currency="NGN"), "ఒకటి naira"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="NGN"),
-            "ఒకటి naira, యాభై  kobo",
+            "ఒకటి naira, యాభై kobo",
         )
 
     def test_year(self):

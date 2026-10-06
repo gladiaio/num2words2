@@ -75,7 +75,7 @@
 //!    is a typo for "debe" in the Python source. Kept verbatim, which is why
 //!    [`LangEsGt::to_cardinal`] does its own overflow check instead of letting
 //!    `default_to_cardinal` emit the English message.
-//! 7. `to_ordinal(0)` == `""` (empty string), not an error.
+//! 7. `to_ordinal(0)` raises ValueError here (Python returns `""`; #160).
 //!
 //! # The currency surface
 //!
@@ -116,15 +116,10 @@
 //!
 //! ## More faithfully reproduced Python bugs (currency)
 //!
-//! 8. **The int branch double-spaces negatives.** It builds `minus_str =
-//!    self.negword` — the raw attribute, `"menos "` *with* its trailing space —
-//!    where every other call site uses `"%s " % self.negword.strip()`. The
-//!    format is then `("%s %s %s" % (minus_str, money_str, currency_str))
-//!    .strip()`, so `to_currency(-1, "EUR")` == `"menos  un euro"` with **two**
-//!    spaces; `.strip()` only touches the ends. The float branch goes through
-//!    `Num2Word_Base`, which *does* strip, so `to_currency(-1.0, "USD")` ==
-//!    `"menos un dólar y cero centavos"` with one. The asymmetry is real and
-//!    both halves are pinned here.
+//! 8. **The int branch double-spaced negatives (fixed, #160).** Python builds
+//!    `minus_str = self.negword` — `"menos "` *with* its trailing space — so
+//!    `to_currency(-1, "EUR")` == `"menos  un euro"` with two spaces. The port
+//!    strips negword like the float branch does: `"menos un euro"`.
 //! 9. **The int branch ignores `adjective`.** It never consults
 //!    `CURRENCY_ADJECTIVES`, so `to_currency(2, "USD", adjective=True)` ==
 //!    `"dos dólares"` while `to_currency(12.34, "USD", adjective=True)` ==
@@ -746,6 +741,7 @@ impl Lang for LangEsGt {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         self.to_ordinal_gender(value, "m")
     }
 
@@ -769,7 +765,8 @@ impl Lang for LangEsGt {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -812,6 +809,7 @@ impl Lang for LangEsGt {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         let gender = if kw.str("gender") == Some("f") { "f" } else { "m" };
         self.to_ordinal_gender(value, gender)
     }
@@ -950,9 +948,9 @@ impl Lang for LangEsGt {
                 Some(forms) => {
                     let cr1 = &forms.unit;
 
-                    // Bug 8: `self.negword` raw, not `.strip()`ped — the
-                    // trailing space survives into the format string.
-                    let minus_str = if v.is_negative() { self.negword() } else { "" };
+                    // Bug 8 (fixed): Python uses `self.negword` raw, so its
+                    // trailing space doubled up in the format string.
+                    let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
                     let abs_val = v.abs();
 
                     // Bug 11: computed unconditionally, discarded below when
@@ -970,10 +968,7 @@ impl Lang for LangEsGt {
                         cr1[0].as_str()
                     };
 
-                    // Python: `("%s %s %s" % (...)).strip()`. `trim` must not
-                    // collapse the interior double space that bug 8 produces on
-                    // negatives — it only strips the ends, exactly as `.strip()`
-                    // does.
+                    // Python: `("%s %s %s" % (...)).strip()`.
                     format!("{} {} {}", minus_str, money_str, currency_str)
                         .trim()
                         .to_string()

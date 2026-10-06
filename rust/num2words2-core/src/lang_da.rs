@@ -76,18 +76,11 @@
 //!    "minus et hundrede seksoghalvtreds". Reproduced with `div_mod_floor`;
 //!    `num-bigint`'s bare `/` and `%` truncate and would give the wrong
 //!    answer here.
-//! 9. **Negative integers get a double space.** `Num2Word_DA.to_currency`'s
-//!    integer arm takes `minus_str = self.negword` *raw* — trailing space
-//!    intact — and drops it into `"%s %s %s"`, so `to_currency(-12, "DKK")`
-//!    is "minus  tolv kroner" with two spaces. The trailing `.strip()` only
-//!    touches the ends, never the interior. Base would have said
-//!    "minus tolv kroner" (it uses `negword.strip() + " "`), and the float
-//!    arm — which delegates to Base — does exactly that: `-12.34` is
-//!    "minus tolv kroner, ...". So the spacing differs between `-12` and
-//!    `-12.0` in the same language. Verified against the live interpreter.
-//!    Note DA's template is `"%s %s %s"`, unlike `lang_DE.py`'s `"%s%s %s"`
-//!    — DE therefore does *not* have this bug and its port must not be
-//!    copied here.
+//! 9. **Negative integers got a double space (fixed, #160).**
+//!    `Num2Word_DA.to_currency`'s integer arm takes `minus_str = self.negword`
+//!    *raw* and drops it into `"%s %s %s"`, so Python's `to_currency(-12,
+//!    "DKK")` is "minus  tolv kroner". The port strips negword, as Base and
+//!    the float arm do, and says "minus tolv kroner".
 //! 10. **The integer arm silently ignores `adjective=`.** Only Base's float
 //!     arm consults `CURRENCY_ADJECTIVES`, so `to_currency(2, "USD",
 //!     adjective=True)` is "to dollars" while `to_currency(2.5, "USD",
@@ -926,10 +919,10 @@ impl Lang for LangDa {
                 }
             };
 
-            // `minus_str = self.negword if val < 0 else ""` — the raw negword,
-            // trailing space and all. Combined with the `"%s %s %s"` template
-            // below that yields "minus  tolv kroner". See module docs, bug 9.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // `minus_str = self.negword if val < 0 else ""` — stripped here,
+            // unlike Python, so the `"%s %s %s"` template below yields
+            // "minus tolv kroner", not "minus  tolv kroner" (#160).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
             // Python calls `self.to_cardinal` here, not `self._money_verbose`
             // — identical for DA, which does not override `_money_verbose`.
@@ -950,9 +943,7 @@ impl Lang for LangDa {
             // Python's integer branch never reads CURRENCY_ADJECTIVES. See
             // module docs, bug 10. (It *is* honoured on the float arm below.)
             //
-            // Python: ("%s %s %s" % (...)).strip(). `trim()` matches `strip()`
-            // on the ends only; it must NOT collapse the interior double space
-            // that a negative `minus_str` introduces.
+            // Python: ("%s %s %s" % (...)).strip().
             return Ok(format!("{} {} {}", minus_str, money_str, currency_str)
                 .trim()
                 .to_string());

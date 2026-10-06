@@ -68,9 +68,10 @@
 //!    branches on `isinstance(val, int)` to skip cents, HA funnels everything
 //!    through `Decimal(str(value))`. So `1` and `1.0` both give "yuro ɗaya",
 //!    and neither shows zero cents.
-//! 10. **Negatives emit a double space.** `result.insert(0, self.negword)`
-//!    inserts "ban " *with* its trailing space, then `" ".join(result)` adds
-//!    another: `-12.34` → "ban  yuro sha biyu da cent talatin da huɗu".
+//! 10. **Negatives emitted a double space (fixed, #160).** Python's
+//!    `result.insert(0, self.negword)` inserts "ban " *with* its trailing
+//!    space, then `" ".join(result)` adds another. The port inserts the
+//!    stripped word: `-12.34` → "ban yuro sha biyu da cent talatin da huɗu".
 //! 11. **Zero has no major segment.** `major_units > 0` is false for 0, so the
 //!    `if not result` fallback fires and hardcodes "sifiri" (never
 //!    `to_cardinal(0)`): `0` → "yuro sifiri". Likewise `0.01` → "cent ɗaya"
@@ -824,9 +825,9 @@ impl Lang for LangHa {
 
         if is_negative {
             // `result.insert(0, self.negword)` inserts "ban " *with* its
-            // trailing space; the join below adds a second one. The resulting
-            // double space is pinned by the corpus (module docs, quirk 10).
-            result.insert(0, NEGWORD.to_string());
+            // trailing space, and the join below adds a second one. Stripped
+            // here so the output has single spaces (module docs, quirk 10).
+            result.insert(0, NEGWORD.trim().to_string());
         }
 
         Ok(result.join(" "))

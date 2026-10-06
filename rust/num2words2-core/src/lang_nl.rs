@@ -698,12 +698,9 @@ impl Lang for LangNl {
     /// diverges from base's in three ways, all of them bugs kept for parity:
     ///
     /// 1. `minus_str = self.negword` keeps negword's **trailing space** where
-    ///    base does `"%s " % self.negword.strip()`. Feeding that to
-    ///    `"%s %s %s"` yields a doubled interior space: `to_currency(-1)` is
-    ///    `"min  één euro"`, not `"min één euro"`. `.strip()` only trims the
-    ///    ends, so the double space survives — as must `trim()` here. Verified
-    ///    against the live interpreter; no negative *int* row exists in the
-    ///    corpus, so this rests on that check alone.
+    ///    base does `"%s " % self.negword.strip()`, so Python's
+    ///    `to_currency(-1)` is `"min  één euro"`. Fixed here (#160): the port
+    ///    strips negword and says `"min één euro"`.
     /// 2. `adjective` is accepted and then **ignored** — the int arm never
     ///    calls `prefix_currency`. So `to_currency(1, "USD", adjective=True)`
     ///    is "één dollar" while the float `1.0` gives "één US dollar en nul
@@ -739,7 +736,7 @@ impl Lang for LangNl {
             };
             let cr1 = &forms.unit;
 
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
             let money_str = self.to_cardinal(&abs_val)?;
 
@@ -751,8 +748,7 @@ impl Lang for LangNl {
                 &cr1[0]
             };
 
-            // Python: ("%s %s %s" % (...)).strip() — see bug 1 above; trim()
-            // must not collapse the interior double space on negatives.
+            // Python: ("%s %s %s" % (...)).strip() — see bug 1 above.
             return Ok(format!("{} {} {}", minus_str, money_str, currency_str)
                 .trim()
                 .to_string());

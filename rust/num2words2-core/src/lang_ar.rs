@@ -1347,9 +1347,10 @@ fn convert_groups_currency(integer_value: &BigInt, fem_name: bool) -> Result<Str
 /// `Num2Word_AR.convert` → `extract_integer_and_decimal_parts` →
 /// `convert_to_arabic`, for the currency path.
 ///
-/// `number` is the `to_str` output. Returns `formatted_number` **unstripped** —
-/// `to_currency` does not `.strip()` its result, which is why the corpus
-/// records `to_currency(0.01)` as `" وإحدى هللة"` with a leading space.
+/// `number` is the `to_str` output. Python's `formatted_number` is empty for a
+/// zero integer part, so `to_currency(0.01)` was `" وإحدى هللة"` — a leading
+/// space and no unit at all. The port spells the zero integer part, as the
+/// non-zero case does: "صفر ريال وإحدى هللة" (#160).
 fn convert_currency(number: &str, prefs: &CurrencyPrefs) -> Result<String> {
     // --- extract_integer_and_decimal_parts ---
     // `splits = re.split("\\.", str(self.number))`. `to_str` emits at most one
@@ -1394,7 +1395,10 @@ fn convert_currency(number: &str, prefs: &CurrencyPrefs) -> Result<String> {
     // currency mode, so their two branches contribute nothing.
     let mut formatted = ret_val;
 
-    if !integer_value.is_zero() {
+    if integer_value.is_zero() {
+        // Only reached with a non-zero subunit (all-zero returned above).
+        formatted = format!("{} {}", ZERO_WORD, prefs.unit[0]);
+    } else {
         let remaining100 = (&integer_value % 100u8).to_u32().expect("0..=99");
         if remaining100 == 0 {
             formatted.push_str(prefs.unit[0]);
@@ -2216,8 +2220,9 @@ impl Lang for LangAr {
     ///   Base skips the cents segment for ints; AR instead skips it whenever
     ///   `int(number) == number`, which catches `1.0` as well as `1`. So
     ///   `has_decimal` is not consulted here — `to_str` subsumes it.
-    /// * The result is **not** stripped, so a sub-unit-only amount keeps its
-    ///   leading space: `to_currency(0.01)` is `" وإحدى هللة"`.
+    /// * A sub-unit-only amount spells its zero integer part (Python leaves it
+    ///   out, with a leading space): `to_currency(0.01)` is
+    ///   "صفر ريال وإحدى هللة" (#160).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -2266,8 +2271,7 @@ impl Lang for LangAr {
         };
 
         let result = convert_currency(&number, &prefs)?;
-        // `if minus: return minus + result` — no strip, so a negative
-        // sub-unit-only amount doubles the space: `-0.01` → "سالب  وإحدى هللة".
+        // `if minus: return minus + result`.
         if minus {
             return Ok(format!("{}{}", MINUS, result));
         }

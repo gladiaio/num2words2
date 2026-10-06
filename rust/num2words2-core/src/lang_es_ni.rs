@@ -92,7 +92,7 @@
 //!    "nuevemilésimo"). Corpus-confirmed.
 //! 5. **`replace("oo", "o")`** at every recursion level: "decimooctavo" →
 //!    "decimoctavo" (documented in the Python source as deliberate).
-//! 6. **`to_ordinal(0)` == `""`** — the empty string, not a word.
+//! 6. **`to_ordinal(0)`** raises ValueError here (Python returns `""`; #160).
 //! 7. Two hard crashes near 10^18, see [`log1000_floor`] and the notes below.
 //!
 //! # Crashes reproduced (see `concerns` in the port report)
@@ -711,6 +711,7 @@ impl Lang for LangEsNi {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         self.to_ordinal_gendered(value, "m")
     }
 
@@ -735,7 +736,8 @@ impl Lang for LangEsNi {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -778,6 +780,7 @@ impl Lang for LangEsNi {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         let gender = if kw.str("gender") == Some("f") { "f" } else { "m" };
         self.to_ordinal_gendered(value, gender)
     }

@@ -42,15 +42,11 @@
 //!    identical (both append ":e"), so the final `else` is dead — kept here
 //!    for structural fidelity.
 //!
-//! 5. **SV's `to_currency` double-spaces the minus on the int path.** It
-//!    builds `"%s %s %s" % (minus_str, money, unit)` with `minus_str =
-//!    self.negword` — the *un-stripped* "minus " — where every other path
-//!    uses `self.negword.strip()`. `.strip()` only removes the leading and
-//!    trailing space, so the interior double space survives:
-//!    `to_currency(-10, "EUR")` → "minus  tio euros". The float path
-//!    delegates to `Num2Word_Base` and correctly yields a single space
-//!    ("minus tolv euros, trettiofyra cents"), so the same call spaces
-//!    differently depending on whether the caller passed `-10` or `-10.0`.
+//! 5. **SV's `to_currency` double-spaced the minus on the int path (fixed,
+//!    #160).** Python builds `"%s %s %s" % (minus_str, money, unit)` with the
+//!    *un-stripped* `self.negword`, so `to_currency(-10, "EUR")` was
+//!    "minus  tio euros". The port strips it, as the float path does:
+//!    "minus tio euros".
 //!
 //! 6. **SV's int path silently ignores `adjective=`.** `Num2Word_Base`'s int
 //!    path applies `prefix_currency`, but SV's override never consults
@@ -785,10 +781,10 @@ impl Lang for LangSv {
             }
         };
 
-        // `minus_str = self.negword` — un-stripped, unlike every other call
-        // site. The trailing space plus the format's own separator is the
-        // double-space bug; see the module docs, bug 5.
-        let minus_str = if v.is_negative() { self.negword() } else { "" };
+        // `minus_str = self.negword` — stripped here, unlike Python, whose
+        // trailing space plus the format's own separator double-spaced the
+        // output; see the module docs, bug 5.
+        let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
         let abs_val = v.abs();
         // Python calls to_cardinal directly here, not _money_verbose. Same
         // result for SV, but kept literal.

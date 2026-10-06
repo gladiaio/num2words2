@@ -42,13 +42,14 @@
 //!    `outwords[-2]` / `outwords[-3]` and the `len(outwords) == 3` test see.
 //!    This is load-bearing for the observed output and is reproduced by
 //!    splitting on `' '` here too.
-//! 4. **Blanking a token leaves a double space.** `outwords[-2]` / `outwords[-3]`
-//!    are set to `""` in place and then `" ".join(...)` re-joins, so an emptied
-//!    *interior* slot yields two adjacent spaces. `to_ordinal(1100)` ==
-//!    "бир минг  юзинчи" (two spaces before "юзинчи") — corpus-confirmed.
-//!    `.strip()` only removes the leading/trailing case, hence
-//!    `to_ordinal(100)` == "юзинчи" (leading blank trimmed) but 1100 keeps its
-//!    interior gap.
+//! 4. **Blanking an interior "бир" (fixed, #160).** Python sets
+//!    `outwords[-2]` to `""` whenever it is "бир", then re-joins with `" "`, so
+//!    an emptied *interior* slot yields two adjacent spaces *and* loses a
+//!    digit: `to_ordinal(1100)` == "бир минг  юзинчи", `to_ordinal(21000)` ==
+//!    "йигирма  мингинчи" (i.e. 20000th). The port only drops a *leading* "бир"
+//!    (`to_ordinal(100)` == "юзинчи", 1000 == "мингинчи", as in Python) and
+//!    keeps an interior one, matching the cardinal: 1100 == "бир минг бир
+//!    юзинчи", 21000 == "йигирма бир мингинчи".
 //! 5. **`ords_feminine` has a duplicate key.** The literal is
 //!    `{"бир": "", "бир": "", "икки": "икки", ...}` — Python keeps the last
 //!    binding, and both are `""`, so "бир" → `""`. That empty mapping is what
@@ -733,8 +734,14 @@ impl LangUzCyr {
             let w2 = outwords[n - 2].clone();
             if let Some(v) = self.ords_feminine.get(w2.as_str()) {
                 // "бир" -> "" is the interesting case (quirk 5); every other
-                // key maps to itself, so this is a no-op for them.
-                outwords[n - 2] = v.to_string();
+                // key maps to itself, so this is a no-op for them. Python
+                // blanks it anywhere; the port only drops a *leading* "бир"
+                // ("бир юз" -> "юзинчи"). An interior one is a real digit:
+                // Python's 21000 -> "йигирма  мингинчи" reads as 20000th
+                // (quirk 4, fixed).
+                if n == 2 || !v.is_empty() {
+                    outwords[n - 2] = v.to_string();
+                }
             } else if w2 == "ўн" {
                 // Python: outwords[-2][:-1] + 'н' — drops the final char and
                 // re-appends "н", i.e. "ўн" -> "ў" + "н" -> "ўн". A no-op.
@@ -762,8 +769,8 @@ impl LangUzCyr {
         // self.title is the identity here — setup() leaves is_title False.
         outwords[n - 1] = self.title(&lastword);
 
-        // " ".join(outwords).strip(): trims only the ends, so an emptied
-        // interior slot survives as a double space (quirk 4).
+        // " ".join(outwords).strip(): only a leading slot is ever emptied
+        // (see above), so trimming the ends removes it.
         Ok(outwords.join(" ").trim().to_string())
     }
 
@@ -885,7 +892,7 @@ impl Lang for LangUzCyr {
     /// can raise — the two rewrites use `in` / `.get`. Crucially the rewrites
     /// run *before* the raise, so their mutations survive into the handler.
     /// That ordering is what produces `to_ordinal(100)` == "юзинчи" and
-    /// `to_ordinal(1100)` == "бир минг  юзинчи" (quirk 4).
+    /// `to_ordinal(1100)` == "бир минг бир юзинчи" (quirk 4, fixed).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         // Inherited Num2Word_Base.verify_ordinal. The float check
         // (`errmsg_floatord`) is unreachable for integer input.

@@ -33,9 +33,10 @@
 //!   only the trailing EXTS sweep needed porting (see
 //!   [`LangPt::to_cardinal_float`]).
 //! * `to_ordinal(float/Decimal)` — **`value = int(value)` truncates toward
-//!   zero before `verify_ordinal`**, so `to_ordinal(2.5)` == "segundo",
-//!   `to_ordinal(0.5)` == "", `to_ordinal(-0.0)` == "" and `to_ordinal(-1.5)`
-//!   raises the *negative* TypeError, never the float one.
+//!   zero before `verify_ordinal`**, so `to_ordinal(2.5)` == "segundo" and
+//!   `to_ordinal(-1.5)` raises the *negative* TypeError, never the float one.
+//!   `to_ordinal(0.5)` and `to_ordinal(-0.0)` truncate to 0, which Python
+//!   renders as "" and the port rejects with ValueError (#160).
 //! * `to_ordinal_num(float/Decimal)` — `verify_ordinal` on the **raw** value:
 //!   fractional -> TypeError (`errmsg_floatord`), numerically negative ->
 //!   TypeError (`errmsg_negord`). `-0.0` passes both checks
@@ -75,8 +76,9 @@
 //!    "quadrigentésimo" (standard PT is "quadringentésimo") and `ords[2][7]`
 //!    is "septigentésimo" (standard is "septingentésimo"). The frozen corpus
 //!    confirms both (`ordinal(700)` == "septigentésimo").
-//! 4. **`to_ordinal(0)` returns the empty string** — every digit maps through
-//!    `ords[idx % 3][0]` == `""`, and the join/strip collapses to "".
+//! 4. **`to_ordinal(0)` returned the empty string** in Python — every digit
+//!    maps through `ords[idx % 3][0]` == `""`. The port raises ValueError
+//!    instead: Portuguese has no ordinal for zero (#160).
 //! 5. **`to_ordinal` drops a leading "primeiro "** whenever the value is not
 //!    exactly 1 (`result[9:]`), to avoid "primeiro milésimo". This is why
 //!    `ordinal(1000)` == "milésimo" but `ordinal(2000)` == "segundo milésimo".
@@ -787,6 +789,10 @@ impl Lang for LangPt {
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
+        // Portuguese has no ordinal for zero; Python returns "" here (#160).
+        if value.is_zero() {
+            return Err(N2WError::Value("Cannot treat 0 as ordinal.".into()));
+        }
 
         // Python reassigns `value = str(value)` and later compares it to "1".
         let value_str = value.to_string();
@@ -855,7 +861,7 @@ impl Lang for LangPt {
     ///
     /// The first statement is `value = int(value)` — truncation toward zero —
     /// and `verify_ordinal` runs on the *truncated* int. So `2.5` ->
-    /// "segundo", `0.5` -> "", `-0.0` -> "", and `-1.5` raises the
+    /// "segundo", `0.5` / `-0.0` -> ValueError (zero, #160), and `-1.5` raises the
     /// negative-num TypeError (never the float one). Values of 10^18 and up
     /// still hit the `thousand_separators` KeyError (module docs, item 6):
     /// `to_ordinal(1e+20)` raises KeyError.

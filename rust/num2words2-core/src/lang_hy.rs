@@ -1331,6 +1331,11 @@ impl Lang for LangHy {
         if !whole.is_zero() {
             result.push(self.to_cardinal(&whole)?);
             result.push(self.pluralize(&whole, &forms.unit)?);
+        } else if cents_val.is_zero() {
+            // Python skips both segments for a zero amount and returns "";
+            // spell it like any other whole amount instead (#160).
+            result.push(self.to_cardinal(&whole)?);
+            result.push(self.pluralize(&whole, &forms.unit)?);
         }
 
         if !cents_val.is_zero() {

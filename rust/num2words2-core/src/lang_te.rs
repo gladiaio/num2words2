@@ -73,12 +73,11 @@
 //!    hard-coding `false`, so the deadness is emergent from the ported table
 //!    exactly as in Python. Fixing the padding would change output.
 //!
-//! 2. **`cards[50]` has a trailing space**: `"యాభై "` (`lang_TE.py:64`),
-//!    while every other round ten is unpadded. This leaks into output:
-//!    `to_cardinal(50)` == `"యాభై "`, `to_year(1050)` ==
-//!    `"ఒకటి వేయిల యాభై "`, and — because the modifiers test above never
-//!    fires and the space is therefore not stripped — `to_ordinal(50)` ==
-//!    `"యాభై వ"` with a space before the `వ`, unlike `"నలభైవ"` (40).
+//! 2. **`cards[50]` had a trailing space (fixed, #160)**: `"యాభై "`
+//!    (`lang_TE.py:64`), while every other round ten is unpadded. In Python it
+//!    leaks into output: `to_cardinal(50)` == `"యాభై "`, `to_ordinal(50)` ==
+//!    `"యాభై వ"` (unlike `"నలభైవ"` for 40), currency `"యాభై  cents"`. The
+//!    port's table drops the space, so 50 behaves like the other round tens.
 //!
 //! 3. **`cards[35]` is `"ముప్పై ఐదు"`**, using `ఐదు` for "five" where every
 //!    other compound in the table (5, 25, 45, 55, ...) uses `అయిదు`. A
@@ -279,10 +278,10 @@ const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 39] = [
 /// `self.low_numwords`, in Python source order.
 ///
 /// `set_low_numwords` zips this against `range(99, -1, -1)`, so index 0 is
-/// the word for 99 and index 99 is the word for 0. Two entries are odd and
-/// intentional: `"యాభై "` (50) carries a trailing space, and
-/// `"ముప్పై ఐదు"` (35) uses `ఐదు` where its neighbours use `అయిదు`. See
-/// module docs, bugs 2 and 3.
+/// the word for 99 and index 99 is the word for 0. One entry is odd and
+/// intentional: `"ముప్పై ఐదు"` (35) uses `ఐదు` where its neighbours use
+/// `అయిదు` (module docs, bug 3). Python's 50 also carries a trailing space,
+/// dropped here (bug 2).
 ///
 /// # DO NOT retype or reformat this table — it is not NFC
 ///
@@ -350,7 +349,7 @@ const LOW: [&str; 100] = [
     "యాభై మూడు",
     "యాభై రెండు",
     "యాభై ఒకటి",
-    "యాభై ",  // 50: trailing space, verbatim from lang_TE.py:64 - see bug 2
+    "యాభై",  // 50: lang_TE.py:64 has a trailing space here, dropped - see bug 2
     "నలభై తొమ్మిది",
     "నలభై ఎనిమిది",
     "నలభై ఏడు",
@@ -523,10 +522,11 @@ impl Lang for LangTe {
         "(-) "
     }
 
-    /// `self.pointword` from TE's `setup`, trailing space included. Only the
-    /// float path reads it, so it is out of scope; recorded for completeness.
+    /// `self.pointword` from TE's `setup`. Python's value carries a trailing
+    /// space, which the float path's own separator doubled ("సున్న బిందువు  అయిదు");
+    /// the port drops it (#160).
     fn pointword(&self) -> &str {
-        "బిందువు "
+        "బిందువు"
     }
 
     fn merge(&self, l: (&str, &BigInt), r: (&str, &BigInt)) -> (String, BigInt) {
@@ -724,7 +724,7 @@ impl Lang for LangTe {
     // fractional-cents branch of `default_to_currency` (Python's
     // `self.to_cardinal(float(right))`), which TE reaches only for input with
     // more than 2 decimals, e.g. `to_currency(1.234, "EUR")`. Python renders
-    // that via `to_cardinal_float` using `pointword = "బిందువు "`; the float
+    // that via `to_cardinal_float` using `pointword`; the float
     // cardinal path is a later phase, so this Rust port raises where Python
     // returns a string. No corpus row hits it — every currency value is 0, 1, 2
     // decimals — but it is a real gap, flagged in `concerns`.

@@ -130,11 +130,7 @@ NATIVE_ENGLISH_LOOKALIKES = set()
 ALLOW = {
     "exceptions": set(),
     # gladiaio/num2words2#160
-    "hygiene": {
-        "ar", "ca", "da", "dk", "dv", "es", "es_CO", "es_CR", "es_GT",
-        "es_HN", "es_NI", "es_VE", "fa", "fi", "ha", "hi", "hu", "hy", "is",
-        "nl", "pt", "pt_BR", "sq", "sv", "te", "tr", "uz_Cyrl", "uz_cyr",
-    },
+    "hygiene": set(),
     # gladiaio/num2words2#154
     "english_words": {
         "br", "fo", "gl", "haw", "ht", "jv", "jw", "kk", "lb", "ln", "mg",

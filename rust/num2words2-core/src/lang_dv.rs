@@ -45,15 +45,14 @@
 //! This is a port, not a rewrite. All of the following are verified against
 //! the interpreter and against `bench/corpus.jsonl`:
 //!
-//! 1. **Negative cardinals emit a double space.** When `part_words` is empty
-//!    (any |value| < 1000 with a non-zero last group) `convert_int` returns
-//!    `"".join([]) + " " + word`, i.e. a string with a *leading* space. The
-//!    non-negative path launders this via `result.strip()`, but the `sign == 1`
-//!    path does `" ".join([negword, result])` with **no strip**, so
-//!    `to_cardinal(-1)` == `"މައިނަސް  އެކެއް"` — two spaces. `to_cardinal(-1000)`
-//!    has only one, because `parts[0] == "000"` takes the early `int(parts[0])
-//!    == 0` return, which has no leading space. Reproduced in
-//!    [`LangDv::to_cardinal_float`].
+//! 1. **Negative cardinals emitted a double space (fixed, #160).** When
+//!    `part_words` is empty (any |value| < 1000 with a non-zero last group)
+//!    `convert_int` returns `"".join([]) + " " + word`, i.e. a string with a
+//!    *leading* space. The non-negative path launders this via
+//!    `result.strip()`, but Python's `sign == 1` path does
+//!    `" ".join([negword, result])` with **no strip**, so `to_cardinal(-1)`
+//!    was `"މައިނަސް އެކެއް"` — two spaces. The port strips `result` on the
+//!    negative path too, so every negative gets one space.
 //!
 //! 2. **`convert_three2nominal` mixes stem and nominal for hundreds.** The
 //!    `x00` branch uses `convert_two2nominal(digits_str[0])` while the `xyz`
@@ -112,9 +111,8 @@
 //!    `value.to_integral_value()` — round to *nearest*, ties to even — not
 //!    floor, and `frac_part` is `(value - int_part) * 100` after the same
 //!    rounding. So 99.99 rounds **up** to 100 and leaves `frac_part == -1`,
-//!    printing `"ސަތޭކަ EUR މައިނަސް  އެއް ލާރި"`: "one hundred EUR **minus** one
-//!    laari", carrying quirk 1's double space along with it (`to_cardinal_float`
-//!    is what renders that -1). 1234.56 likewise becomes 1235 EUR minus 44
+//!    printing `"ސަތޭކަ EUR މައިނަސް އެއް ލާރި"`: "one hundred EUR **minus** one
+//!    laari" (`to_cardinal_float` is what renders that -1). 1234.56 likewise becomes 1235 EUR minus 44
 //!    laari. And 0.5 ties to even, so `int_part` is 0 and it prints "fifty
 //!    laari" with no unit word at all.
 //!
@@ -627,8 +625,9 @@ impl LangDv {
         let result = self.convert_int(&value.abs().to_string(), nominal)?;
 
         if value.is_negative() {
-            // " ".join([negword, result]) — no strip, hence the double space.
-            return Ok(format!("{} {}", NEGWORD, result));
+            // " ".join([negword, result]) — Python skips the strip here and
+            // double-spaces; stripped in the port (quirk 1, fixed).
+            return Ok(format!("{} {}", NEGWORD, result.trim()));
         }
         Ok(result.trim().to_string())
     }
@@ -666,10 +665,9 @@ impl LangDv {
         let result = self.convert_int(&digits, nominal)?;
 
         if coefficient.is_negative() {
-            // " ".join([negword, result]) — no strip, hence the double space
-            // that quirk 1 describes. This is the path 99.99's frac_part of -1
-            // takes, which is why the corpus shows "މައިނަސް  އެއް ލާރި".
-            return Ok(format!("{} {}", NEGWORD, result));
+            // " ".join([negword, result]) — stripped, unlike Python (quirk 1,
+            // fixed). This is the path 99.99's frac_part of -1 takes.
+            return Ok(format!("{} {}", NEGWORD, result.trim()));
         }
         Ok(result.trim().to_string())
     }
@@ -784,9 +782,9 @@ impl LangDv {
         };
 
         if sign_negative {
-            // " ".join([negword, result]) — no strip, so convert_int's leading
-            // space survives as the quirk-1 double space.
-            Ok(format!("{} {}", NEGWORD, result))
+            // " ".join([negword, result]) — stripped, unlike Python, so
+            // convert_int's leading space no longer doubles up (quirk 1).
+            Ok(format!("{} {}", NEGWORD, result.trim()))
         } else {
             Ok(result.trim().to_string())
         }
@@ -1599,7 +1597,7 @@ mod float_tests {
         assert_eq!(f(1.5, 1).unwrap(), "އެކެއް ޕޮއިންޓް ފަހެއް");
         assert_eq!(f(3.14, 2).unwrap(), "ތިނެއް ޕޮއިންޓް އެކެއް ހަތަރެއް");
         assert_eq!(f(12.34, 2).unwrap(), "ބާރަ ޕޮއިންޓް ތިނެއް ހަތަރެއް");
-        assert_eq!(f(-12.34, 2).unwrap(), "މައިނަސް  ބާރަ ޕޮއިންޓް ތިނެއް ހަތަރެއް");
+        assert_eq!(f(-12.34, 2).unwrap(), "މައިނަސް ބާރަ ޕޮއިންޓް ތިނެއް ހަތަރެއް");
         assert_eq!(f(1.005, 3).unwrap(), "އެކެއް ޕޮއިންޓް ސުމެއް ސުމެއް ފަހެއް");
         assert_eq!(f(2.675, 3).unwrap(), "ދޭއް ޕޮއިންޓް ހައެއް ހަތެއް ފަހެއް");
         assert!(reads_zero_point(&f(0.01, 2)));
@@ -1612,7 +1610,7 @@ mod float_tests {
             f(1234.56, 2).unwrap(),
             "އެއްހާސް ދުއިސައްތަތިރީސްހަތަރެއް ޕޮއިންޓް ފަހެއް ހައެއް"
         );
-        assert_eq!(f(-1.5, 1).unwrap(), "މައިނަސް  އެކެއް ޕޮއިންޓް ފަހެއް");
+        assert_eq!(f(-1.5, 1).unwrap(), "މައިނަސް އެކެއް ޕޮއިންޓް ފަހެއް");
         assert!(reads_zero_point(&f(0.1, 1)));
         assert!(reads_zero_point(&f(0.99, 2)));
         assert_eq!(f(1.01, 2).unwrap(), "އެކެއް ޕޮއިންޓް ސުމެއް އެކެއް");
@@ -1647,7 +1645,7 @@ mod float_tests {
         );
         assert_eq!(
             l.cardinal_float_entry(&fv(-2.0), None).unwrap(),
-            "މައިނަސް  ދޭއް ޕޮއިންޓް ސުމެއް"
+            "މައިނަސް ދޭއް ޕޮއިންޓް ސުމެއް"
         );
         assert_eq!(
             l.cardinal_float_entry(&fv(-1000.0), None).unwrap(),
@@ -1763,7 +1761,7 @@ mod float_tests {
         );
         assert_eq!(
             l.to_cardinal_kw(&BigInt::from(-5), &kw(KwVal::Bool(false))).unwrap(),
-            "މައިނަސް  ފަސް"
+            "މައިނަސް ފަސް"
         );
         assert_eq!(
             l.to_cardinal_kw(&BigInt::from(0), &kw(KwVal::Bool(false))).unwrap(),

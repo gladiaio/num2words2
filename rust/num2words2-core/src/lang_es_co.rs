@@ -65,7 +65,7 @@
 //!    Python's numeric hashing makes `ords[1000]` find the `1e3` entry, so
 //!    `to_ordinal(1000)` == "milésimo" rather than a `KeyError`. Modelled here
 //!    with `u64` keys, which collapses the int/float distinction the same way.
-//! 6. **`to_ordinal(0)` == `""`** (empty string), not an error.
+//! 6. **`to_ordinal(0)`** raises ValueError here (Python returns `""`; #160).
 //! 7. **`errmsg_toobig`** ships the typo "deber ser inferior" (for "debe ser
 //!    inferior"); reproduced verbatim in the `Overflow` message.
 //!
@@ -660,6 +660,7 @@ impl Lang for LangEsCo {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         self.ordinal_g(value, false)
     }
 
@@ -681,7 +682,8 @@ impl Lang for LangEsCo {
     // so float/Decimal input is accepted only when whole and non-negative:
     // fractional -> TypeError (`errmsg_floatord`), negative whole -> TypeError
     // (`errmsg_negord`). -0.0 *passes* both checks (abs(-0.0) == -0.0) and
-    // renders like 0 — to_ordinal(-0.0) == "", to_ordinal_num(-0.0) == "-0.0º".
+    // renders like 0 — to_ordinal(-0.0) raises ValueError like 0 (#160),
+    // to_ordinal_num(-0.0) == "-0.0º".
     // `to_year` truncates via `int(val)`: to_year(-1.5) == "menos uno".
 
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -724,6 +726,7 @@ impl Lang for LangEsCo {
         if !kw.only(&["gender"]) {
             return Err(N2WError::Fallback("kwargs".into()));
         }
+        crate::lang_es::es_reject_zero_ordinal(value)?;
         self.ordinal_g(value, kw.str("gender") == Some("f"))
     }
 
@@ -879,12 +882,10 @@ impl Lang for LangEsCo {
             // "un US dólar". Only the float path below applies it.
             let _ = adjective;
 
-            // `negword` is used raw, *not* `.strip()`ed as the float path and
-            // everywhere else does, so its trailing space collides with the
-            // format string's: -1 COP is "menos  un peso" with two spaces.
-            // `.strip()` only trims the ends, so the doubled space survives.
-            // Reproduced verbatim.
-            let minus_str = if v.is_negative() { self.negword() } else { "" };
+            // Python uses `negword` raw here, so its trailing space collided
+            // with the format string's ("menos  un peso"). Stripped like the
+            // float path so the output has single spaces (#160).
+            let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
 
             // Python computes to_cardinal(abs_val) first and discards it when

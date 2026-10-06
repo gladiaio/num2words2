@@ -74,17 +74,11 @@
 //!    `to_ordinal(2002)` == "kétezer-kétik". This is the only input class
 //!    where the loop completes without a `break`. The corpus does not cover
 //!    it; verified directly against the interpreter and reproduced here.
-//! 8. **A negative *int* amount renders with a doubled space.**
-//!    `Num2Word_HU.to_currency` builds `minus_str` from the **raw**
-//!    `self.negword` (`"mínusz "`, trailing space included) rather than
-//!    `Num2Word_Base`'s `"%s " % self.negword.strip()`, then feeds it to
-//!    `"%s %s %s"`, whose own separator adds a second space. The trailing
-//!    `.strip()` only trims the ends, so the interior gap survives:
-//!    `to_currency(-5, "HUF")` == **"mínusz  öt forint"**. The *float* path
-//!    goes through `Num2Word_Base.to_currency` and gets the normal single
-//!    space: `to_currency(-12.34, "EUR")` == "mínusz tizenkettő euros, …".
-//!    Both verified against the interpreter; the float form is
-//!    corpus-confirmed.
+//! 8. **A negative *int* amount rendered with a doubled space (fixed,
+//!    #160).** `Num2Word_HU.to_currency` builds `minus_str` from the **raw**
+//!    `self.negword` (`"mínusz "`) and feeds it to `"%s %s %s"`, so Python's
+//!    `to_currency(-5, "HUF")` is "mínusz  öt forint". The port strips
+//!    negword, as the float path does: "mínusz öt forint".
 //! 9. **`adjective=True` is silently ignored for ints.** HU's int branch
 //!    never consults `CURRENCY_ADJECTIVES`, so `to_currency(5, "USD",
 //!    adjective=True)` == "öt dollars", while the float path *does* apply it:
@@ -1281,8 +1275,8 @@ impl Lang for LangHu {
         };
 
         // minus_str = self.negword if val < 0 else ""
-        // NB: the *raw* negword, keeping its trailing space — see bug 8.
-        let minus_str = if v.is_negative() { NEGWORD } else { "" };
+        // Python uses the raw negword here; stripped to avoid bug 8.
+        let minus_str = if v.is_negative() { NEGWORD.trim() } else { "" };
         let abs_val = v.abs();
         let money_str = self.to_cardinal(&abs_val)?;
 

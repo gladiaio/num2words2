@@ -204,10 +204,10 @@ fn index_error(msg: &str) -> N2WError {
 /// exist at all. Any code outside these four raises NotImplementedError, which
 /// is exactly what the corpus records for all seven of those.
 ///
-/// IRR and IRT carry **empty** subunit forms `("", "")` — not an oversight to
-/// tidy up. `to_currency(1.5, "IRT")` really does render "یک تومان و  پنجاه ",
-/// with a trailing space where the subunit name would go; inventing a word
-/// there would change output.
+/// IRR and IRT carry **empty** subunit forms `("", "")`. Python renders
+/// `to_currency(1.5, "IRT")` as "یک تومان و  پنجاه ", with a trailing space
+/// where the subunit name would go; the port trims it ("یک تومان و پنجاه",
+/// #160) but does not invent a subunit word.
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     const CENTS: [&str; 2] = ["سنت", "سنت"];
     // The `("", "")` both Iranian entries carry for their subunit.
@@ -446,8 +446,10 @@ impl Lang for LangFa {
     /// read from the live Python signature. Base's is ",", but only
     /// 36 of 149 languages actually use it — most default to " " or a
     /// conjunction, so inheriting Base's comma silently corrupts them.
+    /// Python's is " و ", whose trailing space doubles the one Base's
+    /// `"%s%s %s"` template adds after the separator; dropped here (#160).
     fn default_separator(&self) -> &str {
-        " و "
+        " و"
     }
 
     // cards / maxval / merge stay at their trait defaults: Python never builds
@@ -694,6 +696,7 @@ impl Lang for LangFa {
             )));
         }
 
+        // trim_end: IRR/IRT's empty subunit name leaves a trailing space.
         crate::currency::default_to_currency(
             self,
             val,
@@ -702,5 +705,6 @@ impl Lang for LangFa {
             separator.unwrap_or(self.default_separator()),
             adjective,
         )
+        .map(|s| s.trim_end().to_string())
     }
 }

@@ -1305,6 +1305,10 @@ impl Lang for LangPtBr {
     /// "segundo milionésimo milésimo" for 6000000.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
+        // Portuguese has no ordinal for zero; Python returns "" here (#160).
+        if value.is_zero() {
+            return Err(N2WError::Value("Cannot treat 0 as ordinal.".into()));
+        }
 
         let s = value.to_string(); // Python: value = str(int(value))
         let mut result: Vec<String> = Vec::new();
@@ -1371,7 +1375,8 @@ impl Lang for LangPtBr {
     /// `Num2Word_PT.to_ordinal` (inherited) on float/Decimal input.
     ///
     /// `value = int(value)` — truncation toward zero — runs *before*
-    /// `verify_ordinal`, so `2.5` -> "segundo", `0.5` -> "", `-0.0` -> "",
+    /// `verify_ordinal`, so `2.5` -> "segundo", `0.5` / `-0.0` -> ValueError
+    /// (they truncate to 0, which has no ordinal; Python returns "", #160),
     /// and `-1.5` raises the negative-num TypeError (never the float one).
     /// 10^18 and up still hit the `thousand_separators` KeyError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
