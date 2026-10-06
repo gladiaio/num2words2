@@ -50,10 +50,11 @@
 //! 5. **Typo in `THOUSANDS[10]`**: the plural form is "kvintillióny" with a
 //!    doubled `l`, while the singular "kvintilión" and genitive
 //!    "kvintiliónov" both have one. Kept verbatim.
-//! 6. **`to_currency`'s int path mis-pluralizes every count except 1.** It
-//!    picks `cr1[0]`/`cr1[1]` by hand instead of calling `self.pluralize`, so
-//!    0, 5+ and the teens all take the paucal (2-4) form where `pluralize`
-//!    would pick the genitive `cr1[2]`. See [`LangSk::to_currency`].
+//! 6. **`to_currency`'s int path mis-pluralized every count except 1 (fixed,
+//!    #187).** Python picks `cr1[0]`/`cr1[1]` by hand instead of calling
+//!    `self.pluralize`, so 0, 5+ and the teens all took the paucal (2-4) form
+//!    — "päť eurá" — while the float path said "päť eur". The port uses
+//!    `pluralize` on both paths. See [`LangSk::to_currency`].
 //! 7. **`to_currency` has no gender agreement.** The count comes from
 //!    `to_cardinal`, which only ever emits the masculine "jeden"/"dva", so a
 //!    feminine unit reads wrong: `1 CZK` is "jeden koruna" (Slovak wants
@@ -131,7 +132,7 @@
 //!   * `OverflowError` — bug 4 is reachable *through* `to_currency`, since the
 //!     int path calls `to_cardinal`: `to_currency(10**33, "EUR")` was
 //!     `KeyError: 11` in Python and is now an OverflowError (#159).
-//!     `to_currency(10**30)` is fine ("kvintilión eurá").
+//!     `to_currency(10**30)` is fine ("kvintilión eur").
 
 use std::sync::OnceLock;
 use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
@@ -397,8 +398,8 @@ fn plural_form_index(n: &BigInt) -> usize {
 /// `Num2Word_EUR.CURRENCY_FORMS`. Confirmed against the live interpreter.
 ///
 /// All six tuples carry three forms — nominative singular / paucal (2-4) /
-/// genitive plural — and the arity is load-bearing: `pluralize` indexes 0/1/2,
-/// `to_cheque` takes `cr1[-1]`, and `to_currency`'s int path takes `cr1[1]`.
+/// genitive plural — and the arity is load-bearing: `pluralize` indexes 0/1/2
+/// and `to_cheque` takes `cr1[-1]`.
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     const CENTS: [&str; 3] = ["cent", "centy", "centov"];
 
@@ -981,8 +982,8 @@ impl Lang for LangSk {
     /// that is unreachable — but it is mapped to `Index` rather than panicking
     /// so the exception type survives if the table ever changes.
     ///
-    /// Reached only from `Num2Word_Base.to_currency`'s float path; SK's own int
-    /// path pointedly does *not* call this (see [`LangSk::to_currency`]).
+    /// Python only reached this from `Num2Word_Base.to_currency`'s float path;
+    /// the port's int path uses it too (bug 6, #187).
     fn pluralize(&self, n: &BigInt, forms: &[String]) -> Result<String> {
         forms
             .get(plural_form_index(n))
@@ -997,7 +998,7 @@ impl Lang for LangSk {
     /// The split is why `currency:EUR` of `1` is "jeden euro" (no cents) while
     /// `1.0` is "jeden euro, nula centov".
     ///
-    /// # The int path's plural bug, reproduced (bug 6)
+    /// # The int path's plural bug (bug 6, fixed in #187)
     ///
     /// Python picks the currency word by hand here instead of calling
     /// `self.pluralize`:
@@ -1009,15 +1010,11 @@ impl Lang for LangSk {
     ///     currency_str = cr1[1] if len(cr1) > 1 else cr1[0]
     /// ```
     ///
-    /// So *every* count other than 1 takes `cr1[1]`, the paucal (2-4) form,
-    /// including 0, 5+ and the teens — where `pluralize` would correctly pick
-    /// the genitive `cr1[2]`. The corpus locks the wrong answers in:
-    /// `currency:USD` of `0` is "nula doláre", of `100` is "sto doláre", of
-    /// `1000000` is "milión doláre" — all should be "dolárov", and the float
-    /// path one line below *does* say "dolárov" for the same magnitudes ("nula
-    /// dolárov, päťdesiat centov" at 0.5). EUR shows it just as plainly:
-    /// "nula eurá" (int 0) against "nula eur" (float 0.5). Do not "fix" this
-    /// into a `pluralize` call.
+    /// So every count other than 1 took `cr1[1]`, the paucal (2-4) form,
+    /// including 0, 5+ and the teens: `5` was "päť eurá" and `100 USD` "sto
+    /// doláre", while the float path said "päť eur, nula centov". The port
+    /// calls [`Lang::pluralize`] like the float path, so `5` is "päť eur"
+    /// and `0` "nula eur".
     ///
     /// `abs(val)` is taken before the comparison, so `-1` is singular too:
     /// "mínus jeden euro".
@@ -1047,12 +1044,9 @@ impl Lang for LangSk {
                 let abs_val = v.abs();
                 let money_str = self.to_cardinal(&abs_val)?;
 
-                let currency_str = if abs_val.is_one() {
-                    forms.unit.first().cloned()
-                } else {
-                    forms.unit.get(1).or_else(|| forms.unit.first()).cloned()
-                }
-                .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
+                // `self.pluralize`, as the float path does — Python's
+                // hand-picked `cr1[1]` gave "päť eurá" (bug 6, #187).
+                let currency_str = Lang::pluralize(self, &abs_val, &forms.unit)?;
 
                 // Python: ("%s %s %s" % (minus_str, money_str, currency_str))
                 //             .strip()

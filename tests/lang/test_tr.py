@@ -297,8 +297,9 @@ class Num2WordsTRTest(TestCase):
 
     def test_currency(self):
         """Test currency conversion."""
+        # Ints honour currency= and space the unit like floats (#187).
         self.assertEqual(
-            num2words(0, lang="tr", to="currency", currency="TRY"), "sıfırlira"
+            num2words(0, lang="tr", to="currency", currency="TRY"), "sıfır lira"
         )
         self.assertEqual(
             num2words(0.01, lang="tr", to="currency", currency="TRY"),
@@ -309,14 +310,14 @@ class Num2WordsTRTest(TestCase):
             "sıfır lira, elli kuruş",
         )
         self.assertEqual(
-            num2words(1, lang="tr", to="currency", currency="TRY"), "birlira"
+            num2words(1, lang="tr", to="currency", currency="TRY"), "bir lira"
         )
         self.assertEqual(
             num2words(1.5, lang="tr", to="currency", currency="TRY"),
             "bir lira, elli kuruş",
         )
         self.assertEqual(
-            num2words(0, lang="tr", to="currency", currency="EUR"), "sıfırlira"
+            num2words(0, lang="tr", to="currency", currency="EUR"), "sıfır avro"
         )
         self.assertEqual(
             num2words(0.01, lang="tr", to="currency", currency="EUR"),
@@ -327,14 +328,14 @@ class Num2WordsTRTest(TestCase):
             "sıfır avro, elli sent",
         )
         self.assertEqual(
-            num2words(1, lang="tr", to="currency", currency="EUR"), "birlira"
+            num2words(1, lang="tr", to="currency", currency="EUR"), "bir avro"
         )
         self.assertEqual(
             num2words(1.5, lang="tr", to="currency", currency="EUR"),
             "bir avro, elli sent",
         )
         self.assertEqual(
-            num2words(0, lang="tr", to="currency", currency="USD"), "sıfırlira"
+            num2words(0, lang="tr", to="currency", currency="USD"), "sıfır dolar"
         )
         self.assertEqual(
             num2words(0.01, lang="tr", to="currency", currency="USD"),
@@ -345,7 +346,7 @@ class Num2WordsTRTest(TestCase):
             "sıfır dolar, elli sent",
         )
         self.assertEqual(
-            num2words(1, lang="tr", to="currency", currency="USD"), "birlira"
+            num2words(1, lang="tr", to="currency", currency="USD"), "bir dolar"
         )
         self.assertEqual(
             num2words(1.5, lang="tr", to="currency", currency="USD"),
@@ -433,3 +434,21 @@ def test_tr_spaced_precision_decimal_word_kwargs():
 
     # Combined
     assert num2words(3.14, lang="tr", spaced=True, decimal_word="nokta") == "üç nokta on dört"
+
+
+
+def test_tr_currency_int_matches_float():
+    # gladiaio/num2words2#187: ints said "kırkikilira" (always lira, no
+    # space) while floats defaulted to EUR. Both default to TRY now.
+    assert num2words(42, lang="tr", to="currency") == "kırkiki lira"
+    assert num2words(42.0, lang="tr", to="currency") == "kırkiki lira, sıfır kuruş"
+    assert num2words(-5, lang="tr", to="currency") == "eksi beş lira"
+    assert num2words(42, lang="tr", to="currency", currency="EUR") == "kırkiki avro"
+    try:
+        num2words(7, lang="tr", to="currency", currency="XXX")
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError("unknown currency code on an int must raise")
+    # Cardinals stay unspaced by default (#102).
+    assert num2words(42, lang="tr") == "kırkiki"

@@ -79,16 +79,20 @@
 //! `to_ordinal`/`to_ordinal_num`/`to_currency` accept no extra kwargs
 //! (trait defaults fall back to Python's own TypeError).
 //!
-//! Currency quirks, equally deliberate:
+//! Currency:
 //!
-//! * `to_currency` short-circuits on a *pure* `int` and never consults
-//!   `CURRENCY_FORMS`: it ignores the `currency` argument entirely and always
-//!   appends `CURRENCY_UNIT` ("lira"), with no separating space. So
-//!   `to_currency(100, "JPY")` is "yüzlira", and an unimplemented code does
-//!   *not* raise on that path — only the inherited float path does.
-//! * That int branch also uses the bare `negword` ("eksibeşlira"), while the
-//!   inherited float path uses `"%s " % negword.strip()` ("eksi oniki avro,
-//!   otuzdört sent"). The space is present in one and absent in the other.
+//! * Fixed (gladiaio/num2words2#187): Python's `to_currency` short-circuits
+//!   on a *pure* `int`, ignores `currency=`, and glues `CURRENCY_UNIT`
+//!   ("lira") and the bare negword on with no spaces ("kırkikilira",
+//!   "eksibeşlira"), while every other input went to `Num2Word_Base` with
+//!   the signature's default `currency="EUR"` ("kırkiki avro, sıfır sent").
+//!   The port sends ints through `Num2Word_Base` too, so `currency=` is
+//!   honoured (an unknown code raises `NotImplementedError` like a float),
+//!   the number words and the unit are separated by a space even though
+//!   cardinals stay unspaced, and an int has no cents segment, as in Base:
+//!   42 -> "kırkiki lira". The default is TRY for both paths — the int
+//!   path's lira, and the unit every currency test without `currency=`
+//!   expects.
 //! * `pluralize` is `forms[0] if number == 1 else forms[0]` — a no-op ternary.
 //!   Turkish does not inflect the currency name, so `number` is dead.
 
@@ -107,12 +111,6 @@ const ZEROTH: &str = "sıfırıncı";
 const NEGWORD: &str = "eksi";
 const CARDINAL_HUNDRED: &str = "yüz";
 const ORDINAL_HUNDRED: &str = "yüzüncü";
-
-/// `self.CURRENCY_UNIT`. The int branch of `to_currency` hardcodes this
-/// regardless of the requested currency. (`CURRENCY_SUBUNIT`, "kuruş", is set
-/// alongside it in Python but never read — the subunit words come from
-/// `CURRENCY_FORMS` — so it is not modelled here.)
-const CURRENCY_UNIT: &str = "lira";
 
 const ERRMSG_NONNUM: &str = "Sadece sayılar yazıya çevrilebilir.";
 
@@ -1073,10 +1071,10 @@ fn insert_spaces(text: &str, pointword: &str) -> String {
 }
 
 impl Lang for LangTr {
-    /// This language's own `to_currency(currency=...)` default,
-    /// read from the live Python signature. Only 44 of 156 use EUR.
+    /// Python's signature says `currency="EUR"`, but its int path always
+    /// said lira. TRY for both paths since #187.
     fn default_currency(&self) -> &str {
-        "EUR"
+        "TRY"
     }
 
     /// This language's own `to_currency(separator=...)` default,
@@ -1377,11 +1375,10 @@ impl Lang for LangTr {
 
     /// `Num2Word_TR.to_currency`.
     ///
-    /// The int arm is TR's own and deliberately unlike everything else: it
-    /// drops `currency`, `cents`, `separator` and `adjective` on the floor,
-    /// never looks at `CURRENCY_FORMS` (so `to_currency(7, "XXX")` is
-    /// "yedilira", not a NotImplementedError), and glues the parts together
-    /// with no spaces. Everything non-int defers to `Num2Word_Base`.
+    /// Python's int arm dropped `currency`, `cents`, `separator` and
+    /// `adjective`, never looked at `CURRENCY_FORMS`, and glued the parts
+    /// together with no spaces ("kırkikilira"). Since #187 every input
+    /// defers to `Num2Word_Base`, as floats always did.
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1390,13 +1387,6 @@ impl Lang for LangTr {
         separator: Option<&str>,
         adjective: bool,
     ) -> Result<String> {
-        if let CurrencyValue::Int(v) = val {
-            // Python: `self.negword if val < 0 else ""` — the bare negword,
-            // *not* Base's `"%s " % negword.strip()`. Hence "eksibeşlira".
-            let minus_str = if v.is_negative() { NEGWORD } else { "" };
-            let money_str = self.to_cardinal_impl(&v.abs())?;
-            return Ok(format!("{}{}{}", minus_str, money_str, CURRENCY_UNIT));
-        }
         crate::currency::default_to_currency(
             self,
             val,
