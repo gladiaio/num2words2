@@ -717,9 +717,9 @@ impl Lang for LangFrBe {
     /// The int branch is not a shortcut through Base — it diverges in two
     /// observable ways, both reproduced here:
     ///
-    /// 1. **An unknown currency code does not raise.** Base's int path lets the
-    ///    `KeyError` become `NotImplementedError`; FR catches it and returns a
-    ///    bare `to_cardinal(val)` — the number with no currency word at all.
+    /// 1. **An unknown currency code raises (fixed, #219).** Python caught the
+    ///    `KeyError` and returned a bare `to_cardinal(val)` — the number with
+    ///    no currency word at all; the port raises NotImplementedError.
     ///    So `to_currency(100, "KWD")` == "cent" and `to_currency(-100, "KWD")`
     ///    == "moins cent", while the *float* path for the same code raises
     ///    NotImplementedError from Base. The corpus pins both halves: KWD/BHD/CHF
@@ -749,9 +749,9 @@ impl Lang for LangFrBe {
         if let CurrencyValue::Int(v) = val {
             let cr1 = match self.currency_forms.get(currency) {
                 Some(forms) => &forms.unit,
-                // `except KeyError: return self.to_cardinal(val)` — `val`, the
-                // *signed* original, so to_cardinal supplies "moins " itself.
-                None => return self.to_cardinal(v),
+                // Python's `except KeyError: return self.to_cardinal(val)`
+                // printed a bare number; raise like the float path (#219).
+                None => return Err(crate::currency::unknown_currency(self, currency)),
             };
 
             let minus_str = if v.is_negative() {

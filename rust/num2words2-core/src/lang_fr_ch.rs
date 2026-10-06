@@ -159,8 +159,8 @@ fn pow10(n: i64) -> BigInt {
 /// shadows `Num2Word_EUR`'s attribute outright. EN's in-place mutation of the
 /// EUR dict therefore never reaches FR or FR_CH, and none of EN's ~24 extra
 /// codes (CHF, KWD, BHD, NGN, …) are visible here. The corpus confirms it from
-/// the other side: `currency:CHF` and `currency:KWD` fall into the KeyError
-/// paths below rather than resolving to EN's "franc"/"dinar".
+/// the other side: `currency:CHF` and `currency:KWD` raise below rather than
+/// resolving to EN's "franc"/"dinar".
 ///
 /// So this is a verbatim transcription of `lang_FR.py`'s literal — the one
 /// case where reading the source *is* correct. It coincidentally lands on the
@@ -775,13 +775,10 @@ impl Lang for LangFrCh {
     /// The integer path is FR's own hand-rolled branch and diverges from
     /// `Num2Word_Base.to_currency` in three observable ways, all reproduced:
     ///
-    /// 1. **An unknown currency does not raise.** Base re-raises the KeyError
-    ///    as NotImplementedError; FR catches it and returns a bare
-    ///    `self.to_cardinal(val)` with no currency word at all. Hence the
-    ///    corpus's `currency:CHF, 1000000 -> "un million"` — a currency
-    ///    conversion that silently forgets the currency. The float path has no
-    ///    such fallback, so the *same* code raises there: `currency:CHF, 0.5
-    ///    -> NotImplementedError`. Same input, same code, opposite outcomes.
+    /// 1. **An unknown currency raises (fixed, #219).** Python caught the
+    ///    KeyError and returned a bare `self.to_cardinal(val)` with no
+    ///    currency word (`currency:CHF, 1000000 -> "un million"`) while the
+    ///    float path raised; both raise NotImplementedError now.
     /// 2. **`adjective` is dropped on the floor.** The integer branch never
     ///    consults `CURRENCY_ADJECTIVES`, so `to_currency(2, "USD",
     ///    adjective=True)` is "deux dollars" while the float `2.0` is "deux US
@@ -807,10 +804,9 @@ impl Lang for LangFrCh {
         if let CurrencyValue::Int(v) = val {
             let forms = match self.currency_forms.get(currency) {
                 Some(f) => f,
-                // `except KeyError: return self.to_cardinal(val)` — note it
-                // passes the *signed* val, so the sign is handled by
-                // to_cardinal's own negword rather than minus_str below.
-                None => return self.to_cardinal(v),
+                // Python's `except KeyError: return self.to_cardinal(val)`
+                // printed a bare number; raise like the float path (#219).
+                None => return Err(crate::currency::unknown_currency(self, currency)),
             };
 
             // See divergence (2) above: the flag is accepted and ignored.

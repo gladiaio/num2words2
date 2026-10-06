@@ -60,8 +60,6 @@ class TestKOK(LangTest, TestCase):
         (38.4, "तीस आनी आठ रुपया", {"cents": False, "currency": "INR"}),
         ("1.50", "एक रुपया पन्नास पैसो", {"cents": True, "currency": "INR"}),
         (12.34, "धा आनी दोन डॉलर तीस आनी चार सेंट", {"currency": "USD"}),
-        # Unknown codes fall back to the first CURRENCY_FORMS entry (INR).
-        (12.34, "धा आनी दोन रुपया तीस आनी चार पैसो", {"currency": "GBP"}),
     ]
 
     # to_year ignores longval and delegates to to_cardinal — no year pairing.
@@ -84,6 +82,11 @@ class TestKOK(LangTest, TestCase):
 
     def test_currency(self):
         self._run_currency_tests()
+
+    def test_unknown_currency_code_raises(self):
+        # Unknown codes used to fall back to the default currency (#219).
+        with self.assertRaisesRegex(NotImplementedError, 'Currency code "GBP"'):
+            num2words(12.34, lang="kok", to="currency", currency="GBP")
 
     def test_float(self):
         self._run_float_tests()

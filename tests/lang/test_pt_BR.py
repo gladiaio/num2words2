@@ -568,12 +568,10 @@ class Num2WordsPT_BRTest(TestCase):
         )
 
     def test_unsupported_currency(self):
-        """Test unsupported currency code."""
-        # The parent class should handle unknown currencies
-        # This might not raise an error but return a default format
-        result = num2words(100, lang="pt-br", to="currency", currency="GBP")
-        # Should still produce some output
-        self.assertIsNotNone(result)
+        """An unsupported code raises, int and float alike (#219)."""
+        for value in (100, 100.5):
+            with self.assertRaises(NotImplementedError):
+                num2words(value, lang="pt-br", to="currency", currency="GBP")
 
     def test_decimal_currency_conversion(self):
         """Test currency conversion with Decimal values."""

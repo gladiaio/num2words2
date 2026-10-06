@@ -524,10 +524,9 @@ class Num2WordsHATest(TestCase):
             "naira ɗari",
         )
 
-        # Test unknown currency (should default to NGN)
-        self.assertEqual(
-            num2words(100, lang="ha", to="currency", currency="XYZ"), "naira ɗari"
-        )
+        # An unknown currency raises instead of printing naira (#219).
+        with self.assertRaises(NotImplementedError):
+            num2words(100, lang="ha", to="currency", currency="XYZ")
 
     def test_currency_with_fractional_cents(self):
         """Test currency with fractional cents."""

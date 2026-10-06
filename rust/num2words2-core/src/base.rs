@@ -407,6 +407,12 @@ pub trait Lang {
         "EUR"
     }
 
+    /// Another spelling of the same currency (ar takes "SR" and the ISO code
+    /// "SAR" for the riyal), so `currency=` is not taken as ignored (#219).
+    fn same_currency(&self, _a: &str, _b: &str) -> bool {
+        false
+    }
+
     fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
         crate::currency::default_to_cheque(self, val, currency)
     }

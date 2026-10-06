@@ -95,15 +95,12 @@
 //! `pluralize`, and no `separator`/`adjective` kwargs, so those trait hooks all
 //! stay at their defaults and are never consulted.
 //!
-//! The dispatcher passes `currency=<ISO code>` straight through, and DV
-//! interpolates whatever it is given **verbatim** as the unit word: there is no
-//! lookup, so `to_currency(1, currency="EUR")` is `"އެއް EUR"` and no code can
-//! ever raise `NotImplementedError`. Every code is "supported", which is
-//! exactly what the corpus records for all nine it tries. Omitting `currency=`
-//! instead yields the class's own default word — `to_currency(1)` is
-//! `"އެއް ރުފިޔާ"` (rufiyaa), the real Maldivian unit — which is what the
-//! generated [`Lang::default_currency`] override carries; the binding resolves
-//! it before `to_currency` runs, so the `&str` arriving here is already right.
+//! Python interpolated `currency=` **verbatim** as the unit word, so
+//! `to_currency(1, currency="EUR")` was `"އެއް EUR"` — a raw ISO code in
+//! Dhivehi text. DV knows one currency, the rufiyaa: the port accepts its
+//! default word ރުފިޔާ (what the binding passes when `currency=` is omitted)
+//! and the code `MVR`, and raises `NotImplementedError` for every other code,
+//! as `base.to_currency` does for an unknown one (#219).
 //!
 //! Continuing the quirk list above, all verified against the interpreter:
 //!
@@ -115,7 +112,7 @@
 //!    rufiyaa and laari, and puts the negword in front once.
 //!
 //! 7. **Either segment vanishes when its part is zero**, so 0.01 is
-//!    `"އެއް ލާރި"` (no unit word) and 1.0 is `"އެއް EUR"` (no cents). Python
+//!    `"އެއް ލާރި"` (no unit word) and 1.0 is `"އެއް ރުފިޔާ"` (no cents). Python
 //!    returned the **empty string** when both parts round to zero (0.001); the
 //!    port says zero units, like `to_currency(0)`.
 //!
@@ -1181,6 +1178,17 @@ impl Lang for LangDv {
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
+        // Only the rufiyaa has words (#219): never print a raw ISO code.
+        let currency = match currency {
+            "ރުފިޔާ" | "MVR" => "ރުފިޔާ",
+            other => {
+                return Err(N2WError::NotImplemented(format!(
+                    "Currency code \"{}\" not implemented for \"{}\"",
+                    other,
+                    self.lang_name()
+                )))
+            }
+        };
         // decimal_value = self.to_decimal(value). Decimal(int) and
         // Decimal(str(float)) — which is what the shim already handed us.
         let decimal_value = match val {
@@ -1233,7 +1241,7 @@ impl Lang for LangDv {
             // and Python then puts the bool itself into the list and dies in
             // `" ".join(...)`. Reproduced rather than papered over — but note
             // it fires only once the cents segment exists at all, which is why
-            // `to_currency(1.0, cents=False)` still returns "އެއް EUR", and why
+            // `to_currency(1.0, cents=False)` still returns "އެއް ރުފިޔާ", and why
             // this sits after frac_part has been rendered and pushed: an
             // OverflowError from that render happens first in Python too.
             if !cents {

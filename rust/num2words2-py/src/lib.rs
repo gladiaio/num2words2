@@ -13,6 +13,7 @@ use bigdecimal::BigDecimal;
 use num2words2_core::base::{
     floatord_error, py_num_str, year_float_error, Kwargs, KwVal, Lang,
 };
+use num2words2_core::currency::to_currency_respecting_code;
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
     has_py_digit, is_malformed_number, number_notation, parse_grouped, python_decimal_str,
@@ -233,6 +234,12 @@ fn opt(r: Result<String, N2WError>) -> Result<Option<String>, N2WError> {
 /// bare-`None` return becomes Python None, everything else maps through.
 fn finish(r: Result<String, N2WError>) -> PyResult<Option<String>> {
     opt(r).map_err(map_err)
+}
+
+/// The currency `to='currency'` uses when `currency=` is omitted.
+#[pyfunction]
+fn default_currency(lang: &str) -> PyResult<String> {
+    Ok(need_lang(lang)?.default_currency().to_string())
 }
 
 #[pyfunction]
@@ -718,7 +725,8 @@ fn int_mode(
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
-            l.to_currency_kw(
+            to_currency_respecting_code(
+                l,
                 &CurrencyValue::Int(n.clone()),
                 currency,
                 cents,
@@ -767,7 +775,8 @@ fn dec_mode(
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
-            l.to_currency_kw(
+            to_currency_respecting_code(
+                l,
                 &CurrencyValue::Decimal {
                     value: value.clone(),
                     has_decimal: repr.contains('.'),
@@ -870,12 +879,7 @@ fn currency_core(
     let v = CurrencyValue::parse(value, is_int, has_decimal, is_float)?;
     let adjective = adjective.unwrap_or(l.default_adjective());
     let currency = currency.unwrap_or(l.default_currency());
-    let r = if kw.is_empty() {
-        l.to_currency(&v, currency, cents, separator, adjective)
-    } else {
-        l.to_currency_kw(&v, currency, cents, separator, adjective, kw)
-    };
-    opt(r)
+    opt(to_currency_respecting_code(l, &v, currency, cents, separator, adjective, kw))
 }
 
 // --- Argument classification for the unified `num2words` entry -------------
@@ -1415,6 +1419,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<NumberTooLargeError>(),
     )?;
     m.add_function(wrap_pyfunction!(supported_langs, m)?)?;
+    m.add_function(wrap_pyfunction!(default_currency, m)?)?;
     m.add_function(wrap_pyfunction!(to_cardinal, m)?)?;
     m.add_function(wrap_pyfunction!(to_ordinal, m)?)?;
     m.add_function(wrap_pyfunction!(to_ordinal_num, m)?)?;

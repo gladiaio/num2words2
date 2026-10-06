@@ -80,16 +80,13 @@
 //!
 //! `to_currency` is overridden **completely** and shares nothing with
 //! `Num2Word_Base.to_currency` — see [`LangHy::to_currency`] for the three
-//! consequences (no `CURRENCY_PRECISION`, no `separator`/`adjective`, and an
-//! unknown code returning a bare cardinal instead of raising). `to_cheque` is
-//! *not* overridden, so it uses the base implementation and does raise for the
-//! codes `to_currency` silently accepts.
+//! consequences (no `CURRENCY_PRECISION`, no `separator`/`adjective`; an
+//! unknown code, which Python answered with a bare cardinal, now raises like
+//! the base implementation, #219). `to_cheque` is *not* overridden.
 //!
 //! Because `to_currency` hands floats to `to_cardinal`, this file must also
 //! carry the inherited float-cardinal path (`float2tuple` /
-//! `to_cardinal_float` / a float twin of `splitnum`), which the corpus
-//! exercises through the unknown-code branch (`to_currency(12.34, "KWD")` ==
-//! "տասներկու ամբողջ երեք չորս"). That arithmetic is done in `f64` because
+//! `to_cardinal_float` / a float twin of `splitnum`). That arithmetic is done in `f64` because
 //! Python does it in `f64`; see the "CPython float semantics" note below for
 //! why an exact-decimal model is measurably wrong.
 //!
@@ -862,15 +859,6 @@ impl LangHy {
         Ok(result)
     }
 
-    /// `Num2Word_HY.to_cardinal` dispatched on what Python actually held: an
-    /// `int` keeps the exact integer engine, a float takes the float twin.
-    fn to_cardinal_value(&self, val: &CurrencyValue) -> Result<String> {
-        match val {
-            CurrencyValue::Int(i) => self.to_cardinal(i),
-            CurrencyValue::Decimal { value: d, .. } => self.to_cardinal_f64(bd_to_f64(d)),
-        }
-    }
-
     /// `Num2Word_HY.to_cardinal` for **Decimal** input — the twin of
     /// [`LangHy::to_cardinal_f64`], but with exact `BigDecimal` arithmetic so
     /// issue #603's `98746251323029.99` keeps every digit instead of rounding
@@ -1226,11 +1214,10 @@ impl Lang for LangHy {
     ///    `(self, val, currency="AMD", cents=True)`; the separator is the
     ///    hard-coded "," spliced in below, and passing either kwarg to HY is a
     ///    TypeError. Both trait parameters are therefore ignored.
-    /// 3. **An unknown code does not raise.** The `else` returns
-    ///    `to_cardinal(abs(val))`, so `to_currency(12.34, "KWD")` is
-    ///    "տասներկու ամբողջ երեք չորս" rather than the NotImplementedError the
-    ///    base would raise. `to_cheque` is *not* overridden, so it still raises
-    ///    for those same codes — the two modes disagree.
+    /// 3. **An unknown code raises (fixed, #219).** Python's `else` returned
+    ///    `to_cardinal(abs(val))`, so `to_currency(12.34, "KWD")` was
+    ///    "տասներկու ամբողջ երեք չորս" — no currency at all. The port raises
+    ///    NotImplementedError, like the base and `to_cheque`.
     ///
     /// # Faithfully reproduced Python bugs
     ///
@@ -1293,9 +1280,9 @@ impl Lang for LangHy {
 
         let forms = match self.currency_forms.get(currency) {
             Some(f) => f,
-            // else: return self.to_cardinal(val) — note `val` is the abs value,
-            // so the sign is silently discarded.
-            None => return self.to_cardinal_value(&val),
+            // Python's `else: return self.to_cardinal(val)` printed a bare
+            // number for an unknown code; raise instead (#219).
+            None => return Err(crate::currency::unknown_currency(self, currency)),
         };
 
         let whole: BigInt;

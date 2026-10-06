@@ -12,7 +12,7 @@
 //! parses that. The stringification stays in the one place that already
 //! defines it, and the two sides cannot disagree about it.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{Kwargs, Lang, N2WError, Result};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
@@ -165,6 +165,55 @@ pub fn parse_currency_parts(
     }
 }
 
+/// `NotImplementedError` for a currency code the language has no words for.
+pub fn unknown_currency<L: Lang + ?Sized>(lang: &L, code: &str) -> N2WError {
+    N2WError::NotImplemented(format!(
+        "Currency code \"{}\" not implemented for \"{}\"",
+        code,
+        lang.lang_name()
+    ))
+}
+
+/// `to_currency[_kw]` that refuses to answer in the wrong currency (#219).
+///
+/// Many languages override `to_currency` wholesale and read only their own
+/// currency, so `currency="GBP"` silently printed the default ("dous euros",
+/// "اثنان ريالان"). A different code must give different words: when the
+/// output for `currency` is identical to the output for the language's
+/// default, the code was ignored and this raises like an unknown code does
+/// in `base.to_currency`. Codes whose forms are genuinely the same as the
+/// default's (two "dollar" currencies) are exempt.
+#[allow(clippy::too_many_arguments)]
+pub fn to_currency_respecting_code<L: Lang + ?Sized>(
+    lang: &L,
+    val: &CurrencyValue,
+    currency: &str,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: bool,
+    kw: &Kwargs,
+) -> Result<String> {
+    let render = |code: &str| {
+        if kw.is_empty() {
+            lang.to_currency(val, code, cents, separator, adjective)
+        } else {
+            lang.to_currency_kw(val, code, cents, separator, adjective, kw)
+        }
+    };
+    let out = render(currency)?;
+    let default = lang.default_currency();
+    if currency != default && !lang.same_currency(currency, default) {
+        let same_forms = match (lang.currency_forms(currency), lang.currency_forms(default)) {
+            (Some(a), Some(b)) => a.unit == b.unit && a.subunit == b.subunit,
+            _ => false,
+        };
+        if !same_forms && matches!(render(default), Ok(d) if d == out) {
+            return Err(unknown_currency(lang, currency));
+        }
+    }
+    Ok(out)
+}
+
 /// Python's `Num2Word_Base.to_currency`.
 ///
 /// Kept as a free function taking `&dyn Lang` so a language can override
@@ -194,11 +243,7 @@ pub fn default_to_currency<L: Lang + ?Sized>(
 
     let forms = lang
         .currency_forms(currency)
-        .ok_or_else(|| N2WError::NotImplemented(format!(
-            "Currency code \"{}\" not implemented for \"{}\"",
-            currency,
-            lang.lang_name()
-        )))?;
+        .ok_or_else(|| unknown_currency(lang, currency))?;
 
     let mut cr1 = forms.unit.clone();
     let cr2 = forms.subunit.clone();
@@ -308,11 +353,7 @@ pub fn default_to_cheque<L: Lang + ?Sized>(
 ) -> Result<String> {
     let forms = lang
         .currency_forms(currency)
-        .ok_or_else(|| N2WError::NotImplemented(format!(
-            "Currency code \"{}\" not implemented for \"{}\"",
-            currency,
-            lang.lang_name()
-        )))?;
+        .ok_or_else(|| unknown_currency(lang, currency))?;
 
     let divisor = lang.currency_precision(currency);
     let is_negative = val.is_negative();

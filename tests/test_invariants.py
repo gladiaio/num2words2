@@ -125,6 +125,31 @@ def _ordinal_fraction_failures(lang):
     return out
 
 
+def _currency_code_failures(lang):
+    """currency=X either raises NotImplementedError or names a currency other
+    than the language default -- never the default's words, never the raw
+    ISO code (#219)."""
+    default = _rust.default_currency(lang)
+    try:
+        base = num2words(2, lang=lang, to="currency", currency=default)
+    except Exception:  # noqa: BLE001 - only the comparison matters here
+        base = None
+    out = []
+    for code in ("USD", "EUR", "GBP", "JPY"):
+        if code == default:
+            continue
+        try:
+            r = num2words(2, lang=lang, to="currency", currency=code)
+        except NotImplementedError:
+            continue
+        except Exception as e:  # noqa: BLE001 - classifying is the point
+            out.append((code, type(e).__name__))
+            continue
+        if r == base or code in r:
+            out.append((code, r))
+    return out
+
+
 CHECKS = {
     "exceptions": _exception_failures,
     "hygiene": _hygiene_failures,
@@ -132,6 +157,7 @@ CHECKS = {
     "parity": _parity_failures,
     "maxval": _maxval_failures,
     "ordinal_rejects_fraction": _ordinal_fraction_failures,
+    "currency_code_respected": _currency_code_failures,
 }
 
 # Languages whose own decimal word is spelled "point".
@@ -151,6 +177,7 @@ ALLOW = {
     "parity": {"pt_BR"},
     "maxval": set(),
     "ordinal_rejects_fraction": set(),
+    "currency_code_respected": set(),
 }
 
 

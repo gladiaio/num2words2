@@ -121,6 +121,10 @@ num2words(0.001, to='currency', currency='TND')
 Built-in currencies (`currency=`): EUR, USD, GBP, AUD, CAD, NZD, HKD, SGD,
 CHF, AED, JPY, CNY, INR, KRW, MXN, BRL, ZAR, SAR, QAR, KWD, NGN, BHD, OMR,
 JOD, TND, LYD, IQD. Other languages add their own (RUB, UAH, BGN, ...).
+A code the language has no words for raises
+`NotImplementedError('Currency code "GBP" not implemented for "Num2Word_GL"')`
+for int, float, Decimal and string input alike; it never falls back to the
+language's default currency.
 
 Optional `adjective=True` prefixes the currency adjective for languages that
 have one (German "DM" → "Deutsche Mark", etc.):

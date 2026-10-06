@@ -687,11 +687,10 @@ impl Lang for LangFr {
     /// branch is not a reimplementation of Base's — it differs in three ways
     /// that are all observable, and all reproduced here:
     ///
-    /// 1. **An unknown currency does not raise.** Base turns the `KeyError`
-    ///    into `NotImplementedError`; FR catches it and returns a bare
-    ///    `to_cardinal(val)`. So `to_currency(0, "KWD")` is "zéro" — no unit,
-    ///    no error — while `to_currency(0.5, "KWD")` *does* raise, because
-    ///    that one reaches Base. The corpus pins both.
+    /// 1. **An unknown currency raises (fixed, #219).** Python caught the
+    ///    `KeyError` and returned a bare `to_cardinal(val)` — `to_currency(0,
+    ///    "KWD")` was "zéro", no unit — while the float path raised. Both
+    ///    raise `NotImplementedError` now.
     /// 2. **`adjective` is ignored**, since FR's branch never consults
     ///    `CURRENCY_ADJECTIVES`. `to_currency(2, "USD", adjective=True)` is
     ///    "deux dollars", not "deux US dollars" — the adjective only survives
@@ -716,8 +715,9 @@ impl Lang for LangFr {
         if let CurrencyValue::Int(v) = val {
             let forms = match self.currency_forms.get(currency) {
                 Some(f) => f,
-                // except KeyError: return self.to_cardinal(val)
-                None => return self.to_cardinal(v),
+                // Python's `except KeyError: return self.to_cardinal(val)`
+                // printed a bare number; raise like the float path (#219).
+                None => return Err(crate::currency::unknown_currency(self, currency)),
             };
 
             let minus_str = if v.is_negative() {

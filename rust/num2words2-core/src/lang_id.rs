@@ -94,16 +94,10 @@
 //! this file can reach them.
 //!
 //! `CURRENCY_FORMS` **is** defined on the class but is *dead code*: the body of
-//! `to_currency` never reads it, hardcoding `"rupiah"`/`"sen"` instead. Verified
-//! against the interpreter — setting `CURRENCY_FORMS = {}` changes no output,
-//! and `GBP`/`JPY`/`XYZ` are absent from the table yet convert fine. So the
-//! [`Lang::currency_forms`] hook is deliberately **not** implemented: base.rs
-//! documents its contract as "`None` -> NotImplementedError, as in Python", and
-//! ID raises NotImplementedError for *no* code. Returning `Some` for only the
-//! table's three entries (IDR/USD/EUR) would claim GBP is unsupported when it
-//! actually renders `"seratus rupiah"`. Unlike most languages, ID's table is
-//! its own class dict, not the shared `Num2Word_EUR` one, so the
-//! `lang_EUR`-mutated-by-`Num2Word_EN` trap does not apply here either.
+//! `to_currency` never reads it, hardcoding `"rupiah"`/`"sen"` instead, so
+//! Python printed rupiah for every code. The port accepts IDR only and raises
+//! NotImplementedError for any other code (#219); the [`Lang::currency_forms`]
+//! hook stays unimplemented.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyValue};
@@ -111,7 +105,7 @@ use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, Zero};
 
 /// `ZERO`.
 const ZERO: &str = "nol";
@@ -360,38 +354,6 @@ fn join(word_blocks: &[(String, Vec<String>)]) -> Result<String> {
     }
 
     Ok(word_list.join(" "))
-}
-
-/// Python's `str(float)` for the values `to_currency`'s fractional-cents branch
-/// can reach.
-///
-/// `right` there is a fractional number of cents, so `0 < right < 100` and it is
-/// never integral — that is exactly what `has_fractional_cents` asserts. Within
-/// that domain Rust's `{}` and Python's `repr` agree (both are shortest
-/// round-trip) except for one thing: Python switches to exponent form once the
-/// value drops below `1e-4` (`str(1e-05) == "1e-05"`, but `str(0.0001) ==
-/// "0.0001"`), while Rust's `{}` never does and would print `"0.00001"`. Rust's
-/// `{:e}` gives the right mantissa but an unpadded exponent (`"1e-5"`), so the
-/// two-digit zero padding is reapplied here.
-///
-/// The `f == 0.0` guard and the `+` exponent arm cannot trigger from
-/// `to_currency` (zero is not fractional, and the value is under 100); they are
-/// kept so the helper is correct rather than merely correct-in-context.
-fn py_repr_float(f: f64) -> String {
-    if f == 0.0 || f.abs() >= 1e-4 {
-        return format!("{}", f);
-    }
-    let s = format!("{:e}", f);
-    match s.split_once('e') {
-        Some((mantissa, exp)) => {
-            let (sign, digits) = match exp.strip_prefix('-') {
-                Some(d) => ("-", d),
-                None => ("+", exp.strip_prefix('+').unwrap_or(exp)),
-            };
-            format!("{}e{}{:0>2}", mantissa, sign, digits)
-        }
-        None => s,
-    }
 }
 
 /// Port of `Num2Word_ID.verify_ordinal`, integer path.
@@ -786,41 +748,19 @@ impl Lang for LangId {
     ///
     /// A self-contained reimplementation that shares nothing with
     /// `Num2Word_Base.to_currency`, so `currency::default_to_currency` is
-    /// deliberately not delegated to. Four behaviours are load-bearing and all
-    /// four are verified against the interpreter:
+    /// deliberately not delegated to:
     ///
-    /// 1. **The unit is always `"rupiah"` and the subunit always `"sen"`**,
-    ///    whatever `currency` says. `USD 12.34` is
-    ///    `"dua belas rupiah tiga puluh empat sen"`, not dolar/sen — and
-    ///    `CURRENCY_FORMS` is never consulted, so an unknown code like `"XYZ"`
-    ///    converts happily rather than raising NotImplementedError. There is no
-    ///    `Currency code "X" not implemented` path in this language.
+    /// 1. **The unit is always `"rupiah"`.** Python printed rupiah whatever
+    ///    `currency` said (`USD 12.34` was `"dua belas rupiah tiga puluh empat
+    ///    sen"`) and never raised; the port accepts only IDR and raises
+    ///    NotImplementedError for every other code (#219).
     /// 2. **`currency == "IDR"` suppresses the cents segment entirely**, on the
     ///    stated reasoning that the rupiah has no practical subunit. So
-    ///    `IDR 12.34` is `"dua belas rupiah"` — the `.34` is silently dropped —
-    ///    while `USD 12.34` keeps it. Since `default_currency()` is `"IDR"`,
-    ///    this is what an omitted `currency=` kwarg does.
+    ///    `IDR 12.34` is `"dua belas rupiah"`. With only IDR accepted, the
+    ///    Python "rupiah … sen" branch for other codes is gone.
     /// 3. **The negative word is `"minus "`, not `MINUS_SIGN`** (`"min "`),
-    ///    which `to_cardinal` uses. `to_currency` hardcodes its own, so the two
-    ///    modes disagree: `to_cardinal(-12)` is `"min dua belas"` but
-    ///    `to_currency(-12.34, "USD")` is `"minus dua belas rupiah ..."`.
-    /// 4. **`separator` and `adjective` are ignored**, and `cents` is honoured
-    ///    *only* in the fractional-cents branch. `separator`/`adjective` are
-    ///    accepted and never read. Because the whole-cents branch calls
-    ///    `to_cardinal` unconditionally, `cents=False` on a normal value still
-    ///    spells the cents as words rather than digits:
-    ///    `to_currency(12.34, "USD", cents=False)` is
-    ///    `"... tiga puluh empat sen"`, not `"... 34 sen"`. That is a Python
-    ///    bug — `cents=False` is meant to select the terse form — and it is
-    ///    reproduced.
-    ///
-    /// The divisor is a hardcoded 100 throughout: `Num2Word_ID` has no
-    /// `CURRENCY_PRECISION` and never passes `divisor=` to
-    /// `parse_currency_parts`, so the 3-decimal (KWD/BHD) and 0-decimal (JPY)
-    /// conventions do **not** apply. The corpus pins this: `JPY 12.34` is
-    /// `"dua belas rupiah tiga puluh empat sen"` rather than being rounded to a
-    /// whole unit, and `KWD 0.5` is `"nol rupiah lima puluh sen"` rather than
-    /// 500 fils.
+    ///    which `to_cardinal` uses. `to_currency` hardcodes its own.
+    /// 4. **`separator`, `adjective` and `cents` are ignored.**
     ///
     /// `has_decimal` is unused — ID never branches on it, so `Decimal("5")` and
     /// `Decimal("5.00")` both give `"lima rupiah"` where Base would split them.
@@ -828,14 +768,19 @@ impl Lang for LangId {
         &self,
         val: &CurrencyValue,
         currency: &str,
-        cents: bool,
+        _cents: bool,
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
+        // Every branch says "rupiah" (#219): any other code would print the
+        // wrong currency, so it raises like an unknown code in base.
+        if currency != "IDR" {
+            return Err(crate::currency::unknown_currency(self, currency));
+        }
         // has_fractional_cents = (Decimal(str(val)) * 100) % 1 != 0.
         // Hardcoded 100, not currency_precision() — see the doc comment.
         // `str(int) * 100` can never have a remainder, so ints are always
-        // False; they take the early return below regardless.
+        // False. It only decides the rounding of the whole part below.
         let has_fractional_cents = match val {
             CurrencyValue::Int(_) => false,
             CurrencyValue::Decimal { value, .. } => {
@@ -846,78 +791,16 @@ impl Lang for LangId {
             }
         };
 
-        let is_integer_input = matches!(val, CurrencyValue::Int(_));
-
         // is_int_with_cents=False, keep_precision=has_fractional_cents,
         // divisor defaulted to 100 on the Python side.
-        let (left, right, is_negative) =
+        let (left, _right, is_negative) =
             parse_currency_parts(val, false, has_fractional_cents, 100);
 
         let minus_str = if is_negative { "minus " } else { "" };
         let money_str = self.to_cardinal(&left)?;
 
-        if is_integer_input || currency == "IDR" {
-            return Ok(format!("{}{} rupiah", minus_str, money_str));
-        }
-
-        // Python: `if isinstance(right, Decimal) and has_fractional_cents`.
-        // `right` is a Decimal exactly when parse_currency_parts kept precision
-        // — i.e. when has_fractional_cents — and non-int input is guaranteed
-        // here by the early return, so the two conjuncts collapse into one.
-        let cents_str = if has_fractional_cents {
-            // `to_cardinal(float(right)) if cents else str(float(right))`.
-            // Both sides go through a float cast first, so the repr is what
-            // ID's own float path actually sees.
-            let f = right.to_f64().ok_or_else(|| {
-                N2WError::Value(format!("cannot represent {} as f64", right))
-            })?;
-            let repr = py_repr_float(f);
-            if cents {
-                if repr.contains('e') {
-                    // ID's to_cardinal(float) splits the repr on "." and feeds
-                    // the pieces to split_by_3/puluh, which do BASE[int(c)] per
-                    // character. An exponent repr like "1e-05" therefore reaches
-                    // int("e") and dies. Reachable: 1.0000001 USD leaves 1e-05
-                    // cents. Python raises ValueError here, so returning any
-                    // string — including the one base.rs's float path would
-                    // happily produce — would be wrong.
-                    return Err(N2WError::Value(
-                        "invalid literal for int() with base 10: 'e'".to_string(),
-                    ));
-                }
-                // Non-exponent reprs: ID spells the fractional part digit by
-                // digit off the repr, and `Num2Word_Base.to_cardinal_float`
-                // (which cardinal_from_decimal routes to) does the same, with
-                // `to_cardinal(digit)` matching ID's `BASE[digit]` and ZERO for
-                // "0". Verified equal against the interpreter across the
-                // reachable range, so the default hook is left in place rather
-                // than re-deriving split_by_koma/spell_float here.
-                self.cardinal_from_decimal(&right)?
-            } else {
-                // str() never raises, so the exponent repr survives verbatim:
-                // 1.0000001 USD -> "satu rupiah 1e-05 sen".
-                repr
-            }
-        } else {
-            // `self.to_cardinal(right) if right > 0 else ""`. right is a whole
-            // number of cents here (scale 0), and non-negative because
-            // parse_currency_parts took abs() first.
-            let right_int = right.as_bigint_and_exponent().0;
-            if right_int.is_positive() {
-                self.to_cardinal(&right_int)?
-            } else {
-                String::new()
-            }
-        };
-
-        // A zero cents value yields "" and drops the segment, which is what
-        // makes 1.0 -> "satu rupiah" rather than "satu rupiah nol sen".
-        if !cents_str.is_empty() {
-            return Ok(format!(
-                "{}{} rupiah {} sen",
-                minus_str, money_str, cents_str
-            ));
-        }
+        // `currency == "IDR"` suppresses the cents segment: the rupiah has no
+        // practical subunit, so whole rupiah are read for every input.
         Ok(format!("{}{} rupiah", minus_str, money_str))
     }
 

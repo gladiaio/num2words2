@@ -2008,6 +2008,12 @@ impl Lang for LangAr {
         "SR"
     }
 
+    /// "SR" (the Python default) and the ISO code "SAR" are both the riyal.
+    fn same_currency(&self, a: &str, b: &str) -> bool {
+        let riyal = |c: &str| c == "SR" || c == "SAR";
+        riyal(a) && riyal(b)
+    }
+
     /// This language's own `to_currency(separator=...)` default,
     /// read from the live Python signature. Base's is ",", but only
     /// 36 of 149 languages actually use it — most default to " " or a

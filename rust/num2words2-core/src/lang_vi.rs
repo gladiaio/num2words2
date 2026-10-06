@@ -95,12 +95,11 @@
 //!
 //! Consequences, all reproduced here and all corroborated by the corpus:
 //!
-//! 8. **`currency` is read and thrown away.** Every branch appends the literal
-//!    `" đồng"`. The corpus proves it: the same 12 values under EUR, USD, GBP,
-//!    JPY, KWD, BHD, INR, CNY and CHF give nine byte-identical blocks of
-//!    output. No code can raise `NotImplementedError`, so `currency_forms`,
-//!    `currency_precision`, `pluralize` and `lang_name` stay at their trait
-//!    defaults — nothing reaches them.
+//! 8. **`currency` was read and thrown away (fixed, #219).** Every branch
+//!    appends the literal `" đồng"`, so Python gave đồng under EUR, USD, GBP
+//!    and every other code. The port raises `NotImplementedError` for any code
+//!    but VND (`lang_name` exists only for that message); `currency_forms`,
+//!    `currency_precision` and `pluralize` stay at their trait defaults.
 //!
 //! 9. **`cents`, `separator` and `adjective` are dead parameters.** Never read.
 //!    The generated `default_separator()` / `default_currency()` above are
@@ -861,7 +860,7 @@ impl Lang for LangVi {
     // CURRENCY_FORMS, calls no pluralize/_money_verbose/_cents_*, and has no
     // to_cheque — so `currency_forms`, `currency_adjective`,
     // `currency_precision`, `pluralize`, `money_verbose`, `cents_verbose`,
-    // `cents_terse` and `lang_name` are all left at their trait defaults and
+    // `cents_terse` are all left at their trait defaults and
     // are all unreachable. Overriding them would invent behaviour the class
     // does not have.
     //
@@ -869,12 +868,16 @@ impl Lang for LangVi {
     // path is an AttributeError, not a float conversion, so there is no
     // fractional-cents rendering to port.
 
+    fn lang_name(&self) -> &str {
+        "Num2Word_VI"
+    }
+
     /// Port of `Num2Word_VI.to_currency`.
     ///
-    /// `currency`, `cents`, `separator` and `adjective` are accepted and
-    /// discarded — bugs #8 and #9. Every branch ends in the literal `" đồng"`,
-    /// which is why all nine currency codes in the corpus produce identical
-    /// output and why no code path can raise NotImplementedError.
+    /// `cents`, `separator` and `adjective` are accepted and discarded — bugs
+    /// #8 and #9. Every branch ends in the literal `" đồng"`, so Python printed
+    /// đồng whatever `currency=` said; the port raises NotImplementedError for
+    /// any code but VND instead of naming the wrong currency (#219).
     ///
     /// Statement order matters and is preserved: the `Decimal` guard runs
     /// *before* the int/float branch, so `to_currency(10**26)` raises
@@ -883,11 +886,14 @@ impl Lang for LangVi {
     fn to_currency(
         &self,
         val: &CurrencyValue,
-        _currency: &str,
+        currency: &str,
         _cents: bool,
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
+        if currency != self.default_currency() {
+            return Err(crate::currency::unknown_currency(self, currency));
+        }
         // decimal_val = Decimal(str(val))
         let decimal_val = match val {
             CurrencyValue::Int(v) => BigDecimal::from(v.clone()),

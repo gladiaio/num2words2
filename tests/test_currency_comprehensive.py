@@ -3,14 +3,18 @@
 
 import unittest
 
-from num2words2 import num2words
+from num2words2 import _rust, num2words
 
 
 class ComprehensiveCurrencyTests(unittest.TestCase):
     """Test currency support across all languages based on matrix findings"""
 
     def test_full_support_languages(self):
-        """Test languages with full currency support (10/10)"""
+        """Every code either raises or names a different currency (#219).
+
+        These languages used to "support" all ten codes by printing their
+        own default currency for the unknown ones.
+        """
         full_support_langs = [
             "ar",
             "bn",
@@ -39,17 +43,17 @@ class ComprehensiveCurrencyTests(unittest.TestCase):
         ]
 
         for lang in full_support_langs:
+            default = num2words(100.50, lang=lang, to="currency")
             for currency in test_currencies:
                 try:
                     result = num2words(
                         100.50, lang=lang, to="currency", currency=currency
                     )
-                    self.assertIsNotNone(result, f"{lang} should support {currency}")
-                    self.assertTrue(
-                        len(result) > 0, f"{lang} {currency} output should not be empty"
-                    )
-                except Exception as e:
-                    self.fail(f"{lang} failed for {currency}: {e}")
+                except NotImplementedError:
+                    continue
+                self.assertTrue(result, f"{lang} {currency} output is empty")
+                if currency != _rust.default_currency(lang):
+                    self.assertNotEqual(result, default, f"{lang} {currency}")
 
     def test_polish_gbp_support(self):
         """Test newly added Polish GBP support"""
