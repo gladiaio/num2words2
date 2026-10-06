@@ -5,8 +5,12 @@
 //! `Num2Word_Base.__init__` skips the `self.cards = OrderedDict()` branch
 //! entirely and never sets `MAXVAL`. All four in-scope methods
 //! (`to_cardinal`, `to_ordinal`, `to_ordinal_num`, `to_year`) are overridden
-//! outright, so `cards`/`maxval`/`merge` stay at their trait defaults here and
-//! **nothing overflows** — every integer, however large, renders.
+//! outright, so `cards`/`merge` stay at their trait defaults here, and in
+//! Python **nothing overflows** — every integer, however large, renders. On a
+//! large enough integer the port's recursion overflowed the native stack, so
+//! it adds a ceiling (gladiaio/num2words2#203): `maxval` is 10^14, where the
+//! crore multiplier would itself need "கோடி", and every mode raises
+//! `OverflowError` from there.
 //!
 //! The algorithm is the Indian numbering system: crore (10^7), lakh (10^5),
 //! thousand, then a special hundreds table and a teens table, joined with
@@ -32,9 +36,11 @@
 //! 3. **The thousands scale word takes no "ஒரு"**, unlike lakh and crore:
 //!    1000 renders as bare "ஆயிரம்" while 100000 is "ஒரு இலட்சம்" and 10000000
 //!    is "ஒரு கோடி". Asymmetric in Python; preserved.
-//! 4. **Crore stacks on itself past 10^14** rather than promoting to a larger
-//!    scale word, because `_int_to_word` recurses on the crore quotient:
-//!    10^15 == "பத்து கோடி கோடி", 10^21 == "ஒரு கோடி கோடி கோடி". Preserved.
+//! 4. ~~**Crore stacks on itself past 10^14**~~ rather than promoting to a
+//!    larger scale word, because `_int_to_word` recurses on the crore
+//!    quotient: in Python 10^15 == "பத்து கோடி கோடி", 10^21 ==
+//!    "ஒரு கோடி கோடி கோடி". The port raises `OverflowError` there instead
+//!    (gladiaio/num2words2#203).
 //! 5. **`self.scale` is dead.** The Python `__init__` builds
 //!    `{1000: "ஆயிரம்", 100000: "இலட்சம்", 10000000: "கோடி",
 //!    1000000000000: "டிரில்லியன்"}` and never reads it — the scale words are
@@ -93,15 +99,16 @@
 //! 12. **`keep_precision` skips the ROUND_HALF_UP quantize**, so a value with
 //!     fractional cents *truncates* rather than rounds: `2.675` is
 //!     "இரண்டு ரூபாய் அறுபது ஏழு பைசா" (67 paise, not 68).
-//! 13. **Past 10^26 TA stops speaking Tamil** and hands back the bare number —
-//!     see [`LangTa::to_currency`] for the derivation. Reproduced for the int
-//!     path only; the float path cannot be reproduced from this file.
+//! 13. ~~**Past 10^26 TA stops speaking Tamil**~~ and hands back the bare
+//!     number (`to_currency(10**26)` == "100000000000000000000000000 INR").
+//!     Unreachable since gladiaio/num2words2#203: the 10^14 ceiling raises
+//!     `OverflowError` first.
 //!
 //! # Error behaviour
 //!
-//! For **integer** input none of the four in-scope methods can raise: there is
-//! no overflow check, no table lookup that can miss, and no `int()` parse.
-//! Every method returns `Ok`. The `try/except BaseException` wrappers around
+//! For **integer** input below the 10^14 ceiling none of the four in-scope
+//! methods can raise: there is no table lookup that can miss and no `int()`
+//! parse. From the ceiling up every method raises `OverflowError` (#203). The `try/except BaseException` wrappers around
 //! Python's `to_cardinal`/`to_ordinal`/`to_ordinal_num` are a float-truncation
 //! fallback (e.g. `to_cardinal(12.34)` raises `KeyError` on `teens[12.34]`,
 //! is caught, and retries as `int(12.34)` → "பன்னிரண்டு"); floats are out of
@@ -113,7 +120,7 @@
 //! None. Every method is a pure function of its argument — no flag is set in
 //! one call and consumed by another.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -121,6 +128,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// "பூஜ்ஜியம்" — the zero word, returned by both the cardinal and ordinal paths.
 const ZERO: &str = "பூஜ்ஜியம்";
@@ -314,30 +322,31 @@ fn int_to_word(n: &BigInt) -> String {
 }
 
 /// Python's `_int_to_cardinal`.
-fn int_to_cardinal(n: &BigInt) -> String {
+fn int_to_cardinal(n: &BigInt) -> Result<String> {
+    check_maxval(n, maxval_ceiling())?;
     if n.is_zero() {
-        return ZERO.to_string();
+        return Ok(ZERO.to_string());
     }
     if n.sign() == num_bigint::Sign::Minus {
         // NEGWORD carries its own trailing space — plain concatenation.
-        return format!("{}{}", NEGWORD, int_to_word(&(-n)));
+        return Ok(format!("{}{}", NEGWORD, int_to_word(&(-n))));
     }
-    int_to_word(n)
+    Ok(int_to_word(n))
 }
 
 /// Python's `_int_to_ordinal`.
-fn int_to_ordinal(n: &BigInt) -> String {
+fn int_to_ordinal(n: &BigInt) -> Result<String> {
     if n.is_zero() {
-        return ZERO.to_string();
+        return Ok(ZERO.to_string());
     }
     // `n in self.ordinals` — keys 1..=10 only, so negatives never match.
     if let Some(i) = n.to_usize() {
         if (1..=10).contains(&i) {
-            return ORDINALS[i - 1].to_string();
+            return Ok(ORDINALS[i - 1].to_string());
         }
     }
     // Note: no separator before the suffix. This is Python's behaviour.
-    format!("{}{}", int_to_cardinal(n), ORDINAL_SUFFIX)
+    Ok(format!("{}{}", int_to_cardinal(n)?, ORDINAL_SUFFIX))
 }
 
 /// Python's `self.to_cardinal(float(right))`, the fractional-cents branch.
@@ -365,7 +374,7 @@ fn int_to_ordinal(n: &BigInt) -> String {
 ///
 /// `right` is `fraction * 100` with `fraction` in `[0, 1)`, so the value is in
 /// `[0, 100)` and the `as i64` cast cannot overflow.
-fn cardinal_from_fractional_cents(right: &BigDecimal) -> String {
+fn cardinal_from_fractional_cents(right: &BigDecimal) -> Result<String> {
     // `to_f64` formats the coefficient and defers to Rust's float parser, so
     // it is correctly rounded exactly as Python's `float(Decimal)` is.
     let truncated = right.to_f64().map(f64::trunc).unwrap_or(0.0);
@@ -396,10 +405,6 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
 
 pub struct LangTa {
     currency_forms: HashMap<&'static str, CurrencyForms>,
-    /// `10**26`. See [`LangTa::to_currency`] — the magnitude at which Python's
-    /// `(Decimal(str(n)) * 100) % 1` overflows the decimal context and TA's
-    /// blanket `except BaseException` takes over.
-    decimal_ctx_limit: BigInt,
 }
 
 impl LangTa {
@@ -407,7 +412,6 @@ impl LangTa {
         LangTa {
             // Built once here, never per call.
             currency_forms: build_currency_forms(),
-            decimal_ctx_limit: BigInt::from(10u8).pow(26),
         }
     }
 }
@@ -418,7 +422,21 @@ impl Default for LangTa {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// கோடி (10^7), so from 10^14 the crore multiplier would itself need கோடி and
+/// the word would stack ("கோடி கோடி").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangTa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -434,7 +452,7 @@ impl Lang for LangTa {
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        Ok(int_to_cardinal(value))
+        Ok(int_to_cardinal(value)?)
     }
 
     /// TA's float/Decimal cardinal path — **pure truncation toward zero**.
@@ -497,11 +515,11 @@ impl Lang for LangTa {
                 value.with_scale(0).as_bigint_and_exponent().0
             }
         };
-        Ok(int_to_cardinal(&truncated))
+        Ok(int_to_cardinal(&truncated)?)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(int_to_ordinal(value))
+        int_to_ordinal(value)
     }
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
@@ -511,12 +529,14 @@ impl Lang for LangTa {
     }
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
+        // The thousands split would otherwise slip a value past the ceiling.
+        check_maxval(value, maxval_ceiling())?;
         let t = thousand();
 
         // n < 1000: plain cardinal. This arm also swallows every negative
         // year, so `to_year(-500)` == "கழித்தல் ஐநூறு".
         if value < &t {
-            return Ok(int_to_cardinal(value));
+            return Ok(int_to_cardinal(value)?);
         }
 
         let remainder = value.mod_floor(&t);
@@ -527,16 +547,16 @@ impl Lang for LangTa {
             let mut result = YEAR_THOUSAND.to_string();
             if is_positive(&remainder) {
                 result.push(' ');
-                result.push_str(&int_to_cardinal(&remainder));
+                result.push_str(&int_to_cardinal(&remainder)?);
             }
             return Ok(result);
         }
 
         let thousands = value.div_floor(&t);
-        let mut result = format!("{} {}", int_to_cardinal(&thousands), YEAR_THOUSAND);
+        let mut result = format!("{} {}", int_to_cardinal(&thousands)?, YEAR_THOUSAND);
         if is_positive(&remainder) {
             result.push(' ');
-            result.push_str(&int_to_cardinal(&remainder));
+            result.push_str(&int_to_cardinal(&remainder)?);
         }
         Ok(result)
     }
@@ -555,7 +575,7 @@ impl Lang for LangTa {
     /// truncation: `to_ordinal(1.5)` → `_int_to_ordinal(1)` → "முதல்",
     /// `to_ordinal(-1.5)` → `_int_to_ordinal(-1)` → "கழித்தல் ஒன்றுஆவது".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(int_to_ordinal(&ta_trunc(value)))
+        int_to_ordinal(&ta_trunc(value))
     }
 
     /// `to_ordinal_num(float/Decimal)` — `str(n) + "-வது"` for every numeric
@@ -587,6 +607,9 @@ impl Lang for LangTa {
             ),
             FloatValue::Decimal { value, .. } => (value.clone(), true),
         };
+        // The simulation recurses like `_int_to_word`, so it needs the same
+        // ceiling (#203).
+        check_maxval(&x.abs().with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
         ta_year_sim(&x, is_decimal)
     }
 
@@ -630,45 +653,17 @@ impl Lang for LangTa {
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
-        // Python opens the method with
-        //
-        //     decimal_val = Decimal(str(n))
-        //     has_fractional_cents = (decimal_val * 100) % 1 != 0
-        //
-        // inside a `try:` whose `except BaseException` returns
-        // `str(n) + " " + currency`. For |n| >= 10**26 that arithmetic
-        // *raises*: `decimal_val * 100` is then >= 10**28, and decimal's
-        // default context precision is 28, so the `% 1` remainder — whose
-        // integer quotient would need 29+ digits — signals InvalidOperation.
-        // The handler swallows it and TA hands back the bare number:
-        //
-        //     to_currency(10**26 - 1, "INR") == "தொண்ணூறு ஒன்பது ஆயிரம் ..."
-        //     to_currency(10**26,     "INR") == "100000000000000000000000000 INR"
-        //
-        // The threshold is exact for ints: below it the product needs at most
-        // 28 digits and is computed exactly, at or above it the product is
-        // rounded to 28 significant digits and still lands >= 10**28.
-        //
-        // This runs *before* the CURRENCY_FORMS lookup because Python's does
-        // too — the raise happens on the first line of the `try`, so the
-        // fallback beats the NotImplementedError:
-        //
-        //     to_currency(10**30, "JPY") == "1000000000000000000000000000000 JPY"
-        //
-        // Reproduced for the int path only, where `str(n)` is exactly BigInt's
-        // Display (sign included). The float/Decimal path hits the same limit,
-        // but there `str(n)` is `repr(float)` — "1e+30", or "1E+26" for a
-        // Decimal — which is not recoverable from the parsed BigDecimal. See
-        // the port report's `concerns`.
-        if let CurrencyValue::Int(v) = val {
-            if v.abs() >= self.decimal_ctx_limit {
-                return Ok(format!("{} {}", v, currency));
-            }
-        }
+        // Past the #203 ceiling, before anything else reads the value. Python's
+        // `except BaseException` fallback to the bare number (only reachable
+        // from 10**26) is therefore gone: a value that large raises instead.
+        let whole = match val {
+            CurrencyValue::Int(v) => v.clone(),
+            CurrencyValue::Decimal { value, .. } => value.with_scale(0).as_bigint_and_exponent().0,
+        };
+        check_maxval(&whole, maxval_ceiling())?;
 
         // `(decimal_val * 100) % 1 != 0`. An int can never have fractional
-        // cents — the product is integral — which is also why the arm above is
-        // the only place the context limit can bite the int path.
+        // cents — the product is integral.
         let has_fractional_cents = match val {
             CurrencyValue::Int(_) => false,
             CurrencyValue::Decimal { value, .. } => {
@@ -702,7 +697,7 @@ impl Lang for LangTa {
         if is_negative {
             result.push(NEGWORD.trim().to_string());
         }
-        result.push(int_to_cardinal(&left));
+        result.push(int_to_cardinal(&left)?);
         result.push(forms.unit[0].clone());
 
         // Python: `if right > 0`. This is the *only* cents guard, so a whole
@@ -712,11 +707,11 @@ impl Lang for LangTa {
             // exactly when parse_currency_parts kept precision, i.e. exactly
             // when has_fractional_cents — otherwise it returned a plain int.
             let right_words = if has_fractional_cents {
-                cardinal_from_fractional_cents(&right)
+                cardinal_from_fractional_cents(&right)?
             } else {
                 // Safe: !keep_precision leaves `cents` at scale 0, so the
                 // coefficient is the value.
-                int_to_cardinal(&right.as_bigint_and_exponent().0)
+                int_to_cardinal(&right.as_bigint_and_exponent().0)?
             };
             result.push(right_words);
             result.push(forms.subunit[0].clone());
@@ -1030,32 +1025,17 @@ mod tests {
         assert_eq!(cur("1.999999999999999999999", "INR").unwrap(), "ஒன்று ரூபாய் நூறு பைசா");
     }
 
-    /// Past 10**26 the decimal context blows up and TA's `except
-    /// BaseException` returns the bare number. Boundary verified against the
-    /// live Python converter.
+    /// The #203 ceiling comes before Python's 10**26 bare-number fallback
+    /// (bug 13), which is no longer reachable.
     #[test]
-    fn int_decimal_context_limit() {
-        let below = "99999999999999999999999999"; // 10**26 - 1
-        assert!(cur(below, "INR").unwrap().starts_with("தொண்ணூறு ஒன்பது ஆயிரம்"));
-        assert_eq!(
-            cur("100000000000000000000000000", "INR").unwrap(),
-            "100000000000000000000000000 INR"
-        );
-        assert_eq!(
-            cur("-100000000000000000000000000", "INR").unwrap(),
-            "-100000000000000000000000000 INR"
-        );
-        assert!(cur("-99999999999999999999999999", "INR").unwrap().starts_with("கழித்தல்"));
-        // The fallback beats the NotImplementedError: Python raises on the
-        // first line of the try, before the CURRENCY_FORMS lookup.
-        assert_eq!(
-            cur("1000000000000000000000000000000", "JPY").unwrap(),
-            "1000000000000000000000000000000 JPY"
-        );
-        // ... but a value under the limit still raises for an unknown code.
+    fn currency_overflows_at_the_ceiling() {
+        assert!(cur("99999999999999", "INR").unwrap().starts_with("தொண்ணூறு ஒன்பது இலட்சம்"));
+        for arg in ["100000000000000", "-100000000000000", "1e26", "1e30"] {
+            assert!(matches!(cur(arg, "INR"), Err(N2WError::Overflow(_))), "{}", arg);
+        }
         assert!(matches!(
-            cur("10000000000000000000000000", "JPY"),
-            Err(N2WError::NotImplemented(_))
+            cur("1000000000000000000000000000000", "JPY"),
+            Err(N2WError::Overflow(_))
         ));
     }
 

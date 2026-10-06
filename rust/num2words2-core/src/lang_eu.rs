@@ -6,10 +6,14 @@
 //! `any(hasattr(self, f) for f in ["high_numwords", "mid_numwords", "low_numwords"])`,
 //! which is False here, so Python never builds `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives the recursive
-//! `_int_to_word` over magnitude bands. Consequently `cards`/`maxval`/`merge`
-//! stay at their trait defaults, and there is **no overflow check at all** —
-//! the billions branch recurses without bound, so arbitrarily large values
-//! render (10^18 == "bat mila milioi mila milioi", verified in the corpus).
+//! `_int_to_word` over magnitude bands. Consequently `cards`/`merge` stay at
+//! their trait defaults, and Python has **no overflow check at all** — the
+//! billions branch recurses without bound, so arbitrarily large values render
+//! (10^18 == "bat mila milioi mila milioi", verified in the corpus). On a
+//! large enough integer the port's recursion overflowed the native stack, so
+//! it adds a ceiling (gladiaio/num2words2#203): `maxval` is 10^12, where
+//! "mila" would repeat ("mila mila milioi"), and every mode raises
+//! `OverflowError` from there.
 //!
 //! `setup()` overrides two inherited fields:
 //!   * `negword  = "minus "`  — note the **trailing space**, which is
@@ -88,13 +92,13 @@
 //! Everything else is infallible. Within the four integer modes every table
 //! index is provably bounded (`ones[n]` only for `n < 10`, `ones[n - 10]` only
 //! for `10 < n < 20`, `tens[n / 10]` only for `n < 100`, `ones[n / 100]` only
-//! for `n < 1000`), and with no `MAXVAL` there is no overflow raise. The
+//! for `n < 1000`); the only raise is the port's 10^12 ceiling (#203). The
 //! currency path cannot raise at all — an unknown code falls back to euros
 //! (bug 9) instead of raising, which is precisely why `currency:JPY` succeeds
 //! where `cheque:JPY` does not. The corpus agrees: every `eu` row in the four
 //! integer modes and all 108 `currency:` rows have `"ok": true`.
 
-use crate::base::{Lang as LangTrait, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang as LangTrait, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -103,6 +107,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `ones`. Index 0 is the empty string, as in Python — it is only ever
@@ -481,7 +486,7 @@ fn cardinal_from_repr(n: &str) -> Result<String> {
     match n.split_once('.') {
         Some((left, right)) => {
             // ret += _int_to_word(int(left)) + " " + pointword + " "
-            ret.push_str(&int_to_word(&py_int(left)?));
+            ret.push_str(&checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
@@ -493,13 +498,13 @@ fn cardinal_from_repr(n: &str) -> Result<String> {
                 }
                 first = false;
                 let digit = py_int_digit(d)?;
-                ret.push_str(&int_to_word(&BigInt::from(digit)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(digit))?);
             }
             Ok(ret)
         }
         // return ret + _int_to_word(int(n))
         None => {
-            ret.push_str(&int_to_word(&py_int(n)?));
+            ret.push_str(&checked_int_to_word(&py_int(n)?)?);
             Ok(ret)
         }
     }
@@ -539,7 +544,29 @@ impl Default for LangEu {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// "mila milioi" (10^9), so from 10^12 the module would stack "mila" ("mila
+/// mila milioi").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl LangTrait for LangEu {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -588,9 +615,9 @@ impl LangTrait for LangEu {
     /// trim/re-space happens.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            Ok(format!("{}{}", NEGWORD, int_to_word(&value.abs())))
+            Ok(format!("{}{}", NEGWORD, checked_int_to_word(&value.abs())?))
         } else {
-            Ok(int_to_word(value))
+            Ok(checked_int_to_word(value)?)
         }
     }
 
@@ -811,10 +838,10 @@ impl LangTrait for LangEu {
             .get(currency)
             .unwrap_or_else(|| &self.currency_forms["EUR"]);
 
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         // `cents and right` — `right == 0` is falsy in Python (bug 11).
         let cents_str = if cents && !right.is_zero() {
-            int_to_word(&right)
+            checked_int_to_word(&right)?
         } else {
             String::new()
         };
@@ -903,8 +930,8 @@ mod float_tests {
         assert_eq!(dd("12.345"), "hamabi koma hiru lau bost");
         assert_eq!(dd("0.001"), "zero koma zero zero bat");
         assert_eq!(
-            dd("98746251323029.99"),
-            "laurogeita hamarta zortzi mila zazpiehun eta berrogeita sei mila milioi biehun eta berrogeita hamarta bat milioi hiruehun eta hogeita hiru mila hogeita bederatzi koma bederatzi bederatzi"
+            dd("98746251329.99"),
+            "laurogeita hamarta zortzi mila milioi zazpiehun eta berrogeita sei milioi biehun eta berrogeita hamarta bat mila hiruehun eta hogeita bederatzi koma bederatzi bederatzi"
         );
     }
 }

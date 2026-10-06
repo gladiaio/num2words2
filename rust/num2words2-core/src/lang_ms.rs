@@ -9,9 +9,12 @@
 //! three attributes exists (`if any(hasattr(self, field) for field in ...)`),
 //! so for MS **neither is ever created**. `to_cardinal` is overridden outright
 //! and drives `_int_to_word` by repeated division. Consequently `cards`/
-//! `maxval`/`merge` stay at their trait defaults here, and there is **no
-//! overflow check at all** — MS is unbounded, which is why 10^21 converts fine
-//! (`"satu bilion trilion"`).
+//! `merge` stay at their trait defaults here, and Python has **no overflow
+//! check at all** — MS is unbounded, which is why 10^21 converts there
+//! (`"satu bilion trilion"`). On a large enough integer the port's recursion
+//! overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^15, where "trilion" would stack,
+//! and every mode raises `OverflowError` from there.
 //!
 //! Dead code in the Python source, deliberately not ported:
 //!   * `Num2Word_MS._setup` calls `super()._setup()`, but `Num2Word_Base` has
@@ -70,20 +73,11 @@
 //!     `100` default stands. MS therefore has no 3-decimal or 0-decimal
 //!     behaviour even if a caller names such a code — moot in practice, since
 //!     none of them are in its table.
-//! 12. **`except BaseException` swallows decimal's context limit** and hands
-//!     back the bare number. See [`LangMs::to_currency`] for the derivation of
-//!     the exact 10^26 threshold and for what it means that this beats the
-//!     `NotImplementedError`.
-//!
-//! # The one deliberate gap
-//!
-//! Bug 12 is reproduced exactly on the int path, where `str(n)` is precisely
-//! BigInt's `Display`. On the float/Decimal path `str(n)` is `repr(float)` /
-//! Decimal's scientific form, which no longer exists by the time the core sees
-//! a `BigDecimal` — so for `|value| >= 10**26` `to_currency` returns
-//! `NotImplemented` and lets `num2words()`'s `except NotImplementedError: pass`
-//! hand the call back to Python, which produces the real answer. See
-//! [`LangMs::to_currency`]. Nothing else in this file gives up.
+//! 12. ~~**`except BaseException` swallows decimal's context limit**~~ and
+//!     hands back the bare number from 10^26 up (`to_currency(10**26)` ==
+//!     "100000000000000000000000000 MYR"). Unreachable since
+//!     gladiaio/num2words2#203: the 10^15 ceiling raises `OverflowError`
+//!     first.
 //!
 //! # Faithfully reproduced Python bugs
 //!
@@ -110,8 +104,9 @@
 //!
 //! # Error variants
 //!
-//! Negative ordinals raise `TypeError` (bug 1). `to_cardinal`/`to_ordinal_num`/`to_year`
-//! cannot fail for integer input: every table index `_int_to_word` computes is
+//! Negative ordinals raise `TypeError` (bug 1), and every mode raises
+//! `OverflowError` from the 10^15 ceiling (#203). Below it
+//! `to_cardinal`/`to_ordinal_num`/`to_year` cannot fail for integer input: every table index `_int_to_word` computes is
 //! provably in range (see the safety notes on [`int_to_word`]), so the
 //! `except BaseException` fallbacks in the Python `to_cardinal` /
 //! `to_ordinal_num` are unreachable and are not modelled.
@@ -122,9 +117,7 @@
 //! handshake as in `lang_ES`). Every method is a pure function of its argument,
 //! so the stateless Rust path is faithful.
 
-use crate::base::{
-    negord_error, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result,
-};
+use crate::base::{check_maxval, negord_error, pow10_big, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -132,6 +125,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is the empty-string filler, exactly as in Python.
 const ONES: [&str; 10] = [
@@ -337,14 +331,15 @@ fn int_to_word(n: &BigInt) -> String {
 /// (`self.negword + self._int_to_word(-n)`) — not trimmed-then-spaced as
 /// `Num2Word_Base.to_cardinal` would do. Same result, but MS never routes
 /// through the base method.
-fn int_to_cardinal(n: &BigInt) -> String {
+fn int_to_cardinal(n: &BigInt) -> Result<String> {
+    check_maxval(n, maxval_ceiling())?;
     if n.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
     if n.is_negative() {
-        return format!("{}{}", "negatif ", int_to_word(&(-n)));
+        return Ok(format!("{}{}", "negatif ", int_to_word(&(-n))));
     }
-    int_to_word(n)
+    Ok(int_to_word(n))
 }
 
 /// `int(value)` — truncation toward zero — for both `FloatValue` arms.
@@ -457,6 +452,7 @@ fn ms_cardinal_numeric(value: &FloatValue) -> Result<String> {
         FloatValue::Decimal { value, .. } => (value.is_negative(), !value.is_integer()),
     };
     let whole = trunc_toward_zero(value)?.abs();
+    check_maxval(&whole, maxval_ceiling())?;
 
     // `if n == 0: return "kosong"` — numeric equality, so -0.0 lands here.
     if whole.is_zero() && !frac {
@@ -479,29 +475,19 @@ fn int_to_ordinal(n: &BigInt) -> Result<String> {
     if *n <= BigInt::from(10) {
         return ordinal_at(n).map(|s| s.to_string());
     }
-    Ok(format!("ke-{}", int_to_cardinal(n)))
+    Ok(format!("ke-{}", int_to_cardinal(n)?))
 }
 
 pub struct LangMs {
     /// Built once here, never per call — `to_currency` and the inherited
     /// `to_cheque` only ever read it.
     currency_forms: HashMap<&'static str, CurrencyForms>,
-    /// `10**26`: the value at which `(Decimal(str(n)) * 100) % 1` overruns
-    /// decimal's default 28-digit context. See [`LangMs::to_currency`].
-    decimal_ctx_limit: BigInt,
-    /// The same limit against the already-scaled `value * 100`, i.e. `10**28`
-    /// — which is the quantity Python's `% 1` actually chokes on. Kept as a
-    /// second field so neither currency path builds a bound per call.
-    decimal_ctx_scaled_limit: BigDecimal,
 }
 
 impl LangMs {
     pub fn new() -> Self {
-        let limit = BigInt::from(10u8).pow(26);
         LangMs {
             currency_forms: build_currency_forms(),
-            decimal_ctx_scaled_limit: BigDecimal::from(&limit * 100),
-            decimal_ctx_limit: limit,
         }
     }
 }
@@ -512,7 +498,21 @@ impl Default for LangMs {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// trilion (10^12), so from 10^15 the module would stack it ("trilion
+/// trilion").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 impl Lang for LangMs {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -528,7 +528,7 @@ impl Lang for LangMs {
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        Ok(int_to_cardinal(value))
+        Ok(int_to_cardinal(value)?)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
@@ -543,7 +543,7 @@ impl Lang for LangMs {
     /// Python's `to_year` branches on `n < 1000` / `n < 2000` / else and returns
     /// `self._int_to_cardinal(n)` in all three — see bug 4.
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        Ok(int_to_cardinal(value))
+        Ok(int_to_cardinal(value)?)
     }
 
     /// `to_ordinal(float/Decimal)`.
@@ -640,7 +640,7 @@ impl Lang for LangMs {
                 value.with_scale(0).as_bigint_and_exponent().0
             }
         };
-        Ok(int_to_cardinal(&int_part))
+        Ok(int_to_cardinal(&int_part)?)
     }
 
     // ---- currency -------------------------------------------------------
@@ -684,78 +684,21 @@ impl Lang for LangMs {
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
-        // Python opens the method body with
-        //
-        //     decimal_val = Decimal(str(n))
-        //     has_fractional_cents = (decimal_val * 100) % 1 != 0
-        //
-        // inside a `try:` whose `except BaseException` hands back
-        // `str(n) + " " + currency`. For |n| >= 10**26 that second line
-        // *raises*: `decimal_val * 100` is then >= 10**28, and decimal's
-        // default context precision is 28, so the `% 1` remainder — whose
-        // integer quotient would need 29+ digits — signals InvalidOperation.
-        // The handler swallows it and MS returns the bare number:
-        //
-        //     to_currency(10**26 - 1, "MYR") == "sembilan puluh sembilan ..."
-        //     to_currency(10**26,     "MYR") == "100000000000000000000000000 MYR"
-        //
-        // The threshold is exact for ints: below it `n * 100` needs at most 28
-        // digits and is computed exactly, at or above it the product is >=
-        // 10**28 whether or not it was rounded to 28 significant digits.
-        //
-        // This runs *before* the CURRENCY_FORMS lookup because Python's does
-        // too — the raise happens on the first lines of the `try`, so the
-        // fallback beats the NotImplementedError rather than the other way
-        // round:
-        //
-        //     to_currency(10**30, "JPY") == "1000000000000000000000000000000 JPY"
-        //
-        // Reproduced exactly here on the int path, where `str(n)` is precisely
-        // BigInt's Display, sign included. The float/Decimal path hits the same
-        // limit but cannot reconstruct `str(n)`; it is handled a few lines
-        // down.
-        if let CurrencyValue::Int(v) = val {
-            if v.abs() >= self.decimal_ctx_limit {
-                return Ok(format!("{} {}", v, currency));
-            }
-        }
+        // Past the #203 ceiling, before anything else reads the value. Python's
+        // `except BaseException` fallback to the bare number (only reachable
+        // from 10**26) is therefore gone: a value that large raises instead.
+        let whole = match val {
+            CurrencyValue::Int(v) => v.clone(),
+            CurrencyValue::Decimal { value, .. } => value.with_scale(0).as_bigint_and_exponent().0,
+        };
+        check_maxval(&whole, maxval_ceiling())?;
 
         // `(decimal_val * 100) % 1 != 0`. An int can never have fractional
-        // cents — the product is integral — which is also why the arm above is
-        // the only place the context limit can bite the int path.
+        // cents — the product is integral.
         let has_fractional_cents = match val {
             CurrencyValue::Int(_) => false,
             CurrencyValue::Decimal { value, .. } => {
                 let scaled = value * BigDecimal::from(100);
-
-                // The float/Decimal side of the same context limit: `% 1`
-                // signals once |decimal_val * 100| >= 10**28. Python's
-                // `except BaseException` then returns `str(n) + " " + currency`
-                // exactly as it does for ints — but `str(n)` here is
-                // `repr(float)` ("1e+26") or Decimal's own scientific form
-                // ("1E+26"), and *neither is recoverable* from the BigDecimal
-                // the shim parsed. Reproducing Python's shortest-round-trip
-                // float repr in Rust is the second implementation of it that
-                // the porting contract exists to prevent.
-                //
-                // So the core reports that it cannot serve this input rather
-                // than fabricating a different one. num2words()'s currency fast
-                // path is `except NotImplementedError: pass`, so the dispatcher
-                // falls through to the Python converter and the caller still
-                // gets the exact "1e+26 MYR". A direct core caller gets a loud
-                // error rather than silently plausible words ("seratus trilion
-                // trilion ringgit"), which is what returning a value here would
-                // mean. This is the one place MS's Rust surface is deliberately
-                // narrower than Python's — see the port report's `concerns`.
-                if scaled.abs() >= self.decimal_ctx_scaled_limit {
-                    return Err(N2WError::NotImplemented(format!(
-                        "Num2Word_MS.to_currency falls back to str(value) for \
-                         |value| >= 10**26, which this core cannot reconstruct \
-                         (currency {:?})",
-                        currency
-                    )));
-                }
-
                 // with_scale(0) truncates toward zero, matching Decimal's
                 // sign-of-dividend `%`; either way this only tests != 0.
                 &scaled - scaled.with_scale(0) != BigDecimal::zero()
@@ -788,7 +731,7 @@ impl Lang for LangMs {
         if is_negative {
             result.push(self.negword().trim().to_string());
         }
-        result.push(int_to_cardinal(&left));
+        result.push(int_to_cardinal(&left)?);
         result.push(forms.unit[0].clone());
 
         // Python: `if right > 0`. This is the *only* cents guard, so a whole
@@ -801,7 +744,7 @@ impl Lang for LangMs {
             result.push(if has_fractional_cents {
                 FRACTIONAL_CENTS_WORD.to_string()
             } else {
-                int_to_cardinal(&right)
+                int_to_cardinal(&right)?
             });
             result.push(forms.subunit[0].clone());
         }
@@ -890,12 +833,14 @@ mod tests {
         assert_eq!(card("1000000000000"), "satu trilion");
     }
 
-    /// The trillions arm recurses, so beyond 10^12 the scale name stacks.
+    /// The trillions arm recurses, so past 10^15 the scale name would stack
+    /// ("satu juta trilion"); the #203 ceiling stops it there.
     #[test]
-    fn unbounded_trillions_stacking() {
-        assert_eq!(card("1000000000000000"), "seribu trilion");
-        assert_eq!(card("1000000000000000000"), "satu juta trilion");
-        assert_eq!(card("1000000000000000000000"), "satu bilion trilion");
+    fn trillions_stop_at_the_ceiling() {
+        assert_eq!(card("100000000000000"), "seratus trilion");
+        for s in ["1000000000000000", "-1000000000000000", "1000000000000000000000"] {
+            assert!(matches!(LangMs::new().to_cardinal(&n(s)), Err(N2WError::Overflow(_))), "{}", s);
+        }
     }
 
     #[test]
@@ -1079,57 +1024,18 @@ mod tests {
         assert_eq!(cur("-0.0", "MYR").unwrap(), "kosong ringgit");
     }
 
-    /// Bug 12: at 10**26 decimal's context blows up and `except BaseException`
-    /// returns the bare number — and it beats the NotImplementedError, because
-    /// Python raises before it ever looks the currency code up.
+    /// The #203 ceiling comes before Python's 10**26 bare-number fallback
+    /// (bug 12), on both the int and the float/Decimal path.
     #[test]
-    fn currency_decimal_context_limit_on_ints() {
-        // 10**26 - 1: still inside the context, so still words.
-        assert!(cur("99999999999999999999999999", "MYR").unwrap().starts_with("sembilan puluh"));
-        assert_eq!(
-            cur("100000000000000000000000000", "MYR").unwrap(),
-            "100000000000000000000000000 MYR"
-        );
-        assert_eq!(
-            cur("-100000000000000000000000000", "MYR").unwrap(),
-            "-100000000000000000000000000 MYR"
-        );
-        // Beats the NotImplementedError an unknown code would otherwise raise.
-        assert_eq!(
-            cur("1000000000000000000000000000000", "JPY").unwrap(),
-            "1000000000000000000000000000000 JPY"
-        );
-        // ...but only past the threshold.
-        assert!(matches!(
-            cur("10000000000000000000000000", "JPY"),
-            Err(N2WError::NotImplemented(_))
-        ));
-    }
-
-    /// The float/Decimal side of bug 12 is the one input the core declines
-    /// rather than answers: `str(value)` is gone by the time it gets a
-    /// BigDecimal, so it defers to Python through the dispatcher's
-    /// `except NotImplementedError: pass` instead of emitting words Python
-    /// would never emit. Below the threshold it answers normally.
-    #[test]
-    fn currency_decimal_context_limit_defers_on_floats() {
-        for arg in ["100000000000000000000000000", "1e26", "1e30", "1e300"] {
-            let val = CurrencyValue::parse(arg, false, true, true).unwrap();
-            assert!(
-                matches!(
-                    LangMs::new().to_currency(&val, "MYR", true, None, false),
-                    Err(N2WError::NotImplemented(_))
-                ),
-                "float {} should defer to Python, not answer",
-                arg
-            );
+    fn currency_overflows_at_the_ceiling() {
+        assert!(cur("999999999999999", "MYR").unwrap().starts_with("sembilan ratus"));
+        for arg in ["1000000000000000", "-1000000000000000", "1e26", "1e30"] {
+            assert!(matches!(cur(arg, "MYR"), Err(N2WError::Overflow(_))), "{}", arg);
         }
-        // Just under the limit the float path answers for itself.
-        let val = CurrencyValue::parse("99999999999999999999999999.99", false, true, true).unwrap();
-        assert!(LangMs::new()
-            .to_currency(&val, "MYR", true, None, false)
-            .unwrap()
-            .starts_with("sembilan puluh sembilan trilion"));
+        assert!(matches!(
+            cur("1000000000000000000000000000000", "JPY"),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// Bug 8: `cents`, `separator` and `adjective` are not parameters of MS's

@@ -5,9 +5,12 @@
 //! `any(hasattr(...))` guard in `Num2Word_Base.__init__` never fires: Python
 //! never builds `self.cards` and never sets `self.MAXVAL`. `to_cardinal`,
 //! `to_ordinal`, `to_ordinal_num` and `to_year` are all overridden outright
-//! and drive `_int_to_word` recursively. Consequently `cards`/`maxval`/`merge`
-//! stay at their trait defaults here, and **there is no overflow check at
-//! all** — `to_cardinal(10**600)` simply recurses and answers.
+//! and drive `_int_to_word` recursively. Consequently `cards`/`merge` stay at
+//! their trait defaults here, and Python has **no overflow check at all** —
+//! `to_cardinal(10**600)` simply recurses and answers. On a large enough
+//! integer the port's recursion overflowed the native stack, so it adds a
+//! ceiling (gladiaio/num2words2#203): `maxval` is 10^12, where "милиард" would
+//! start to stack (oddity 6), and every mode raises `OverflowError` from there.
 //!
 //! Nothing is inherited from `Num2Word_Base` in scope: all four modes are
 //! overridden. `Num2Word_BG._setup` is dead code (it calls `super()._setup()`,
@@ -117,9 +120,9 @@
 //!    verbatim.
 //! 6. **The 100/1000 scale words carry no agreement.** Above 10**9 the
 //!    billions count recurses through `_int_to_word` and is suffixed with a
-//!    flat " милиарда", so `10**15` == "един милион милиарда" and `10**21` ==
-//!    "хиляда милиарда милиарда" — the library has no numword above
-//!    "милиард" and stacks it instead.
+//!    flat " милиарда", so in Python `10**15` == "един милион милиарда" and
+//!    `10**21` == "хиляда милиарда милиарда" — the library has no numword
+//!    above "милиард" and stacks it instead. The port stops at 10^12 (#203).
 //!
 //! # Currency
 //!
@@ -159,9 +162,9 @@
 //!
 //! # Errors
 //!
-//! None of the four integer modes can fail. Every table lookup is guarded by
-//! a range check (`tens` is only indexed with 10..=19 or a multiple of ten in
-//! 20..=90; `ones` only with 0..=9), there is no `MAXVAL` comparison, and the
+//! Below the 10^12 ceiling none of the four integer modes can fail. Every
+//! table lookup is guarded by a range check (`tens` is only indexed with
+//! 10..=19 or a multiple of ten in 20..=90; `ones` only with 0..=9), and the
 //! `try/except BaseException` wrappers in `to_cardinal`/`to_ordinal`/
 //! `to_ordinal_num` only exist to catch `float`/`str` coercion failures that
 //! integer input cannot trigger — their `except` bodies re-run the same call
@@ -170,7 +173,7 @@
 //! The currency surface can fail only on an unknown currency code, with the
 //! two distinct `NotImplemented` messages described in oddity 7.
 
-use crate::base::{year_float_error, Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, year_float_error, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -178,6 +181,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`. Note the **trailing space**: BG's `to_cardinal` and
 /// `_int_to_cardinal` concatenate it raw (`self.negword + ...`), unlike
@@ -554,17 +558,18 @@ impl LangBg {
     /// The `n < 0` branch is reachable **only** via `_int_to_ordinal`
     /// (`to_cardinal` strips the sign before ever calling this), and it drops
     /// `masculine=True` — see module docs, oddity 1.
-    fn int_to_cardinal(&self, n: &BigInt) -> String {
+    fn int_to_cardinal(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
-            return ONES[0].to_string();
+            return Ok(ONES[0].to_string());
         }
 
         if n.is_negative() {
             // Note: no `masculine=True` here, unlike the positive path.
-            return format!("{}{}", NEGWORD, self.int_to_word(&(-n), false, false));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&(-n), false, false)));
         }
 
-        self.int_to_word(n, true, false)
+        Ok(self.int_to_word(n, true, false))
     }
 
     /// `Num2Word_BG.to_ordinal(n)` fed a float/Decimal, resolved to its
@@ -579,7 +584,7 @@ impl LangBg {
     /// retries as `_int_to_ordinal(int(n))`. Whole values produce the exact
     /// same words the truncated retry would, so the observable result is
     /// *always* `_int_to_ordinal(int(n))` — truncation toward zero.
-    fn ordinal_numeric(&self, value: &FloatValue) -> String {
+    fn ordinal_numeric(&self, value: &FloatValue) -> Result<String> {
         let trunc = match value {
             FloatValue::Float { value, .. } => {
                 BigInt::from_f64(value.trunc()).unwrap_or_else(BigInt::zero)
@@ -595,6 +600,7 @@ impl LangBg {
     /// "минус двадесет и едно" — unlike the masculine int path.
     fn cardinal_year_numeric(&self, value: &FloatValue) -> Result<String> {
         let (neg, _, whole) = decompose_numeric(value);
+        check_maxval(&whole, maxval_ceiling())?;
 
         // `if n == 0: return self.ones[0]` — numeric, so -0.0 lands here.
         if whole.is_zero() {
@@ -609,19 +615,19 @@ impl LangBg {
 
     /// `_int_to_ordinal(n)`: table lookup, else glue a suffix onto the
     /// cardinal.
-    fn int_to_ordinal(&self, n: &BigInt) -> String {
+    fn int_to_ordinal(&self, n: &BigInt) -> Result<String> {
         if let Some(word) = n.to_u32().and_then(ordinal_word) {
-            return word.to_string();
+            return Ok(word.to_string());
         }
 
-        let cardinal = self.int_to_cardinal(n);
+        let cardinal = self.int_to_cardinal(n)?;
 
         // Python slices `cardinal[:-4]` / `[:-3]` *by character*. Since the
         // guard is `endswith(suffix)` and each suffix is exactly that many
         // characters ("един" = 4, "два"/"три" = 3), dropping the suffix is
         // identical to dropping the character count — `strip_suffix` is
         // exactly faithful and cannot split a UTF-8 boundary.
-        if let Some(stem) = cardinal.strip_suffix("един") {
+        Ok(if let Some(stem) = cardinal.strip_suffix("един") {
             format!("{}първи", stem)
         } else if let Some(stem) = cardinal.strip_suffix("два") {
             format!("{}втори", stem)
@@ -631,7 +637,7 @@ impl LangBg {
             format!("{}и", cardinal)
         } else {
             format!("{}ти", cardinal)
-        }
+        })
     }
 
     /// `Num2Word_BG.to_cardinal(n)` where Python's `n` is a **float**.
@@ -676,10 +682,10 @@ impl LangBg {
                 // Reachable: precision >= 309 (i.e. |n| < 1e-308) overflows the
                 // `10**precision` float cast, and every such n truncates to 0,
                 // so this answers "нула" — sign and all detail discarded.
-                Err(_) => return Ok(self.int_to_cardinal(&pre_int)),
+                Err(_) => return Ok(self.int_to_cardinal(&pre_int)?),
             };
 
-            return Ok(self.fraction_words(n < 0.0, pre, post, precision));
+            return self.fraction_words(n < 0.0, pre, post, precision);
         }
 
         // "For integers" — an integral float such as 1.0 or -3.0.
@@ -689,12 +695,18 @@ impl LangBg {
             // integral too, so this bottoms out immediately.
             return Ok(format!("{}{}", NEGWORD, self.to_cardinal_f64(-n, precision)?));
         }
-        Ok(self.int_to_cardinal(&pre_int))
+        Ok(self.int_to_cardinal(&pre_int)?)
     }
 
     /// The fractional branch of BG's `to_cardinal`, from `float2tuple`'s
     /// `(pre, post)`. Shared by the float and (since #156) Decimal paths.
-    fn fraction_words(&self, negative: bool, pre: BigInt, post: BigInt, precision: u32) -> String {
+    fn fraction_words(
+        &self,
+        negative: bool,
+        pre: BigInt,
+        post: BigInt,
+        precision: u32,
+    ) -> Result<String> {
         // `if n < 0` — not Base's `value < 0 and pre == 0`. BG writes the
         // sign itself and abs()es `pre`, which covers int(-0.5) == 0 for
         // free. `-0.0 < 0` is false in Python and in Rust alike.
@@ -706,7 +718,7 @@ impl LangBg {
 
         // `pre` is now >= 0, so this takes `_int_to_cardinal`'s positive
         // path: the integer part is masculine ("два точка две пет").
-        result.push_str(&self.int_to_cardinal(&pre));
+        result.push_str(&self.int_to_cardinal(&pre)?);
 
         // Always true for a non-integral double — `repr` only goes to
         // exponent form at >= 1e16, where every double is integral — but
@@ -737,7 +749,7 @@ impl LangBg {
                 result.push_str(ONES[d as usize]);
             }
         }
-        result.trim().to_string()
+        Ok(result.trim().to_string())
     }
 
     /// `Num2Word_BG.to_cardinal(n)` where Python's `n` is a **Decimal**.
@@ -752,13 +764,13 @@ impl LangBg {
     ///     return self.negword + self.to_cardinal(-n)
     /// return self._int_to_cardinal(int(n))
     /// ```
-    fn to_cardinal_bigdecimal(&self, n: &BigDecimal) -> String {
+    fn to_cardinal_bigdecimal(&self, n: &BigDecimal) -> Result<String> {
         if n.is_negative() {
             // `-n` is positive, so the recursion lands on the tail below and
             // the magnitude keeps its masculine agreement. Decimal("-0.0") is
             // *not* < 0 in Python, and BigDecimal has no signed zero either,
             // so both answer plain "нула".
-            return format!("{}{}", NEGWORD, self.to_cardinal_bigdecimal(&-n.clone()));
+            return Ok(format!("{}{}", NEGWORD, self.to_cardinal_bigdecimal(&-n.clone())?));
         }
         // `int(n)` truncates toward zero; so does `with_scale(0)`.
         self.int_to_cardinal(&n.with_scale(0).as_bigint_and_exponent().0)
@@ -792,7 +804,21 @@ fn decompose_numeric(value: &FloatValue) -> (bool, bool, BigInt) {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// милиард (10^9), so from 10^12 the module would stack it ("милиарда
+/// милиарда").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
 impl Lang for LangBg {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -821,13 +847,13 @@ impl Lang for LangBg {
         if value.is_negative() {
             // `self.negword + self.to_cardinal(-n)`: the recursion re-enters
             // the positive path, so the magnitude *is* masculine here.
-            return Ok(format!("{}{}", NEGWORD, self.int_to_cardinal(&(-value))));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_cardinal(&(-value))?));
         }
-        Ok(self.int_to_cardinal(value))
+        Ok(self.int_to_cardinal(value)?)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(self.int_to_ordinal(value))
+        self.int_to_ordinal(value)
     }
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
@@ -856,7 +882,7 @@ impl Lang for LangBg {
         if value < &thousand {
             // Also the path for negatives (BC years): `_int_to_cardinal`
             // handles the sign, dropping masculine agreement as ever.
-            return Ok(self.int_to_cardinal(value));
+            return Ok(self.int_to_cardinal(value)?);
         }
 
         if value < &two_thousand {
@@ -867,24 +893,24 @@ impl Lang for LangBg {
                 "хиляда".to_string()
             } else {
                 // Dead: `thousands` is provably 1 for 1000..=1999.
-                format!("{} хиляди", self.int_to_cardinal(&thousands))
+                format!("{} хиляди", self.int_to_cardinal(&thousands)?)
             };
             if remainder.is_positive() {
                 result.push(' ');
-                result.push_str(&self.int_to_cardinal(&remainder));
+                result.push_str(&self.int_to_cardinal(&remainder)?);
             }
             return Ok(result);
         }
 
         // 2000 and up: plain cardinal ("две хиляди двадесет и пет").
-        Ok(self.int_to_cardinal(value))
+        Ok(self.int_to_cardinal(value)?)
     }
 
     /// `to_ordinal(float/Decimal)` — see [`LangBg::ordinal_numeric`]: the
     /// observable result is always `_int_to_ordinal(int(n))`, with the
     /// negative cardinal's neuter "едно" quirk ("минус едноти") intact.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(self.ordinal_numeric(value))
+        self.ordinal_numeric(value)
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(n)` + a suffix picked by
@@ -962,7 +988,7 @@ impl Lang for LangBg {
             let remainder = &whole - BigInt::from(1000);
             if remainder.is_positive() {
                 result.push(' ');
-                result.push_str(&self.int_to_cardinal(&remainder));
+                result.push_str(&self.int_to_cardinal(&remainder)?);
             }
             return Ok(result);
         }
@@ -993,9 +1019,9 @@ impl Lang for LangBg {
             // 13, #156). A fractional Decimal now reads like a float, exactly.
             FloatValue::Decimal { value: d, precision } if !d.is_integer() => {
                 let (pre, post) = float2tuple(value);
-                Ok(self.fraction_words(d.is_negative(), pre, post, *precision))
+                self.fraction_words(d.is_negative(), pre, post, *precision)
             }
-            FloatValue::Decimal { value, .. } => Ok(self.to_cardinal_bigdecimal(value)),
+            FloatValue::Decimal { value, .. } => self.to_cardinal_bigdecimal(value),
         }
     }
 
@@ -1104,7 +1130,7 @@ impl Lang for LangBg {
         // `left` is always >= 0 (`parse_currency_parts` abs()es it), so this
         // takes `_int_to_cardinal`'s positive path: units are masculine, with
         // no agreement against the unit word's gender (oddity 11).
-        let money_str = self.int_to_cardinal(&left);
+        let money_str = self.int_to_cardinal(&left)?;
         let currency_str = index_form(cr1, left.is_one())?;
 
         // For integers, don't show cents.
@@ -1135,7 +1161,7 @@ impl Lang for LangBg {
                     ONES[0].to_string()
                 }
             } else if right_int.is_positive() {
-                self.int_to_cardinal(&right_int)
+                self.int_to_cardinal(&right_int)?
             } else {
                 ONES[0].to_string()
             }
@@ -1451,11 +1477,10 @@ mod tests {
             ("1.10", 2, "един точка едно нула"),
             ("12.345", 3, "дванадесет точка три четири пет"),
             (
-                "98746251323029.99",
+                "98746251329.99",
                 2,
-                "деветдесет и осем хиляди седемстотин четиридесет и шест милиарда \
-                 двеста петдесет и едно милиона триста двадесет и три хиляди двадесет и девет \
-                 точка девет девет",
+                "деветдесет и осем милиарда седемстотин четиридесет и шест милиона \
+                 двеста петдесет и едно хиляди триста двадесет и девет точка девет девет",
             ),
             ("0.001", 3, "нула точка нула нула едно"),
         ];
@@ -1497,10 +1522,11 @@ mod tests {
             (-3.0, 1, "минус три"),
             // repr(1e21) is "1e+21", so the shim hands over precision 21 —
             // and the integer tail never looks at it (oddity 16).
-            (1e21, 21, "хиляда милиарда милиарда"),
         ] {
             assert_eq!(bg.to_cardinal_float(&f(v, p), None).unwrap(), want, "{}", v);
         }
+        // Past the #203 ceiling (10^12) "милиарда" would stack.
+        assert!(matches!(bg.to_cardinal_float(&f(1e21, 21), None), Err(N2WError::Overflow(_))));
     }
 
     /// More float rows from the live interpreter, chosen for the digits that

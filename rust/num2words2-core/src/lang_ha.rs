@@ -7,9 +7,12 @@
 //! defines none of `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never assigns
 //! `self.MAXVAL`. `to_cardinal` is overridden outright and drives the private
-//! `_int_to_hausa` recursion. Therefore `cards`/`maxval`/`merge` stay at their
-//! trait defaults here and **there is no overflow check at all** — Hausa
-//! happily words 10**606 by recursing through "tiriliyan".
+//! `_int_to_hausa` recursion. Therefore `cards`/`merge` stay at their trait
+//! defaults here, and Python has **no overflow check at all** — it happily
+//! words 10**606 by recursing through "tiriliyan". On a large enough integer
+//! the port's recursion overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^15, where "tiriliyan" would
+//! stack, and every mode raises `OverflowError` from there.
 //!
 //! Inherited from `Num2Word_Base`, then immediately overridden by HA, so the
 //! base versions are never reached: `to_ordinal`, `to_ordinal_num`, `to_year`.
@@ -123,7 +126,7 @@
 //!
 //! Fraction remains a later phase.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -131,6 +134,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `Num2Word_HA.ONES`, keys 0..=9.
 const ONES: [&str; 10] = [
@@ -240,6 +244,13 @@ impl LangHa {
             scale: SCALE.iter().map(|(e, w)| (pow10(*e), *w)).collect(),
             currency_forms,
         }
+    }
+
+    /// `int_to_hausa` behind [`maxval_ceiling`], checked before the first
+    /// recursive step (gladiaio/num2words2#203).
+    fn checked_int_to_hausa(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_hausa(number))
     }
 
     /// Port of `Num2Word_HA._int_to_hausa`.
@@ -407,7 +418,9 @@ impl LangHa {
                 decimal_str
             ))
         })?;
-        result.push_str(&self.to_cardinal(&decimal_num)?);
+        // At most 17 significant digits, so this stays clear of the stack
+        // depth the #203 ceiling guards against; read it unchecked.
+        result.push_str(&self.int_to_hausa(&decimal_num));
         Ok(result)
     }
 
@@ -436,7 +449,7 @@ impl LangHa {
         // recursion would `KeyError` on a fractional dict key.
         let truncated = value.with_scale(0);
         if (value - truncated.clone()).is_zero() {
-            Ok(self.int_to_hausa(&truncated.as_bigint_and_exponent().0))
+            Ok(self.checked_int_to_hausa(&truncated.as_bigint_and_exponent().0)?)
         } else {
             // `float_to_words`' shape: the fractional digits as one integer.
             let precision = value.as_bigint_and_exponent().1.max(0) as u32;
@@ -464,7 +477,21 @@ impl Default for LangHa {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// tiriliyan (10^12), so from 10^15 the module would stack it ("tiriliyan
+/// tiriliyan").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 impl Lang for LangHa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -495,7 +522,7 @@ impl Lang for LangHa {
             return Ok(format!("{}{}", NEGWORD, self.to_cardinal(&value.abs())?));
         }
 
-        Ok(self.int_to_hausa(value))
+        Ok(self.checked_int_to_hausa(value)?)
     }
 
     /// Port of `Num2Word_HA.to_ordinal`. No `verify_ordinal` call, so

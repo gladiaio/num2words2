@@ -42,6 +42,8 @@ def test_examples_from_issue(lang, s, expected):
 
 
 def test_decimal_keeps_exact_digits():
-    # #603: a fractional Decimal is read exactly, never through an f64.
-    assert num2words(Decimal("98746251323029.99"), lang="bg").endswith(
-        "двадесет и девет точка девет девет")
+    # #603: a fractional Decimal is read exactly, never through an f64
+    # (float() would round this one to 98746251330.0). Kept below bg's 10**12
+    # ceiling (#203).
+    assert num2words(Decimal("98746251329.999999"), lang="bg").endswith(
+        "двадесет и девет точка" + " девет" * 6)

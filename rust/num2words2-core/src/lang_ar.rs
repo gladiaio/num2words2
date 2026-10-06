@@ -114,11 +114,13 @@
 //! 2. **`validate_number` only checks the upper bound**, never `abs`. So
 //!    `to_cardinal(-(10**51))` sails past the overflow guard and then trips an
 //!    `assert` deep inside (see 4).
-//! 3. **`to_ordinal` never calls `validate_number`.** `to_ordinal(10**51)`
-//!    therefore raised `AssertionError` where `to_cardinal(10**51)` raises the
-//!    intended `OverflowError`, after seconds of work for 10**10000. Fixed
-//!    (gladiaio/num2words2#237): [`to_ordinal_impl`] checks the ceiling up
-//!    front, so every ordinal mode raises `OverflowError` at `maxval('ar')`.
+//! 3. **`to_ordinal` never calls `validate_number`.** In Python
+//!    `to_ordinal(10**51)` therefore raises `AssertionError` where
+//!    `to_cardinal(10**51)` raises the intended `OverflowError`, after work
+//!    quadratic in the digit count (seconds for 10**10000, a hang for larger
+//!    integers). The port checks the ceiling up front (gladiaio/num2words2#203,
+//!    #237): [`to_ordinal_impl`] raises `OverflowError` at `maxval('ar')` in
+//!    every ordinal mode.
 //! 4. **Bare `assert`s guard the group tables**, so out-of-range groups raise
 //!    `AssertionError` rather than the commented-out `OverflowError` the
 //!    author intended (the dead `raise OverflowError` blocks are still in the
@@ -212,7 +214,7 @@
 //! AssertionError from `assert int(group_level) < len(self.arabicTwos)` in
 //! both implementations.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use crate::base::{check_maxval, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -956,6 +958,10 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
     } else {
         number.clone()
     };
+    // Python skips `validate_number` here and dies on a group-table `assert`
+    // — but only after work quadratic in the digit count, so 10**50000 hung
+    // for minutes (#203). Reject at the ceiling first, as `to_cardinal` does.
+    check_maxval(&abs, &maxval())?;
     let conv = convert(&abs, fem_name)?;
     // `convert_to_arabic` prepends `"{} ".format(arabicPrefixText)` when it is
     // non-empty — but returns "صفر" for zero *before* reaching that append,

@@ -5,9 +5,12 @@
 //! builds `self.cards` and never sets `MAXVAL` (see the `hasattr` guard at the
 //! end of `Num2Word_Base.__init__`). All four in-scope entry points are
 //! overridden outright and drive a hand-written `_int_to_word` recursion.
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here and
-//! there is **no overflow check at all** — arbitrarily large values are
-//! accepted (see bug 5 below for what happens past 10^12).
+//! Consequently `cards`/`merge` stay at their trait defaults here, and Python
+//! has **no overflow check at all** — arbitrarily large values are accepted
+//! (see bug 5 below for what happens past 10^12). On a large enough integer
+//! the port's recursion overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^15 and every mode raises
+//! `OverflowError` from there.
 //!
 //! `Num2Word_ET._setup` is a bare `super()._setup()` passthrough, and nothing
 //! in the base ever calls it (`__init__` calls `setup`, not `_setup`), so it is
@@ -49,10 +52,10 @@
 //! 5. **Above 10^12 the trillions branch recurses into itself**, so the scale
 //!    word repeats instead of naming a higher scale: `10**15` ==
 //!    "tuhat triljonit", `10**18` == "üks miljon triljonit", `10**21` ==
-//!    "üks miljard triljonit". All three are corpus rows. Since there is no
+//!    "üks miljard triljonit". All three are corpus rows. Since Python has no
 //!    MAXVAL, this continues indefinitely (10^24 would be
-//!    "üks triljon triljonit"), which is why the recursion must run on `BigInt`
-//!    and never on a fixed-width int.
+//!    "üks triljon triljonit"). The port stops at 10^15, before the word
+//!    repeats (gladiaio/num2words2#203).
 //! 6. **The `thousands == 100` special case is redundant-looking but load-
 //!    bearing**: it yields "sada tuhat" for 100_000 where the general arm would
 //!    give "ükssada tuhat". Only the *exact* multiplier 100 is special — 101_000
@@ -123,9 +126,7 @@
 //!    numerals; ET just picks index 0 or 1. Corpus-pinned as-is
 //!    ("null eurot", "kaks eurot", "üks euro").
 
-use crate::base::{
-    negord_error, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result,
-};
+use crate::base::{check_maxval, negord_error, pow10_big, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -133,6 +134,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.ones` — index 0 is an unused empty filler.
 const ONES: [&str; 10] = [
@@ -368,14 +370,15 @@ impl LangEt {
     }
 
     /// `_int_to_cardinal`.
-    fn int_to_cardinal(&self, n: &BigInt) -> String {
+    fn int_to_cardinal(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
-            return "null".to_string();
+            return Ok("null".to_string());
         }
         if n.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&-n));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&-n)));
         }
-        self.int_to_word(n)
+        Ok(self.int_to_word(n))
     }
 
     /// `_int_to_ordinal`.
@@ -420,7 +423,7 @@ impl LangEt {
         }
 
         // Everything else: cardinal + "s" (bug 1).
-        Ok(format!("{}s", self.int_to_cardinal(n)))
+        Ok(format!("{}s", self.int_to_cardinal(n)?))
     }
 
     /// `_int_to_word(n)` run on a **non-int** `n` (a float or Decimal), which
@@ -536,7 +539,21 @@ impl Default for LangEt {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// triljon (10^12), so from 10^15 the module would stack it ("triljonit
+/// triljonit").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 impl Lang for LangEt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -566,7 +583,7 @@ impl Lang for LangEt {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         // Python's `to_cardinal` tests for str/float first; for integral input
         // both tests fail and it drops straight to `_int_to_cardinal(int(n))`.
-        Ok(self.int_to_cardinal(value))
+        Ok(self.int_to_cardinal(value)?)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
@@ -581,7 +598,7 @@ impl Lang for LangEt {
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
         // All three Python branches have identical bodies.
-        Ok(self.int_to_cardinal(value))
+        Ok(self.int_to_cardinal(value)?)
     }
 
     /// `Num2Word_ET.to_cardinal` for non-integer input.
@@ -629,7 +646,7 @@ impl Lang for LangEt {
             FloatValue::Decimal { value: d, .. } => d.is_integer(),
         };
         if whole {
-            return Ok(self.int_to_cardinal(&pre));
+            return Ok(self.int_to_cardinal(&pre)?);
         }
 
         let precision = value.precision() as usize;
@@ -641,7 +658,7 @@ impl Lang for LangEt {
             result.push_str(NEGWORD);
             pre = pre.abs();
         }
-        result.push_str(&self.int_to_cardinal(&pre));
+        result.push_str(&self.int_to_cardinal(&pre)?);
 
         if precision > 0 {
             // `result += " " + self.pointword` (raw, no title).
@@ -754,6 +771,9 @@ impl Lang for LangEt {
             }
             FloatValue::Decimal { value, .. } => value.clone(),
         };
+        // The simulation recurses like `_int_to_word`, so it needs the same
+        // ceiling (#203).
+        check_maxval(&d.abs().with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
         if d.is_zero() {
             // `if n == 0: return "null"` — numeric, so -0.0 loses its sign.
             return Ok("null".to_string());
@@ -846,7 +866,7 @@ impl Lang for LangEt {
         let minus_str = if is_negative { "miinus " } else { "" };
         // `left` is always >= 0 (`parse_currency_parts` abs()es it), so this
         // takes `_int_to_cardinal`'s positive path.
-        let money_str = self.int_to_cardinal(&left);
+        let money_str = self.int_to_cardinal(&left)?;
         let currency_str = index_form(cr1, left.is_one())?;
 
         // For integers, don't show cents.
@@ -882,7 +902,7 @@ impl Lang for LangEt {
                 // it is kept because it is what Python writes.
                 let right_int = right.as_bigint_and_exponent().0;
                 if right_int.is_positive() {
-                    self.int_to_cardinal(&right_int)
+                    self.int_to_cardinal(&right_int)?
                 } else {
                     "null".to_string()
                 }

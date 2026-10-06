@@ -5,17 +5,20 @@
 //! builds `self.cards` and never sets `MAXVAL`. Every in-scope mode is
 //! overridden outright and driven by `_int_to_word`, a plain recursive
 //! descent over the Indian scale system (हजार / लाख / कोटी / अब्ज / खर्व).
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here.
+//! Consequently `cards`/`merge` stay at their trait defaults here.
 //!
-//! **There is no overflow check and no ceiling.** Because `MAXVAL` is never
+//! **Python has no overflow check and no ceiling.** Because `MAXVAL` is never
 //! set, the `value >= self.MAXVAL` guard in `Num2Word_Base.to_cardinal` is
 //! never reached (the override skips it), and the top `खर्व` branch recurses
 //! on `number // 10**11`, which re-enters the same branch for large enough
-//! inputs. So `10**22` is "एक खर्व खर्व" rather than an `OverflowError`, and
-//! arbitrarily large `BigInt`s terminate by repeated division. None of the
-//! four in-scope modes can raise: every list index is guarded by the range
-//! check that selects the branch, so there is no `IndexError`/`KeyError`
-//! path here.
+//! inputs. So in Python `10**22` is "एक खर्व खर्व" rather than an
+//! `OverflowError`. On a large enough integer the port's recursion
+//! overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^22, where the multiplier would
+//! itself need `खर्व`, and every mode raises `OverflowError` from there.
+//! Below it none of the four in-scope modes can raise: every list index is
+//! guarded by the range check that selects the branch, so there is no
+//! `IndexError`/`KeyError` path here.
 //!
 //! Inherited from `Num2Word_Base`:
 //!   * `setup()` sets only `negword = "ऋण "` (note the **trailing space**)
@@ -84,7 +87,7 @@
 //! calling in, and `to_ordinal`/`to_year` both route through `to_cardinal`.
 //! It is reproduced in [`int_to_word`] for fidelity regardless.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -93,6 +96,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`, set by `setup()`. The trailing space is load-bearing:
 /// `to_cardinal` concatenates it directly (`ret + word`) rather than joining
@@ -573,13 +577,13 @@ fn cardinal_from_str(number: &str) -> Result<String> {
     };
 
     let Some(dot) = n.find('.') else {
-        ret.push_str(&int_to_word(&py_int(n)?));
+        ret.push_str(&checked_int_to_word(&py_int(n)?)?);
         return Ok(ret);
     };
 
     // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
     let (left, right) = (&n[..dot], &n[dot + 1..]);
-    ret.push_str(&int_to_word(&py_int(left)?));
+    ret.push_str(&checked_int_to_word(&py_int(left)?)?);
     ret.push(' ');
     ret.push_str(POINTWORD);
     ret.push(' ');
@@ -592,7 +596,7 @@ fn cardinal_from_str(number: &str) -> Result<String> {
         }
         first = false;
         let mut buf = [0u8; 4];
-        ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+        ret.push_str(&checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
     }
     Ok(ret)
 }
@@ -647,7 +651,29 @@ impl Default for LangMr {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// खर्व (10^11), so from 10^22 its multiplier would itself need खर्व and the
+/// word would stack ("एक खर्व खर्व").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(22))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl Lang for LangMr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -846,7 +872,7 @@ impl Lang for LangMr {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_MR.to_ordinal`.
@@ -1067,7 +1093,7 @@ impl Lang for LangMr {
         let one = bi(1);
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -1077,7 +1103,7 @@ impl Lang for LangMr {
         // `if cents and right:` — `right` is falsy at 0, which is how a whole
         // float loses its cents segment.
         if cents && !right.is_zero() {
-            let cents_str = int_to_word(&right);
+            let cents_str = checked_int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');
