@@ -265,3 +265,15 @@ class Num2WordsITTest(TestCase):
         self.assertEqual(num2words(-0.04, lang="it"), "meno zero virgola zero quattro")
         self.assertEqual(num2words(-1.4, lang="it"), "meno uno virgola quattro")
         self.assertEqual(num2words(-10.25, lang="it"), "meno dieci virgola due cinque")
+
+    def test_ordinal_num_agrees_with_ordinal(self):
+        # gladiaio/num2words2#155/#157: to="ordinal" deliberately reads
+        # negatives ("meno primo"); to="ordinal_num" crashed with
+        # AttributeError (errmsg_negord/errmsg_floatord never set).
+        self.assertEqual(num2words(-1, lang="it", to="ordinal"), "meno primo")
+        self.assertEqual(num2words(-1, lang="it", to="ordinal_num"), "-1")
+        self.assertEqual(num2words(-42, lang="it", to="ordinal_num"), "-42")
+        self.assertEqual(num2words(-2.0, lang="it", to="ordinal_num"), "-2")
+        for x in (1.5, -0.5, "1.5"):
+            with self.assertRaisesRegex(TypeError, "Cannot treat float"):
+                num2words(x, lang="it", to="ordinal_num")

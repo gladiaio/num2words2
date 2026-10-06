@@ -116,8 +116,14 @@ class Num2WordsPLTest(TestCase):
         self.assertEqual(num2words(1000000, lang="pl", to="ordinal"), "milionowy")
 
     def test_to_ordinal_error(self):
-        with self.assertRaises(NotImplementedError):
+        # gladiaio/num2words2#155: a fractional ordinal raised an empty
+        # NotImplementedError, and every negative a ValueError about int("-").
+        with self.assertRaises(TypeError):
             num2words(1.5, lang="pl", to="ordinal")
+        for n in (-1, -11, -42, -1.0, -0.5):
+            with self.assertRaisesRegex(TypeError, "Cannot treat"):
+                num2words(n, lang="pl", to="ordinal")
+        self.assertEqual(num2words(2.0, lang="pl", to="ordinal"), "drugi")
 
     def test_currency(self):
         self.assertEqual(

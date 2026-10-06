@@ -88,22 +88,14 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly what
 //! Python emits, and each is pinned by a `bench/corpus.jsonl` row:
 //!
-//! 1. **`to_ordinal` of a small negative silently returns a *positive* ordinal**,
-//!    via Python's negative list indexing. `_int_to_ordinal` guards with
-//!    `if n <= 10: return self.ordinals[n]`, and that test is true for every
-//!    negative `n`, so `ordinals[-1]` wraps to the last element:
-//!      * `to_ordinal(-1)` == `"kesepuluh"`  (`ordinals[-1]`, i.e. index 10)
-//!      * `to_ordinal(-7)` == `"keempat"`   (`ordinals[-7]`, i.e. index 4)
-//!      * `to_ordinal(-11)` == `""`         (`ordinals[-11]`, i.e. index 0 — the
-//!        empty-string filler; untested by the corpus but follows from the same
-//!        rule)
-//!    Modelled by [`ordinal_at`], which reproduces the wrap explicitly.
-//! 2. **`to_ordinal(n)` for `n <= -12` raises `IndexError`** — the wrap runs off
-//!    the front of the 11-element list. The `except BaseException` in
-//!    `to_ordinal` does *not* rescue this: its handler re-calls
-//!    `self._int_to_ordinal(int(n))` with the same value, which raises the same
-//!    `IndexError` a second time, this time uncaught. Corpus: `-21`, `-42`,
-//!    `-100`, `-999`, `-1000`, `-1000000` all → `IndexError`.
+//! 1. ~~**`to_ordinal` of a negative silently returns a *positive* ordinal**~~
+//!    Fixed (gladiaio/num2words2#155). `_int_to_ordinal` guards with
+//!    `if n <= 10: return self.ordinals[n]`, which is true for every negative
+//!    `n`, so Python wrapped around (`to_ordinal(-1)` == "kesepuluh",
+//!    `to_ordinal(-11)` == "") and raised `IndexError` from `-12` down. The
+//!    port raises Base's `errmsg_negord` `TypeError` for every negative, like
+//!    most languages, on the int and the truncating float path alike.
+//! 2. (merged into 1.)
 //! 3. **`to_ordinal_num` does no sign handling**: it is literally
 //!    `"ke-" + str(n)`, so `to_ordinal_num(-1)` == `"ke--1"` (double hyphen).
 //! 4. **`to_year`'s three branches are identical** — the `n < 1000` /
@@ -116,8 +108,7 @@
 //!
 //! # Error variants
 //!
-//! Only `IndexError` is reachable in scope, mapping to `N2WError::Index`. See
-//! bug 2 above and [`ordinal_at`]. `to_cardinal`/`to_ordinal_num`/`to_year`
+//! Negative ordinals raise `TypeError` (bug 1). `to_cardinal`/`to_ordinal_num`/`to_year`
 //! cannot fail for integer input: every table index `_int_to_word` computes is
 //! provably in range (see the safety notes on [`int_to_word`]), so the
 //! `except BaseException` fallbacks in the Python `to_cardinal` /
@@ -129,7 +120,9 @@
 //! handshake as in `lang_ES`). Every method is a pure function of its argument,
 //! so the stateless Rust path is faithful.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{
+    negord_error, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result,
+};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -244,27 +237,12 @@ fn index_error(i: &BigInt) -> N2WError {
     N2WError::Index(format!("list index out of range (ordinals[{}])", i))
 }
 
-/// Python's `self.ordinals[n]`, **including negative-index wraparound**.
-///
-/// Python resolves a negative index `n` as `len + n` and raises `IndexError`
-/// only once that is still negative. Reproducing the wrap rather than
-/// rejecting negatives outright is what makes `to_ordinal(-1)` == "kesepuluh"
-/// and `to_ordinal(-21)` == `IndexError`. See bugs 1 and 2 in the module docs.
-///
-/// Callers only reach this with `n <= 10`, so the `n >= len` overflow arm that
-/// Python would also check is unreachable — but it is handled anyway rather
-/// than being an unchecked assumption.
+/// Python's `self.ordinals[n]`. `int_to_ordinal` rejects negatives first
+/// (#155), so callers only reach this with `0 <= n <= 10`.
 fn ordinal_at(n: &BigInt) -> Result<&'static str> {
-    let len = BigInt::from(ORDINALS.len());
-    let resolved = if n.is_negative() { &len + n } else { n.clone() };
-    if resolved.is_negative() || resolved >= len {
-        return Err(index_error(n));
-    }
-    // Safe: 0 <= resolved < 11.
-    let i = resolved
-        .to_usize()
-        .ok_or_else(|| index_error(n))?;
-    ORDINALS.get(i).copied().ok_or_else(|| index_error(n))
+    n.to_usize()
+        .and_then(|i| ORDINALS.get(i).copied())
+        .ok_or_else(|| index_error(n))
 }
 
 /// Python's `_int_to_word`. `n` must be non-negative (`_int_to_cardinal` strips
@@ -493,7 +471,9 @@ fn int_to_ordinal(n: &BigInt) -> Result<String> {
     if n.is_zero() {
         return Ok(ZERO_WORD.to_string());
     }
-    // `n <= 10` is true for every negative too — that is bug 1/2.
+    // `n <= 10` is true for every negative too, which wrapped around in
+    // Python (bug 1, #155): reject negatives like Base's verify_ordinal.
+    verify_ordinal(n)?;
     if *n <= BigInt::from(10) {
         return ordinal_at(n).map(|s| s.to_string());
     }
@@ -572,10 +552,12 @@ impl Lang for LangMs {
     /// `except BaseException` then retries as `_int_to_ordinal(int(n))`. The
     /// only non-raising first passes (whole teens like `11.0`, whole scale
     /// counts like `1e6`) produce the identical words the retry would — so the
-    /// observable result is *always* `_int_to_ordinal(int(n))`, truncation,
-    /// negative-index wraparound and all (`-1.0` → "kesepuluh",
-    /// `-21.0` → IndexError).
+    /// observable result is `_int_to_ordinal(int(n))`, truncation and all.
+    /// Negatives (`-0.5` included) raise `errmsg_negord` (bug 1, #155).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        if strictly_negative(value) {
+            return Err(negord_error(py_num_str(value)));
+        }
         int_to_ordinal(&trunc_toward_zero(value)?)
     }
 
@@ -934,21 +916,12 @@ mod tests {
         assert_eq!(ord("1000000").unwrap(), "ke-satu juta");
     }
 
-    /// Bug 1: negative list indexing wraps to a positive ordinal.
+    /// Bug 1 (fixed, #155): negatives used to wrap to a positive ordinal
+    /// or raise IndexError; they now raise Base's `errmsg_negord` TypeError.
     #[test]
-    fn negative_ordinals_wrap() {
-        assert_eq!(ord("-1").unwrap(), "kesepuluh");
-        assert_eq!(ord("-7").unwrap(), "keempat");
-        // ordinals[-11] is the index-0 empty-string filler.
-        assert_eq!(ord("-11").unwrap(), "");
-    }
-
-    /// Bug 2: past the wrap, Python raises IndexError (twice — the bare
-    /// `except` re-raises).
-    #[test]
-    fn negative_ordinals_index_error() {
-        for v in ["-12", "-21", "-42", "-100", "-999", "-1000", "-1000000"] {
-            assert!(matches!(ord(v), Err(N2WError::Index(_))), "{v}");
+    fn negative_ordinals_raise_type_error() {
+        for v in ["-1", "-7", "-11", "-12", "-21", "-42", "-1000000"] {
+            assert!(matches!(ord(v), Err(N2WError::Type(_))), "{v}");
         }
     }
 

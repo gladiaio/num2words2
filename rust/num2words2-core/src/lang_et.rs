@@ -30,19 +30,14 @@
 //!    "kaks tuhats", `to_ordinal(10**12)` == "üks triljons". Note 110 →
 //!    "ükssada kümmes" only *looks* right; it is the same `+ "s"` rule landing
 //!    on "kümme" by luck.
-//! 2. **`to_ordinal` on negatives is Python list indexing, not arithmetic.**
-//!    `_int_to_ordinal` checks `n == 0` then `n < 10`, and every negative
-//!    passes `n < 10`, reaching `self.ordinals_ones[n]` with a negative index.
-//!    For `-10..=-1` Python wraps around and returns a *positive* ordinal:
-//!    `to_ordinal(-1)` == "üheksas" (index 9), `to_ordinal(-7)` == "kolmas"
-//!    (index 3), and `to_ordinal(-10)` == "" (index 0, the empty filler slot).
-//!    For `n < -10` the index is out of range and Python raises `IndexError` —
-//!    `to_ordinal(-21)`, `(-42)`, `(-100)`, `(-999)`, `(-1000)`, `(-1000000)`
-//!    all crash. See [`ordinal_ones_at`].
-//!    The `except BaseException` wrapper in `to_ordinal` does not rescue this:
-//!    its handler re-runs `self._int_to_ordinal(int(n))`, which raises the very
-//!    same `IndexError` again, so the exception still escapes. Modelled by
-//!    simply propagating.
+//! 2. ~~**`to_ordinal` on negatives is Python list indexing, not arithmetic.**~~
+//!    Fixed (gladiaio/num2words2#155). `_int_to_ordinal` checks `n == 0`
+//!    then `n < 10`, and every negative passed `n < 10`, reaching
+//!    `self.ordinals_ones[n]` with a negative index: Python wrapped around
+//!    and returned a *positive* ordinal (`to_ordinal(-1)` == "üheksas") for
+//!    `-10..=-1` and raised `IndexError` below that. The port now raises
+//!    Base's `errmsg_negord` `TypeError` for every negative, like most
+//!    languages, and so does the truncating float entry (`-0.5`, `-1.5`).
 //! 3. **Compound ordinals 21..99 use the *cardinal* tens stem.** The `else` arm
 //!    of the `n < 100` branch is `self.tens[t] + " " + self.ordinals_ones[o]`,
 //!    so `to_ordinal(21)` == "kakskümmend esimene" (Estonian wants the genitive
@@ -128,7 +123,9 @@
 //!    numerals; ET just picks index 0 or 1. Corpus-pinned as-is
 //!    ("null eurot", "kaks eurot", "üks euro").
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{
+    negord_error, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result,
+};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -273,24 +270,12 @@ fn index_form(forms: &[String], singular: bool) -> Result<&str> {
         .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
 }
 
-/// `self.ordinals_ones[n]` with Python's list-index semantics.
-///
-/// Python allows negative indices into a length-10 list: `-1` is the last
-/// element, `-10` the first, and anything below `-10` raises `IndexError`.
-/// `_int_to_ordinal` reaches this with `n < 10`, which every negative satisfies,
-/// so the wrap-around is live behaviour (bug 2) rather than a theoretical path.
+/// `self.ordinals_ones[n]`. `_int_to_ordinal` rejects negatives first
+/// (#155), so callers only reach here with `0 <= n < 10`.
 fn ordinal_ones_at(n: &BigInt) -> Result<&'static str> {
-    let idx: usize = if n.is_negative() {
-        if *n < big(-10) {
-            return Err(N2WError::Index("list index out of range".into()));
-        }
-        // -10..=-1 → 0..=9
-        (n + 10u32).to_usize().expect("bounded to 0..=9")
-    } else {
-        // Callers only reach here with 0 <= n < 10.
-        n.to_usize().expect("bounded to 0..=9")
-    };
-    Ok(ORDINALS_ONES[idx])
+    n.to_usize()
+        .and_then(|i| ORDINALS_ONES.get(i).copied())
+        .ok_or_else(|| N2WError::Index("list index out of range".into()))
 }
 
 pub struct LangEt {
@@ -399,8 +384,9 @@ impl LangEt {
             return Ok("nullis".to_string());
         }
 
-        // Every negative satisfies `n < 10` and falls into the list index
-        // below — that is the whole of bug 2.
+        // Every negative would satisfy `n < 10` and wrap around in the list
+        // index below (bug 2, #155): reject it like Base's verify_ordinal.
+        verify_ordinal(n)?;
         if *n < big(10) {
             return ordinal_ones_at(n).map(|s| s.to_string());
         }
@@ -708,10 +694,12 @@ impl Lang for LangEt {
     /// branch — `== 0/10/100/1000`, integral teens dict, or the cardinal+"s"
     /// arm — whose result equals the truncated-int one. So the port runs the
     /// integer `_int_to_ordinal` on the truncation directly:
-    /// `2.5` -> "teine", `-1.5` -> `ordinals_ones[-1]` == "üheksas" (bug 2),
-    /// `-21.0` -> IndexError from `ordinals_ones[-21]` (raised inside the
-    /// except handler, so it propagates).
+    /// `2.5` -> "teine". Negatives (`-0.5` included, which would truncate to
+    /// 0) raise `errmsg_negord` instead of wrapping around (bug 2, #155).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        if strictly_negative(value) {
+            return Err(negord_error(py_num_str(value)));
+        }
         match value {
             FloatValue::Float { value: f, .. } if f.is_nan() => {
                 // The first call survives every comparison (all False for

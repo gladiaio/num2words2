@@ -37,12 +37,13 @@
 //! 4. `to_ordinal(0)` returned an `IndexError` upstream (the `while last == 0`
 //!    loop pops the only fragment, then indexes an empty list); PR #668 fixes
 //!    it to "zerowy", adopted here.
-//! 5. `to_ordinal(n)` for **every** negative `n` raises
-//!    `ValueError: invalid literal for int() with base 10: '-'`, because the
-//!    minus sign survives into either `splitbyx`'s head chunk or
-//!    `get_digits`'s `"%03d"` slice. `to_cardinal` is unaffected (it strips
-//!    the sign first), and `to_ordinal_num` is unaffected (it returns the
-//!    input untouched).
+//! 5. ~~`to_ordinal(n)` for **every** negative `n` raises
+//!    `ValueError: invalid literal for int() with base 10: '-'`~~ — fixed
+//!    (gladiaio/num2words2#155). The minus sign survived into `splitbyx` /
+//!    `get_digits` and died in `int()`. The port now raises Base's
+//!    `errmsg_negord` `TypeError`, like most languages, and a fractional
+//!    float/Decimal raises `errmsg_floatord` instead of an empty
+//!    `NotImplementedError`; a whole float (`2.0`) converts like its int.
 //! 6. `to_currency`'s integer path second-guesses its own `pluralize`: any
 //!    value above 1 whose cardinal *ends with* "jeden" is forced to form 1
 //!    instead. Polish grammar wants form 2 there ("dwadzieścia jeden
@@ -60,7 +61,9 @@
 //! `TypeError`. See [`value_error`], [`index_error`], [`key_error`].
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, pow10_big, verify_ordinal, verify_ordinal_float, Lang, N2WError, Result,
+};
 use crate::currency::{default_to_currency, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -700,10 +703,11 @@ impl Lang for LangPl {
     /// Port of `Num2Word_PL.to_ordinal`.
     ///
     /// `if number % 1 != 0: raise NotImplementedError()` is unreachable for
-    /// integers, so it is not modelled. Raises `IndexError` for 0, `KeyError`
-    /// for level >= 4 (>= 10^12), `ValueError` for every negative, and
+    /// integers, so it is not modelled. Raises `KeyError` for level >= 4
+    /// (>= 10^12), `TypeError` for every negative (#155), and
     /// `OverflowError` for values >= 10^66 (#159).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
         // PR savoirfairelinux/num2words#668: splitbyx("0") yields a single
         // zero fragment; the pop loop below empties the list and then indexes
         // it (IndexError). Handle zero explicitly.
@@ -830,47 +834,14 @@ impl Lang for LangPl {
 
     /// `to_ordinal(float/Decimal)`.
     ///
-    /// ```python
-    /// if number % 1 != 0:
-    ///     raise NotImplementedError()
-    /// fragments = list(splitbyx(str(number), 3))
-    /// ...
-    /// ```
-    ///
-    /// A fractional value raises NotImplementedError; a whole one is split
-    /// from `str(number)` — where any '.' or 'E' dies in `int()` with
-    /// ValueError. `repr(float)` always carries one or the other, so *every*
-    /// float is ValueError; only a fixed-notation whole `Decimal` reaches
-    /// the real ordinal path (negatives then die in `get_digits` exactly as
-    /// ints do).
+    /// Python raised an empty `NotImplementedError` for a fractional value
+    /// and split `str(number)` for a whole one, where any '.' or 'E' died in
+    /// `int()` with `ValueError` — so every float failed. Now Base's
+    /// `verify_ordinal` rules apply (#155): fractional → `errmsg_floatord`,
+    /// negative → `errmsg_negord`, whole → the integer ordinal.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        if value.as_whole_int().is_none() {
-            // NotImplementedError. The binding treats NotImplemented as
-            // "fall back to the original Python", which re-raises the same
-            // NotImplementedError — observably identical either way.
-            return Err(N2WError::NotImplemented(String::new()));
-        }
-        match value {
-            FloatValue::Float { value, .. } => Err(value_error(format!(
-                "invalid literal for int() with base 10: '{}'",
-                value
-            ))),
-            FloatValue::Decimal { value: d, .. } => {
-                let s = python_decimal_str(d);
-                if is_plain_int_str(&s) {
-                    // The integer port reproduces IndexError for 0, KeyError
-                    // for level >= 4 and ValueError for negatives.
-                    self.to_ordinal(&d.with_scale(0).as_bigint_and_exponent().0)
-                } else {
-                    Err(value_error(format!(
-                        "invalid literal for int() with base 10: '{}'",
-                        s
-                    )))
-                }
-            }
-        }
+        self.to_ordinal(&verify_ordinal_float(value)?)
     }
-
 
     /// `Decimal('-0.0')` per mode. `BigDecimal` cannot carry the sign, so the
     /// binding cannot demote it to a signed-zero `Float` without losing the
@@ -881,8 +852,8 @@ impl Lang for LangPl {
     /// (which year delegates to) reads `str(number)` == "-0.0", strips the
     /// sign textually, and speaks "minus zero przecinek zero". The other two
     /// modes coincide with the demoted `Float{-0.0}` path and return `None`:
-    ///   * ordinal → `splitbyx("-0.0")` feeds `int("-")` → `ValueError`, which
-    ///     `ordinal_float_entry` already reproduces for `Float{-0.0}`;
+    ///   * ordinal → zero, which `ordinal_float_entry` already gives for
+    ///     `Float{-0.0}`;
     ///   * ordinal_num → Base echoes `str(number)` == "-0.0", which the default
     ///     `ordinal_num_float_entry` already returns from `repr_str`.
     fn neg_zero_decimal(&self, to: &str) -> Option<Result<String>> {

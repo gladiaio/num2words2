@@ -507,3 +507,11 @@ class Num2WordsMSTest(TestCase):
         self.assertEqual(num2words(100, lang="ms"), num2words("100", lang="ms"))
         self.assertEqual(num2words(1000, lang="ms"), num2words("1000", lang="ms"))
 
+
+    def test_negative_ordinal_raises(self):
+        # gladiaio/num2words2#155: Python list indexing wrapped -1 to
+        # "kesepuluh" (tenth), -11 to "" and crashed with IndexError below.
+        for n in (-1, -2, -11, -12, -42, -1000, -0.5, -1.5):
+            with self.assertRaisesRegex(TypeError, "Cannot treat negative"):
+                num2words(n, lang="ms", to="ordinal")
+        self.assertEqual(num2words(10, lang="ms", to="ordinal"), "kesepuluh")
