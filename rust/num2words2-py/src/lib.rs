@@ -1512,20 +1512,12 @@ fn group_digits(value: BigInt, locale: &str, separator: &str) -> PyResult<String
 /// `num2words2.maxval(lang)` — the per-language MAXVAL ceiling (issue #582).
 #[pyfunction]
 fn maxval(lang: &str) -> PyResult<Option<BigInt>> {
-    let l = match get_lang(lang) {
-        Some(l) => l,
-        None => {
-            let nl = lang.replace('-', "_");
-            if let Some(l) = get_lang(&nl) {
-                l
-            } else {
-                let prefix: String = nl.chars().take(2).collect();
-                get_lang(&prefix).ok_or_else(|| {
-                    PyNotImplementedError::new_err(format!("No MAXVAL for lang='{}'", lang))
-                })?
-            }
-        }
-    };
+    // Same code resolution as `num2words` (#238).
+    let l = presentation::resolve_lang(lang)
+        .and_then(|k| get_lang(&k))
+        .ok_or_else(|| {
+            PyNotImplementedError::new_err(format!("No MAXVAL for lang='{}'", lang))
+        })?;
     Ok(l.python_maxval())
 }
 

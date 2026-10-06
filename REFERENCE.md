@@ -523,8 +523,14 @@ prefix where possible.
 
 ### Aliases
 
-The dispatcher normalises hyphens to underscores and tries case-folded
-fallbacks. These explicit aliases are also registered:
+Codes are case-insensitive and accept `-` or `_` between subtags
+(`EN`, `PT-br`, `zh-tw`, `sr-latn` all work). Subtags are normalised the
+BCP-47 way: language lower-case, script Title-case (`Latn`, `Cyrl`), region
+upper-case; an unknown region falls back to the bare language (`en-US` ->
+`en`). A script subtag with no converter of its own raises
+`NotImplementedError` (`sr-Latx`) instead of answering in another script;
+`uz-Latn` and `sr-Cyrl` name the default script and resolve to `uz` / `sr`.
+These explicit aliases are also registered:
 
 | Alias | Canonical | Reason |
 |---|---|---|

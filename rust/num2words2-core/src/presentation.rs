@@ -7,16 +7,23 @@
 //! Python surface. The PyO3 binder classifies the caller's arguments into the
 //! plain types below and calls these directly.
 
-/// Resolve a caller's language code to a core key, mirroring the historic
-/// dispatcher (`num2words2.__init__._normalize_lang`):
+/// Resolve a caller's language code to a core key. Matching is
+/// case-insensitive and accepts `-` or `_` between subtags
+/// (gladiaio/num2words2#238):
 ///
-/// 1. exact match, then
-/// 2. hyphen -> underscore, then
-/// 3. `xx_YY` casing, then
-/// 4. the bare two-letter prefix.
+/// 1. exact match, then hyphen -> underscore, then
+/// 2. a case-insensitive match on the whole code (`EN`, `PT-br`, `zh-tw`,
+///    `sr_latn`, `uz_cyrl`, `EN_AERO_FAA`), then
+/// 3. BCP-47 subtags: the language lower-cased, a 4-letter script
+///    Title-cased, a 2-letter / 3-digit region upper-cased. A script must
+///    name a known `lang_Script` key or the language's default script
+///    ([`DEFAULT_SCRIPTS`]); any other script is rejected rather than
+///    silently served in another script. A region falls back to the bare
+///    language when there is no `lang_REGION` key (`en-US` -> `en`), then
+/// 4. the bare two-letter prefix (`english` -> `en`).
 ///
-/// Returns `None` when none match; the binder turns that into the same empty
-/// `NotImplementedError` the Python raised.
+/// Returns `None` when none match; the binder turns that into a
+/// `NotImplementedError`.
 pub fn resolve_lang(raw: &str) -> Option<String> {
     let keys = crate::supported_lang_keys();
     // `keys.contains(&s)` cannot be used: the keys are `&'static str` and the
@@ -31,21 +38,67 @@ pub fn resolve_lang(raw: &str) -> Option<String> {
     if known(&nl) {
         return Some(nl);
     }
-    let parts: Vec<&str> = nl.split('_').collect();
+    let lower = nl.to_lowercase();
+    if let Some(k) = keys.iter().find(|k| k.to_lowercase() == lower) {
+        return Some((*k).to_string());
+    }
+
+    let parts: Vec<&str> = lower.split('_').collect();
     if parts.len() >= 2 {
-        let candidate = format!("{}_{}", parts[0].to_lowercase(), parts[1].to_uppercase());
-        if known(&candidate) {
-            return Some(candidate);
+        let lang = parts[0];
+        let mut rest = &parts[1..];
+        if is_script(rest[0]) {
+            let script = title_case(rest[0]);
+            let candidate = format!("{}_{}", lang, script);
+            if known(&candidate) {
+                return Some(candidate);
+            }
+            if !DEFAULT_SCRIPTS.contains(&(lang, script.as_str())) {
+                // Unknown script: never serve another script silently.
+                return None;
+            }
+            rest = &rest[1..];
         }
-        if known(parts[0]) {
-            return Some(parts[0].to_string());
+        if let Some(region) = rest.first().filter(|r| is_region(r)) {
+            let candidate = format!("{}_{}", lang, region.to_uppercase());
+            if known(&candidate) {
+                return Some(candidate);
+            }
+        }
+        if known(lang) {
+            return Some(lang.to_string());
         }
     }
-    let prefix: String = nl.chars().take(2).collect();
+    let prefix: String = lower.chars().take(2).collect();
     if known(&prefix) {
         return Some(prefix);
     }
     None
+}
+
+/// The script the bare key of a language with `lang_Script` variants is
+/// written in, so that naming it explicitly resolves to the bare key
+/// (`uz-Latn` -> `uz`). Other `lang-Script` codes without a key of their own
+/// are rejected, since the bare key's script is not recorded for them.
+const DEFAULT_SCRIPTS: &[(&str, &str)] = &[("sr", "Cyrl"), ("uz", "Latn")];
+
+/// A BCP-47 script subtag: four ASCII letters.
+fn is_script(s: &str) -> bool {
+    s.len() == 4 && s.chars().all(|c| c.is_ascii_alphabetic())
+}
+
+/// A BCP-47 region subtag: two ASCII letters or three digits.
+fn is_region(s: &str) -> bool {
+    (s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()))
+        || (s.len() == 3 && s.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn title_case(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c.flat_map(char::to_lowercase)).collect(),
+        None => String::new(),
+    }
 }
 
 /// `style=` presentation post-processing (issues #535, #562), mirroring
@@ -123,6 +176,53 @@ mod tests {
         assert_eq!(resolve_lang("en_US").as_deref(), Some("en"));
         // Two-letter-prefix fallback on a longer word.
         assert_eq!(resolve_lang("english").as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn resolve_case_insensitive_bcp47() {
+        // gladiaio/num2words2#238
+        for (raw, want) in [
+            ("EN", "en"),
+            ("PT-br", "pt_BR"),
+            ("zh-tw", "zh_TW"),
+            ("sr_latn", "sr_Latn"),
+            ("SR-LATN", "sr_Latn"),
+            ("sr-Cyrl", "sr_Cyrl"),
+            ("uz_cyrl", "uz_Cyrl"),
+            ("uz-Latn", "uz"),
+            ("uz_cyr", "uz_cyr"),
+            ("CZ", "cz"),
+            ("en_aero_icao", "en_aero_icao"),
+            ("EN-us", "en"),
+            ("sr-latn-RS", "sr_Latn"),
+            ("English", "en"),
+        ] {
+            assert_eq!(resolve_lang(raw).as_deref(), Some(want), "{raw}");
+        }
+    }
+
+    #[test]
+    fn resolve_unknown_script_is_rejected() {
+        // Never fall back to the other script (#238).
+        assert_eq!(resolve_lang("sr_Latx"), None);
+        assert_eq!(resolve_lang("uz-Arab"), None);
+        assert_eq!(resolve_lang("sr-Latx-RS"), None);
+    }
+
+    #[test]
+    fn lowercase_collisions_share_a_converter() {
+        // The case-insensitive step picks any key with the same lowercase
+        // spelling; that is only sound while they share a converter.
+        let keys = crate::supported_lang_keys();
+        for a in &keys {
+            for b in &keys {
+                if a.to_lowercase() == b.to_lowercase() {
+                    let pa = crate::get_lang_by_key(a).unwrap() as *const _ as *const ();
+                    let pb = crate::get_lang_by_key(b).unwrap() as *const _ as *const ();
+                    assert_eq!(pa, pb, "{a} vs {b}");
+                }
+            }
+        }
     }
 
     #[test]
