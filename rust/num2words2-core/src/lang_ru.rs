@@ -1005,11 +1005,21 @@ impl LangRu {
     fn cardinal_float_with(&self, value: &FloatValue, kw: &Kwargs) -> Result<String> {
         let n = match value {
             FloatValue::Float { value: f, .. } => {
-                if f.abs() < 0.01 {
+                if *f == 0.0 {
                     // _int2word(0, cardinal=True, case=case, ...) — "ноль".
                     return self.int2word(&BigInt::zero(), true, self.opts_from_kwargs(kw)?);
                 }
-                py_float_repr(*f)
+                if f.abs() < 0.01 {
+                    // Python's `abs(number) < 0.01` guard returned "ноль" for
+                    // every such float, so 0.005 read as zero while
+                    // Decimal("0.005") read "ноль целых пять тысячных"
+                    // (#208). Read the same digits positionally (repr goes
+                    // exponential below 1e-4): Rust's f64 Display is the
+                    // shortest round-trip, always positional.
+                    format!("{}", f)
+                } else {
+                    py_float_repr(*f)
+                }
             }
             // No `< 0.01` guard on the Decimal arm; str(Decimal) verbatim.
             FloatValue::Decimal { value: d, .. } => py_decimal_str(d),
@@ -1284,8 +1294,8 @@ fn float_value_str(value: &FloatValue) -> String {
 /// **Known divergence** (negative zero): `BigInt` has no signed zero, so the
 /// binding demotes `Decimal("-0.0")` to `FloatValue::Float { -0.0 }` before
 /// this module runs — indistinguishable from a true float `-0.0`. Python
-/// treats them differently in RU: the float takes the `abs(number) < 0.01`
-/// guard ("ноль") while the Decimal takes the string path ("минус ноль целых
+/// treats them differently in RU: the float takes the float-zero guard
+/// ("ноль") while the Decimal takes the string path ("минус ноль целых
 /// ноль десятых"). The float behaviour is kept (it is the reachable one for
 /// real floats and the corpus's float rows); the Decimal("-0.0")
 /// cardinal/year rows cannot be matched from this file.
@@ -1440,14 +1450,13 @@ impl Lang for LangRu {
     /// routes whole values to the integer path: it stringifies and branches
     /// on `"." in str(number)`, so `5.0` keeps its ".0" tail ("пять целых
     /// ноль десятых") and `Decimal("5")` (no dot) renders as an integer.
-    /// `to_cardinal_float` below implements exactly that, float `< 0.01`
-    /// guard included.
+    /// `to_cardinal_float` below implements exactly that.
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
-        // A genuine float `-0.0` takes the `abs(number) < 0.01` guard in
+        // A genuine float `-0.0` takes the float-zero guard in
         // `to_cardinal_float` and renders "ноль". The type-ambiguous
         // `Decimal("-0.0")` (which BigInt cannot hold) is intercepted earlier
         // by the binding via `neg_zero_decimal` below, so it never reaches
@@ -1515,7 +1524,7 @@ impl Lang for LangRu {
     /// binding demotes it to `Float { -0.0 }` unless this hook claims it. RU's
     /// `to_cardinal`/`to_year` read `str(number)` == "-0.0", take the "."
     /// string path and emit the negword-prefixed decimal grammar ("минус ноль
-    /// целых ноль десятых") — unlike the genuine float, which the `< 0.01`
+    /// целых ноль десятых") — unlike the genuine float, which the float-zero
     /// guard collapses to "ноль". Only cardinal/year diverge; ordinal and
     /// ordinal_num run `int(str(int(value)))` == 0 either way ("нулевой" / "0"),
     /// so those return `None` and ride the exact `Float { -0.0 }` demotion.
@@ -1554,13 +1563,12 @@ impl Lang for LangRu {
     /// non-integers inline off `str(number)`, so `base.float2tuple` /
     /// `to_cardinal_float` are never reached. Two float-only wrinkles:
     ///
-    /// * `if abs(number) < 0.01: return self._int2word(0, ...)` — a *float*
-    ///   whose magnitude is below one hundredth collapses to "ноль" (so
-    ///   `0.005` → "ноль"), **before** any sign is considered. A `Decimal`
-    ///   never takes this shortcut: `Decimal("0.001")` → "ноль целых одна
-    ///   тысячная".
-    /// * the guard reads the raw f64, so `0.01` (== the literal) is *not*
-    ///   below it and renders in full.
+    /// * ~~`if abs(number) < 0.01: return self._int2word(0, ...)`~~ — in
+    ///   Python a *float* whose magnitude is below one hundredth collapsed to
+    ///   "ноль" (so `0.005` → "ноль"), while `Decimal("0.005")` read "ноль
+    ///   целых пять тысячных". Fixed (gladiaio/num2words2#208): such a float
+    ///   reads its digits like the Decimal; only a float zero (`-0.0`) still
+    ///   takes the shortcut.
     ///
     /// `precision_override` (the `precision=` kwarg) is ignored, exactly as
     /// Python's `to_cardinal(self, number, ...)` — which has no `precision`
@@ -1575,7 +1583,7 @@ impl Lang for LangRu {
     }
 
     /// `to_cardinal(float/Decimal, case=, plural=, gender=, animate=)`. The
-    /// kwargs reach only the `abs(number) < 0.01` and dot-less (Decimal("5"),
+    /// kwargs reach only the float-zero and dot-less (Decimal("5"),
     /// exponent repr) branches; the "." branch hardcodes `gender="f"` and
     /// default case for both parts, so `to_cardinal(125.1, gender="f")` is
     /// the plain "сто двадцать пять целых одна десятая" and a bad `case=`
@@ -2001,11 +2009,13 @@ mod tests {
     }
 
     #[test]
-    fn cardinal_float_below_hundredth_is_zero() {
-        // abs(number) < 0.01 short-circuits to "ноль", sign and all.
-        assert_eq!(ff(0.001), "ноль");
-        assert_eq!(ff(0.005), "ноль");
-        assert_eq!(ff(-0.005), "ноль");
+    fn cardinal_float_below_hundredth_reads_its_digits() {
+        // Python's abs(number) < 0.01 shortcut returned "ноль" here (#208).
+        assert_eq!(ff(0.001), "ноль целых одна тысячная");
+        assert_eq!(ff(0.005), "ноль целых пять тысячных");
+        assert_eq!(ff(-0.005), "минус ноль целых пять тысячных");
+        assert_eq!(ff(0.00001), "ноль целых одна стотысячная");
+        assert_eq!(ff(-0.0), "ноль");
     }
 
     #[test]

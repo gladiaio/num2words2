@@ -117,11 +117,22 @@ class Num2WordsRUTest(TestCase):
         self.assertEqual(
             num2words(1.5, lang="ru", case="xx"), num2words(1.5, lang="ru")
         )
-        # ... while the dot-less and tiny-float branches honour them.
+        # ... while the dot-less branch honours them.
         self.assertEqual(num2words(Decimal("1"), lang="ru", gender="f"), "одна")
+        # A float below 0.01 is no longer collapsed to "ноль" (#208), so it
+        # takes the "." branch too.
         self.assertEqual(
-            num2words(0.001, lang="ru", case="g"), num2words(0, lang="ru", case="g")
+            num2words(0.001, lang="ru", case="g"), "ноль целых одна тысячная"
         )
+
+    def test_float_below_one_hundredth(self):
+        # gladiaio/num2words2#208: floats below 0.01 read "ноль".
+        for s in ("0.005", "-0.001", "0.0099", "0.00001"):
+            self.assertEqual(num2words(float(s), lang="ru"),
+                             num2words(Decimal(s), lang="ru"))
+        self.assertEqual(num2words(0.005, lang="ru"), "ноль целых пять тысячных")
+        self.assertEqual(num2words(-0.001, lang="ru"),
+                         "минус ноль целых одна тысячная")
 
     def test_floating_point(self):
         self.assertEqual(num2words(5.2, lang="ru"), "пять целых две десятых")
