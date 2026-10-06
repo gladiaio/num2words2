@@ -939,12 +939,24 @@ fn fallback_en(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
     }
 }
 
-/// `SentenceConverter.convert_number`.
+/// The plain cardinal in the sentence's own language.
+fn cardinal_own(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
+    let l = ctx.lang()?;
+    match val {
+        Val::I(n) => l.to_cardinal(n),
+        Val::F(v) => cardinal_float(l, *v),
+    }
+}
+
+/// `SentenceConverter.convert_number`. When the specific reading fails (an
+/// ordinal the language has no word for, e.g. es "0º"), say the cardinal in
+/// the sentence's language before falling back to English, so a Spanish
+/// sentence never gets an English "zero" spliced into it.
 fn convert_number(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
     match convert_inner(ctx, val, typ) {
         Ok(s) => Ok(s),
         Err(e) if is_bail(&e) => Err(e),
-        Err(_) => fallback_en(ctx, val),
+        Err(_) => cardinal_own(ctx, val).or_else(|_| fallback_en(ctx, val)),
     }
 }
 

@@ -45,3 +45,11 @@ def test_other_languages_dates_unchanged():
         "le premier mai deux mille vingt-quatre")
     assert num2words_sentence("am 1. Mai 2024", lang="de") == (
         "am ersten Mai zweitausendvierundzwanzig")
+
+
+def test_failed_reading_falls_back_to_own_language_cardinal():
+    # es has no ordinal for zero (#160); the sentence must not splice in an
+    # English "zero".
+    from num2words2 import num2words_sentence
+
+    assert num2words_sentence("el 0º lugar", lang="es") == "el cero lugar"
