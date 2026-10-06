@@ -452,6 +452,29 @@ num2words_sentence("Prend la 3e à droite", lang='fr')
 This is also what plain `num2words("text 6")` falls back to when the
 input has digits mixed with non-numeric characters.
 
+### Unconvertible input: `errors=`
+
+Some numeric tokens have no reading: `50%`, `¥100` in a language without
+a word for the yen, `5 m²`, `555-1234`, `v2.0.1`. What happens to them is
+set with `errors=`, as in pandas:
+
+| `errors=` | behaviour | default for |
+|---|---|---|
+| `"raise"` | `ValueError` naming the token | `num2words()` |
+| `"ignore"` | the token is returned as written | `num2words_sentence()` |
+
+```python
+num2words("I have 3 cats")                  # 'I have three cats'
+num2words("50%")
+# ValueError: cannot convert '50%' to words (lang='en'); pass errors='ignore' to return it unchanged
+num2words("50%", errors="ignore")           # '50%'
+num2words_sentence("50% or 3")              # '50% or three'
+num2words_sentence("50% or 3", errors="raise")  # ValueError
+```
+
+Any other value raises `ValueError`. The keyword is handled by the
+dispatcher and never passed to the language converters.
+
 ---
 
 ## Locale codes

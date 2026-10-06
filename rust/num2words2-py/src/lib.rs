@@ -528,6 +528,7 @@ fn from_string(
         separator,
         adjective,
         &kwbag(kwargs),
+        sentencepath::Errors::Ignore,
     )
 }
 
@@ -544,6 +545,7 @@ fn from_string_core(
     separator: Option<&str>,
     adjective: Option<bool>,
     kw: &Kwargs,
+    errors: sentencepath::Errors,
 ) -> PyResult<(u8, Option<String>)> {
     // "n/d" fraction strings route straight to to_fraction, whatever `to`
     // says — mirroring the dispatcher, where this check precedes the mode
@@ -613,7 +615,7 @@ fn from_string_core(
                             // this path are exotic (the sentence converter takes
                             // none); defer those rare cases.
                             if kw.is_empty() {
-                                return match sentencepath::convert(s, lang, to) {
+                                return match sentencepath::convert_with(s, lang, to, errors) {
                                     Ok(out) => Ok((0, Some(out))),
                                     Err(N2WError::Fallback(_)) => Ok((1, None)),
                                     Err(e) => Err(map_err(e)),
@@ -1157,6 +1159,11 @@ fn num2words(
     let intish = plain_int;
     let plain_num = is_float || is_decimal;
 
+    // `errors=` belongs to the dispatcher, never to a language converter
+    // (which would decline an unknown kwarg): read it and drop it here.
+    let (errors, stripped) = take_errors(kwargs, "raise")?;
+    let kwargs = stripped.as_ref().or(kwargs);
+
     let resolved = presentation::resolve_lang(lang).ok_or_else(|| unknown_lang(lang))?;
     let lang = resolved.as_str();
     let l = need_lang(lang)?;
@@ -1241,6 +1248,7 @@ fn num2words(
             separator.as_deref(),
             adjective,
             &kw,
+            errors,
         )? {
             (0, out) => Ok(out.map(|o| {
                 if to_final == "cheque" {
@@ -1424,20 +1432,45 @@ fn num2words(
     Err(declined(lang, to, kwargs))
 }
 
+/// The `errors=` keyword ("raise" | "ignore", default `default`) and, when
+/// it was given, a copy of `kwargs` without it.
+fn take_errors<'py>(
+    kwargs: Option<&Bound<'py, PyDict>>,
+    default: &str,
+) -> PyResult<(sentencepath::Errors, Option<Bound<'py, PyDict>>)> {
+    let Some(kw) = kwargs else {
+        return Ok((sentencepath::Errors::parse(default).map_err(map_err)?, None));
+    };
+    let Some(v) = kw.get_item("errors")? else {
+        return Ok((sentencepath::Errors::parse(default).map_err(map_err)?, None));
+    };
+    let mode = match v.extract::<String>() {
+        Ok(m) => m,
+        Err(_) => pystr(&v)?,
+    };
+    let errors = sentencepath::Errors::parse(&mode).map_err(map_err)?;
+    let rest = kw.copy()?;
+    rest.del_item("errors")?;
+    Ok((errors, Some(rest)))
+}
+
 /// `num2words_sentence` — dispatches on `lang=None` (auto-detect) vs a fixed
-/// language, so the Python surface is a pass-through. `**kwargs` are accepted
-/// and ignored, matching the historic signature.
+/// language, so the Python surface is a pass-through. `errors="ignore"` (the
+/// default) leaves a token it cannot convert as written, `errors="raise"`
+/// raises ValueError naming it. Other `**kwargs` are accepted and ignored,
+/// matching the historic signature.
 #[pyfunction]
-#[pyo3(signature = (sentence, lang=Some("en".to_string()), to="cardinal", **_kwargs))]
+#[pyo3(signature = (sentence, lang=Some("en".to_string()), to="cardinal", **kwargs))]
 fn num2words_sentence(
     sentence: &str,
     lang: Option<String>,
     to: &str,
-    _kwargs: Option<&Bound<'_, PyDict>>,
+    kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<String> {
+    let (errors, _) = take_errors(kwargs, "ignore")?;
     match lang.as_deref() {
-        None => sentencepath::convert_auto(sentence, to).map_err(map_err),
-        Some(l) => sentencepath::convert(sentence, l, to).map_err(map_err),
+        None => sentencepath::convert_auto(sentence, to, errors).map_err(map_err),
+        Some(l) => sentencepath::convert_with(sentence, l, to, errors).map_err(map_err),
     }
 }
 
@@ -1510,7 +1543,7 @@ fn sentence(text: &str, lang: &str, to: &str) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (text, to))]
 fn sentence_auto(text: &str, to: &str) -> PyResult<String> {
-    sentencepath::convert_auto(text, to).map_err(map_err)
+    sentencepath::convert_auto(text, to, sentencepath::Errors::Ignore).map_err(map_err)
 }
 
 /// Detection alone, for the agreement harness. None on slim builds.

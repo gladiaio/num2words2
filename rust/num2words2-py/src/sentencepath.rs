@@ -1862,16 +1862,81 @@ fn detect_language_impl(text: &str) -> String {
 }
 
 /// `num2words_sentence(text)` with `lang=None`: detect, then convert.
-pub fn convert_auto(text: &str, to: &str) -> Result<String, N2WError> {
+pub fn convert_auto(text: &str, to: &str, errors: Errors) -> Result<String, N2WError> {
     match detect_language(text) {
-        Some(lang) => convert(text, &lang, to),
+        Some(lang) => convert_with(text, &lang, to, errors),
         None => Err(N2WError::NotImplemented(
             "sentence: built without lang-detect".into(),
         )),
     }
 }
 
+/// What to do with a numeric token that cannot be converted (`errors=`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Errors {
+    /// Raise `ValueError` naming the token.
+    Raise,
+    /// Leave the token as written.
+    Ignore,
+}
+
+impl Errors {
+    /// Parse the `errors=` keyword; anything but "raise"/"ignore" is a
+    /// `ValueError`.
+    pub fn parse(s: &str) -> Result<Errors, N2WError> {
+        match s {
+            "raise" => Ok(Errors::Raise),
+            "ignore" => Ok(Errors::Ignore),
+            other => Err(N2WError::Value(format!(
+                "errors must be 'raise' or 'ignore', got '{}'",
+                other
+            ))),
+        }
+    }
+}
+
+/// With `errors="raise"`: fail on the first numeric character (ASCII or
+/// not, `²`, `½` included) left as written in an unconverted stretch
+/// `chars[a..b]`, naming the whitespace-delimited token around it.
+fn check_leftover(
+    chars: &[char],
+    a: usize,
+    b: usize,
+    lang: &str,
+    errors: Errors,
+) -> Result<(), N2WError> {
+    if errors == Errors::Ignore {
+        return Ok(());
+    }
+    let Some(p) = (a..b).find(|&i| chars[i].is_numeric()) else {
+        return Ok(());
+    };
+    let mut s = p;
+    while s > 0 && !chars[s - 1].is_whitespace() {
+        s -= 1;
+    }
+    let mut e = p;
+    while e < chars.len() && !chars[e].is_whitespace() {
+        e += 1;
+    }
+    while e > p + 1 && matches!(chars[e - 1], '.' | ',' | ';' | ':' | '!' | '?' | ')') {
+        e -= 1;
+    }
+    let token: String = chars[s..e].iter().collect();
+    Err(N2WError::Value(format!(
+        "cannot convert '{}' to words (lang='{}'); pass errors='ignore' to return it unchanged",
+        token, lang
+    )))
+}
+
+/// `num2words_sentence(text, lang, to)`: unconvertible tokens are left as
+/// written.
 pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
+    convert_with(text, lang, to, Errors::Ignore)
+}
+
+/// [`convert`] with an `errors=` policy for tokens it cannot convert.
+pub fn convert_with(text: &str, lang: &str, to: &str, errors: Errors) -> Result<String, N2WError> {
     // Validate language is supported (same message as the Python raise; the
     // shim's NotImplementedError catch re-runs the original, which raises
     // it identically).
@@ -1891,6 +1956,7 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
     let t = Text::new(&norm);
     let exts = extract_numbers(&t, lang)?;
     if exts.is_empty() {
+        check_leftover(&t.chars, 0, t.chars.len(), lang, errors)?;
         return Ok(text.to_string());
     }
 
@@ -1985,10 +2051,12 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         // Python slicing tolerates end > len (fr's num_end+2 quirk).
         let end = (*end).min(chars.len());
         let start = (*start).min(end).max(pos);
+        check_leftover(&chars, pos, start, lang, errors)?;
         out.extend(&chars[pos..start]);
         out.push_str(replacement);
         pos = pos.max(end);
     }
+    check_leftover(&chars, pos, chars.len(), lang, errors)?;
     out.extend(&chars[pos..]);
     Ok(out)
 }
