@@ -1,6 +1,6 @@
 # Contributing to num2words2
 
-`num2words2` is an actively-maintained, independent fork of `savoirfairelinux/num2words`. Contributions are welcome here directly — open issues and pull requests against [`gladiaio/num2words2`](https://github.com/gladiaio/num2words2), not the upstream repo.
+`num2words2` is a Rust port of the `savoirfairelinux/num2words` conversion engine with a Python binder, kept output-compatible with the original (see [Relationship to num2words](README.rst#relationship-to-num2words)). Contributions are welcome here directly — open issues and pull requests against [`gladiaio/num2words2`](https://github.com/gladiaio/num2words2), not the upstream repo.
 
 If you have an upstream PR that's been waiting for attention, feel free to open an equivalent PR here and reference the original — we'll port it with full credit to you.
 
@@ -10,7 +10,7 @@ If you have an upstream PR that's been waiting for attention, feel free to open 
 
 #### Issues
 
-If you are unsure where to begin contribution to Num2Words, you can start by looking through the issues page.
+If you are unsure where to begin contributing to num2words2, you can start by looking through the issues page.
 Numerous issues are created and waiting for your love on the [issue board](https://github.com/gladiaio/num2words2/issues).
 
 #### Pull Requests
@@ -19,7 +19,7 @@ Contributions will be accepted through the creation of Pull Requests. Here is th
 
 * Fork the repository into yours and work from there
 * Commit and push your changes into your fork
-* When you are done, create a [Pull Request](https://github.com/gladiaio/num2words2/compare) on the **master** branch
+* When you are done, create a [Pull Request](https://github.com/gladiaio/num2words2/compare) on the **main** branch
 
 A template is provided to create your Pull Request. Try to fill the information at the best of your knowledge.
 
@@ -37,10 +37,10 @@ For your pull request to be merged, the answer to the following questions must b
 
 ##### Adding new code
 
-* Is the code PEP8 compliant?
+* Is the Python code formatted with black and isort, and does flake8 pass?
 * Is the code covered by tests?
 
-[TravisCI](https://travis-ci.org/) is configured to run those checks on every Pull-Request. It is recommended you configure your fork to do the same.
+GitHub Actions runs these checks (tests on every supported Python version, lint, E2E) on every pull request. See [`num2words2/README.md`](num2words2/README.md) for how to add a language to the Rust core.
 
 ### Reporting bugs
 

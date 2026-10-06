@@ -27,7 +27,7 @@ What actually happened instead.
 **Environment (please complete the following information):**
  - OS: [e.g. Ubuntu 20.04]
  - Python version: [e.g. 3.9.5]
- - num2words2 version: [e.g. 0.5.15]
+ - num2words2 version: [e.g. 1.0.20]
  - Language/locale: [e.g. en, fr, es]
 
 **Additional context**

@@ -14,7 +14,7 @@ Complete guide for migrating from the original `num2words` library to `num2words
 
 ```bash
 # 1. Run migration script
-curl -O https://raw.githubusercontent.com/jqueguiner/num2words/master/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 python migrate_to_num2words2.py --dry-run .  # Preview changes
 python migrate_to_num2words2.py .            # Apply changes
 
@@ -46,7 +46,7 @@ Use our migration script for Python code:
 
 ```bash
 # Download the script
-curl -O https://raw.githubusercontent.com/jqueguiner/num2words/master/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 
 # Preview changes (recommended)
 python migrate_to_num2words2.py --dry-run /path/to/your/project
@@ -72,14 +72,14 @@ Update your dependency declarations:
 **requirements.txt:**
 ```diff
 - num2words>=0.5.12
-+ num2words2>=0.5.15
++ num2words2>=1.0
 ```
 
 **pyproject.toml:**
 ```diff
 dependencies = [
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ]
 ```
 
@@ -87,7 +87,7 @@ dependencies = [
 ```diff
 install_requires=[
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ]
 ```
 
@@ -348,9 +348,9 @@ print(f"Converted 10,000 numbers in {end - start:.2f} seconds")
 
 ### Getting Help
 
-- **Documentation:** https://github.com/jqueguiner/num2words
-- **Issues:** https://github.com/jqueguiner/num2words/issues
-- **Discussions:** https://github.com/jqueguiner/num2words/discussions
+- **Documentation:** https://github.com/gladiaio/num2words2/wiki
+- **API reference:** https://github.com/gladiaio/num2words2/blob/main/REFERENCE.md
+- **Issues:** https://github.com/gladiaio/num2words2/issues
 
 ## Migration Checklist
 
@@ -404,4 +404,4 @@ A: Yes, all original languages plus additional languages (Armenian, Mongolian, S
 
 ---
 
-**Need more help?** Check our [migration examples](https://github.com/jqueguiner/num2words/tree/master/examples) or [open an issue](https://github.com/jqueguiner/num2words/issues).
+**Need more help?** Check the [wiki](https://github.com/gladiaio/num2words2/wiki) or [open an issue](https://github.com/gladiaio/num2words2/issues).

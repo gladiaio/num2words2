@@ -141,7 +141,7 @@ $ num2words2 --list-converters
 
 `num2words2` supports **120+ languages** (170+ locale codes including aliases and regional variants). The full list lives in [REFERENCE.md → Locale codes](REFERENCE.md#locale-codes); the highlights below give a sense of breadth.
 
-**European**: `en` English, `fr` French (`fr_BE`, `fr_CH`, `fr_DZ`), `es` Spanish (`es_CO`, `es_CR`, `es_GT`, `es_HN`, `es_NI`, `es_VE`), `de` German, `it` Italian, `pt` Portuguese (`pt_BR`), `nl` Dutch, `ru` Russian, `pl` Polish, `cs` Czech, `sk` Slovak, `sl` Slovenian, `hu` Hungarian, `ro` Romanian, `el` Greek, `bg` Bulgarian, `uk` Ukrainian, `be` Belarusian, `hr` Croatian, `sr` Serbian (`sr_Cyrl`, `sr_Latn`), `bs` Bosnian, `mk` Macedonian, `sq` Albanian, `sv` Swedish, `da` Danish, `no` Norwegian, `nn` Nynorsk, `nb` Bokmål, `fi` Finnish, `et` Estonian, `lv` Latvian, `lt` Lithuanian, `is` Icelandic, `fo` Faroese, `ga` Irish, `cy` Welsh, `eu` Basque, `ca` Catalan, `gl` Galician, `oc` Occitan, `mt` Maltese, `lb` Luxembourgish, `rm` Romansh (`rm_puter`, `rm_surmiran`, `rm_sursilv`, `rm_sutsilv`, `rm_vallader`), `eo` Esperanto, `lij` Ligurian, `br` Breton.
+**European**: `en` English, `fr` French (`fr_BE`, `fr_CH`, `fr_DZ`), `es` Spanish (`es_CO`, `es_CR`, `es_GT`, `es_HN`, `es_NI`, `es_VE`), `de` German, `it` Italian, `pt` Portuguese (`pt_BR`), `nl` Dutch, `ru` Russian, `pl` Polish, `cs` Czech, `sk` Slovak, `sl` Slovenian, `hu` Hungarian, `ro` Romanian, `el` Greek, `bg` Bulgarian, `uk` Ukrainian, `be` Belarusian, `hr` Croatian, `sr` Serbian (`sr_Cyrl`, `sr_Latn`), `bs` Bosnian, `mk` Macedonian, `sq` Albanian, `sv` Swedish, `da` Danish, `no` Norwegian, `nn` Nynorsk, `nb` Bokmål, `fi` Finnish, `et` Estonian, `lv` Latvian, `lt` Lithuanian, `is` Icelandic, `fo` Faroese, `cy` Welsh, `eu` Basque, `ca` Catalan, `gl` Galician, `oc` Occitan, `mt` Maltese, `lb` Luxembourgish, `rm` Romansh (`rm_puter`, `rm_surmiran`, `rm_sursilv`, `rm_sutsilv`, `rm_vallader`), `eo` Esperanto, `lij` Ligurian, `br` Breton.
 
 **Asian**: `zh` Chinese (`zh_CN`, `zh_HK`, `zh_TW`), `ja` Japanese, `ko` Korean, `hi` Hindi, `bn` Bengali, `ta` Tamil, `te` Telugu, `kn` Kannada, `ml` Malayalam, `mr` Marathi, `gu` Gujarati, `pa` Punjabi, `or` Odia, `as` Assamese, `sa` Sanskrit, `ne` Nepali, `si` Sinhala, `ur` Urdu, `fa` Persian, `ps` Pashto, `sd` Sindhi, `dv` Divehi, `bo` Tibetan, `my` Burmese, `th` Thai, `lo` Lao, `km` Khmer, `vi` Vietnamese, `id` Indonesian, `ms` Malay, `tl` Tagalog, `fil` Filipino, `jv` Javanese, `su` Sundanese, `ksw` S'gaw Karen, `cnh` Hakha Chin, `lus` Mizo, `mn` Mongolian.
 
@@ -149,7 +149,7 @@ $ num2words2 --list-converters
 
 **Central Asian**: `kk` Kazakh (`kz`), `ky` Kyrgyz, `uz` Uzbek (`uz_Cyrl`), `tg` Tajik, `tk` Turkmen.
 
-**African**: `am` Amharic, `ti` Tigrinya, `so` Somali, `om` Oromo, `ha` Hausa, `yo` Yoruba, `ig` Igbo, `sw` Swahili, `xh` Xhosa, `zu` Zulu, `sn` Shona, `lg` Luganda, `rw` Kinyarwanda, `ki` Kikuyu, `ln` Lingala, `wo` Wolof, `ff` Fula, `bm` Bambara, `mg` Malagasy.
+**African**: `am` Amharic, `ti` Tigrinya, `so` Somali, `om` Oromo, `ha` Hausa, `yo` Yoruba, `sw` Swahili, `xh` Xhosa, `zu` Zulu, `sn` Shona, `lg` Luganda, `rw` Kinyarwanda, `ki` Kikuyu, `ln` Lingala, `wo` Wolof, `ff` Fula, `bm` Bambara, `mg` Malagasy.
 
 **Pacific**: `mi` Māori, `haw` Hawaiian, `tet` Tetum.
 
@@ -193,7 +193,7 @@ We provide a migration script to automatically update your codebase:
 
 ```bash
 # Download and run the migration script
-curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 python migrate_to_num2words2.py /path/to/your/project
 
 # Or just scan current directory
@@ -238,18 +238,18 @@ Update your dependency files:
 ```bash
 # requirements.txt
 - num2words>=0.5.12
-+ num2words2>=0.5.15
++ num2words2>=1.0
 
 # pyproject.toml
 dependencies = [
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ]
 
 # setup.py
 install_requires=[
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ],
 ```
 
@@ -281,7 +281,7 @@ pip uninstall num2words
 
 `num2words2` maintains full backward compatibility. However, if you experience any issues:
 
-1. **Check version compatibility** - Ensure you're using `num2words2>=0.5.15`
+1. **Check version compatibility** - Ensure you're using a current `num2words2` release (`pip install -U num2words2`)
 2. **Report issues** - Create an issue at https://github.com/gladiaio/num2words2/issues
 3. **Rollback if needed** - The migration script creates backups for easy rollback
 
@@ -304,8 +304,10 @@ done
 ### Running Tests
 
 ```bash
-# Install development dependencies
-pip install -r requirements-test.txt
+# Build the Rust extension and install development dependencies
+pip install maturin
+maturin develop --no-default-features
+pip install -r tests/requirements-test.txt
 
 # Run tests
 python -m pytest tests/

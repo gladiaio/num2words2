@@ -15,7 +15,7 @@ git clone https://github.com/gladiaio/num2words2.git
 cd num2words2
 
 python -m pip install -e .
-python -m pip install -r requirements-test.txt
+python -m pip install -r tests/requirements-test.txt
 ```
 
 The Makefile provides common workflows:

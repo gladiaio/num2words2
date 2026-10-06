@@ -197,3 +197,13 @@ def test_doc_example(kind, code, comment):
         assert str(value) == comment
     else:
         assert value == _expected(comment)
+
+
+def test_reference_lists_every_language_code():
+    """REFERENCE.md's Locale codes section names every code the core
+    accepts (gladiaio/num2words2#241: 30 were missing)."""
+    with open(os.path.join(ROOT, "REFERENCE.md"), encoding="utf-8") as f:
+        text = f.read()
+    section = text[text.index("## Locale codes") : text.index("## String input")]
+    listed = set(re.findall(r"`([^`]+)`", section))
+    assert sorted(set(num2words2._rust.supported_langs()) - listed) == []

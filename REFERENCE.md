@@ -449,28 +449,33 @@ dispatcher and never passed to the language converters.
 them as `lang=`. Unknown locales fall back to the two-letter ISO 639-1
 prefix where possible.
 
-### Major languages
+### Languages
 
 `af` Afrikaans, `am` Amharic, `ar` Arabic, `as` Assamese, `az` Azerbaijani,
-`be` Belarusian, `bg` Bulgarian, `bn` Bengali, `bs` Bosnian, `ca` Catalan,
-`ce` Chechen, `cs` Czech, `cy` Welsh, `da` Danish, `de` German, `dv` Divehi,
-`el` Greek, `en` English, `eo` Esperanto, `es` Spanish, `et` Estonian,
-`eu` Basque, `fa` Persian, `fi` Finnish, `fil` Filipino, `fr` French,
-`gl` Galician, `gu` Gujarati, `ha` Hausa, `he` Hebrew, `hi` Hindi,
-`hr` Croatian, `hu` Hungarian, `hy` Armenian, `id` Indonesian, `is` Icelandic,
-`it` Italian, `ja` Japanese, `ka` Georgian, `kk` Kazakh, `km` Khmer,
-`kn` Kannada, `ko` Korean, `ku` Kurdish, `ky` Kyrgyz, `la` Latin, `lb` Luxembourgish,
-`lo` Lao, `lt` Lithuanian, `lv` Latvian, `mg` Malagasy, `mi` Maori,
+`ba` Bashkir, `ban` Balinese, `be` Belarusian, `bg` Bulgarian, `bm` Bambara,
+`bn` Bengali, `bo` Tibetan, `br` Breton, `bs` Bosnian, `ca` Catalan, `ce`
+Chechen, `ceb` Cebuano, `ckb` Central Kurdish, `cnh` Hakha Chin, `cs` Czech,
+`cy` Welsh, `da` Danish, `de` German, `dv` Divehi, `el` Greek, `en` English,
+`eo` Esperanto, `es` Spanish, `et` Estonian, `eu` Basque, `fa` Persian, `ff`
+Fula, `fi` Finnish, `fil` Filipino, `fo` Faroese, `fr` French, `gl` Galician,
+`gu` Gujarati, `ha` Hausa, `haw` Hawaiian, `he` Hebrew, `hi` Hindi, `hmn`
+Hmong, `hr` Croatian, `ht` Haitian Creole, `hu` Hungarian, `hy` Armenian, `id`
+Indonesian, `is` Icelandic, `it` Italian, `ja` Japanese, `jv` Javanese, `ka`
+Georgian, `ki` Kikuyu, `kk` Kazakh (alias `kz`), `km` Khmer, `kn` Kannada,
+`ko` Korean, `kok` Konkani, `ksw` S'gaw Karen, `ku` Kurdish, `ky` Kyrgyz, `la`
+Latin, `lb` Luxembourgish, `lg` Luganda, `lij` Ligurian, `ln` Lingala, `lo`
+Lao, `lt` Lithuanian, `lus` Mizo, `lv` Latvian, `mg` Malagasy, `mi` Maori,
 `mk` Macedonian, `ml` Malayalam, `mn` Mongolian, `mr` Marathi, `ms` Malay,
-`mt` Maltese, `my` Burmese, `ne` Nepali, `nl` Dutch, `no` Norwegian,
-`om` Oromo, `or` Odia, `pa` Punjabi, `pl` Polish, `ps` Pashto, `pt` Portuguese,
-`rm` Romansh, `ro` Romanian, `ru` Russian, `rw` Kinyarwanda, `sa` Sanskrit,
-`sd` Sindhi, `si` Sinhala, `sk` Slovak, `sl` Slovenian, `sn` Shona,
-`so` Somali, `sq` Albanian, `sr` Serbian, `sv` Swedish, `sw` Swahili,
-`ta` Tamil, `te` Telugu, `tet` Tetum, `tg` Tajik, `th` Thai, `ti` Tigrinya,
-`tk` Turkmen, `tl` Tagalog, `tr` Turkish, `tt` Tatar, `uk` Ukrainian,
-`ur` Urdu, `uz` Uzbek, `vi` Vietnamese, `wo` Wolof, `xh` Xhosa, `yi` Yiddish,
-`yo` Yoruba, `zh` Chinese, `zu` Zulu.
+`mt` Maltese, `my` Burmese, `ne` Nepali, `nl` Dutch, `nn` Norwegian Nynorsk,
+`no` Norwegian, `oc` Occitan, `om` Oromo, `or` Odia, `pa` Punjabi, `pap`
+Papiamento, `pl` Polish, `pli` Pali, `ps` Pashto, `pt` Portuguese, `rm`
+Romansh, `ro` Romanian, `ru` Russian, `rw` Kinyarwanda, `sa` Sanskrit, `sd`
+Sindhi, `si` Sinhala, `sk` Slovak, `sl` Slovenian, `sn` Shona, `so` Somali,
+`sq` Albanian, `sr` Serbian, `su` Sundanese, `sv` Swedish, `sw` Swahili, `ta`
+Tamil, `te` Telugu, `tet` Tetum, `tg` Tajik, `th` Thai, `ti` Tigrinya, `tk`
+Turkmen, `tl` Tagalog, `tr` Turkish, `tt` Tatar, `uk` Ukrainian, `ur` Urdu,
+`uz` Uzbek, `vi` Vietnamese, `wo` Wolof, `xh` Xhosa, `yi` Yiddish, `yo`
+Yoruba, `zh` Chinese (Simplified), `zu` Zulu.
 
 ### Regional variants
 
@@ -478,7 +483,7 @@ prefix where possible.
 |---|---|
 | `en_IN` | Indian English (lakh / crore numbering) |
 | `en_NE`, `en_NG`, `en_NP` | Nepalese / Nigerian / Nepali English |
-| `en_Aero_*` | Aviation/ICAO family — see [Aviation section](#aviation--icao-english) |
+| `en_Aero_ICAO`, `en_Aero_FAA`, `en_Aero_USN`, `en_Aero_US_Navy`, `en_Aero_US_Army`, `en_Aero_NATO` | Aviation/ICAO family — see [Aviation section](#aviation--icao-english) |
 | `es_CO`, `es_CR`, `es_GT`, `es_HN`, `es_NI`, `es_VE` | Spanish regional (Latin America) |
 | `fr_BE`, `fr_CH`, `fr_DZ` | Belgian / Swiss / Algerian French |
 | `pt_BR` | Brazilian Portuguese |
