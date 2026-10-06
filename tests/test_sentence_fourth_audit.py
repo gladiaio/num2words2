@@ -80,3 +80,22 @@ def test_negative_temperature_uses_converter_word():
 )
 def test_ordinal_mode_decimals_stay_cardinal(text, lang, expected):
     assert num2words_sentence(text, lang=lang, to="ordinal") == expected
+
+
+# --- #227: a hyphen after a letter of any script is not a minus -----------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("מקום 1 ו-2.", "he", "מקום אחת ו-שתיים."),
+        ("é-2", "fr", "é-deux"),
+        ("и-2", "ru", "и-два"),
+        ("x-2", "en", "x-two"),
+        ("и -2", "ru", "и минус два"),
+        ("我有5个苹果", "zh", "我有五个苹果"),
+        # Scripts without word spaces: the hyphen is a sign.
+        ("温度是-5度", "zh", "温度是负五度"),
+    ],
+)
+def test_hyphen_after_letter_is_not_minus(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected

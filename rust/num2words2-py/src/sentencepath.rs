@@ -463,6 +463,14 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
             i += 1;
             continue;
         }
+        // A hyphen right after a letter of any script is not a minus sign
+        // (he "ו-2" is "and 2", ru "и-2"; #227): skip it so the digits match
+        // on their own. Only the sign test is Unicode-aware; the digit
+        // boundaries stay ASCII so "有5个" still reads its 5.
+        if chars[i] == '-' && i > 0 && is_word_letter(chars[i - 1]) {
+            i += 1;
+            continue;
+        }
         let mut j = i;
         if chars[j] == '-' {
             j += 1;
@@ -507,6 +515,19 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
     out
 }
 
+/// A letter or digit that a hyphen after it joins to a word (#227). Scripts
+/// written without spaces between words (Han, kana, Thai, Lao, Khmer,
+/// Myanmar) are excluded: zh "温度是-5度" is minus five.
+fn is_word_letter(c: char) -> bool {
+    c.is_alphanumeric()
+        && !matches!(c as u32,
+            0x3040..=0x30FF | 0x31F0..=0x31FF // kana
+            | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF // Han
+            | 0x0E00..=0x0EFF // Thai, Lao
+            | 0x1000..=0x109F // Myanmar
+            | 0x1780..=0x17FF) // Khmer
+}
+
 /// A number written with thousands separators starting at char `start`
 /// (`1,000,000`, `1.234,56`, `-1 000`; #151). Returns the end of the token and
 /// its value as a plain decimal string. Only tokens that really contain
@@ -529,6 +550,10 @@ fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, Str
     }
     let mut j = start;
     if j < n && chars[j] == '-' {
+        // Not a sign after a letter of any script (#227).
+        if start > 0 && is_word_letter(chars[start - 1]) {
+            return None;
+        }
         j += 1;
     }
     if j >= n || !chars[j].is_ascii_digit() {
