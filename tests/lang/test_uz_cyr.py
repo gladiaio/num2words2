@@ -178,3 +178,16 @@ class Num2WordsUZCYRTest(TestCase):
             num2words('1031.56', lang='uz_cyr', to='currency', currency='USD'),
             'бир минг ўттиз бир доллар, эллик олти цент'
         )
+
+    def test_minus_between_minus_one_and_zero(self):
+        # gladiaio/num2words2#209: int("-0") dropped the sign.
+        from decimal import Decimal
+        for v in (-0.25, Decimal("-0.25"), "-0.25"):
+            self.assertEqual(num2words(v, lang="uz_Cyrl"),
+                             "минус нол вергул йигирма беш")
+        self.assertEqual(num2words("-0.25", lang="uz_cyr"),
+                         "минус нол вергул йигирма беш")
+        self.assertEqual(num2words(-1.25, lang="uz_Cyrl"),
+                         "минус бир вергул йигирма беш")
+        # Negative zero is still zero.
+        self.assertEqual(num2words(-0.0, lang="uz_Cyrl"), "нол вергул нол")
