@@ -164,6 +164,13 @@ def parse_args(parser, argv):
     args, extras = parser.parse_known_args(argv)
     if extras and args.number is None and NEGATIVE_NUMBER.match(extras[0]):
         args.number = extras.pop(0)
+    # Python 3.14's argparse hands a dash-prefixed token such as "-1x" to the
+    # positional instead of rejecting it as an unknown option; reject it here
+    # so the CLI behaves the same on every Python version.
+    if (args.number is not None and args.number.startswith("-")
+            and not NEGATIVE_NUMBER.match(args.number)):
+        extras.insert(0, args.number)
+        args.number = None
     if extras:
         parser.error("unrecognized arguments: {}".format(" ".join(extras)))
     return args
