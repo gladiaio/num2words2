@@ -197,3 +197,34 @@ def test_space_grouped_thousands(text, lang, expected):
 )
 def test_currency_symbols(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #232: native ordinal notations ---------------------------------------
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("1-й и 2-я место", "ru", "Первый и вторая место"),
+        ("в 90-е годы", "ru", "в 90-е годы"),  # "-е" is ambiguous: kept
+        ("5-летний", "ru", "5-летний"),
+        ("1-й", "uk", "Перший"),
+        ("1. i 2. miejsce.", "pl", "Pierwszy i drugi miejsce."),
+        ("Mam 3. Potem", "pl", "Mam trzy. Potem"),  # sentence end
+        ("1. místo", "cs", "První místo"),
+        ("1. maj", "da", "Første maj"),
+        ("1. mai", "nb", "Første mai"),
+        ("1. sırada", "tr", "Birinci sırada"),
+        ("Il 1° posto", "it", "Il primo posto"),
+        ("la 1ª volta", "it", "la prima volta"),
+        ("a 2ª posição", "pt", "a segunda posição"),
+        ("a 21ª posição", "pt_BR", "a vigésima primeira posição"),
+        ("la 2ª vez", "es", "la segunda vez"),
+        ("第1位", "ja", "第一位"),
+        ("3番目", "ja", "三番目"),
+        ("제1회", "ko", "제일회"),
+        ("và thứ 2", "vi", "và thứ hai"),
+        ("thứ 1 và thứ 4", "vi", "thứ nhất và thứ tư"),
+    ],
+)
+def test_native_ordinal_notations(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected

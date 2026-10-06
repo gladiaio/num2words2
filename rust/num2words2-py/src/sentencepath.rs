@@ -90,6 +90,15 @@
 //! a symbol after the number (`5€`, `5 €`) counts like one before it, and a
 //! glued percentage (`50%`) is left as written — no converter has a percent
 //! word.
+//!
+//! Also deliberate (#232): the ordinal registry knows the native notations
+//! — ru/uk `1-й` (ru `2-я` feminine; case endings and the ambiguous `-е`
+//! are left as written), pl/cs/sk/da/nb/fi/tr `1.` before a lowercase word
+//! (a dot before a capital is a sentence end), es/pt/it `1°`/`1º`/`2ª`
+//! (feminine for `ª`; pt/it take no `gender=`, so their -o ordinals are
+//! turned -a), and the prefix forms keep their prefix word: ja `第1位` ->
+//! `第一位`, ko `제1회` -> `제일회`, vi `thứ 2` -> `thứ hai` (`thứ nhất`,
+//! `thứ tư`).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -97,7 +106,7 @@ use std::sync::OnceLock;
 use std::str::FromStr;
 
 use bigdecimal::BigDecimal;
-use num2words2_core::base::Lang;
+use num2words2_core::base::{KwVal, Kwargs, Lang};
 use num2words2_core::strnum::{
     groups_with_spaces, is_space_group_sep, number_notation, parse_grouped, unicode_digit,
     Grouped,
@@ -117,7 +126,7 @@ fn norm_lang(lang: &str) -> String {
     if l.is_empty() {
         return "en".to_string();
     }
-    if ORDINAL_PATTERNS.iter().any(|(k, _)| *k == l) {
+    if ORDINAL_PATTERNS.iter().any(|(k, _, _)| *k == l) {
         return l;
     }
     l.split(['-', '_']).next().unwrap_or("").to_string()
@@ -158,37 +167,83 @@ fn temp_words(lang: &str) -> Option<(&'static str, &'static str)> {
         .map(|(_, _, w, u)| (*w, *u))
 }
 
-/// `lang_registry.ORDINAL_PATTERNS` — the integer is captured in group 1 (or,
-/// for the CJK bare-form alternations, whichever branch fires). Keyed by the
-/// normalised lang. Compiled WITHOUT the ignore-case flag, matching Python's
-/// `re.finditer(ordinal_pattern, sentence)` (no flags).
-const ORDINAL_PATTERNS: &[(&str, &str)] = &[
-    ("en", r"(\d+)(?:st|nd|rd|th)\b"),
-    ("de", r"(\d+)(?:\.|te|er)\b"),
-    ("nl", r"(\d+)(?:ste|de|e)\b"),
-    ("sv", r"(\d+):(?:a|e)\b"),
-    ("af", r"(\d+)(?:ste|de)\b"),
-    ("fr", r"(\d+)(?:er|ère|e|ème)\b"),
-    ("es", r"(\d+)(?:º|°|ª)\b"),
-    ("pt", r"(\d+)(?:º|°|ª)\b"),
-    ("it", r"(\d+)(?:º|°|ª)\b"),
-    ("ca", r"(\d+)(?:r|n|t|è|a)\b"),
-    ("el", r"(\d+)(?:ος|η|ο|ός)\b"),
-    ("tr", r"(\d+)(?:inci|ıncı|uncu|üncü)\b"),
-    ("az", r"(\d+)[-‐](?:ci|cu|cü|cı)\b"),
-    ("hi", r"(\d+)(?:वां|वीं|वें)\b"),
-    ("bn", r"(\d+)(?:তম|ম|য়|র্থ)\b"),
-    ("ta", r"(\d+)(?:வது|ஆம்)\b"),
-    ("fa", r"(\d+)(?:مین|ام|م)\b"),
-    ("zh", r"第(\d+)"),
-    ("ja", r"第(\d+)|(\d+)番目"),
-    ("ko", r"제(\d+)|(\d+)번째"),
-    ("vi", r"thứ\s*(\d+)"),
-    ("th", r"ที่\s*(\d+)"),
-    ("id", r"ke[-‐](\d+)"),
-    ("ms", r"ke[-‐](\d+)"),
-    ("ia", r"(\d+)me\b"),
+/// `lang_registry.ORDINAL_PATTERNS` — the integer is captured in group 1.
+/// Keyed by the normalised lang; a language may have several. Compiled
+/// WITHOUT the ignore-case flag, matching Python's
+/// `re.finditer(ordinal_pattern, sentence)` (no flags). The [`OrdForm`]
+/// says how the match is read (#232).
+const ORDINAL_PATTERNS: &[(&str, &str, OrdForm)] = &[
+    ("en", r"(\d+)(?:st|nd|rd|th)\b", OrdForm::Suffix),
+    ("de", r"(\d+)(?:\.|te|er)\b", OrdForm::Suffix),
+    ("nl", r"(\d+)(?:ste|de|e)\b", OrdForm::Suffix),
+    ("sv", r"(\d+):(?:a|e)\b", OrdForm::Suffix),
+    ("af", r"(\d+)(?:ste|de)\b", OrdForm::Suffix),
+    ("fr", r"(\d+)(?:er|ère|e|ème)\b", OrdForm::Suffix),
+    ("es", r"(\d+)\.?[º°ª]", OrdForm::Symbol),
+    ("pt", r"(\d+)\.?[º°ª]", OrdForm::Symbol),
+    ("it", r"(\d+)\.?[º°ª]", OrdForm::Symbol),
+    ("ca", r"(\d+)(?:r|n|t|è|a)\b", OrdForm::Suffix),
+    ("el", r"(\d+)(?:ος|η|ο|ός)\b", OrdForm::Suffix),
+    ("tr", r"(\d+)(?:inci|ıncı|uncu|üncü)\b", OrdForm::Suffix),
+    ("az", r"(\d+)[-‐](?:ci|cu|cü|cı)\b", OrdForm::Suffix),
+    ("hi", r"(\d+)(?:वां|वीं|वें)\b", OrdForm::Suffix),
+    ("bn", r"(\d+)(?:তম|ম|য়|র্থ)\b", OrdForm::Suffix),
+    ("ta", r"(\d+)(?:வது|ஆம்)\b", OrdForm::Suffix),
+    ("fa", r"(\d+)(?:مین|ام|م)\b", OrdForm::Suffix),
+    ("zh", r"第(\d+)", OrdForm::Suffix),
+    ("ja", r"第(\d+)", OrdForm::Prefix),
+    ("ja", r"(\d+)番目", OrdForm::Suffix),
+    ("ko", r"제(\d+)", OrdForm::Prefix),
+    ("ko", r"(\d+)번째", OrdForm::Suffix),
+    ("vi", r"thứ\s*(\d+)", OrdForm::Vi),
+    ("th", r"ที่\s*(\d+)", OrdForm::Suffix),
+    ("id", r"ke[-‐](\d+)", OrdForm::Suffix),
+    ("ms", r"ke[-‐](\d+)", OrdForm::Suffix),
+    ("ia", r"(\d+)me\b", OrdForm::Suffix),
+    // "1. miejsce", "1. místo", "1. plads", "1. sırada" (#232).
+    ("pl", r"(\d+)\.", OrdForm::Dot),
+    ("cs", r"(\d+)\.", OrdForm::Dot),
+    ("sk", r"(\d+)\.", OrdForm::Dot),
+    ("da", r"(\d+)\.", OrdForm::Dot),
+    ("nb", r"(\d+)\.", OrdForm::Dot),
+    ("no", r"(\d+)\.", OrdForm::Dot),
+    ("fi", r"(\d+)\.", OrdForm::Dot),
+    ("tr", r"(\d+)\.", OrdForm::Dot),
+    // "1-й", "2-я" (#232).
+    ("ru", r"(\d+)-(\p{Cyrillic}+)", OrdForm::Hyphen),
+    ("uk", r"(\d+)-(\p{Cyrillic}+)", OrdForm::Hyphen),
 ];
+
+/// How an [`ORDINAL_PATTERNS`] match is read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OrdForm {
+    /// The whole match is replaced by the ordinal.
+    Suffix,
+    /// `<n>º` / `<n>ª` (es, pt, it): the ordinal, feminine for `ª`; the
+    /// marker must end the word (`\b` never matched after `°`).
+    Symbol,
+    /// A prefix word that stays (ja `第1位` -> `第一位`, ko `제1회` ->
+    /// `제일회`): only the digits are read, as a cardinal.
+    Prefix,
+    /// vi `thứ 2` -> `thứ hai`: the prefix stays, the number is read
+    /// `nhất`/`tư` for 1/4 and as a cardinal otherwise.
+    Vi,
+    /// `<n>.` followed by a lowercase word (pl `1. miejsce`); a dot before
+    /// a capital or at the end is a sentence end, not an ordinal.
+    Dot,
+    /// ru/uk `<n>-<ending>`: the nominative endings say the gender; any
+    /// other ending (case forms, "-летний") is left as written.
+    Hyphen,
+}
+
+/// How a [`Typ::Ordinal`] is said.
+#[derive(Clone, Copy)]
+enum OrdKind {
+    Masc,
+    Fem,
+    Cardinal,
+    Vi,
+}
 
 /// `lang_registry.MONTH_NAMES` — month-name regex per lang (a non-capturing
 /// group). Keyed by the normalised lang. Substituted into date templates
@@ -290,7 +345,7 @@ struct DatePat {
 struct Res {
     temp_symbol: Regex,
     temps: Vec<(&'static str, Regex)>,
-    ordinals: Vec<(&'static str, Regex)>,
+    ordinals: Vec<(&'static str, Regex, OrdForm)>,
     dates: Vec<(&'static str, Vec<DatePat>)>,
     year: Regex,
     currency: Regex,
@@ -312,7 +367,7 @@ impl Res {
 
         let ordinals = ORDINAL_PATTERNS
             .iter()
-            .map(|(lang, pat)| (*lang, re(pat)))
+            .map(|(lang, pat, form)| (*lang, re(pat), *form))
             .collect();
 
         // Build concrete date patterns: substitute `{month}` with the
@@ -356,10 +411,14 @@ impl Res {
         self.temps.iter().find(|(k, _)| *k == lang).map(|(_, r)| r)
     }
 
-    /// Ordinal regex — keyed by the normalised lang (`get_ordinal_pattern`).
-    fn ordinal_re(&self, lang: &str) -> Option<&Regex> {
+    /// Ordinal regexes — keyed by the normalised lang (`get_ordinal_pattern`).
+    fn ordinal_res(&self, lang: &str) -> Vec<(&Regex, OrdForm)> {
         let n = norm_lang(lang);
-        self.ordinals.iter().find(|(k, _)| *k == n).map(|(_, r)| r)
+        self.ordinals
+            .iter()
+            .filter(|(k, _, _)| *k == n)
+            .map(|(_, r, f)| (r, *f))
+            .collect()
     }
 
     /// Date patterns — keyed by the normalised lang (`get_date_patterns`).
@@ -456,7 +515,7 @@ enum Val {
 enum Typ {
     TempSymbol,
     TempWord,
-    Ordinal,
+    Ordinal(OrdKind),
     OrdinalDate,
     DateNumber,
     Year,
@@ -1043,10 +1102,10 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     // surface form owns its full span (digit + suffix); the date pass then
     // only fires where no ordinal was consumed. The integer is the first
     // non-empty capture group (CJK forms alternate which branch fills it).
-    if let Some(ore) = r.ordinal_re(lang) {
+    for (ore, form) in r.ordinal_res(lang) {
         for m in ore.captures_iter(t.s) {
             let g0 = m.get(0).unwrap();
-            let (s, e) = t.span(g0.start(), g0.end());
+            let (mut s, mut e) = t.span(g0.start(), g0.end());
             if overlap(&used, s, e) {
                 continue;
             }
@@ -1055,26 +1114,75 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             if g0.as_str().ends_with('.') && e < n && t.chars[e].is_ascii_digit() {
                 continue;
             }
-            let grp = (1..m.len())
-                .filter_map(|i| m.get(i))
-                .map(|mm| mm.as_str())
-                .find(|x| !x.is_empty());
-            let grp = match grp {
-                Some(x) => x,
-                None => continue,
+            let g1 = m.get(1).unwrap();
+            let c = &t.chars;
+            // The forms added for #232 check their boundaries by hand: the
+            // number must not continue a word or a number, the marker must
+            // end the word.
+            if form != OrdForm::Suffix {
+                let (ds, _) = t.span(g1.start(), g1.end());
+                if ds == s
+                    && ds > 0
+                    && (c[ds - 1].is_ascii_alphanumeric()
+                        || matches!(c[ds - 1], '.' | ',' | '-'))
+                {
+                    continue;
+                }
+                if matches!(form, OrdForm::Symbol | OrdForm::Hyphen)
+                    && e < n
+                    && c[e].is_alphanumeric()
+                {
+                    continue;
+                }
+            }
+            let kind = match form {
+                OrdForm::Suffix => OrdKind::Masc,
+                OrdForm::Symbol if g0.as_str().contains('ª') => OrdKind::Fem,
+                OrdForm::Symbol => OrdKind::Masc,
+                OrdForm::Dot => {
+                    let mut k = e;
+                    while k < n && c[k].is_whitespace() {
+                        k += 1;
+                    }
+                    if k == e || k >= n || !c[k].is_lowercase() {
+                        continue;
+                    }
+                    OrdKind::Masc
+                }
+                OrdForm::Hyphen => {
+                    let ending = m.get(2).unwrap().as_str();
+                    match (norm_lang(lang).as_str(), ending) {
+                        ("ru", "й" | "ый" | "ий" | "ой") | ("uk", "й" | "ий") => OrdKind::Masc,
+                        ("ru", "я" | "ая" | "ья") => OrdKind::Fem,
+                        // Case forms ("-го", "-м"), "-е" (neuter "1-е место"
+                        // or plural "90-е годы"), "-летний"…: as written.
+                        _ => {
+                            mark(&mut used, s, e);
+                            continue;
+                        }
+                    }
+                }
+                OrdForm::Prefix | OrdForm::Vi => {
+                    (s, e) = t.span(g1.start(), g1.end());
+                    if form == OrdForm::Vi {
+                        OrdKind::Vi
+                    } else {
+                        OrdKind::Cardinal
+                    }
+                }
             };
             // Python `int(groups[0])`; a parse failure is a `ValueError`
             // -> `continue`, not an abort.
-            let v = match grp.parse::<BigInt>() {
+            let v = match g1.as_str().parse::<BigInt>() {
                 Ok(v) => v,
                 Err(_) => continue,
             };
             exts.push(Ext {
                 start: s,
                 end: e,
-                text: g0.as_str().to_string(),
+                text: t.slice(s, e),
                 val: Val::I(v),
-                typ: Typ::Ordinal,
+                typ: Typ::Ordinal(kind),
             });
             mark(&mut used, s, e);
         }
@@ -1397,7 +1505,42 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             Ok(format!("{} {} {}", cardinal_str(l, &num)?, temp_word, celsius_word))
         }
         Typ::TempWord => cardinal_str(ctx.lang()?, &signed(val)?),
-        Typ::Ordinal => ctx.lang()?.to_ordinal(val.i()),
+        Typ::Ordinal(kind) => {
+            let l = ctx.lang()?;
+            let n = val.i();
+            match kind {
+                OrdKind::Masc => l.to_ordinal(n),
+                OrdKind::Cardinal => l.to_cardinal(n),
+                // Vietnamese: "thứ nhất", "thứ tư", else the cardinal.
+                OrdKind::Vi if *n == BigInt::from(1) => Ok("nhất".to_string()),
+                OrdKind::Vi if *n == BigInt::from(4) => Ok("tư".to_string()),
+                OrdKind::Vi => l.to_cardinal(n),
+                OrdKind::Fem => {
+                    let kw = Kwargs(vec![("gender".into(), KwVal::Str("f".into()))]);
+                    match l.to_ordinal_kw(n, &kw) {
+                        Ok(s) => Ok(s),
+                        Err(e) if !matches!(e, N2WError::Fallback(_)) => Err(e),
+                        // pt/it take no gender=: their ordinals are
+                        // masculine words in -o, each of which turns -a
+                        // ("vigésimo primeiro" -> "vigésima primeira").
+                        Err(_) => {
+                            let m = l.to_ordinal(n)?;
+                            let base = norm_lang(ctx.raw);
+                            if matches!(base.as_str(), "pt" | "it")
+                                && m.split(' ').all(|w| w.ends_with('o'))
+                            {
+                                Ok(m.split(' ')
+                                    .map(|w| format!("{}a", &w[..w.len() - 1]))
+                                    .collect::<Vec<_>>()
+                                    .join(" "))
+                            } else {
+                                Ok(m)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Typ::OrdinalDate => {
             if ctx.raw == "fr" && *val.i() == BigInt::from(1) {
                 return Ok("premier".to_string());
