@@ -22,7 +22,9 @@
 //! `cnum == 1` arm: with the flag set, a leading "et" is dropped even above
 //! 10^6, so `to_cardinal(10**6)` == "en million" but the cardinal computed
 //! *inside* `to_ordinal(10**6)` is just "millioner" (Python then emits
-//! "millionerte"; the port strips the plural, see bug 3 / #172).
+//! "millionerte"; the port strips the plural, see bug 3 / #172). Python
+//! drops that "en" inside compounds too (10**6 + 1 → "millioner første");
+//! the port applies the flag only to a bare scale word (see bug 3 / #184).
 //!
 //! Two consequences:
 //!
@@ -62,7 +64,11 @@
 //!    savoirfairelinux/num2words#688 does. Ordinals are fixed too (#172):
 //!    Python ordinalises the plural ("millionerte"); the port builds on the
 //!    singular stem, 10^6 → "millionte", 2·10^6 → "to millionte",
-//!    10^9 → "milliardte".
+//!    10^9 → "milliardte". Compounds are fixed as well (#184): Python
+//!    drops the count and keeps the plural (10^6 + 1 → "millioner
+//!    første"); the port ordinalises the last word of the plain cardinal,
+//!    10^6 + 1 → "en million første", 10^6 + 1000 → "en million
+//!    ettusindte", as 1001 → "ettusinde og første".
 //! 4. **Ordinal suffixes double up.** `to_ordinal` first rewrites a trailing
 //!    cardinal via `ords`, *then* appends "te"/"ende" by `value % 100`, with
 //!    no check that a rewrite happened. 30 has no `ords` entry ("tredive"
@@ -705,8 +711,19 @@ impl Lang for LangDa {
         self.verify_ordinal(value)?;
 
         // self.ordflag = True; outword = self.to_cardinal(value); ordflag = False
-        let engine = DaOrd { base: self };
-        let mut outword = default_to_cardinal(&engine, value)?;
+        //
+        // Python's ordflag drops the "en" before *every* million-scale word,
+        // so compounds lost their count: 10**6 + 1 → "millioner første"
+        // (#184). The port keeps the flag only for a bare scale word
+        // (10**6 → "millionte", #172); any other value ordinalises the last
+        // word of the plain cardinal: "en million første", the way 1001 is
+        // "ettusinde og første".
+        let bare_scale = value >= &BigInt::from(1_000_000) && self.cards.get(value).is_some();
+        let mut outword = if bare_scale {
+            default_to_cardinal(&DaOrd { base: self }, value)?
+        } else {
+            default_to_cardinal(self, value)?
+        };
 
         // First insertion-ordered suffix hit wins, then break.
         for (key, rep) in self.ords.iter() {

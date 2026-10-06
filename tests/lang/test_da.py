@@ -525,3 +525,31 @@ class Num2WordsDATest(TestCase):
                 num2words(3 * 10**9, lang=lang, to="ordinal"), "tre milliardte"
             )
             self.assertEqual(num2words(10**6, lang=lang, to="ordinal_num"), "1000000te")
+
+    def test_ordinal_compound_above_million(self):
+        """gladiaio/num2words2#184: compounds keep the cardinal's count.
+
+        Only the last word is ordinalised; the leading part is the cardinal
+        (Python emitted "millioner første" for 10**6 + 1).
+        """
+        cases = {
+            10**6 + 1: "en million første",
+            10**6 + 21: "en million enogtyvende",
+            2 * 10**6 + 3: "to millioner tredje",
+            10**9 + 1: "en milliard første",
+            10**9 + 10**6: "en milliard en millionte",
+            10**9 + 10**6 + 1: "en milliard en million første",
+            10**6 + 1000: "en million ettusindte",
+            10**6 + 1001: "en million ettusinde og første",
+            10**12 + 1: "en billion første",
+        }
+        for lang in ("da", "dk"):
+            for value, expected in cases.items():
+                self.assertEqual(
+                    num2words(value, lang=lang, to="ordinal"), expected
+                )
+            # The words before the ordinalised one match the cardinal's.
+            for value in cases:
+                card = num2words(value, lang=lang).split(" ")
+                ordw = num2words(value, lang=lang, to="ordinal").split(" ")
+                self.assertEqual(ordw[:-1], card[:-1])
