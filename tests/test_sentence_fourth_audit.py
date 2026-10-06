@@ -228,3 +228,19 @@ def test_currency_symbols(text, lang, expected):
 )
 def test_native_ordinal_notations(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #195: de strong ending when no article or preposition precedes -------
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1. Mai ist frei", "Erster Mai ist frei"),
+        ("Heute, 3. Oktober, ist frei", "Heute, dritter Oktober, ist frei"),
+        ("am 3. Oktober", "am dritten Oktober"),
+        ("Der 1. Mai", "Der erste Mai"),
+        ("das 1. Mal", "das erste Mal"),
+    ],
+)
+def test_de_ordinal_date_strong_ending(text, expected):
+    assert num2words_sentence(text, lang="de") == expected

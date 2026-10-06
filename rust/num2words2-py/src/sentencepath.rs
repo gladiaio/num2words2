@@ -1907,6 +1907,12 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
                     if !converted.ends_with('n') {
                         converted.push('n');
                     }
+                } else if (b.is_empty() || b.ends_with(['.', '!', '?', ':', ';', ',', '(']))
+                    && converted.ends_with('e')
+                {
+                    // No article or preposition before it: strong
+                    // nominative, "1. Mai ist frei" -> "Erster Mai" (#195).
+                    converted.push('r');
                 }
                 converted
             }
