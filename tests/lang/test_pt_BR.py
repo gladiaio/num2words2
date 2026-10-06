@@ -642,3 +642,21 @@ def test_pt_br_dot_string_pronounced_as_ponto():
     assert num2words("1.5", lang="pt_BR") == "um ponto cinco"
     # Comma-string and float are canonical pt-BR; pronounce as 'vírgula'.
     assert "vírgula" in num2words(1.50, lang="pt_BR")
+
+
+def test_pt_br_ordinal_large_scale_words():
+    # gladiaio/num2words2#173: KeyError('18') from 10**18. Short scale up to
+    # "decilionésimo" (10**33), then a clear OverflowError.
+    import pytest
+
+    from num2words2 import num2words
+    assert num2words(10**18, lang="pt_BR", to="ordinal") == "quintilionésimo"
+    assert num2words(2 * 10**21 + 5, lang="pt_BR", to="ordinal") == (
+        "segundo sextilionésimo quinto"
+    )
+    assert num2words(10**24, lang="pt_BR", to="ordinal") == "setilionésimo"
+    assert num2words(10**33, lang="pt_BR", to="ordinal") == "decilionésimo"
+    for v in (10**36, 10**54):
+        with pytest.raises(OverflowError, match="ordinal"):
+            num2words(v, lang="pt_BR", to="ordinal")
+    assert num2words(10**36, lang="pt_BR", to="ordinal_num") == "%dº" % 10**36
