@@ -144,7 +144,8 @@
 //!
 //! It overrides `to_currency` and `_cents_verbose`; `to_cheque`,
 //! `_money_verbose` and `_cents_terse` stay `Num2Word_Base`'s (the port fixes
-//! `to_cheque`'s unit word, quirk 6). It defines
+//! `to_cheque`'s unit word, quirk 6, and makes `_money_verbose` and the cents
+//! honour the gender flags, quirk 11). It defines
 //! neither `CURRENCY_ADJECTIVES` nor `CURRENCY_PRECISION`, so both remain
 //! Base's empty dicts and [`Lang::currency_precision`] keeps its default 100
 //! for every code.
@@ -196,6 +197,16 @@
 //!    (verified live). The generated [`Lang::default_separator`] below returns
 //!    `""` because that is the literal in the signature; the falsy-to-comma
 //!    step happens inside [`LangHr::to_currency`], as it does in Python.
+//!
+//! 11. **The numerals ignored the currency's gender (fixed, #196).** Python
+//!    spelled both amounts with `self.to_cardinal` (masculine), although the
+//!    form tuples flag kuna and lipa as feminine: `to_currency(1, "HRK")` was
+//!    "jedan kuna" and 2.02 "dva kune, dva lipe". The units numeral now goes
+//!    through [`LangHr::money_verbose`], which reads the unit's flag, and the
+//!    cents through `_cents_verbose`, which reads the subunit's: "jedna
+//!    kuna", "dvije kune, dvije lipe". EUR/USD (euro/dolar, cent) are
+//!    masculine and unchanged. As for `sr` (#188), only the units word is
+//!    re-gendered.
 //!
 //! # Scope: fractional cents
 //!
@@ -1164,9 +1175,9 @@ impl Lang for LangHr {
     // ---- currency -------------------------------------------------------
     //
     // HR overrides `to_currency` and `_cents_verbose`, and supplies its own
-    // `CURRENCY_FORMS` + `pluralize`. Everything else on the currency path —
-    // `_money_verbose`, `_cents_terse` — is `Num2Word_Base`'s, and the trait
-    // defaults already mirror those, so they are left alone. `to_cheque` is
+    // `CURRENCY_FORMS` + `pluralize`. `_money_verbose` is overridden here too,
+    // to honour the unit's gender flag (#196); `_cents_terse` is
+    // `Num2Word_Base`'s, which the trait default already mirrors. `to_cheque` is
     // Base's too, except for the unit word (quirk 6, #189).
     // `CURRENCY_ADJECTIVES` and `CURRENCY_PRECISION` are Base's empty dicts, so
     // `currency_adjective` (None) and `currency_precision` (100) are correct as
@@ -1178,6 +1189,33 @@ impl Lang for LangHr {
 
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
+    }
+
+    /// Base's `_money_verbose` (`self.to_cardinal(number)`), with the units
+    /// word agreeing with the unit's gender flag (#196): "jedna kuna",
+    /// "dvadeset jedna kuna", "dvije kune"; EUR/USD stay masculine. Only the
+    /// last word is re-gendered, so scale words keep their own gender.
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        let feminine = self
+            .currency_forms
+            .get(currency)
+            .and_then(|f| f.unit.last())
+            .is_some_and(|flag| flag.as_str() == "True");
+        if !feminine {
+            return Ok(words);
+        }
+        let (head, last) = match words.rsplit_once(' ') {
+            Some((h, l)) => (Some(h), l),
+            None => (None, words.as_str()),
+        };
+        Ok(match ONES.iter().skip(1).find(|(m, _)| *m == last) {
+            Some((_, f)) => match head {
+                Some(h) => format!("{} {}", h, f),
+                None => f.to_string(),
+            },
+            None => words.clone(),
+        })
     }
 
     /// `Num2Word_Base.to_cheque` with the "many" form as the unit word instead
@@ -1207,18 +1245,13 @@ impl Lang for LangHr {
     /// `lipa` (flag `True`) would get feminine numerals ("jedna lipa") while
     /// EUR's `cent` (flag `False`) stays masculine ("jedan cent").
     ///
-    /// **Unreachable, and therefore not corpus-verified.** `Num2Word_Base`
-    /// reaches `_cents_verbose` from its own `to_currency`, but HR overrides
-    /// `to_currency` wholesale and spells the cents with `self.to_cardinal`
-    /// instead — which passes `feminine=False` — so the flag this method exists
-    /// to read is never consulted on any live path. `to_cheque` calls
-    /// `_money_verbose`, not this. Ported anyway because it is real surface on
-    /// the class and the trait exposes the hook.
+    /// Python's own `to_currency` spelled the cents with `self.to_cardinal`
+    /// (masculine) and never reached this; the port's does, so "dvije lipe"
+    /// agrees with the feminine subunit (#196). The cents are below 100, so
+    /// `_int2word`'s flag only touches the units word.
     ///
-    /// The `CURRENCY_FORMS[currency]` miss is Python's `KeyError`, not the
-    /// `NotImplementedError` the `to_currency`/`to_cheque` lookups raise; the
-    /// `[-1]` on an empty tuple would be an `IndexError`. Both are dead for the
-    /// same reason as the method itself.
+    /// The `CURRENCY_FORMS[currency]` miss is Python's `KeyError`; `to_currency`
+    /// has already raised NotImplementedError for an unknown code by then.
     fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
         let forms = self
             .currency_forms
@@ -1318,7 +1351,9 @@ impl Lang for LangHr {
         } else {
             String::new()
         };
-        let money_str = self.to_cardinal(&left)?;
+        // Python: `self.to_cardinal(left)`, always masculine; the numeral
+        // agrees with the unit instead ("jedna kuna", #196).
+        let money_str = self.money_verbose(&left, currency)?;
 
         // Python: `if right > 0 or is_float:` — a true `int` always lands here
         // with `right = 0` and `is_float = False`, which is what keeps the cents
@@ -1373,8 +1408,10 @@ impl Lang for LangHr {
             // — `to_cardinal(0) == to_cardinal(0)` and `"0" == str(0)` — so the
             // special case is dead code in the original and is collapsed here.
             // (It exists in Python only to sidestep the isinstance check above.)
+            // Python: `self.to_cardinal(right)`, always masculine; the subunit's
+            // gender flag is honoured instead ("dvije lipe", #196).
             let s = if cents {
-                self.to_cardinal(&r)?
+                self.cents_verbose(&r, currency)?
             } else {
                 r.to_string()
             };
