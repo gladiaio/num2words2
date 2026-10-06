@@ -80,7 +80,6 @@ print(num2words(42.50, to='currency', lang='es'))  # cuarenta y dos euros con ci
 print(num2words(2024, to='year'))  # twenty twenty-four
 ```
 
-<!-- doc-examples: skip (fraction / cheque / currency=) -->
 ```python
 # Fractions (new in v1.0.13)
 print(num2words('1/3'))                   # one third

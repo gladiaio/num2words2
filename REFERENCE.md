@@ -39,7 +39,6 @@ utility function, and the aviation/ICAO language codes.
 
 ## Quick start
 
-<!-- doc-examples: skip (cheque / currency= / fraction) -->
 ```python
 from num2words2 import num2words
 
@@ -107,7 +106,6 @@ num2words(2026, to='year', lang='nl')   # 'tweeduizend zesentwintig'
 Spelled-out monetary amounts. Supports 2-decimal default plus 3-decimal
 "mil" currencies (BHD, KWD, OMR, JOD, TND, LYD, IQD).
 
-<!-- doc-examples: skip (currency=) -->
 ```python
 num2words(1234.56, to='currency', currency='USD')
 # 'one thousand, two hundred and thirty-four dollars, fifty-six cents'
@@ -131,7 +129,6 @@ Optional `adjective=True` prefixes the currency adjective where the
 language's converter defines one for that currency (English "US dollars",
 etc.):
 
-<!-- doc-examples: skip (currency=) -->
 ```python
 num2words(100, to='currency', currency='USD', adjective=True)
 # 'one hundred US dollars'
@@ -142,7 +139,6 @@ num2words(100, to='currency', currency='USD', adjective=True)
 Bank-style cheque format — integer part as words, fractional part as
 digits, currency name pluralised, whole result upper-cased.
 
-<!-- doc-examples: skip (cheque) -->
 ```python
 num2words(1234.56, to='cheque', currency='USD')
 # 'ONE THOUSAND, TWO HUNDRED AND THIRTY-FOUR AND 56/100 DOLLARS'
@@ -150,7 +146,8 @@ num2words(1234.56, to='cheque', currency='USD')
 num2words(1.00, to='cheque', currency='USD')
 # 'ONE AND 00/100 DOLLARS'
 
-num2words(1.234, to='cheque', currency='BHD')   # composes with 3-decimal
+# BHD's 3-decimal subunit carries through:
+num2words(1.234, to='cheque', currency='BHD')
 # 'ONE AND 234/1000 DINARS'
 ```
 
@@ -169,7 +166,6 @@ Languages without fraction rules raise `NotImplementedError`
 (`lang='ru' does not support to='fraction'`), and any input other than an
 `'n/d'` string raises `TypeError`.
 
-<!-- doc-examples: skip (fraction) -->
 ```python
 num2words('1/3')                # 'one third'
 num2words('1/2', lang='fr')     # 'un demi'
@@ -223,7 +219,6 @@ num2words(1234, lang='en', style='us')      # 'one thousand, two hundred thirty-
 Override how many fractional digits to read. Useful when the language's
 default doesn't match your input:
 
-<!-- doc-examples: skip (precision=) -->
 ```python
 num2words(3.14159, lang='en', precision=5)
 # 'three point one four one five nine'
@@ -243,7 +238,6 @@ precision raises `ValueError`.
 
 ### `cents=` — currency subunit control
 
-<!-- doc-examples: skip (currency=) -->
 ```python
 num2words(5, to='currency', currency='USD', cents='omit')
 # 'five dollars'                                  (drops the cents segment)
@@ -532,7 +526,6 @@ applies the following rules in order:
 
 1. **Fraction pattern (`'n/d'`)** — routed directly to `to_fraction(n, d)`.
    Whitespace and signs on either side are tolerated.
-   <!-- doc-examples: skip (fraction) -->
    ```python
    num2words('1/3')        # 'one third'
    num2words('-3/4')       # 'minus three quarters'
