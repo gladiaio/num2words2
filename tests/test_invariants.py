@@ -130,9 +130,8 @@ NATIVE_ENGLISH_LOOKALIKES = set()
 ALLOW = {
     # gladiaio/num2words2#157, #158, #155
     "exceptions": {
-        "az", "bg", "ce", "cy", "dv", "fa", "hy", "lij", "rm", "rm_puter",
-        "rm_surmiran", "rm_sursilv", "rm_sutsilv", "rm_vallader", "sn",
-        "sr_Latn", "vi",
+        "cy", "fa", "lij", "rm", "rm_puter", "rm_surmiran", "rm_sursilv",
+        "rm_sutsilv", "rm_vallader", "sr_Latn", "vi",
     },
     # gladiaio/num2words2#160
     "hygiene": {
@@ -148,8 +147,8 @@ ALLOW = {
     },
     # gladiaio/num2words2#156 (pt_BR differs on purpose, see #92)
     "parity": {
-        "dv", "pt_BR", "rm", "rm_puter", "rm_surmiran", "rm_sursilv",
-        "rm_sutsilv", "rm_vallader", "vi",
+        "pt_BR", "rm", "rm_puter", "rm_surmiran", "rm_sursilv", "rm_sutsilv",
+        "rm_vallader", "vi",
     },
     "maxval": set(),
 }

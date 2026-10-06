@@ -89,13 +89,13 @@
 //!    would ordinalize both the millions and the units group. Unreachable from
 //!    the four in-scope modes (see `to_ordinal`'s range gate below), but the
 //!    comparison is ported as written rather than "fixed" to a position check.
-//! 7. **`to_ordinal` raises `KeyError` for every negative input.** The guard is
-//!    `if number < 20: return makestring(ORDINAL_WORDS[number])`, and every
-//!    negative satisfies `< 20`, so `ORDINAL_WORDS[-1]` misses the dict. It is
-//!    a crash, not a deliberate raise, but the exception *type* is observable —
-//!    hence `N2WError::Key` and not a tidy `TypeError`. `to_cardinal` is
-//!    unaffected (it strips the sign first) and `to_ordinal_num` is unaffected
-//!    (it returns the input untouched).
+//! 7. ~~**`to_ordinal` raises `KeyError` for every negative input.**~~ Fixed
+//!    (gladiaio/num2words2#158). The guard is `if number < 20: return
+//!    makestring(ORDINAL_WORDS[number])`, and every negative satisfies `< 20`,
+//!    so Python's `ORDINAL_WORDS[-1]` missed the dict. The port raises Base's
+//!    `errmsg_negord` `TypeError` instead, and a fractional float/Decimal
+//!    `errmsg_floatord` (Python: `KeyError` too). `to_cardinal` and
+//!    `to_ordinal_num` are unaffected.
 //!
 //! # Float / Decimal routing (the entry hooks)
 //!
@@ -113,10 +113,9 @@
 //!
 //! `to_ordinal(float/Decimal)` is its own zoo ([`Lang::ordinal_float_entry`]):
 //!
-//! * `number < 20` → `ORDINAL_WORDS[number]`. A float/Decimal key hits the
-//!   dict iff it hash-equals an int key 0..=19: `5.0` → "pumed",
-//!   `-0.0` → "dimfed" (`-0.0 == 0`), while `0.5`, `-1.0`, `Decimal('-3.0')`
-//!   all raise **KeyError**.
+//! * Fractional and negative values raise `TypeError` first (bug 7, #158).
+//! * `number < 20` → `ORDINAL_WORDS[number]`: `5.0` → "pumed", `-0.0` →
+//!   "dimfed" (`-0.0 == 0`).
 //! * `number == 100` → "canfed" (`1E+2` included); `> 100` →
 //!   NotImplementedError — so `to_ordinal(101.0)` raises where
 //!   `to_cardinal(101.0)` renders.
@@ -264,7 +263,8 @@
 
 use std::sync::OnceLock;
 use crate::base::{
-    check_maxval, pow10_big, strictly_negative, Kwargs, KwVal, Lang, N2WError, Result,
+    check_maxval, pow10_big, strictly_negative, verify_ordinal, verify_ordinal_float, Kwargs,
+    KwVal, Lang, N2WError, Result,
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
@@ -662,19 +662,6 @@ fn kw_truthy(v: &KwVal) -> bool {
         KwVal::Str(s) => !s.is_empty(),
         KwVal::List(l) => !l.is_empty(),
         KwVal::None => false,
-    }
-}
-
-/// The KeyError payload for `ORDINAL_WORDS[<float/Decimal>]`: Python sets the
-/// missing key itself as the exception arg — `str()` of the float, or the
-/// `Decimal('...')` repr. The corpora record only the type; the message
-/// mirrors what `repr(KeyError.args[0])` would show.
-fn float_key_repr(value: &FloatValue) -> String {
-    match value {
-        FloatValue::Float { value, precision } => py_float_str(*value, *precision),
-        FloatValue::Decimal { value, .. } => {
-            format!("Decimal('{}')", python_decimal_str(value))
-        }
     }
 }
 
@@ -1200,10 +1187,9 @@ impl LangCy {
     fn to_ordinal_impl(&self, value: &BigInt, gender: &str) -> Result<String> {
         if value < &BigInt::from(20) {
             // Python: ORDINAL_WORDS[number]. Every negative satisfies `< 20`
-            // and misses the dict → KeyError. Module bug 7.
-            if value.is_negative() {
-                return Err(N2WError::Key(format!("{}", value)));
-            }
+            // and missed the dict (KeyError); reject it like Base's
+            // verify_ordinal instead. Module bug 7, #158.
+            verify_ordinal(value)?;
             // 0..=19 — always present.
             let idx = value.to_usize().expect("0..=19 fits usize");
             return Ok(makestring(ORDINAL_WORDS[idx], None));
@@ -1323,10 +1309,10 @@ impl Lang for LangCy {
 
     /// `to_ordinal(float/Decimal)` — Python's dict-lookup gauntlet.
     ///
-    /// * `number < 20` → `ORDINAL_WORDS[number]`. The lookup succeeds iff the
-    ///   value hash-equals an int key 0..=19 (`5.0`, `Decimal('5.00')`,
-    ///   `-0.0`); anything else — fractional, or negative — raises
-    ///   **KeyError** (module bug 7 extended to the float domain).
+    /// * A fractional value raises `errmsg_floatord`, a negative one
+    ///   `errmsg_negord` (Python: KeyError; module bug 7, #158).
+    /// * `number < 20` → `ORDINAL_WORDS[number]`, for a value that
+    ///   hash-equals an int key 0..=19 (`5.0`, `Decimal('5.00')`, `-0.0`).
     /// * `number == 100` → "canfed" (`1E+2` too); `> 100` →
     ///   **NotImplementedError**.
     /// * else (20 ≤ n < 100) → `to_cardinal(number, ordinal=True)`: a float
@@ -1334,20 +1320,12 @@ impl Lang for LangCy {
     ///   ("ugain pwynt dim"); a Decimal reaches the integer branch with
     ///   `ordinal=True` live ("ail a deugain" for `Decimal('42')`).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        // Whole and non-negative from here on (-0.0 is whole zero).
+        let whole = verify_ordinal_float(value)?;
         // `if number < 20:`
-        let lt20 = match value {
-            FloatValue::Float { value, .. } => *value < 20.0,
-            FloatValue::Decimal { value, .. } => *value < BigDecimal::from(20),
-        };
-        if lt20 {
-            if let Some(i) = value.as_whole_int() {
-                // -0.0 == 0 hits the key; true negatives miss it.
-                if !i.is_negative() {
-                    let idx = i.to_usize().expect("0..=19 fits usize");
-                    return Ok(makestring(ORDINAL_WORDS[idx], None));
-                }
-            }
-            return Err(N2WError::Key(float_key_repr(value)));
+        if whole < BigInt::from(20) {
+            let idx = whole.to_usize().expect("0..=19 fits usize");
+            return Ok(makestring(ORDINAL_WORDS[idx], None));
         }
         let (eq100, gt100) = match value {
             FloatValue::Float { value, .. } => (*value == 100.0, *value > 100.0),

@@ -163,15 +163,16 @@
 //!     float appends ".0", giving the Decimal a trailing zero digit and
 //!     exponent -1 — hence the trailing `ސުމެއް`/`ސުން` after the pointword
 //!     in every `N.0` row.
-//! 11. **`cardinal(0.0)`, `cardinal(-0.0)` and `cardinal(".5")` raise
-//!     IndexError**: `digits[:exponent]` is empty and `convert_int` dies on
-//!     `parts[0]` — before the sign is even looked at, which is why `-0.0`
-//!     raises rather than printing a negword.
+//! 11. ~~**`cardinal(0.0)`, `cardinal(-0.0)` and `cardinal(".5")` raise
+//!     IndexError**~~ — fixed (gladiaio/num2words2#158). `digits[:exponent]`
+//!     is empty for any value below 1, and Python's `convert_int` died on
+//!     `parts[0]`, so `0.5` raised while `1.5` converted. An empty integer
+//!     part is now read as zero (with the fraction's implicit leading zeros
+//!     restored), so `0.5` reads like `1.5` does.
 //! 12. **`verify_ordinal` raises TypeError for non-integral floats first**,
 //!     then for negatives (also TypeError); `-0.0` passes both checks
-//!     (`-0.0 == int(-0.0)`, `abs(-0.0) == -0.0`) and dies later with
-//!     cardinal's IndexError — except in `to_ordinal_num`, which happily
-//!     formats it as `-0.0 ވަނަ`.
+//!     (`-0.0 == int(-0.0)`, `abs(-0.0) == -0.0`); `to_ordinal_num` formats
+//!     it as `-0.0 ވަނަ`.
 //! 13. **Ordinal floats mix nominal and stem.** `to_cardinal_float(value,
 //!     nominal=False)` hardcodes the *integer* part nominal — Python calls
 //!     `convert_int(digits[:exponent])` with the default — while the
@@ -752,25 +753,25 @@ impl LangDv {
             let cut = n + exponent; // == len(digits) - |exponent|
 
             // `digits[:exponent]` — empty when |exponent| >= len(digits), which
-            // makes convert_int die with IndexError. That is evaluated first in
-            // Python's join list, so 0.5 / 0.01 / 0.001 / 1.0-with-no-int-part
-            // raise before the fractional digits are ever touched.
+            // made Python's convert_int die with IndexError, so 0.5 / 0.01 /
+            // 0.0 raised while 1.5 converted (quirk 11). Fixed
+            // (gladiaio/num2words2#158): an empty integer part is zero.
             let int_digits: String = if cut > 0 {
                 digit_str.chars().take(cut as usize).collect()
             } else {
-                String::new()
+                "0".to_string()
             };
             // Python hardcodes nominal=True for the integer part here (the
             // default arg), independent of the flag threaded to the fraction.
             let int_part = self.convert_int(&int_digits, true)?;
 
-            // `digits[exponent:len(digits)]` — the fractional digits, clamped
-            // to the whole coefficient when |exponent| exceeds its length
-            // (unreachable in practice: int_part has already raised by then).
+            // `digits[exponent:len(digits)]` — the fractional digits. When
+            // |exponent| exceeds the coefficient's length the leading zeros
+            // are implicit (0.05 is digits "5", exponent -2), so restore them.
             let frac_digits: String = if cut > 0 {
                 digit_str.chars().skip(cut as usize).collect()
             } else {
-                digit_str.chars().collect()
+                format!("{}{}", "0".repeat((-cut) as usize), digit_str)
             };
             let frac_part = self.convert_discrete(&frac_digits, nominal)?;
 
@@ -1057,7 +1058,7 @@ impl Lang for LangDv {
                 let mut v = *f;
                 let mut suffix = "";
                 // Numeric `<`: -0.0 is not negative and keeps its sign into
-                // the cardinal, which raises IndexError there regardless.
+                // the cardinal.
                 if v < 0.0 {
                     v = -v;
                     suffix = BCWORD;
@@ -1584,49 +1585,53 @@ mod float_tests {
         )
     }
 
-    fn is_index(r: &Result<String>) -> bool {
-        matches!(r, Err(N2WError::Index(_)))
+    /// Values below 1 raised IndexError in Python (quirk 11); since #158
+    /// they read with a zero integer part, like `1.5` reads with "one".
+    fn reads_zero_point(r: &Result<String>) -> bool {
+        matches!(r, Ok(w) if w.contains("ސުމެއް ޕޮއިންޓް"))
     }
 
     #[test]
     fn float_cardinal_matches_corpus_and_interpreter() {
-        assert!(is_index(&f(0.5, 1)));
+        // Quirk 11 (fixed, #158): Python raised IndexError below 1.
+        assert_eq!(f(0.5, 1).unwrap(), "ސުމެއް ޕޮއިންޓް ފަހެއް");
+        assert_eq!(f(0.05, 2).unwrap(), "ސުމެއް ޕޮއިންޓް ސުމެއް ފަހެއް");
         assert_eq!(f(1.5, 1).unwrap(), "އެކެއް ޕޮއިންޓް ފަހެއް");
         assert_eq!(f(3.14, 2).unwrap(), "ތިނެއް ޕޮއިންޓް އެކެއް ހަތަރެއް");
         assert_eq!(f(12.34, 2).unwrap(), "ބާރަ ޕޮއިންޓް ތިނެއް ހަތަރެއް");
         assert_eq!(f(-12.34, 2).unwrap(), "މައިނަސް  ބާރަ ޕޮއިންޓް ތިނެއް ހަތަރެއް");
         assert_eq!(f(1.005, 3).unwrap(), "އެކެއް ޕޮއިންޓް ސުމެއް ސުމެއް ފަހެއް");
         assert_eq!(f(2.675, 3).unwrap(), "ދޭއް ޕޮއިންޓް ހައެއް ހަތެއް ފަހެއް");
-        assert!(is_index(&f(0.01, 2)));
+        assert!(reads_zero_point(&f(0.01, 2)));
         assert_eq!(f(99.99, 2).unwrap(), "ނުވަދިހަނުވައެއް ޕޮއިންޓް ނުވައެއް ނުވައެއް");
         assert_eq!(f(1.0, 1).unwrap(), "އެކެއް ޕޮއިންޓް ސުމެއް");
-        assert!(is_index(&f(0.0, 1)));
-        assert!(is_index(&f(-0.5, 1)));
+        assert!(reads_zero_point(&f(0.0, 1)));
+        assert!(reads_zero_point(&f(-0.5, 1)));
         assert_eq!(f(100.5, 1).unwrap(), "ސަތޭކަ ޕޮއިންޓް ފަހެއް");
         assert_eq!(
             f(1234.56, 2).unwrap(),
             "އެއްހާސް ދުއިސައްތަތިރީސްހަތަރެއް ޕޮއިންޓް ފަހެއް ހައެއް"
         );
         assert_eq!(f(-1.5, 1).unwrap(), "މައިނަސް  އެކެއް ޕޮއިންޓް ފަހެއް");
-        assert!(is_index(&f(0.1, 1)));
-        assert!(is_index(&f(0.99, 2)));
+        assert!(reads_zero_point(&f(0.1, 1)));
+        assert!(reads_zero_point(&f(0.99, 2)));
         assert_eq!(f(1.01, 2).unwrap(), "އެކެއް ޕޮއިންޓް ސުމެއް އެކެއް");
         assert_eq!(f(2.25, 2).unwrap(), "ދޭއް ޕޮއިންޓް ދޭއް ފަހެއް");
     }
 
     #[test]
     fn decimal_cardinal_matches_corpus() {
-        assert!(is_index(&d("0.01")));
+        assert!(reads_zero_point(&d("0.01")));
         assert_eq!(d("1.10").unwrap(), "އެކެއް ޕޮއިންޓް އެކެއް ސުމެއް");
         assert_eq!(d("12.345").unwrap(), "ބާރަ ޕޮއިންޓް ތިނެއް ހަތަރެއް ފަހެއް");
         assert_eq!(
             d("98746251323029.99").unwrap(),
             "ނުވަދިހައައްޓްރިޔަން ހަތްސަތޭކަ ސާޅީސްހަބިލިޔަން ދުއިސައްތަފަންސާސްއެއްމިލިޔަން ތިންލައްކަ ތޭވީސްހާސް ނަވާވީސް ޕޮއިންޓް ނުވައެއް ނުވައެއް"
         );
-        assert!(is_index(&d("0.001")));
+        assert!(reads_zero_point(&d("0.001")));
         assert_eq!(d("1.005").unwrap(), "އެކެއް ޕޮއިންޓް ސުމެއް ސުމެއް ފަހެއް");
         assert_eq!(d("2.675").unwrap(), "ދޭއް ޕޮއިންޓް ހައެއް ހަތެއް ފަހެއް");
-        assert!(is_index(&d("0.50")));
+        assert!(reads_zero_point(&d("0.50")));
     }
 
     #[test]
@@ -1635,7 +1640,7 @@ mod float_tests {
         let fv = |v: f64| FloatValue::Float { value: v, precision: 1 };
 
         // cardinal: no whole-value fast path (quirk 10) + scientific collapse
-        // (quirk 9) + IndexError on empty integer part (quirk 11).
+        // (quirk 9) + zero integer part (quirk 11, fixed in #158).
         assert_eq!(
             l.cardinal_float_entry(&fv(5.0), None).unwrap(),
             "ފަހެއް ޕޮއިންޓް ސުމެއް"
@@ -1650,14 +1655,14 @@ mod float_tests {
         );
         assert_eq!(l.cardinal_float_entry(&fv(1e16), None).unwrap(), "އެކެއް");
         assert_eq!(l.cardinal_float_entry(&fv(1e20), None).unwrap(), "އެކެއް");
-        assert!(matches!(
-            l.cardinal_float_entry(&fv(0.0), None),
-            Err(N2WError::Index(_))
-        ));
-        assert!(matches!(
-            l.cardinal_float_entry(&fv(-0.0), None),
-            Err(N2WError::Index(_))
-        ));
+        assert_eq!(
+            l.cardinal_float_entry(&fv(0.0), None).unwrap(),
+            "ސުމެއް ޕޮއިންޓް ސުމެއް"
+        );
+        assert_eq!(
+            l.cardinal_float_entry(&fv(-0.0), None).unwrap(),
+            "މައިނަސް ސުމެއް ޕޮއިންޓް ސުމެއް"
+        );
 
         // ordinal: verify_ordinal order (quirk 12) + nominal/stem mix (13).
         assert_eq!(
@@ -1668,7 +1673,10 @@ mod float_tests {
         assert!(matches!(l.ordinal_float_entry(&fv(2.5)), Err(N2WError::Type(_))));
         assert!(matches!(l.ordinal_float_entry(&fv(-1.5)), Err(N2WError::Type(_))));
         assert!(matches!(l.ordinal_float_entry(&fv(-1.0)), Err(N2WError::Type(_))));
-        assert!(matches!(l.ordinal_float_entry(&fv(-0.0)), Err(N2WError::Index(_))));
+        assert_eq!(
+            l.ordinal_float_entry(&fv(-0.0)).unwrap(),
+            "މައިނަސް ސުމެއް ޕޮއިންޓް ސުން ވަނަ"
+        );
 
         // ordinal_num: -0.0 passes verify and echoes the repr.
         assert_eq!(
@@ -1690,7 +1698,10 @@ mod float_tests {
             "ބާރަ ޕޮއިންޓް ސުމެއް ސަތޭކަ ތިރީސްހަތަރެއް ޕޮއިންޓް ސުމެއް"
         );
         assert_eq!(l.year_float_entry(&fv(1e16)).unwrap(), "އެކެއް");
-        assert!(matches!(l.year_float_entry(&fv(-0.0)), Err(N2WError::Index(_))));
+        assert_eq!(
+            l.year_float_entry(&fv(-0.0)).unwrap(),
+            "މައިނަސް ސުމެއް ޕޮއިންޓް ސުމެއް"
+        );
     }
 
     #[test]

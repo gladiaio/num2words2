@@ -123,7 +123,7 @@
 //! (no `_pending_ordinal`-style handshake), so the stateless Rust path is a
 //! faithful substitute and the Python dispatcher needs no special casing.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{floatord_error, py_num_str, year_float_error, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -506,24 +506,6 @@ impl LangSn {
     }
 }
 
-/// The dict key as Python would repr it in the KeyError — `KeyError: 0.5` /
-/// `KeyError: Decimal('1.5')`. Only the exception *type* is corpus-checked,
-/// so a close rendering of the value suffices.
-fn sn_key_repr(value: &FloatValue) -> String {
-    match value {
-        FloatValue::Float { value, precision } => {
-            if value.is_finite() {
-                format!("{:.*}", *precision as usize, value)
-            } else {
-                format!("{}", value)
-            }
-        }
-        FloatValue::Decimal { value, .. } => {
-            format!("Decimal('{}')", crate::strnum::python_decimal_str(value))
-        }
-    }
-}
-
 impl Lang for LangSn {
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
@@ -790,12 +772,13 @@ impl Lang for LangSn {
     /// Integral values (float or Decimal) sail through the dict lookups by
     /// hash equality and give exactly the integer result — `5.0` ->
     /// "wechishanu", `-0.0` -> "wezero", `12345.000` -> "weuru gumi nepiri…".
-    /// A fractional value misses its first dict lookup and raises
-    /// **KeyError**, uncaught (`0.5`, `2.5`, `Decimal("1.5")` …).
+    /// A fractional value missed its first dict lookup and raised an
+    /// uncaught **KeyError** in Python (`0.5`, `Decimal("1.5")` …); the port
+    /// raises Base's `errmsg_floatord` `TypeError` (gladiaio/num2words2#158).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         match value.as_whole_int() {
             Some(i) => self.to_ordinal(&i),
-            None => Err(N2WError::Key(sn_key_repr(value))),
+            None => Err(floatord_error(py_num_str(value))),
         }
     }
 
@@ -807,12 +790,12 @@ impl Lang for LangSn {
 
     /// `to_year(float/Decimal)` — `_int_to_sn_word(number)` with the raw
     /// value and no try/except: integral values equal the integer year
-    /// (`5.0` -> "shanu"), fractional ones raise **KeyError** exactly like
-    /// the ordinal path (`0.5`, `-1.5`, `3.25` …).
+    /// (`5.0` -> "shanu"); fractional ones raised **KeyError** in Python and
+    /// now raise a `TypeError` in en's `to='year'` wording (#158).
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         match value.as_whole_int() {
             Some(i) => self.to_year(&i),
-            None => Err(N2WError::Key(sn_key_repr(value))),
+            None => Err(year_float_error(value)),
         }
     }
 

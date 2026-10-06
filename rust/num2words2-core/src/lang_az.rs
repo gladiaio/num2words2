@@ -52,8 +52,10 @@
 //! everything to the string algorithm.
 //!
 //! `to_ordinal`/`to_ordinal_num`/`to_year` all open with `assert int(value) ==
-//! value`, which is *live* for float/Decimal input: a fractional value (0.5,
-//! 3.25) fails the comparison and raises a bare `AssertionError` — see
+//! value`, which is *live* for float/Decimal input: in Python a fractional
+//! value (0.5, 3.25) failed the comparison and raised a bare, empty
+//! `AssertionError`. Fixed (gladiaio/num2words2#158): the port raises a
+//! `TypeError` with Base's `errmsg_floatord` / en's `to='year'` wording — see
 //! [`assert_whole`]. A *whole* float passes the assert and then runs the same
 //! cardinal + vowel-suffix walk over the full float string, so
 //! `to_ordinal(5.0)` == "beş nöqtə sıfırıncı" and `to_ordinal_num(5.0)` ==
@@ -136,8 +138,8 @@
 //! `to_ordinal`/`to_ordinal_num`/`to_year` also carry `assert int(value) ==
 //! value` and (the first two) `assert last_vowel is not None`. The first is
 //! vacuous for integer input but **live for float/Decimal input**, where a
-//! fractional value maps to [`N2WError::Assertion`] with Python's bare-assert
-//! empty message (see [`assert_whole`]). The second is unreachable: every word
+//! fractional value raises a `TypeError` (#158; Python's bare assert had an
+//! empty message, see [`assert_whole`]). The second is unreachable: every word
 //! in `DIGITS`/`DECIMALS`/`POWERS_OF_TEN` contains a vowel, so `_last_vowel`
 //! never returns `None` for any value that `to_cardinal` accepts; the
 //! unreachable arm keeps its historical [`N2WError::Value`] mapping rather
@@ -170,7 +172,10 @@
 //! generated `default_currency`/`default_separator` below already match it.
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, floatord_error, pow10_big, py_num_str, year_float_error, Lang, N2WError,
+    Result,
+};
 use crate::currency::CurrencyForms;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -262,16 +267,21 @@ fn last_vowel(value: &str) -> Option<char> {
 
 /// Python's `assert int(value) == value` — the opening statement of
 /// `to_ordinal`, `to_ordinal_num` and `to_year`, live on the float/Decimal
-/// entries. A fractional value fails the comparison and raises a **bare**
-/// `AssertionError` (no message — Python's plain `assert` carries none).
+/// entries. Python raised a bare, empty `AssertionError` for a fractional
+/// value; the port raises a `TypeError` that says what was wrong (#158):
+/// Base's `errmsg_floatord` for the ordinals, en's wording for `to_year`.
 ///
 /// `int()` of inf/nan would raise OverflowError/ValueError *instead of* the
 /// assert failing, but the shim keeps non-finite floats on the Python side
 /// ("inf/nan stay on the Python error path"), so a `None` from `as_whole_int`
 /// here always means "finite but fractional".
-fn assert_whole(value: &FloatValue) -> Result<()> {
+fn assert_whole(value: &FloatValue, year: bool) -> Result<()> {
     if value.as_whole_int().is_none() {
-        return Err(N2WError::Assertion(String::new()));
+        return Err(if year {
+            year_float_error(value)
+        } else {
+            floatord_error(py_num_str(value))
+        });
     }
     Ok(())
 }
@@ -790,8 +800,8 @@ impl Lang for LangAz {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`: `assert int(value) == value` — a bare
-    /// AssertionError for any fractional value (0.5, 3.25) — then the same
+    /// `to_ordinal(float/Decimal)`: `assert int(value) == value` — a
+    /// TypeError for any fractional value (0.5, 3.25), #158 — then the same
     /// cardinal + vowel-suffix walk as the integer path, over the cardinal of
     /// the *full* float string: `to_ordinal(5.0)` == "beş nöqtə sıfırıncı".
     ///
@@ -799,7 +809,7 @@ impl Lang for LangAz {
     /// the assert and then dies inside `to_cardinal` with bug 4's ValueError
     /// — in that order.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        assert_whole(value)?;
+        assert_whole(value, false)?;
         let cardinal = self.to_cardinal_float(value, None)?;
         ordinalize(cardinal)
     }
@@ -809,7 +819,7 @@ impl Lang for LangAz {
     /// `"-".join([str(value), suffix])`. `str(value)` is echoed verbatim, so
     /// the ".0" and -0.0's sign survive: "5.0-cı", "5.00-cı", "-0.0-cı".
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        assert_whole(value)?;
+        assert_whole(value, false)?;
         let cardinal = self.to_cardinal_float(value, None)?;
         let suffix = ordinal_num_suffix_for(&cardinal)?;
         Ok(format!("{}-{}", repr_str, suffix))
@@ -821,7 +831,7 @@ impl Lang for LangAz {
     /// sign bit) picks the "e.ə." era prefix. -0.0 is not < 0, so
     /// `to_year(-0.0)` is a plain "sıfır nöqtə sıfır".
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
-        assert_whole(value)?;
+        assert_whole(value, true)?;
         let (value_str, lt_zero) = match value {
             FloatValue::Float { value: f, .. } => (py_str_f64(f.abs()), *f < 0.0),
             FloatValue::Decimal { value: d, .. } => (py_str_decimal(&d.abs()), d.is_negative()),

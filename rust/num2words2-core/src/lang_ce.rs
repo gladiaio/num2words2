@@ -106,7 +106,10 @@
 //! from its exact digits ([`LangCe::cardinal_decimal_fraction`]).
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, strictly_negative, Kwargs, KwVal, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, floatord_error, py_num_str, strictly_negative, Kwargs, KwVal, Lang, N2WError,
+    Result,
+};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -1258,8 +1261,14 @@ impl Lang for LangCe {
     /// ("5.0"))` really is "пхоьалгӀа" — same call, opposite outcome, decided
     /// solely by `isinstance`. No `verify_ordinal` anywhere (bug 6), so
     /// negatives render with the minus word and `1e16` still IndexErrors out
-    /// of the repr slice.
+    /// of the repr slice. A *fractional* value read as a plain float cardinal
+    /// (float) or raised `KeyError` (Decimal, and so every string like "1.5");
+    /// both now raise Base's `errmsg_floatord` `TypeError`, as
+    /// `to_ordinal_num` does (gladiaio/num2words2#158).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        if value.as_whole_int().is_none() {
+            return Err(floatord_error(py_num_str(value)));
+        }
         match value {
             FloatValue::Float { value, .. } => self.cardinal_float(*value),
             FloatValue::Decimal { value, .. } => self.cardinal_decimal(value, DEFAULT_CLAZZ, "ORD"),

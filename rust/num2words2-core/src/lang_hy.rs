@@ -57,14 +57,13 @@
 //!    `.replace()`, which is non-overlapping and left-to-right, so 10**12
 //!    becomes "միլիոն միլիոն" rather than anything sensible. Reproduced
 //!    verbatim; Rust's `str::replace` has identical semantics.
-//! 4. **`to_ordinal` raises `KeyError` on every negative.** `value < 20` and
-//!    `value < 10` are both true for negatives, so it reaches
-//!    `ORDINAL_ONES[value]` with a key that is not in the dict:
-//!    `to_ordinal(-1)` … `to_ordinal(-10**6)` all raise `KeyError`, never the
-//!    `TypeError` that `verify_ordinal` would have produced (it is never
-//!    called). `to_ordinal_num` *does* call `verify_ordinal`, so it raises
-//!    `TypeError` for the same inputs — the two modes disagree. See
-//!    [`ordinal_ones`].
+//! 4. ~~**`to_ordinal` raises `KeyError` on every negative.**~~ Fixed
+//!    (gladiaio/num2words2#158). `value < 20` and `value < 10` are both true
+//!    for negatives, so Python reached `ORDINAL_ONES[value]` with a missing
+//!    key, while `to_ordinal_num` (which calls `verify_ordinal`) raised
+//!    `TypeError` — the two modes disagreed. `to_ordinal` now raises the same
+//!    `errmsg_negord` `TypeError`, and a fractional float/Decimal
+//!    `errmsg_floatord` instead of a `KeyError`.
 //! 5. **`to_ordinal` just glues "երորդ" onto the cardinal above 100**, with no
 //!    stem adjustment, so `to_ordinal(110)` == "հարյուր տասըերորդ" and
 //!    `to_ordinal(999)` == "ինը հարյուր իննսուն ինըերորդ".
@@ -109,7 +108,7 @@
 //!
 //! # Error variants
 //!
-//! * `to_ordinal(n)` for `n < 0` → `N2WError::Key` (bug 4).
+//! * `to_ordinal(n)` for `n < 0` → `N2WError::Type` (bug 4, fixed).
 //! * `to_ordinal_num(n)` for `n < 0` → `N2WError::Type` (`verify_ordinal`).
 //! * `to_cardinal(n)` for `abs(n) >= 10**36` → `N2WError::Overflow`, from the
 //!   inherited MAXVAL check in `default_to_cardinal`.
@@ -117,8 +116,8 @@
 //!   `N2WError::NotImplemented`. `to_currency` never raises for that case.
 
 use crate::base::{
-    clean, default_to_cardinal, set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Node,
-    Result,
+    clean, default_to_cardinal, floatord_error, py_num_str, set_low_numwords, set_mid_numwords,
+    verify_ordinal, Cards, Lang, N2WError, Node, Result,
 };
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{default_to_cardinal_float, FloatValue};
@@ -162,9 +161,8 @@ const NINETY: &str = "իննսուն";
 
 /// Python's `ORDINAL_ONES` (keys 1..=9).
 ///
-/// A miss is a `KeyError`, which is how `to_ordinal` fails on negatives
-/// (bug 4) — `value < 10` is true for every negative, so it lands here. The
-/// `_` arm covers both out-of-range keys and values too large for `i64`.
+/// A miss is a `KeyError`. `to_ordinal` rejects negatives before this
+/// (bug 4, #158), so the `_` arm is only a safety net.
 fn ordinal_ones(n: &BigInt) -> Result<&'static str> {
     match n.to_i64() {
         Some(1) => Ok("առաջին"),
@@ -252,17 +250,6 @@ fn fv_ge(v: &FloatValue, n: i64) -> bool {
     match v {
         FloatValue::Float { value, .. } => *value >= n as f64,
         FloatValue::Decimal { value, .. } => *value >= BigDecimal::from(n),
-    }
-}
-
-/// The dict key as Python's KeyError would carry it — `repr(key)`-ish. Only
-/// the exception *type* is corpus-pinned; this keeps the message plausible.
-fn fv_key_repr(v: &FloatValue) -> String {
-    match v {
-        FloatValue::Float { value, .. } => py_repr_f64(*value),
-        FloatValue::Decimal { value, .. } => {
-            format!("Decimal('{}')", crate::strnum::python_decimal_str(value))
-        }
     }
 }
 
@@ -1114,9 +1101,11 @@ impl Lang for LangHy {
 
     /// Port of `Num2Word_HY.to_ordinal`.
     ///
-    /// Never calls `verify_ordinal`; negatives fall through `value < 20` and
-    /// `value < 10` into `ORDINAL_ONES[value]` and raise `KeyError` (bug 4).
+    /// Python never called `verify_ordinal`; negatives fell through
+    /// `value < 20` and `value < 10` into `ORDINAL_ONES[value]` and raised
+    /// `KeyError`. They now raise `errmsg_negord` (bug 4, #158).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
         if value.is_zero() {
             return Ok("զրոերորդ".to_string());
         }
@@ -1417,26 +1406,19 @@ impl Lang for LangHy {
 
     /// `to_ordinal(float/Decimal)` — Python's `Num2Word_HY.to_ordinal` has no
     /// type guard, and its dict lookups hash a *whole* float/Decimal exactly
-    /// like the matching int (`ORDINAL_ONES[5.0]` hits key `5`), so:
-    ///
-    /// * `value == 0` (±0.0, `Decimal("0.00")`) -> "զրոերորդ";
-    /// * whole values behave exactly like the int port — negatives fall into
-    ///   `ORDINAL_ONES[value]` and raise KeyError (bug 4);
-    /// * non-whole values below 100 always miss a dict (`ORDINAL_ONES[2.5]`,
-    ///   or `ORDINAL_ONES[units]` for 20..100) -> KeyError;
-    /// * everything else is `to_cardinal(value) + "երորդ"` — the float
-    ///   grammar, tuple-leak bug included.
+    /// like the matching int (`ORDINAL_ONES[5.0]` hits key `5`), so whole
+    /// values (±0.0 included) behave exactly like the int port. A fractional
+    /// value raised `KeyError` below 100 and glued "երորդ" onto the float
+    /// cardinal above it; it now raises Base's `errmsg_floatord` `TypeError`,
+    /// as `to_ordinal_num` does (bug 4, #158).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         if fv_eq_zero(value) {
             return Ok("զրոերորդ".to_string());
         }
-        if let Some(i) = value.as_whole_int() {
-            return self.to_ordinal(&i);
+        match value.as_whole_int() {
+            Some(i) => self.to_ordinal(&i),
+            None => Err(floatord_error(py_num_str(value))),
         }
-        if fv_lt(value, 100) {
-            return Err(N2WError::Key(fv_key_repr(value)));
-        }
-        Ok(format!("{}երորդ", self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: base `verify_ordinal(value)` — float

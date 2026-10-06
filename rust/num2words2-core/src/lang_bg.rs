@@ -170,7 +170,7 @@
 //! The currency surface can fail only on an unknown currency code, with the
 //! two distinct `NotImplemented` messages described in oddity 7.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{year_float_error, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -589,21 +589,16 @@ impl LangBg {
         self.int_to_ordinal(&trunc)
     }
 
-    /// `Num2Word_BG._int_to_cardinal(n)` fed a float/Decimal with **no**
-    /// exception net (the `to_year` path). Whole values ride the dict
-    /// lookups; a fractional one raises KeyError from `self.ones[…]`.
+    /// `Num2Word_BG._int_to_cardinal(n)` fed a whole float/Decimal (the
+    /// `to_year` path; fractional values are rejected before this, #158).
     /// Note the negative branch drops `masculine=True`, so "-21.0" reads
     /// "минус двадесет и едно" — unlike the masculine int path.
     fn cardinal_year_numeric(&self, value: &FloatValue) -> Result<String> {
-        let (neg, frac, whole) = decompose_numeric(value);
+        let (neg, _, whole) = decompose_numeric(value);
 
         // `if n == 0: return self.ones[0]` — numeric, so -0.0 lands here.
-        if whole.is_zero() && !frac {
+        if whole.is_zero() {
             return Ok(ONES[0].to_string());
-        }
-        if frac {
-            // `_int_to_word` reaches `self.ones[<fraction>]` → KeyError.
-            return Err(N2WError::Key(frac_key_msg(value)));
         }
         if neg {
             // No masculine flag on the negative recursion (oddity 1).
@@ -797,16 +792,6 @@ fn decompose_numeric(value: &FloatValue) -> (bool, bool, BigInt) {
     }
 }
 
-/// The KeyError payload — Python's missing dict key is the fractional
-/// residue. The corpus compares exception types only, so this is
-/// best-effort text.
-fn frac_key_msg(value: &FloatValue) -> String {
-    match value {
-        FloatValue::Float { value, .. } => format!("{}", value),
-        FloatValue::Decimal { value, .. } => format!("{}", value),
-    }
-}
-
 impl Lang for LangBg {
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
@@ -955,12 +940,17 @@ impl Lang for LangBg {
     }
 
     /// `to_year(float/Decimal)` — `Num2Word_BG.to_year` has **no** exception
-    /// net, so the KeyError `_int_to_word` raises on a fractional residue
-    /// propagates (`0.5` → KeyError), while whole values ride the dict
-    /// lookups to the same words as their int counterparts — including the
-    /// neuter "минус едно" negatives ("-21.0" → "минус двадесет и едно").
+    /// net, so in Python the KeyError `_int_to_word` raised on a fractional
+    /// residue propagated (`0.5` → KeyError). The port raises a `TypeError`
+    /// instead, in en's `to='year'` wording (gladiaio/num2words2#158). Whole
+    /// values ride the dict lookups to the same words as their int
+    /// counterparts — including the neuter "минус едно" negatives ("-21.0" →
+    /// "минус двадесет и едно").
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
-        let (neg, frac, whole) = decompose_numeric(value);
+        if value.as_whole_int().is_none() {
+            return Err(year_float_error(value));
+        }
+        let (neg, _, whole) = decompose_numeric(value);
 
         // `if n < 1000` — every negative and every value under 1000.
         if neg || whole < BigInt::from(1000) {
@@ -970,11 +960,7 @@ impl Lang for LangBg {
             // thousands = n // 1000 == 1 for this whole range → "хиляда".
             let mut result = "хиляда".to_string();
             let remainder = &whole - BigInt::from(1000);
-            if remainder.is_positive() || frac {
-                if frac {
-                    // `_int_to_cardinal(remainder)` dies in `self.ones[…]`.
-                    return Err(N2WError::Key(frac_key_msg(value)));
-                }
+            if remainder.is_positive() {
                 result.push(' ');
                 result.push_str(&self.int_to_cardinal(&remainder));
             }
