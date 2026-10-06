@@ -540,6 +540,19 @@ mod decimal_str_tests {
     }
 }
 
+/// `format!("{:0>width$}", s)` without its limit: `format!` panics with
+/// "Formatting argument out of range" once `width` exceeds 65535, and the
+/// width is often a user-controlled Decimal scale (issue #204).
+pub fn zero_pad_left(s: &str, width: usize) -> String {
+    let len = s.chars().count();
+    if len >= width {
+        return s.to_string();
+    }
+    let mut out = "0".repeat(width - len);
+    out.push_str(s);
+    out
+}
+
 #[cfg(test)]
 mod grouped_tests {
     use super::*;

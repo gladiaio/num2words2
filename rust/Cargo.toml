@@ -14,5 +14,10 @@ authors = ["jqueguiner"]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# Unwind, not abort (issue #204): num2words2-py wraps every entry point in
+# `catch_unwind` so a Rust panic surfaces as a Python RuntimeError. Under
+# "abort" that backstop is dead code and any panic kills the host Python
+# process. Cost: the slim macOS arm64 .so grows 6.2 -> 7.3 MB (wheel
+# 2.8 -> 3.3 MB) for the unwind tables and landing pads.
+panic = "unwind"
 strip = true

@@ -705,6 +705,7 @@ impl Lang for LangKok {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_of_pystr(&value_python_str(value))
     }
 
@@ -718,6 +719,7 @@ impl Lang for LangKok {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.to_cardinal_float(value, precision_override)
     }
 
@@ -725,6 +727,7 @@ impl Lang for LangKok {
     /// integer mode — the suffix binds to the decimal spelling ("पांच पुंतो
     /// शून्यवो") and any `int()` ValueError propagates before it is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let cardinal = self.cardinal_float_entry(value, None)?;
         Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
     }
@@ -739,6 +742,7 @@ impl Lang for LangKok {
     /// `to_year(float/Decimal)`: `to_cardinal(val)`, `longval` ignored — the
     /// same explicit delegation the integer `to_year` makes.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_entry(value, None)
     }
 

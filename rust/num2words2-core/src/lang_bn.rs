@@ -515,7 +515,7 @@ fn frac_after_dot(number: &BigDecimal) -> Option<String> {
     let adjusted = exp + digits.chars().count() as i64 - 1;
     if adjusted >= -6 {
         // Plain: "0." + the coefficient left-padded with zeros to `scale`.
-        Some(format!("{:0>width$}", digits, width = scale as usize))
+        Some(crate::strnum::zero_pad_left(&digits, scale as usize))
     } else if digits.chars().count() == 1 {
         // Scientific with a single digit: "1E-8" — no ".", so no fraction.
         None

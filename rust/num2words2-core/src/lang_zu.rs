@@ -615,7 +615,7 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -635,6 +635,7 @@ impl Lang for LangZu {
         value: &crate::floatpath::FloatValue,
         precision_override: Option<u32>,
     ) -> crate::base::Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // Python's to_cardinal routes every float/Decimal through this
         // language's own decimal grammar — 5.0 keeps its ".0" tail
         // ("comma nulla"), unlike Base's whole-value integer route.
@@ -647,6 +648,7 @@ impl Lang for LangZu {
     /// else is `"we-" + self.to_cardinal(number)`, i.e. the float string
     /// grammar with the prefix: "we-kuhlanu ichashazi iqanda".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let is_one = match value {
             FloatValue::Float { value, .. } => *value == 1.0,
             FloatValue::Decimal { value, .. } => *value == BigDecimal::from(1),
@@ -774,6 +776,7 @@ impl Lang for LangZu {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let n = match value {
             FloatValue::Float { value, precision } => py_float_repr(*value, *precision),
             FloatValue::Decimal { value, .. } => py_decimal_str(value),

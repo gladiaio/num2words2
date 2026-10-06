@@ -237,46 +237,65 @@ fn finish(r: Result<String, N2WError>) -> PyResult<Option<String>> {
     opt(r).map_err(map_err)
 }
 
+/// Backstop for issue #204: every `#[pyfunction]` body runs inside this.
+/// A Rust panic would otherwise reach Python as pyo3's `PanicException`,
+/// a `BaseException` that `except Exception` does not catch. Here it becomes
+/// a plain `RuntimeError`. Only works because the release profile unwinds
+/// (`panic = "unwind"` in rust/Cargo.toml); under `abort` the process dies.
+fn guard<T>(f: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| {
+        let msg = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".to_string());
+        Err(PyRuntimeError::new_err(format!(
+            "internal error: {msg}; please report this at \
+             https://github.com/gladiaio/num2words2/issues"
+        )))
+    })
+}
+
 /// The currency `to='currency'` uses when `currency=` is omitted.
 #[pyfunction]
 fn default_currency(lang: &str) -> PyResult<String> {
-    Ok(need_lang(lang)?.default_currency().to_string())
+    guard(|| Ok(need_lang(lang)?.default_currency().to_string()))
 }
 
 #[pyfunction]
-fn supported_langs() -> Vec<&'static str> {
-    num2words2_core::supported_lang_keys()
+fn supported_langs() -> PyResult<Vec<&'static str>> {
+    guard(|| Ok(num2words2_core::supported_lang_keys()))
 }
 
 /// `{alias: canonical}` for the keys that share a converter (#245).
 #[pyfunction]
-fn lang_aliases() -> std::collections::HashMap<&'static str, &'static str> {
-    num2words2_core::LANG_ALIASES.iter().copied().collect()
+fn lang_aliases() -> PyResult<std::collections::HashMap<&'static str, &'static str>> {
+    guard(|| Ok(num2words2_core::LANG_ALIASES.iter().copied().collect()))
 }
 
 #[pyfunction]
 fn to_cardinal(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_cardinal(&value))
+    guard(|| finish(need_lang(lang)?.to_cardinal(&value)))
 }
 
 #[pyfunction]
 fn to_ordinal(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal(&value))
+    guard(|| finish(need_lang(lang)?.to_ordinal(&value)))
 }
 
 #[pyfunction]
 fn to_ordinal_num(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal_num(&value))
+    guard(|| finish(need_lang(lang)?.to_ordinal_num(&value)))
 }
 
 #[pyfunction]
 fn to_year(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_year(&value))
+    guard(|| finish(need_lang(lang)?.to_year(&value)))
 }
 
 #[pyfunction]
 fn to_fraction(lang: &str, numerator: BigInt, denominator: BigInt) -> PyResult<Option<String>> {
-    finish(fraction_core(need_lang(lang)?, lang, &numerator, &denominator))
+    guard(|| finish(fraction_core(need_lang(lang)?, lang, &numerator, &denominator)))
 }
 
 /// "n/d": a zero denominator is ZeroDivisionError in every language, ahead
@@ -311,6 +330,21 @@ fn to_currency(
     separator: Option<&str>,
     adjective: Option<bool>,
 ) -> PyResult<Option<String>> {
+    guard(|| to_currency_impl(lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn to_currency_impl(
+    lang: &str,
+    value: &str,
+    is_int: bool,
+    has_decimal: bool,
+    is_float: bool,
+    currency: Option<&str>,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: Option<bool>,
+) -> PyResult<Option<String>> {
     let l = need_lang(lang)?;
     let v = CurrencyValue::parse(value, is_int, has_decimal, is_float).map_err(map_err)?;
     // None => caller omitted the kwarg; the language's own default applies
@@ -335,6 +369,16 @@ fn to_cardinal_float(
     decimal_str: &str,
     precision_override: Option<u32>,
 ) -> PyResult<Option<String>> {
+    guard(|| to_cardinal_float_impl(lang, value, precision, decimal_str, precision_override))
+}
+
+fn to_cardinal_float_impl(
+    lang: &str,
+    value: f64,
+    precision: u32,
+    decimal_str: &str,
+    precision_override: Option<u32>,
+) -> PyResult<Option<String>> {
     let l = need_lang(lang)?;
     let v = float_value(value, precision, decimal_str).map_err(map_err)?;
     finish(l.cardinal_float_entry(&v, precision_override))
@@ -346,6 +390,16 @@ fn to_cardinal_float(
 #[pyfunction]
 #[pyo3(signature = (lang, value, precision, decimal_str, precision_override))]
 fn to_cardinal_float_raw(
+    lang: &str,
+    value: f64,
+    precision: u32,
+    decimal_str: &str,
+    precision_override: Option<u32>,
+) -> PyResult<Option<String>> {
+    guard(|| to_cardinal_float_raw_impl(lang, value, precision, decimal_str, precision_override))
+}
+
+fn to_cardinal_float_raw_impl(
     lang: &str,
     value: f64,
     precision: u32,
@@ -375,6 +429,20 @@ fn float_value(value: f64, precision: u32, decimal_str: &str) -> Result<FloatVal
 #[pyo3(signature = (lang, to, value, precision, decimal_str, repr_str, precision_override, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn to_float(
+    lang: &str,
+    to: &str,
+    value: f64,
+    precision: u32,
+    decimal_str: &str,
+    repr_str: &str,
+    precision_override: Option<u32>,
+    kwargs: PyKwargs,
+) -> PyResult<Option<String>> {
+    guard(|| to_float_impl(lang, to, value, precision, decimal_str, repr_str, precision_override, kwargs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn to_float_impl(
     lang: &str,
     to: &str,
     value: f64,
@@ -458,28 +526,44 @@ fn fraction_error(to: &str, v: &FloatValue) -> N2WError {
 
 #[pyfunction]
 fn to_cardinal_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_cardinal_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_cardinal_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 fn to_ordinal_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_ordinal_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 fn to_ordinal_num_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal_num_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_ordinal_num_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 fn to_year_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_year_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_year_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 #[pyo3(signature = (lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn to_currency_kw(
+    lang: &str,
+    value: &str,
+    is_int: bool,
+    has_decimal: bool,
+    is_float: bool,
+    currency: Option<&str>,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: Option<bool>,
+    kwargs: PyKwargs,
+) -> PyResult<Option<String>> {
+    guard(|| to_currency_kw_impl(lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective, kwargs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn to_currency_kw_impl(
     lang: &str,
     value: &str,
     is_int: bool,
@@ -514,6 +598,20 @@ fn to_currency_kw(
 #[pyo3(signature = (lang, s, to, currency, cents, separator, adjective, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn from_string(
+    lang: &str,
+    s: &str,
+    to: &str,
+    currency: Option<&str>,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: Option<bool>,
+    kwargs: PyKwargs,
+) -> PyResult<(u8, Option<String>)> {
+    guard(|| from_string_impl(lang, s, to, currency, cents, separator, adjective, kwargs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn from_string_impl(
     lang: &str,
     s: &str,
     to: &str,
@@ -826,7 +924,7 @@ fn dec_mode(
 #[pyfunction]
 #[pyo3(signature = (lang, value, currency=None))]
 fn to_cheque(lang: &str, value: &str, currency: Option<&str>) -> PyResult<Option<String>> {
-    cheque_core(need_lang(lang)?, value, currency).map_err(map_err)
+    guard(|| cheque_core(need_lang(lang)?, value, currency).map_err(map_err))
 }
 
 /// The cheque router, shared by the `to_cheque` entry point and `num2words`.
@@ -1113,6 +1211,17 @@ fn decimal_scale(s: &str) -> u32 {
 #[pyfunction]
 #[pyo3(signature = (number, ordinal=false, lang="en", to="cardinal", **kwargs))]
 fn num2words(
+    py: Python<'_>,
+    number: &Bound<'_, PyAny>,
+    ordinal: bool,
+    lang: &str,
+    to: &str,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<String>> {
+    guard(|| num2words_impl(py, number, ordinal, lang, to, kwargs))
+}
+
+fn num2words_impl(
     py: Python<'_>,
     number: &Bound<'_, PyAny>,
     ordinal: bool,
@@ -1473,6 +1582,15 @@ fn num2words_sentence(
     to: &str,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<String> {
+    guard(|| num2words_sentence_impl(sentence, lang, to, kwargs))
+}
+
+fn num2words_sentence_impl(
+    sentence: &str,
+    lang: Option<String>,
+    to: &str,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<String> {
     let (errors, _) = take_errors(kwargs, "ignore")?;
     match lang.as_deref() {
         None => sentencepath::convert_auto(sentence, to, errors).map_err(map_err),
@@ -1485,6 +1603,10 @@ fn num2words_sentence(
 #[pyfunction]
 #[pyo3(signature = (value, locale, separator))]
 fn group_digits(value: BigInt, locale: &str, separator: &str) -> PyResult<String> {
+    guard(|| group_digits_impl(value, locale, separator))
+}
+
+fn group_digits_impl(value: BigInt, locale: &str, separator: &str) -> PyResult<String> {
     fn group(s: &str, size: usize, sep: &str) -> String {
         let bytes = s.as_bytes();
         let mut parts: Vec<&str> = Vec::new();
@@ -1518,6 +1640,10 @@ fn group_digits(value: BigInt, locale: &str, separator: &str) -> PyResult<String
 /// `num2words2.maxval(lang)` — the per-language MAXVAL ceiling (issue #582).
 #[pyfunction]
 fn maxval(lang: &str) -> PyResult<Option<BigInt>> {
+    guard(|| maxval_impl(lang))
+}
+
+fn maxval_impl(lang: &str) -> PyResult<Option<BigInt>> {
     // Same code resolution as `num2words` (#238).
     let l = presentation::resolve_lang(lang)
         .and_then(|k| get_lang(&k))
@@ -1532,7 +1658,7 @@ fn maxval(lang: &str) -> PyResult<Option<BigInt>> {
 #[pyfunction]
 #[pyo3(signature = (text, lang, to))]
 fn sentence(text: &str, lang: &str, to: &str) -> PyResult<String> {
-    sentencepath::convert(text, lang, to).map_err(map_err)
+    guard(|| sentencepath::convert(text, lang, to).map_err(map_err))
 }
 
 /// `num2words_sentence(text)` with `lang=None` — lingua-rs detection, then
@@ -1541,13 +1667,13 @@ fn sentence(text: &str, lang: &str, to: &str) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (text, to))]
 fn sentence_auto(text: &str, to: &str) -> PyResult<String> {
-    sentencepath::convert_auto(text, to, sentencepath::Errors::Ignore).map_err(map_err)
+    guard(|| sentencepath::convert_auto(text, to, sentencepath::Errors::Ignore).map_err(map_err))
 }
 
 /// Detection alone, for the agreement harness. None on slim builds.
 #[pyfunction]
-fn detect_language(text: &str) -> Option<String> {
-    sentencepath::detect_language(text)
+fn detect_language(text: &str) -> PyResult<Option<String>> {
+    guard(|| Ok(sentencepath::detect_language(text)))
 }
 
 #[pymodule]

@@ -224,7 +224,7 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -611,6 +611,7 @@ impl Lang for LangOm {
         value: &crate::floatpath::FloatValue,
         precision_override: Option<u32>,
     ) -> crate::base::Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // Python's to_cardinal routes every float/Decimal through this
         // language's own decimal grammar — 5.0 keeps its ".0" tail
         // ("comma nulla"), unlike Base's whole-value integer route.
@@ -624,6 +625,7 @@ impl Lang for LangOm {
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let is_one = match value {
             FloatValue::Float { value: f, .. } => *f == 1.0,
             FloatValue::Decimal { value: d, .. } => d == &bigdecimal::BigDecimal::from(1),
@@ -759,6 +761,7 @@ impl Lang for LangOm {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let n = match value {
             FloatValue::Float { value, .. } => py_float_str(*value),
             FloatValue::Decimal { value, .. } => py_decimal_str(value),

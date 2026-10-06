@@ -1063,6 +1063,7 @@ impl Lang for LangZhHk {
     /// (`int(-0.0) == -0.0`, `abs(-0.0) == -0.0`) → "第零". A whole value
     /// then takes `to_cardinal`'s integer path, prefixed with 第.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as ordinal.",
@@ -1090,6 +1091,7 @@ impl Lang for LangZhHk {
     /// TypeError(`errmsg_floatyear`); whole values render digit-by-digit
     /// through the integer `to_year` (`int(-0.0)` is 0 → no 公元前 prefix).
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as year.",

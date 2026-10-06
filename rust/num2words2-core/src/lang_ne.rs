@@ -455,7 +455,7 @@ fn split_currency(val: &BigDecimal) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     // `int(parts[0]) if parts[0] else 0` — the guard is unreachable (str() of

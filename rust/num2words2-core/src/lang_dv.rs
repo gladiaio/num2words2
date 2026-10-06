@@ -999,6 +999,7 @@ impl Lang for LangDv {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_full(value, true)
     }
 
@@ -1011,6 +1012,7 @@ impl Lang for LangDv {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_full(value, true)
     }
 
@@ -1018,6 +1020,7 @@ impl Lang for LangDv {
     /// non-integral, then on negative — quirk 12), then the float grammar
     /// with `nominal=False` (quirk 13) plus the ordword.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.verify_ordinal_float(value)?;
         Ok(format!(
             "{} {}",
@@ -1030,6 +1033,7 @@ impl Lang for LangDv {
     /// `"{} {}".format(value, ordword)` — `repr_str` is Python's
     /// `str(value)`, so `-0.0` (which passes verify) prints as `-0.0 ވަނަ`.
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.verify_ordinal_float(value)?;
         Ok(format!("{} {}", repr_str, ORDWORD))
     }
@@ -1038,6 +1042,7 @@ impl Lang for LangDv {
     /// so negative years carry no negword; [1100, 2000) splits into
     /// still-float `high`/`low` halves rendered independently.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value {
             FloatValue::Float { value: f, .. } => {
                 let mut v = *f;

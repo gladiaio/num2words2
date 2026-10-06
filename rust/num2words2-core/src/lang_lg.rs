@@ -577,6 +577,7 @@ impl Lang for LangLg {
         value: &crate::floatpath::FloatValue,
         precision_override: Option<u32>,
     ) -> crate::base::Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // Python's to_cardinal routes every float/Decimal through this
         // language's own decimal grammar — 5.0 keeps its ".0" tail
         // ("comma nulla"), unlike Base's whole-value integer route.
@@ -590,6 +591,7 @@ impl Lang for LangLg {
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let cardinal = self.cardinal_float_entry(value, None)?;
         Ok(format!("ow' {}", cardinal))
     }
@@ -710,6 +712,7 @@ impl Lang for LangLg {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let n = match value {
             FloatValue::Float { value, .. } => py_float_str(*value),
             FloatValue::Decimal { value, .. } => py_decimal_str(value),

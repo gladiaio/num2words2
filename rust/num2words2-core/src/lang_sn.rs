@@ -663,7 +663,7 @@ impl Lang for LangSn {
                 let mut result = checked_int_to_sn_word(&pre.abs())?;
                 result.push(' ');
                 result.push_str(self.pointword());
-                for ch in format!("{:0>w$}", post, w = *precision as usize).chars() {
+                for ch in crate::strnum::zero_pad_left(&post.to_string(), *precision as usize).chars() {
                     let d = ch.to_digit(10).expect("float2tuple yields decimal digits");
                     result.push(' ');
                     result.push_str(ONES[d as usize]);

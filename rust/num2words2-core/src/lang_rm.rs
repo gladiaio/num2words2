@@ -292,7 +292,7 @@ pub(crate) fn decimal_words(
     cardinal: &dyn Fn(&BigInt) -> Result<String>,
 ) -> Result<String> {
     let (pre, post) = float2tuple(value);
-    let digits = format!("{:0>w$}", post, w = value.precision() as usize);
+    let digits = crate::strnum::zero_pad_left(&post.to_string(), value.precision() as usize);
     let mut parts = Vec::with_capacity(digits.len());
     for c in digits.chars() {
         let d = c.to_digit(10).expect("float2tuple yields decimal digits");

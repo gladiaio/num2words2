@@ -13,6 +13,10 @@
 //! the port's recursion overflowed the native stack, so it adds a ceiling
 //! (gladiaio/num2words2#203): `maxval` is 10^15, where "tiriliyan" would
 //! stack, and every mode raises `OverflowError` from there.
+//! The stack-depth guard from #204 (`MAX_BITS`, ≈ 10**12000, where Python's
+//! own recursion limit stops `_int_to_hausa`) stays behind the ceiling as a
+//! backstop, so the native recursion can never overflow the stack even if
+//! `maxval` is raised.
 //!
 //! Inherited from `Num2Word_Base`, then immediately overridden by HA, so the
 //! base versions are never reached: `to_ordinal`, `to_ordinal_num`, `to_year`.
@@ -195,6 +199,10 @@ const SCALE: [(u32, &str); 5] = [
     (2, "ɗari"),
 ];
 
+/// `checked_int_to_hausa` refuses values of this many bits or more
+/// (≈ 10**12000), a backstop behind `maxval`. See the module docs (#204).
+const MAX_BITS: u64 = 39_864;
+
 fn pow10(exp: u32) -> BigInt {
     BigInt::from(10u8).pow(exp)
 }
@@ -254,6 +262,12 @@ impl LangHa {
     /// recursive step (gladiaio/num2words2#203).
     fn checked_int_to_hausa(&self, number: &BigInt) -> Result<String> {
         check_maxval(number, maxval_ceiling())?;
+        if number.bits() >= MAX_BITS {
+            // Stack-depth backstop (#204), see the module docs.
+            return Err(N2WError::Overflow(
+                "number too large to convert to Hausa words (more than 10**12000)".into(),
+            ));
+        }
         Ok(self.int_to_hausa(number))
     }
 

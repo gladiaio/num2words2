@@ -1063,7 +1063,7 @@ impl LangCy {
     fn decimal_to_words(&self, value: &FloatValue) -> Result<String> {
         let (pre, post) = float2tuple(value);
         let prefix = self.to_cardinal_full(&pre.abs(), false, "masc", false)?;
-        let digits = format!("{:0>width$}", post, width = value.precision() as usize);
+        let digits = crate::strnum::zero_pad_left(&post.to_string(), value.precision() as usize);
         let mut parts: Vec<String> = Vec::new();
         for c in digits.chars() {
             let d = c.to_digit(10).expect("float2tuple yields decimal digits");
@@ -1271,6 +1271,7 @@ impl Lang for LangCy {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value {
             FloatValue::Float { value, precision } => self.float_to_words(*value, *precision),
             // Python floored a fractional Decimal away (#156).
@@ -1292,6 +1293,7 @@ impl Lang for LangCy {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.to_cardinal_float(value, precision_override)
     }
 

@@ -407,7 +407,7 @@ pub fn default_cents_terse(n: &BigInt, divisor: i64) -> String {
         return n.to_string();
     }
     let width = divisor.to_string().len() - 1;
-    format!("{:0>width$}", n.to_string(), width = width)
+    crate::strnum::zero_pad_left(&n.to_string(), width)
 }
 
 /// Python's `Num2Word_Base.to_cheque`.
@@ -444,12 +444,7 @@ pub fn cheque_with_unit<L: Lang + ?Sized>(
         let sub = (&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(divisor);
         let sub = sub.with_scale(0).as_bigint_and_exponent().0;
         let digits = divisor.to_string().len() - 1;
-        format!(
-            "{:0>width$}/{}",
-            sub.to_string(),
-            divisor,
-            width = digits
-        )
+        format!("{}/{}", crate::strnum::zero_pad_left(&sub.to_string(), digits), divisor)
     } else {
         String::new()
     };

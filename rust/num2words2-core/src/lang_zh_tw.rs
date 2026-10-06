@@ -1160,6 +1160,7 @@ impl Lang for LangZhTw {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // pre, post = self.float2tuple(float(value)) — float(value) collapses
         // both arms to an f64 before float2tuple ever branches.
         let f: f64 = match value {
@@ -1235,6 +1236,7 @@ impl Lang for LangZhTw {
     /// `to_ordinal(5.0)` == "第五", `to_ordinal(1e16)` == "第一京" — because
     /// `to_cardinal`'s `assert int(value) == value` routes it to the int path.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let Some(i) = value.as_whole_int() else {
             return Err(N2WError::Type(format!(
                 "Cannot treat float {} as ordinal.",
@@ -1269,6 +1271,7 @@ impl Lang for LangZhTw {
     /// `1e20` → 一垓's twenty digits as 一 + nineteen 零 + 年), and `-0.0`
     /// truncates to 0, losing its sign: "零年".
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let Some(i) = value.as_whole_int() else {
             return Err(N2WError::Type(format!(
                 "Cannot treat float {} as year.",
@@ -1491,7 +1494,7 @@ impl Lang for LangZhTw {
             let sub = (&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(divisor);
             let sub = sub.with_scale(0).as_bigint_and_exponent().0;
             let digits = divisor.to_string().len() - 1;
-            format!("{:0>width$}/{}", sub.to_string(), divisor, width = digits)
+            format!("{}/{}", crate::strnum::zero_pad_left(&sub.to_string(), digits), divisor)
         } else {
             String::new()
         };

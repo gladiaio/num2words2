@@ -951,7 +951,7 @@ impl LangJa {
         let mut out = self.to_cardinal(&BigInt::zero())?;
         // title() is the identity for JA; pointword() is ("点", "てん")[0].
         out.push_str(self.pointword());
-        for ch in format!("{:0>width$}", post, width = precision).chars() {
+        for ch in crate::strnum::zero_pad_left(&post.to_string(), precision).chars() {
             let digit = BigInt::from(ch.to_digit(10).unwrap());
             out.push_str(&self.to_cardinal(&digit)?);
         }
@@ -1177,7 +1177,7 @@ impl LangJa {
         };
         let mut out = self.cardinal_kw_int(&BigInt::zero(), reading, &eff_prefer)?;
         out.push_str(if reading { "てん" } else { "点" });
-        for ch in format!("{:0>width$}", post, width = precision).chars() {
+        for ch in crate::strnum::zero_pad_left(&post.to_string(), precision).chars() {
             let digit = BigInt::from(ch.to_digit(10).unwrap());
             out.push_str(&self.cardinal_kw_int(&digit, reading, &eff_prefer)?);
         }
@@ -1424,6 +1424,7 @@ impl Lang for LangJa {
     /// goes through JA's float grammar, matching `to_cardinal`'s own
     /// routing.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let min_year = ERA_START[0].0; // 645
         let too_early = || {
             N2WError::Value(format!("Can't convert years less than {} to era", min_year))

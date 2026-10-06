@@ -853,6 +853,7 @@ impl Lang for LangKy {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // `if n.startswith("-"):` — the sign is read off the string, then the
         // absolute value is rendered and prefixed with negword.
         let is_negative = value.is_negative();

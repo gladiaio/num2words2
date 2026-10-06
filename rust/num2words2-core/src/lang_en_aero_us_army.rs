@@ -492,7 +492,7 @@ impl Lang for LangEnAeroUsArmy {
                     let (int_part, frac_part) = if s.len() <= p {
                         // Fewer digits than the fractional width: integer
                         // part is "0", fraction left-zero-padded to `scale`.
-                        ("0".to_string(), format!("{:0>width$}", s, width = p))
+                        ("0".to_string(), crate::strnum::zero_pad_left(&s, p))
                     } else {
                         let split = s.len() - p;
                         (s[..split].to_string(), s[split..].to_string())

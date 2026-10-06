@@ -970,7 +970,7 @@ impl LangCe {
         let (pre, post) = float2tuple(value);
         let entires = self.cardinal(&pre.abs(), DEFAULT_CLAZZ, "abs")?;
         let mut postfix: Vec<String> = Vec::new();
-        for c in format!("{:0>w$}", post, w = value.precision() as usize).chars() {
+        for c in crate::strnum::zero_pad_left(&post.to_string(), value.precision() as usize).chars() {
             let digit = c.to_digit(10).expect("float2tuple yields decimal digits");
             postfix.push(self.cardinal(&BigInt::from(digit), DEFAULT_CLAZZ, "abs")?);
         }

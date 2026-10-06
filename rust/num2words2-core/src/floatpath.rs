@@ -109,6 +109,23 @@ impl FloatValue {
             }
         }
     }
+
+    /// Issue #204: reject NaN/±inf with the error CPython's `int(float)`
+    /// raises (ValueError / OverflowError), for converters that would
+    /// otherwise panic on them (`unwrap()` on a failed digit parse, ...).
+    /// Python never gets here — the binder routes non-finite floats away —
+    /// but Rust callers of the public `*_float_entry` hooks do.
+    pub fn reject_non_finite(&self) -> Result<()> {
+        match self {
+            FloatValue::Float { value, .. } if value.is_nan() => Err(
+                N2WError::Value("cannot convert float NaN to integer".into()),
+            ),
+            FloatValue::Float { value, .. } if value.is_infinite() => Err(
+                N2WError::Overflow("cannot convert float infinity to integer".into()),
+            ),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Python's `Num2Word_Base.float2tuple`. Returns `(pre, post)`.

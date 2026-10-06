@@ -1137,6 +1137,7 @@ impl Lang for LangTr {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_impl(value, precision_override, self.pointword())
     }
 
@@ -1152,6 +1153,7 @@ impl Lang for LangTr {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         if self.float_exceeds_maxval(value) {
             return Err(N2WError::Overflow(errmsg_toobig_repr(
                 &float_value_repr(value),
@@ -1192,6 +1194,7 @@ impl Lang for LangTr {
     /// as Python orders it — its float-cast KeyError band fires before the
     /// (immune) ordinal runs.
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.verify_ordinal_float(value)?;
         let (cardinal, ordinal) = match value.as_whole_int() {
             Some(i) => {
