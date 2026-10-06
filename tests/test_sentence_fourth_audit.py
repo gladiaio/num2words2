@@ -39,7 +39,7 @@ def test_decimal_matches_num2words_string(lang):
     [
         ("-5 x", "ru", "Минус пять x"),
         ("-5 x", "cs", "Mínus pět x"),
-        ("-5 x", "id", "Minus lima x"),
+        ("-5 x", "id", "Min lima x"),  # id says "min" (#226)
         ("25°C", "ru", "Двадцать пять градусов Цельсия"),
         ("-5°C", "ru", "Минус пять градусов Цельсия"),
         ("-5 x", "en", "Minus five x"),
@@ -48,3 +48,16 @@ def test_decimal_matches_num2words_string(lang):
 )
 def test_negative_integers_not_read_as_decimals(text, lang, expected):
     assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #226: the negative word comes from the converter ---------------------
+
+@pytest.mark.parametrize(
+    "lang", ["pt_BR", "ca", "zh_CN", "fr_CH", "sr_Latn", "es_CO", "el", "ja"]
+)
+def test_negative_word_from_converter(lang):
+    assert num2words_sentence("x -7", lang=lang) == "x " + num2words(-7, lang=lang)
+
+
+def test_negative_temperature_uses_converter_word():
+    assert num2words_sentence("-7°C", lang="pt_BR").startswith("Menos sete")

@@ -59,6 +59,9 @@
 //! point one"). Negative numbers and temperatures are read the same way, so
 //! `-5` is "minus five" in every language, not the float path's "minus five
 //! point zero" that the original produced through `abs(float)` (#225).
+//! The sign is read by the converter itself, so the negative word is the
+//! language's own (pt_BR "menos", ca "menys") rather than a small table
+//! that fell back to English "minus" (#226).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -74,37 +77,8 @@ use regex::Regex;
 
 // ------------------------------------------------------------------ tables
 
-/// `lang_registry.NEGATIVE_WORDS` — the negative-marker word per language.
-/// Keyed by the raw lang string (Python: `self.negative_words.get(self.lang,
-/// "minus")`), default "minus".
-const NEGATIVE_WORDS: &[(&str, &str)] = &[
-    ("en", "minus"), ("fr", "moins"), ("es", "menos"), ("it", "meno"),
-    ("pt", "menos"), ("de", "minus"), ("nl", "min"), ("sv", "minus"),
-    ("da", "minus"), ("no", "minus"), ("is", "mínus"), ("fi", "miinus"),
-    ("et", "miinus"), ("lt", "minus"), ("lv", "mīnus"),
-    ("ru", "минус"), ("uk", "мінус"), ("be", "мінус"), ("bg", "минус"),
-    ("pl", "minus"), ("cs", "mínus"), ("sk", "mínus"), ("sl", "minus"),
-    ("hr", "minus"), ("sr", "минус"), ("mk", "минус"),
-    ("el", "πλην"), ("ro", "minus"), ("hu", "mínusz"), ("tr", "eksi"),
-    ("az", "mənfi"),
-    ("ar", "سالب"), ("he", "מינוס"), ("fa", "منفی"),
-    ("hi", "माइनस"), ("bn", "মাইনাস"), ("ta", "மைனஸ்"), ("te", "మైనస్"),
-    ("ja", "マイナス"), ("zh", "负"), ("zh-cn", "负"), ("ko", "마이너스"),
-    ("vi", "âm"), ("th", "ติดลบ"),
-    ("id", "minus"), ("ms", "minus"),
-    ("eo", "minus"), ("la", "minus"), ("rm", "minus"),
-];
-
-fn negative_word(lang: &str) -> &'static str {
-    NEGATIVE_WORDS
-        .iter()
-        .find(|(k, _)| *k == lang)
-        .map(|(_, v)| *v)
-        .unwrap_or("minus")
-}
-
 /// `lang_registry._norm_lang` — lowercase/strip, keep as-is when it is a known
-/// ordinal or negative key, else fall back to the base subtag. Used for the
+/// ordinal key, else fall back to the base subtag. Used for the
 /// registry lookups (ordinal/date/month) that Python routes through
 /// `get_ordinal_pattern` / `get_date_patterns` / `get_month_names`.
 fn norm_lang(lang: &str) -> String {
@@ -112,9 +86,7 @@ fn norm_lang(lang: &str) -> String {
     if l.is_empty() {
         return "en".to_string();
     }
-    if ORDINAL_PATTERNS.iter().any(|(k, _)| *k == l)
-        || NEGATIVE_WORDS.iter().any(|(k, _)| *k == l)
-    {
+    if ORDINAL_PATTERNS.iter().any(|(k, _)| *k == l) {
         return l;
     }
     l.split(['-', '_']).next().unwrap_or("").to_string()
@@ -1072,6 +1044,12 @@ fn split_sign(val: &Val) -> Result<(bool, &str), N2WError> {
     }
 }
 
+/// A [`Val::D`] with "-0" normalised to "0".
+fn signed(val: &Val) -> Result<String, N2WError> {
+    let (neg, num) = split_sign(val)?;
+    Ok(if neg { format!("-{}", num) } else { num.to_string() })
+}
+
 /// `num2words(v, to="ordinal", lang=...)` with a float.
 fn ordinal_float(l: &(dyn Lang + Sync), v: f64) -> Result<String, N2WError> {
     let (_, prec) = py_float_repr(v)?;
@@ -1128,29 +1106,11 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
         Typ::TempSymbol => {
             let (temp_word, celsius_word) =
                 temp_words(ctx.raw).unwrap_or(("degrees", "Celsius"));
-            let (neg, num) = split_sign(val)?;
+            let num = signed(val)?;
             let l = ctx.lang()?;
-            if neg {
-                Ok(format!(
-                    "{} {} {} {}",
-                    negative_word(ctx.raw),
-                    cardinal_str(l, num)?,
-                    temp_word,
-                    celsius_word
-                ))
-            } else {
-                Ok(format!("{} {} {}", cardinal_str(l, num)?, temp_word, celsius_word))
-            }
+            Ok(format!("{} {} {}", cardinal_str(l, &num)?, temp_word, celsius_word))
         }
-        Typ::TempWord => {
-            let (neg, num) = split_sign(val)?;
-            let l = ctx.lang()?;
-            if neg {
-                Ok(format!("{} {}", negative_word(ctx.raw), cardinal_str(l, num)?))
-            } else {
-                cardinal_str(l, num)
-            }
-        }
+        Typ::TempWord => cardinal_str(ctx.lang()?, &signed(val)?),
         Typ::Ordinal => ctx.lang()?.to_ordinal(val.i()),
         Typ::OrdinalDate => {
             if ctx.raw == "fr" && *val.i() == BigInt::from(1) {
@@ -1228,8 +1188,9 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             if neg {
                 // A negative is read like num2words(-7): an integer stays on
                 // the integer path (ru "минус семь", not "минус семь целых
-                // ноль десятых", #225).
-                Ok(format!("{} {}", negative_word(ctx.raw), cardinal_str(l, num)?))
+                // ноль десятых", #225), with the converter's own negative
+                // word (pt_BR "menos", not "minus", #226).
+                cardinal_str(l, &signed(val)?)
             } else if !num.contains('.') {
                 let n = pyint(num)?;
                 if ctx.ord_mode {
