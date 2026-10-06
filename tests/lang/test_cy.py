@@ -16,6 +16,7 @@
 # MA 02110-1301 USA
 from __future__ import unicode_literals
 
+from decimal import Decimal
 from unittest import TestCase
 
 from num2words2 import num2words
@@ -392,17 +393,17 @@ TEST_CASES_DECIMALS = [
 ]
 
 # gladiaio/num2words2#162: each unit is named once, in the counted form
-# ("un punt punt, ceiniog ceiniog" before). The double space after a zero
-# pence amount is #160.
+# ("un punt punt, ceiniog ceiniog" before). Zero pence say "dim ceiniog"
+# (#186; it was an empty numeral and a double space).
 TEST_CASES_TO_CURRENCY_GBP = (
-    (0.00, "dim punt,  ceiniogau"),
+    (0.00, "dim punt, dim ceiniog"),
     (0.23, "dim punt, tri cheiniog ar hugain"),
     (2.04, "dwy bunt, pedwar ceiniog"),
     (3.50, "tair punt, hanner cant ceiniog"),
     (2002.15, "dwy fil dwy o bunnoedd, pymtheg ceiniog"),
     (100.01, "cant punt, ceiniog"),
-    (50.00, "hanner cant punt,  ceiniogau"),
-    (51.00, "hanner cant ac un punt,  ceiniogau"),
+    (50.00, "hanner cant punt, dim ceiniog"),
+    (51.00, "hanner cant ac un punt, dim ceiniog"),
     (152.50, "cant a hanner a dwy o bunnoedd, hanner cant ceiniog"),
 )
 
@@ -507,4 +508,20 @@ class Num2WordsCYTest(TestCase):
             num2words(1.5, lang="cy", to="currency", currency="USD",
                       adjective=True),
             "un dolar US, hanner cant ceiniog",
+        )
+
+    def test_currency_zero_pence(self):
+        # gladiaio/num2words2#186: zero pence was an empty numeral
+        # ("un punt,  ceiniogau").
+        for x in (1.0, "1.0", Decimal("1.00")):
+            self.assertEqual(
+                num2words(x, lang="cy", to="currency"), "un punt, dim ceiniog"
+            )
+        self.assertEqual(
+            num2words(-5.0, lang="cy", to="currency"),
+            "meinws pump punt, dim ceiniog",
+        )
+        self.assertEqual(
+            num2words(1.0, lang="cy", to="currency", cents=False),
+            "un punt, 00 ceiniogau",
         )

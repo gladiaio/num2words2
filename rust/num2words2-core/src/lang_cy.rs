@@ -221,10 +221,14 @@
 //!     keeps the counted forms and drops the generic ones, so each unit is
 //!     named once ("un punt, hanner cant ceiniog"). With `adjective=True`
 //!     only the adjective survives from the generic form ("un dolar US").
-//! 14. **Zero cents leave a double space.** `_cents_verbose(0, ...)` returns
-//!     `""`, and Base's `"%s%s %s%s %s %s"` template still emits the spaces
-//!     around it: `1.0` → `"un euro,  ceiniogau"` (two spaces after the
-//!     comma). The `has_decimal` guard keeps the segment alive for `1.0`.
+//! 14. ~~**Zero cents leave a double space.**~~ Fixed (gladiaio/num2words2#186).
+//!     Python's `_cents_verbose(0, ...)` returns `""`, and Base's
+//!     `"%s%s %s%s %s %s"` template still emitted the spaces around it:
+//!     `1.0` was `"un punt,  ceiniogau"` (two spaces, no numeral). The port
+//!     spells zero pence with the cardinal's zero word and the counted
+//!     singular noun, like every other pence amount: `"un punt, dim ceiniog"`.
+//!     The `has_decimal` guard still keeps the segment for `1.0`, while the
+//!     int `1` stays `"un bunt"`.
 //!
 //! # Error variants
 //!
@@ -1603,20 +1607,19 @@ impl Lang for LangCy {
 
     /// Python's `Num2Word_CY._cents_verbose`.
     ///
-    /// Three quirks, all ported: zero cents return `""` (bug 14's source);
-    /// `number == 1` drops the numeral entirely and emits only the noun
-    /// (bug 11); and gender is left at its masculine default, unlike
-    /// [`LangCy::money_verbose`].
+    /// Two quirks ported: `number == 1` drops the numeral entirely and emits
+    /// only the noun (bug 11); and gender is left at its masculine default,
+    /// unlike [`LangCy::money_verbose`]. Python returned `""` for zero
+    /// cents (bug 14, fixed in #186); the port says "dim ceiniog".
     fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
-        // Python returns "" before it ever indexes CURRENCY_FORMS, so a missing
-        // code would not KeyError at zero. Ordered the same way here.
-        if number.is_zero() {
-            return Ok(String::new());
-        }
         let forms = self
             .currency_forms
             .get(currency)
             .ok_or_else(|| N2WError::Key(format!("'{}'", currency)))?;
+        if number.is_zero() {
+            // "dim" triggers no mutation; the counted noun stays singular.
+            return Ok(format!("{} {}", self.to_cardinal(number)?, forms.subunit[0]));
+        }
 
         // `if number > 1: to_cardinal(number, raw=True) else: [(OBJ, None)]`.
         // The else arm also catches a hypothetical negative, which cannot occur:
@@ -1737,18 +1740,12 @@ impl Lang for LangCy {
         if cents {
             let cents_str = self.cents_verbose(&right_int, currency)?;
             // `_cents_verbose` names the subunit too ("hanner cant ceiniog",
-            // or bare "ceiniog" for 1), so Base's `pluralize(right, cr2)` was a
-            // second noun ("ceiniog ceiniogau"). Zero cents come back empty;
-            // the plural noun then stays the only one (module bug 14).
-            if !cents_str.is_empty() {
-                return Ok(format!("{}{}{} {}", minus, money, separator, cents_str));
-            }
+            // bare "ceiniog" for 1, "dim ceiniog" for 0 — module bug 14,
+            // #186), so Base's `pluralize(right, cr2)` was a second noun
+            // ("ceiniog ceiniogau") and is dropped.
+            return Ok(format!("{}{}{} {}", minus, money, separator, cents_str));
         }
-        let cents_str = if cents {
-            String::new()
-        } else {
-            self.cents_terse(&right_int, currency)?
-        };
+        let cents_str = self.cents_terse(&right_int, currency)?;
         Ok(format!(
             "{}{}{} {} {}",
             minus,
