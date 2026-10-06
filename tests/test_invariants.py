@@ -28,7 +28,7 @@ EXPECTED_ERRORS = (TypeError, ValueError, OverflowError, NotImplementedError)
 
 CONVERTERS = ["cardinal", "ordinal", "ordinal_num", "year", "currency"]
 INPUTS = [0, 1, -1, 2, 11, 21, 100, 1100, 0.5, -0.5, 1.5, "12", "1.5",
-          Decimal("0.1"), Decimal("1.5"), -42]
+          Decimal("0.1"), Decimal("1.5"), -42, 1.0, 5.0, -5.0]
 
 
 def _call(x, lang, to):
