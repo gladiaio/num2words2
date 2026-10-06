@@ -20,8 +20,6 @@ from __future__ import unicode_literals
 import unittest
 from unittest import TestCase
 
-import pytest
-
 from num2words2 import num2words
 
 TEST_CASES_CARDINAL = (
@@ -2790,9 +2788,7 @@ class Num2WordsUKTest(TestCase):
         for test in TEST_CASES_CARDINAL:
             self.assertEqual(num2words(test[0], lang="uk"), test[1])
 
-    # Known num2words2-core Rust-port gap: Ukrainian (uk) grammatical-case
-    # forms are not ported.
-    @unittest.expectedFailure
+    # gladiaio/num2words2#145
     def test_to_cardinal_feminine(self):
         for test in TEST_CASES_CARDINAL_FEMININE:
             word = num2words(test[0], lang="uk", gender="feminine")
@@ -3470,13 +3466,6 @@ class UkrainianGenderAliasTest:
     pass
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gladiaio/num2words2#145 — uk to_cardinal_kw is not implemented, "
-           "so every gender= value raises NotImplementedError. The gendered "
-           "tables are already transcribed in lang_uk.rs; only the kwarg "
-           "plumbing is missing. Remove this marker with the fix.",
-)
 def test_uk_gender_short_alias_feminine():
     # Regression for savoirfairelinux/num2words#560 — gender='f' was ignored.
     from num2words2 import num2words
@@ -3489,6 +3478,31 @@ def test_uk_gender_short_alias_feminine():
 def test_uk_gender_default_is_masculine():
     from num2words2 import num2words
     assert num2words(21, lang="uk") == "двадцять один"
+
+
+def test_uk_gender_kwarg_variants():
+    # gladiaio/num2words2#145: aliases are case-insensitive; any other value
+    # (masculine, unknown, non-string) is masculine, never an error.
+    from num2words2 import num2words
+    assert num2words(21, lang="uk", gender="Ж") == "двадцять одна"
+    assert num2words(21, lang="uk", gender="жіночий") == "двадцять одна"
+    assert num2words(21, lang="uk", gender="женский") == "двадцять одна"
+    assert num2words(21, lang="uk", gender="m") == "двадцять один"
+    assert num2words(21, lang="uk", gender="masculine") == "двадцять один"
+    assert num2words(2002, lang="uk", gender="f") == "дві тисячі дві"
+    assert num2words(2000000, lang="uk", gender="f") == "два мільйони"
+    assert num2words(-1, lang="uk", gender="f") == "мінус одна"
+
+
+def test_uk_gender_kwarg_float():
+    # gladiaio/num2words2#145: the "." branch genders both sides.
+    from decimal import Decimal
+
+    from num2words2 import num2words
+    assert num2words(1.1, lang="uk", gender="f") == "одна кома одна"
+    assert num2words(2.02, lang="uk", gender="f") == "дві кома нуль дві"
+    assert num2words(Decimal("2"), lang="uk", gender="f") == "дві"
+    assert num2words(1.1, lang="uk") == "один кома один"
 
 
 class Num2WordsUKIntCurrencyAgreementTest(TestCase):

@@ -65,15 +65,22 @@
 //!    `abs(n) >= 10**33` first and raise `OverflowError`, and `maxval()`
 //!    reports 10^33.
 //!
-//! # Dropped kwargs (out of scope, flagged in the report)
+//! # Kwargs
 //!
-//! Python's `to_cardinal(number, **kwargs)` accepts `case` (one of six
-//! morphological cases, resolved via `[...].index(case)`) and `gender`
-//! (feminine aliases `{"f", "feminine", "ж", "жіночий", "женский"}`). The
-//! Rust `Lang` trait passes neither, so `morphological_case` is always 0
-//! (nominative) and `feminine` is always false — which is exactly what the
-//! corpus rows exercise. The full six-form tables are transcribed anyway so
-//! the data is complete and reviewable; only index 0 is reachable today.
+//! Python's `to_cardinal(number, **kwargs)` accepts `gender` (feminine
+//! aliases `{"f", "feminine", "ж", "жіночий", "женский"}`, compared after
+//! `str.lower()`; anything else is masculine) and `case` (one of six
+//! morphological cases, resolved via `[...].index(case)`).
+//!
+//! * `gender` is served by `to_cardinal_kw` / `to_cardinal_float_kw`
+//!   (gladiaio/num2words2#145); for float/Decimal input it applies to both
+//!   sides of the point, as in Python.
+//! * `case` is not served yet: the trait hooks decline it, so
+//!   `morphological_case` is always 0 (nominative). The full six-form tables
+//!   are transcribed anyway so the data is complete and reviewable.
+//!
+//! Integer currency picks the gender per currency (`FEMININE_MONEY` /
+//! `FEMININE_CENTS`) and takes no kwargs.
 //!
 //! # Currency surface
 //!
@@ -126,7 +133,7 @@
 //! into a `TypeError`.
 
 use std::sync::OnceLock;
-use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, KwVal, Kwargs, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -754,6 +761,26 @@ fn is_feminine_cents(currency: &str) -> bool {
 // The exception type is observable behaviour a caller may catch, so parity
 // requires reproducing it rather than tidying it into a TypeError.
 
+/// The feminine `gender=` aliases `Num2Word_UK.to_cardinal` accepts — the
+/// same set as `lang_RU`: short code, English name, and the Ukrainian /
+/// Russian Cyrillic names. Compared after `str.lower()`.
+const FEMININE_ALIASES: [&str; 5] = ["f", "feminine", "ж", "жіночий", "женский"];
+
+/// `isinstance(gender_kw, str) and gender_kw.lower() in feminine_aliases`.
+/// Anything else — an absent key, a masculine/neuter name, a non-string —
+/// is masculine; Python never raises on `gender=`.
+fn feminine_from_kwarg(kv: Option<&KwVal>) -> bool {
+    match kv {
+        Some(KwVal::Str(g)) => FEMININE_ALIASES.contains(&g.to_lowercase().as_str()),
+        _ => false,
+    }
+}
+
+/// The kwargs `Num2Word_UK.to_cardinal(number, **kwargs)` reads. It swallows
+/// any other key silently, but an unknown key still declines to the
+/// dispatcher (like `lang_RU`) rather than guessing.
+const CARDINAL_KWARGS: [&str; 1] = ["gender"];
+
 fn index_error(msg: &str) -> N2WError {
     N2WError::Index(msg.to_string())
 }
@@ -1023,9 +1050,8 @@ impl LangUk {
 
     /// Port of `Num2Word_UK._int2word`.
     ///
-    /// `feminine` and `morphological_case` are always `false` / `0` in this
-    /// scope (the trait exposes no kwargs), but both are threaded through so
-    /// the algorithm matches the source line for line.
+    /// `feminine` comes from the `gender=` kwarg (or the currency's gender);
+    /// `morphological_case` is the `case=` index, always 0 for now.
     fn int2word(&self, n: &BigInt, feminine: bool, mcase: usize) -> Result<String> {
         check_maxval(n, maxval_ceiling())?;
         if n.is_negative() {
@@ -1084,106 +1110,44 @@ impl LangUk {
 
         Ok(words.join(" "))
     }
-}
 
-/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
-/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
-/// reaching the missing table key.
-fn maxval_ceiling() -> &'static BigInt {
-    static M: OnceLock<BigInt> = OnceLock::new();
-    M.get_or_init(|| pow10_big(33))
-}
-
-impl Lang for LangUk {
-    fn maxval(&self) -> &BigInt {
-        maxval_ceiling()
+    /// [`cardinal_float_entry`](Lang::cardinal_float_entry) with the
+    /// resolved `gender`/`case` kwargs threaded through.
+    fn cardinal_entry_with(&self, value: &FloatValue, feminine: bool, mcase: usize) -> Result<String> {
+        let has_point = match value {
+            FloatValue::Float { value, .. } => float_repr_has_point(*value),
+            FloatValue::Decimal { value, .. } => python_decimal_str(value).contains('.'),
+        };
+        if has_point {
+            return self.cardinal_float_with(value, feminine, mcase);
+        }
+        // No '.' in str(number) → `self._int2word(int(n), ...)`.
+        match value {
+            // A finite float without a point reprs in exponent form
+            // ("1e+16"), which int() rejects.
+            FloatValue::Float { value, .. } => Err(value_error(format!(
+                "invalid literal for int() with base 10: '{}'",
+                value
+            ))),
+            FloatValue::Decimal { value, .. } => {
+                let s = python_decimal_str(value);
+                match parse_signed_int(&s) {
+                    Some(n) => self.int2word(&n, feminine, mcase),
+                    // "1E+2"-style scientific strings → ValueError.
+                    None => Err(value_error(format!(
+                        "invalid literal for int() with base 10: '{}'",
+                        s
+                    ))),
+                }
+            }
+        }
     }
 
-    /// This language's own `to_currency(currency=...)` default,
-    /// read from the live Python signature. Only 44 of 156 use EUR.
-    fn default_currency(&self) -> &str {
-        "EUR"
-    }
-
-    /// This language's own `to_currency(separator=...)` default,
-    /// read from the live Python signature. Base's is ",", but only
-    /// 36 of 149 languages actually use it — most default to " " or a
-    /// conjunction, so inheriting Base's comma silently corrupts them.
-    fn default_separator(&self) -> &str {
-        ","
-    }
-
-    fn negword(&self) -> &str {
-        NEGWORD
-    }
-
-    fn pointword(&self) -> &str {
-        "кома"
-    }
-
-    /// Port of `Num2Word_UK.to_cardinal`, integer path only.
-    ///
-    /// Python does `n = str(number).replace(",", ".")` and branches on `"."`;
-    /// `str(int)` never contains one, so integers always take the `else`
-    /// branch → `self._int2word(int(n), gender, morphological_case)`. With no
-    /// kwargs, `gender` is `False` and `morphological_case` is `0`. The float
-    /// branch (pointword, leading-zero expansion) is ported in
-    /// [`to_cardinal_float`](Self::to_cardinal_float) below.
-    ///
-    /// There is no `MAXVAL`/`OverflowError` check: `Num2Word_UK` overrides
-    /// `to_cardinal` outright and never reaches `Num2Word_Base`'s guard.
-    fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        self.int2word(value, false, 0)
-    }
-
-    /// Port of the `"." in n` branch of `Num2Word_UK.to_cardinal`.
-    ///
-    /// `Num2Word_UK` does **not** override `Num2Word_Base.to_cardinal_float`;
-    /// its `to_cardinal` intercepts non-integers inline and never touches
-    /// `base.float2tuple`. So this port reproduces that *string-based* branch,
-    /// not the binary `float2tuple` heuristic that the trait default
-    /// (`floatpath::default_to_cardinal_float`) implements. The f64 artefact
-    /// that heuristic exists to rescue is therefore irrelevant here: UK reads
-    /// `str(number)` directly, so `2.675` → "два кома шістсот сімдесят п'ять"
-    /// (the repr digits "675"), *not* the `674.999…`→675 artefact path.
-    ///
-    /// ```python
-    /// n = str(number).replace(",", ".")
-    /// if "." in n:
-    ///     is_negative = n.startswith("-")
-    ///     abs_n = n[1:] if is_negative else n
-    ///     left, right = abs_n.split(".")
-    ///     leading_zero_count = len(right) - len(right.lstrip("0"))
-    ///     right_side = self._int2word(int(right), gender, morphological_case)
-    ///     decimal_part = (ZERO[0] + " ") * leading_zero_count + right_side
-    ///     result = "%s %s %s" % (self._int2word(int(left), ...),
-    ///                            self.pointword, decimal_part)
-    ///     if is_negative:
-    ///         result = self.negword + " " + result
-    ///     return result
-    /// ```
-    ///
-    /// `str(number)` is reconstructed per arm:
-    ///   * **Float** — `format!("{:.precision$}", value)` reproduces Python's
-    ///     `repr`/`str(float)`. `precision` is the fractional-digit count of
-    ///     that shortest round-trip repr, so formatting the raw f64 to exactly
-    ///     that many places yields the identical digits (checked for every
-    ///     corpus float, incl. `1.005`→"1.005" and `2.675`→"2.675"). No
-    ///     `round_ties_even` is needed — the arithmetic never leaves the string.
-    ///   * **Decimal** — exact arbitrary-precision digits, so the trailing zero
-    ///     of `Decimal("1.10")` survives as "…кома десять" (10), never the
-    ///     "…кома один" a `float(1.10)` cast would give (issue #603), and the
-    ///     trillion-scale `98746251323029.99` keeps every digit.
-    ///
-    /// `gender`/`morphological_case` are unreachable through the trait (always
-    /// masculine / nominative) and `precision=` is ignored — matching the live
-    /// interpreter, where `num2words(0.5, lang="uk", precision=3)` is still
-    /// "нуль кома п'ять".
-    fn to_cardinal_float(
-        &self,
-        value: &FloatValue,
-        _precision_override: Option<u32>,
-    ) -> Result<String> {
+    /// The `"." in n` branch of `Num2Word_UK.to_cardinal` — see
+    /// [`to_cardinal_float`](Lang::to_cardinal_float) for the full port
+    /// notes. Python hands the resolved `gender`/`case` to *both* sides of
+    /// the point, so `to_cardinal(1.1, gender="f")` is "одна кома одна".
+    fn cardinal_float_with(&self, value: &FloatValue, feminine: bool, mcase: usize) -> Result<String> {
         // Reconstruct (sign, integer part, fractional-digit string). `right`
         // keeps its leading zeros and is exactly `precision` chars wide (empty
         // only when precision == 0, i.e. str(number) had no ".").
@@ -1231,7 +1195,7 @@ impl Lang for LangUk {
         // kept faithful — int2word applies the sign via its own negword arm.
         if right.is_empty() {
             let n = if is_negative { -left_int } else { left_int };
-            return self.int2word(&n, false, 0);
+            return self.int2word(&n, feminine, mcase);
         }
 
         // leading_zero_count = len(right) - len(right.lstrip("0")); `right` is
@@ -1240,8 +1204,8 @@ impl Lang for LangUk {
         // int(right) — leading zeros are inert, "00" parses to 0.
         let right_int = parse_int(&right)?;
 
-        let left_word = self.int2word(&left_int, false, 0)?;
-        let right_side = self.int2word(&right_int, false, 0)?;
+        let left_word = self.int2word(&left_int, feminine, mcase)?;
+        let right_side = self.int2word(&right_int, feminine, mcase)?;
         // (ZERO[0] + " ") * leading_zero_count + right_side
         let decimal_part = format!(
             "{}{}",
@@ -1256,6 +1220,135 @@ impl Lang for LangUk {
             result = format!("{} {}", NEGWORD, result);
         }
         Ok(result)
+    }
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#159): the scale-word table
+/// ends at 10^30, so 10^33 and above raise `OverflowError` instead of
+/// reaching the missing table key.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(33))
+}
+
+impl Lang for LangUk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
+    /// This language's own `to_currency(currency=...)` default,
+    /// read from the live Python signature. Only 44 of 156 use EUR.
+    fn default_currency(&self) -> &str {
+        "EUR"
+    }
+
+    /// This language's own `to_currency(separator=...)` default,
+    /// read from the live Python signature. Base's is ",", but only
+    /// 36 of 149 languages actually use it — most default to " " or a
+    /// conjunction, so inheriting Base's comma silently corrupts them.
+    fn default_separator(&self) -> &str {
+        ","
+    }
+
+    fn negword(&self) -> &str {
+        NEGWORD
+    }
+
+    fn pointword(&self) -> &str {
+        "кома"
+    }
+
+    /// Port of `Num2Word_UK.to_cardinal`, integer path only.
+    ///
+    /// Python does `n = str(number).replace(",", ".")` and branches on `"."`;
+    /// `str(int)` never contains one, so integers always take the `else`
+    /// branch → `self._int2word(int(n), gender, morphological_case)`. With no
+    /// kwargs, `gender` is `False` and `morphological_case` is `0`; see
+    /// `to_cardinal_kw` for the kwargs. The float
+    /// branch (pointword, leading-zero expansion) is ported in
+    /// [`to_cardinal_float`](Self::to_cardinal_float) below.
+    ///
+    /// There is no `MAXVAL`/`OverflowError` check: `Num2Word_UK` overrides
+    /// `to_cardinal` outright and never reaches `Num2Word_Base`'s guard.
+    fn to_cardinal(&self, value: &BigInt) -> Result<String> {
+        self.int2word(value, false, 0)
+    }
+
+    /// `to_cardinal(number, gender=...)` (gladiaio/num2words2#145). `gender`
+    /// selects `ONES_FEMININE` for the units chunk ("двадцять одна"); the
+    /// thousands chunk is feminine regardless, agreeing with "тисяча".
+    fn to_cardinal_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
+        if !kw.only(&CARDINAL_KWARGS) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        self.int2word(value, feminine_from_kwarg(kw.get("gender")), 0)
+    }
+
+    /// `to_cardinal(float/Decimal, gender=...)`: the "." branch applies the
+    /// gender to both sides of the point. `precision=` is ignored, as in
+    /// [`cardinal_float_entry`](Self::cardinal_float_entry).
+    fn to_cardinal_float_kw(
+        &self,
+        value: &FloatValue,
+        _precision_override: Option<u32>,
+        kw: &Kwargs,
+    ) -> Result<String> {
+        if !kw.only(&CARDINAL_KWARGS) {
+            return Err(N2WError::Fallback("kwargs".into()));
+        }
+        self.cardinal_entry_with(value, feminine_from_kwarg(kw.get("gender")), 0)
+    }
+
+    /// Port of the `"." in n` branch of `Num2Word_UK.to_cardinal`.
+    ///
+    /// `Num2Word_UK` does **not** override `Num2Word_Base.to_cardinal_float`;
+    /// its `to_cardinal` intercepts non-integers inline and never touches
+    /// `base.float2tuple`. So this port reproduces that *string-based* branch,
+    /// not the binary `float2tuple` heuristic that the trait default
+    /// (`floatpath::default_to_cardinal_float`) implements. The f64 artefact
+    /// that heuristic exists to rescue is therefore irrelevant here: UK reads
+    /// `str(number)` directly, so `2.675` → "два кома шістсот сімдесят п'ять"
+    /// (the repr digits "675"), *not* the `674.999…`→675 artefact path.
+    ///
+    /// ```python
+    /// n = str(number).replace(",", ".")
+    /// if "." in n:
+    ///     is_negative = n.startswith("-")
+    ///     abs_n = n[1:] if is_negative else n
+    ///     left, right = abs_n.split(".")
+    ///     leading_zero_count = len(right) - len(right.lstrip("0"))
+    ///     right_side = self._int2word(int(right), gender, morphological_case)
+    ///     decimal_part = (ZERO[0] + " ") * leading_zero_count + right_side
+    ///     result = "%s %s %s" % (self._int2word(int(left), ...),
+    ///                            self.pointword, decimal_part)
+    ///     if is_negative:
+    ///         result = self.negword + " " + result
+    ///     return result
+    /// ```
+    ///
+    /// `str(number)` is reconstructed per arm:
+    ///   * **Float** — `format!("{:.precision$}", value)` reproduces Python's
+    ///     `repr`/`str(float)`. `precision` is the fractional-digit count of
+    ///     that shortest round-trip repr, so formatting the raw f64 to exactly
+    ///     that many places yields the identical digits (checked for every
+    ///     corpus float, incl. `1.005`→"1.005" and `2.675`→"2.675"). No
+    ///     `round_ties_even` is needed — the arithmetic never leaves the string.
+    ///   * **Decimal** — exact arbitrary-precision digits, so the trailing zero
+    ///     of `Decimal("1.10")` survives as "…кома десять" (10), never the
+    ///     "…кома один" a `float(1.10)` cast would give (issue #603), and the
+    ///     trillion-scale `98746251323029.99` keeps every digit.
+    ///
+    /// Here `gender`/`morphological_case` are the defaults (masculine /
+    /// nominative); `to_cardinal_float_kw` passes the kwargs through
+    /// `cardinal_float_with`. `precision=` is ignored — matching the live
+    /// interpreter, where `num2words(0.5, lang="uk", precision=3)` is still
+    /// "нуль кома п'ять".
+    fn to_cardinal_float(
+        &self,
+        value: &FloatValue,
+        _precision_override: Option<u32>,
+    ) -> Result<String> {
+        self.cardinal_float_with(value, false, 0)
     }
 
     /// `to_cardinal(float/Decimal)` — the FULL routing, whole values included.
@@ -1273,35 +1366,9 @@ impl Lang for LangUk {
     fn cardinal_float_entry(
         &self,
         value: &FloatValue,
-        precision_override: Option<u32>,
+        _precision_override: Option<u32>,
     ) -> Result<String> {
-        let has_point = match value {
-            FloatValue::Float { value, .. } => float_repr_has_point(*value),
-            FloatValue::Decimal { value, .. } => python_decimal_str(value).contains('.'),
-        };
-        if has_point {
-            return self.to_cardinal_float(value, precision_override);
-        }
-        // No '.' in str(number) → `self._int2word(int(n), ...)`.
-        match value {
-            // A finite float without a point reprs in exponent form
-            // ("1e+16"), which int() rejects.
-            FloatValue::Float { value, .. } => Err(value_error(format!(
-                "invalid literal for int() with base 10: '{}'",
-                value
-            ))),
-            FloatValue::Decimal { value, .. } => {
-                let s = python_decimal_str(value);
-                match parse_signed_int(&s) {
-                    Some(n) => self.int2word(&n, false, 0),
-                    // "1E+2"-style scientific strings → ValueError.
-                    None => Err(value_error(format!(
-                        "invalid literal for int() with base 10: '{}'",
-                        s
-                    ))),
-                }
-            }
-        }
+        self.cardinal_entry_with(value, false, 0)
     }
 
     /// `to_ordinal(float/Decimal)`.
@@ -1696,5 +1763,48 @@ mod float_tests {
              мільйон триста двадцять три тисячі двадцять дев'ять кома дев'яносто дев'ять"
         );
         assert_eq!(card_dec("0.001"), "нуль кома нуль нуль один");
+    }
+}
+
+#[cfg(test)]
+mod kwargs_tests {
+    use super::*;
+
+    fn kw(items: &[(&str, &str)]) -> Kwargs {
+        Kwargs(
+            items
+                .iter()
+                .map(|(k, v)| (k.to_string(), KwVal::Str(v.to_string())))
+                .collect(),
+        )
+    }
+
+    fn card(n: i64, items: &[(&str, &str)]) -> String {
+        LangUk::new()
+            .to_cardinal_kw(&BigInt::from(n), &kw(items))
+            .unwrap()
+    }
+
+    /// gladiaio/num2words2#145.
+    #[test]
+    fn gender() {
+        assert_eq!(card(21, &[("gender", "f")]), "двадцять одна");
+        assert_eq!(card(21, &[("gender", "Feminine")]), "двадцять одна");
+        assert_eq!(card(2, &[("gender", "ж")]), "дві");
+        assert_eq!(card(21, &[("gender", "m")]), "двадцять один");
+        assert_eq!(card(21, &[]), "двадцять один");
+        let f = LangUk::new()
+            .to_cardinal_float_kw(
+                &FloatValue::Float { value: 1.1, precision: 1 },
+                None,
+                &kw(&[("gender", "f")]),
+            )
+            .unwrap();
+        assert_eq!(f, "одна кома одна");
+        // Unknown kwargs still decline to the dispatcher.
+        assert!(matches!(
+            LangUk::new().to_cardinal_kw(&BigInt::from(1), &kw(&[("foo", "x")])),
+            Err(N2WError::Fallback(_))
+        ));
     }
 }
