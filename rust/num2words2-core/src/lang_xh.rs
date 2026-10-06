@@ -1164,12 +1164,14 @@ mod tests {
         // Boundary: 1e-4 itself still reprs fixed and speaks normally.
         assert_eq!(card_float(0.0001, 4), "iqanda ichaphaza qanda qanda qanda nye");
 
-        // Decimals: str() flips to '1E-7' form once adjusted exponent < -6,
-        // with an *uppercase* E — and normalises "0.0000001" into it too.
-        assert_value_err(card_dec_p("1E-7", 7).unwrap_err(), "1E-7");
-        assert_value_err(card_dec_p("0.0000001", 7).unwrap_err(), "1E-7");
-        assert_value_err(card_dec_p("1.5E-7", 8).unwrap_err(), "E");
-        assert_value_err(card_dec_p("-1.5E-7", 8).unwrap_err(), "E");
+        // Decimals: Python's str() flips to '1E-7' form once the adjusted
+        // exponent is < -6; the shared str is written out instead (#211),
+        // so these read digit by digit.
+        assert_eq!(
+            card_dec_p("1E-7", 7).unwrap(),
+            "iqanda ichaphaza qanda qanda qanda qanda qanda qanda nye"
+        );
+        assert_eq!(card_dec_p("0.0000001", 7).unwrap(), card_dec_p("1E-7", 7).unwrap());
         // Boundaries that stay fixed: adjusted exponent exactly -6 — one
         // significant digit at the 10^-6 place, or a two-digit coefficient
         // holding a 10^-7-scale value up at -6.
@@ -1236,9 +1238,10 @@ mod tests {
             l.cardinal_float_entry(&f(1e20, 20), None).unwrap_err(),
             "1e+20",
         );
-        assert_value_err(
-            l.cardinal_float_entry(&d("1E+2", 2), None).unwrap_err(),
-            "1E+2",
+        // #211: str(Decimal) is written out ("100"), so it reads.
+        assert_eq!(
+            l.cardinal_float_entry(&d("1E+2", 2), None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
         );
 
         // ordinal: 1.0 == 1 short-circuits; everything else gets "we".
@@ -1253,7 +1256,8 @@ mod tests {
         );
         assert_eq!(l.ordinal_float_entry(&d("5", 0)).unwrap(), "wentlanu");
         assert_eq!(l.ordinal_float_entry(&d("0", 0)).unwrap(), "weiqanda");
-        assert_value_err(l.ordinal_float_entry(&d("1E+20", 20)).unwrap_err(), "1E+20");
+        // #211: str(Decimal) is written out, so 1E+20 reads as an integer.
+        assert_eq!(l.ordinal_float_entry(&d("1E+20", 20)).unwrap(), "we100000000000000000000");
 
         // ordinal_num: "we" + the binding's repr, verbatim.
         assert_eq!(

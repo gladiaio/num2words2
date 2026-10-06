@@ -1361,14 +1361,15 @@ mod tests {
             l.cardinal_float_entry(&fv(1e20, 20), None),
             Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1e+20'"
         ));
-        assert!(matches!(
-            l.cardinal_float_entry(&dv("1E+2", 2), None),
-            Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1E+2'"
-        ));
-        assert!(matches!(
-            l.cardinal_float_entry(&dv("1E+20", 20), None),
-            Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1E+20'"
-        ));
+        // #211: str(Decimal) is written out ("100"), so it reads.
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+2", 2), None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
+        );
+        assert_eq!(
+            format!("{:?}", l.cardinal_float_entry(&dv("1E+20", 20), None)),
+            format!("{:?}", l.to_cardinal(&BigInt::from(10).pow(20)))
+        );
         // Whole values still route through the fraction branch's early return
         // (visible ".") or the int arm (no ".").
         assert_eq!(l.cardinal_float_entry(&fv(5.0, 1), None).unwrap(), "тав");
@@ -1449,10 +1450,10 @@ mod tests {
             l.year_float_entry(&fv(1e16, 16)),
             Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1e+16'"
         ));
-        assert!(matches!(
-            l.year_float_entry(&dv("1E+2", 2)),
-            Err(N2WError::Value(_))
-        ));
+        assert_eq!(
+            l.year_float_entry(&dv("1E+2", 2)).unwrap(),
+            l.to_year(&BigInt::from(100)).unwrap()
+        );
     }
 
     /// The `all_suffixed` kwarg, and the quirk-1 drop across the negative
@@ -1501,10 +1502,10 @@ mod tests {
         ));
         assert!(matches!(l.str_to_number("1e3"), Ok(ParsedNumber::Dec(_))));
         assert!(matches!(l.str_to_number("NaN"), Ok(ParsedNumber::NaN)));
-        // "1e3" parses to Decimal('1E+3'); the cardinal entry then raises.
-        assert!(matches!(
-            l.cardinal_float_entry(&dv("1E+3", 3), None),
-            Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1E+3'"
-        ));
+        // "1e3" parses to Decimal('1E+3'), written out as "1000" (#211).
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+3", 3), None).unwrap(),
+            l.to_cardinal(&BigInt::from(1000)).unwrap()
+        );
     }
 }

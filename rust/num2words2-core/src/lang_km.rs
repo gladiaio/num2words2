@@ -865,11 +865,11 @@ mod float_tests {
             km.cardinal_float_entry(&e16, None),
             Err(N2WError::Value(_))
         ));
-        // str(Decimal("1E+2")) == "1E+2": int("1E+2") -> ValueError.
-        assert!(matches!(
-            km.year_float_entry(&dec("1E+2")),
-            Err(N2WError::Value(_))
-        ));
+        // #211: str(Decimal("1E+2")) is written out ("100"), so it reads.
+        assert_eq!(
+            km.year_float_entry(&dec("1E+2")).unwrap(),
+            km.to_year(&BigInt::from(100)).unwrap()
+        );
         // ordinal_num echoes the repr instead of converting.
         assert_eq!(km.ordinal_num_float_entry(&e16, "1e+16").unwrap(), "ទី1e+16");
     }

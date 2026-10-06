@@ -1555,14 +1555,13 @@ mod entry_routing_tests {
             }
             other => panic!("expected ValueError, got {:?}", other),
         }
-        for (s, repr) in [("1E+2", "1E+2"), ("1E+20", "1E+20")] {
-            match ky.cardinal_float_entry(&dv(s), None) {
-                Err(N2WError::Value(m)) => assert_eq!(
-                    m,
-                    format!("invalid literal for int() with base 10: '{}'", repr)
-                ),
-                other => panic!("{} expected ValueError, got {:?}", s, other),
-            }
+        // #211: str(Decimal) is written out ("100"), so these read.
+        for (s, n) in [("1E+2", 2u32), ("1E+20", 20)] {
+            assert_eq!(
+                ky.cardinal_float_entry(&dv(s), None).unwrap(),
+                ky.to_cardinal(&BigInt::from(10).pow(n)).unwrap(),
+                "{}", s
+            );
         }
     }
 
@@ -1659,11 +1658,10 @@ mod entry_routing_tests {
     #[test]
     fn corpus_strings_scientific_decimal_is_valueerror() {
         let ky = LangKy::new();
-        match ky.cardinal_float_entry(&dv("1E+3"), None) {
-            Err(N2WError::Value(m)) => {
-                assert_eq!(m, "invalid literal for int() with base 10: '1E+3'")
-            }
-            other => panic!("expected ValueError, got {:?}", other),
-        }
+        // #211: str(Decimal) is written out ("1000"), so it reads.
+        assert_eq!(
+            ky.cardinal_float_entry(&dv("1E+3"), None).unwrap(),
+            ky.to_cardinal(&BigInt::from(1000)).unwrap()
+        );
     }
 }

@@ -1118,12 +1118,11 @@ mod float_tests {
             value: BigDecimal::from_str("1E+2").unwrap(),
             precision: 2,
         };
-        match l.cardinal_float_entry(&e2, None) {
-            Err(N2WError::Value(m)) => {
-                assert_eq!(m, "invalid literal for int() with base 10: '1E+2'")
-            }
-            other => panic!("expected ValueError, got {:?}", other),
-        }
+        // #211: str(Decimal) is written out ("100"), so 1E+2 reads as 100.
+        assert_eq!(
+            l.cardinal_float_entry(&e2, None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
+        );
         // ...but ordinal_num never calls int(): the repr sails through.
         assert_eq!(l.ordinal_num_float_entry(&e16, "1e+16").unwrap(), "1e+16-nak");
         // str_to_number: Infinity pre-empts the binding's OverflowError.

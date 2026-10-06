@@ -653,6 +653,12 @@ fn from_string_core(
                 _ => dec_mode(l, to, &value, kw, currency, cents, separator, adjective),
             }
         }
+        // An integer in exponent form ("1e3", "1.5e2"): its plain digits
+        // go to the integer modes (#211).
+        ParsedNumber::Dec(value) if value.as_bigint_and_exponent().1 < 0 => {
+            let n = value.with_scale(0).as_bigint_and_exponent().0;
+            int_mode(l, to, &n, kw, currency, cents, separator, adjective)
+        }
         ParsedNumber::Dec(value) => {
             dec_mode(l, to, &value, kw, currency, cents, separator, adjective)
         }
@@ -977,6 +983,35 @@ fn extras_to_kwargs(
     Ok(Some(Kwargs(out)))
 }
 
+/// A finite float/Decimal argument, normalised once before any language
+/// sees it (gladiaio/num2words2#211). Python writes large and tiny values in
+/// exponent form (`1e+21`, `1e-05`, `Decimal('1E+3')`), and the language
+/// readers `int()` or digit-walk that string: ~80 raised `ValueError`, ce/cy/
+/// rm* `IndexError`, en_AERO read the mantissa digits.
+enum Normalised {
+    /// An integer written in exponent form (`1e+21`, `Decimal('1E+3')`):
+    /// served by the integer modes, as its plain digit string.
+    Int(BigInt),
+    /// A value in positional notation. `decimal` selects the exact Decimal
+    /// arm of the float path; a float whose repr used an exponent (`1e-05`)
+    /// takes it too, with its repr written out (`0.00001`).
+    Frac { value: f64, repr: String, decimal: bool },
+}
+
+/// `repr` is Python's `str(number)`.
+fn normalise_num(repr: &str, value: f64, is_decimal: bool) -> Normalised {
+    if !repr.contains(['e', 'E']) {
+        return Normalised::Frac { value, repr: repr.to_string(), decimal: is_decimal };
+    }
+    match BigDecimal::from_str(repr) {
+        Ok(d) if d.is_integer() && (!is_decimal || d.as_bigint_and_exponent().1 <= 0) => {
+            Normalised::Int(d.with_scale(0).as_bigint_and_exponent().0)
+        }
+        Ok(d) => Normalised::Frac { value, repr: python_decimal_str(&d), decimal: true },
+        Err(_) => Normalised::Frac { value, repr: repr.to_string(), decimal: is_decimal },
+    }
+}
+
 /// abs(exponent) of `Decimal(str(number))` — the shim's fractional-precision
 /// computation. BigDecimal parses the same repr forms (`"1.5"`, `"1e-05"`, ...)
 /// and yields the identical scale.
@@ -1099,24 +1134,25 @@ fn num2words(
         )?;
         if let (true, Some(kw)) = (finite, items) {
             let value = number.extract::<f64>()?;
-            let repr_str = pystr(number)?;
-            let prec = decimal_scale(&repr_str);
-            let decimal_str = if is_decimal {
-                repr_str.clone()
-            } else {
-                String::new()
+            let r = match normalise_num(&pystr(number)?, value, is_decimal) {
+                Normalised::Int(n) => int_int_mode(l, to, &n, &kw),
+                Normalised::Frac { value, repr, decimal } => {
+                    let prec = decimal_scale(&repr);
+                    let decimal_str = if decimal { repr.clone() } else { String::new() };
+                    let precision_override = get_precision(kwargs)?;
+                    to_float_core(
+                        l,
+                        to,
+                        value,
+                        prec,
+                        &decimal_str,
+                        &repr,
+                        precision_override,
+                        &kw,
+                    )
+                }
             };
-            let precision_override = get_precision(kwargs)?;
-            return match to_float_core(
-                l,
-                to,
-                value,
-                prec,
-                &decimal_str,
-                &repr_str,
-                precision_override,
-                &kw,
-            ) {
+            return match r {
                 Ok(out) => {
                     Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
                 }
@@ -1148,7 +1184,14 @@ fn num2words(
                     "adjective",
                 ],
             )? {
-                let value_str = pystr(&num_obj)?;
+                let mut value_str = pystr(&num_obj)?;
+                // #211: '1E+3' / '1e+21' written out before the language
+                // int()s it.
+                if value_str.contains(['e', 'E']) {
+                    if let Ok(d) = BigDecimal::from_str(&value_str) {
+                        value_str = python_decimal_str(&d);
+                    }
+                }
                 let is_int_arg = num_obj.is_exact_instance_of::<PyInt>();
                 let is_float_arg = num_obj.is_instance_of::<PyFloat>();
                 let has_decimal_arg = is_float_arg || value_str.contains('.');

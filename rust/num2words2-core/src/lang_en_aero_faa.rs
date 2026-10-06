@@ -118,8 +118,6 @@ use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::lang_en::LangEn;
-use crate::lang_en_aero::{aero_special_of, aero_special_of_decimal, aero_str_to_number};
-use crate::strnum::ParsedNumber;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::Signed;
@@ -283,13 +281,6 @@ impl Lang for LangEnAeroFaa {
         value: &crate::floatpath::FloatValue,
         precision_override: Option<u32>,
     ) -> crate::base::Result<String> {
-        // The Decimal("Infinity")/("NaN") sentinels smuggled through by
-        // `aero_str_to_number` render as `_digits_of` reads format(v, "f")
-        // = "Infinity"/"-Infinity"/"NaN": no digit chars, only the sign
-        // word — "" / "minus" / "" (all three are corpus rows).
-        if let Some(sp) = aero_special_of(value) {
-            return Ok(sp.cardinal_words().to_string());
-        }
         // Python's to_cardinal routes every float/Decimal through this
         // language's own decimal grammar — 5.0 keeps its ".0" tail
         // ("fife decimal zero"), unlike Base's whole-value integer route.
@@ -301,12 +292,8 @@ impl Lang for LangEnAeroFaa {
     /// The delegate's `verify_ordinal` polices the type: whole values
     /// ordinalise in plain English (`5.0` → "fifth", `Decimal("1E+2")` →
     /// "one hundredth", `-0.0` → "zeroth"); fractional or negative values
-    /// raise TypeError. The Infinity/NaN sentinels reproduce the `int(value)`
-    /// raise inside that comparison: OverflowError / ValueError.
+    /// raise TypeError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        if let Some(sp) = aero_special_of(value) {
-            return Err(sp.int_error());
-        }
         self.english.ordinal_float_entry(value)
     }
 
@@ -316,9 +303,6 @@ impl Lang for LangEnAeroFaa {
     /// Float-ness is checked before sign (so `-1.5` raises the *float*
     /// message); `%s` interpolates `str(value)` = `repr_str`.
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        if let Some(sp) = aero_special_of(value) {
-            return Err(sp.int_error());
-        }
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as ordinal.",
@@ -353,12 +337,6 @@ impl Lang for LangEnAeroFaa {
         self.english.to_fraction(numerator, denominator)
     }
 
-    /// `converter.str_to_number` — base `Decimal(value)` semantics, with
-    /// Infinity/NaN carried through as sentinels (see `lang_en_aero`)
-    /// because AERO's string-reading cardinal *succeeds* on them.
-    fn str_to_number(&self, s: &str) -> Result<ParsedNumber> {
-        aero_str_to_number(s)
-    }
     // negword/pointword are inherited from Num2Word_EN.setup(). Both are inert
     // here: the default `to_cardinal` that would consume them is overridden, and
     // AERO renders its own sign via `minus_word` ("minus", no trailing space).
@@ -498,14 +476,6 @@ impl Lang for LangEnAeroFaa {
         separator: Option<&str>,
         adjective: bool,
     ) -> Result<String> {
-        // Keep the Infinity/NaN sentinels out of the delegate's arithmetic
-        // (no corpus row reaches this; the delegate raises from an int()
-        // cast in Python, same types as here).
-        if let CurrencyValue::Decimal { value: d, .. } = val {
-            if let Some(sp) = aero_special_of_decimal(d) {
-                return Err(sp.int_error());
-            }
-        }
         self.english
             .to_currency(val, currency, cents, separator, adjective)
     }

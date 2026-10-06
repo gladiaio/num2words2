@@ -922,16 +922,19 @@ mod float_tests {
             l.cardinal_float_entry(&fv_d("12345.000", 3), None).unwrap(),
             "on iki müň üç ýüz kyrk bäş point zero zero zero"
         );
-        // Exponent-form reprs: str(1e16) == "1e+16", str(Decimal("1E+2")) ==
-        // "1E+2" — no ".", so int() raises ValueError.
+        // Exponent-form float reprs: str(1e16) == "1e+16" — no ".", so
+        // int() raises ValueError (the dispatcher never sends these here,
+        // #211). str(Decimal) is written out ("100"), so Decimals read.
         for v in [
             l.cardinal_float_entry(&fv_f(1e16, 16), None),
             l.cardinal_float_entry(&fv_f(1e20, 20), None),
-            l.cardinal_float_entry(&fv_d("1E+2", 0), None),
-            l.cardinal_float_entry(&fv_d("1E+20", 0), None),
         ] {
             assert!(matches!(v, Err(N2WError::Value(_))), "{v:?}");
         }
+        assert_eq!(
+            l.cardinal_float_entry(&fv_d("1E+2", 0), None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
+        );
     }
 
     /// `to_ordinal` on floats: cardinal + "-nji", ValueErrors propagating;
@@ -974,14 +977,13 @@ mod float_tests {
             l.year_float_entry(&fv_f(5.0, 1)).unwrap(),
             "bäş point zero"
         );
-        assert!(matches!(
-            l.year_float_entry(&fv_d("1E+2", 0)),
-            Err(N2WError::Value(_))
-        ));
+        assert_eq!(
+            l.year_float_entry(&fv_d("1E+2", 0)).unwrap(),
+            l.to_year(&BigInt::from(100)).unwrap()
+        );
     }
 
-    /// String inputs: "1e3" parses to Decimal('1E+3') whose str keeps the
-    /// exponent, so int() raises; "Infinity" is intercepted in str_to_number
+    /// String inputs: "1e3" parses to Decimal('1E+3'), read as 1000 (#211); "Infinity" is intercepted in str_to_number
     /// (the dispatcher would otherwise report the base class's OverflowError).
     #[test]
     fn corpus_string_rows() {
@@ -989,11 +991,12 @@ mod float_tests {
         let parsed = l.str_to_number("1e3").unwrap();
         match parsed {
             ParsedNumber::Dec(d) => {
+                // #211: str(Decimal('1E+3')) is written out as "1000".
                 let fv = FloatValue::Decimal { value: d, precision: 0 };
-                assert!(matches!(
-                    l.cardinal_float_entry(&fv, None),
-                    Err(N2WError::Value(_))
-                ));
+                assert_eq!(
+                    l.cardinal_float_entry(&fv, None).unwrap(),
+                    l.to_cardinal(&BigInt::from(1000)).unwrap()
+                );
             }
             other => panic!("expected Dec, got {other:?}"),
         }

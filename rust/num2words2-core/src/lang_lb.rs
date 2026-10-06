@@ -1088,14 +1088,13 @@ mod entry_routing_tests {
             }
             other => panic!("expected ValueError, got {:?}", other),
         }
-        for (s, repr) in [("1E+2", "1E+2"), ("1E+20", "1E+20"), ("1E+3", "1E+3")] {
-            match lb.cardinal_float_entry(&dv(s), None) {
-                Err(N2WError::Value(m)) => assert_eq!(
-                    m,
-                    format!("invalid literal for int() with base 10: '{}'", repr)
-                ),
-                other => panic!("{} expected ValueError, got {:?}", s, other),
-            }
+        // #211: str(Decimal) is written out ("100"), so these read.
+        for (s, n) in [("1E+2", 2u32), ("1E+20", 20), ("1E+3", 3)] {
+            assert_eq!(
+                lb.cardinal_float_entry(&dv(s), None).unwrap(),
+                lb.to_cardinal(&BigInt::from(10).pow(n)).unwrap(),
+                "{}", s
+            );
         }
     }
 

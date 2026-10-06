@@ -948,12 +948,11 @@ mod float_entry_tests {
             }
             other => panic!("expected ValueError, got {:?}", other),
         }
-        match l.cardinal_float_entry(&dv("1E+2", 2), None) {
-            Err(N2WError::Value(m)) => {
-                assert_eq!(m, "invalid literal for int() with base 10: '1E+2'")
-            }
-            other => panic!("expected ValueError, got {:?}", other),
-        }
+        // #211: str(Decimal) is written out ("100"), so it reads.
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+2", 2), None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
+        );
         assert!(matches!(
             l.year_float_entry(&fv(1e20, 20)),
             Err(N2WError::Value(_))

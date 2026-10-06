@@ -1028,15 +1028,15 @@ mod float_tests {
             lo.cardinal_float_entry(&e16, None),
             Err(N2WError::Value(_))
         ));
-        // str(Decimal("1E+2")) == "1E+2": int("1E+2") -> ValueError.
+        // #211: str(Decimal("1E+2")) is written out ("100"), so it reads.
         let d1e2 = FloatValue::Decimal {
             value: BigDecimal::from_str("1E+2").unwrap(),
             precision: 2,
         };
-        assert!(matches!(
-            lo.ordinal_float_entry(&d1e2),
-            Err(N2WError::Value(_))
-        ));
+        assert_eq!(
+            lo.ordinal_float_entry(&d1e2).unwrap(),
+            lo.to_ordinal(&BigInt::from(100)).unwrap()
+        );
         // ordinal_num echoes the repr instead of converting.
         assert_eq!(lo.ordinal_num_float_entry(&e16, "1e+16").unwrap(), "ທີ່1e+16");
     }

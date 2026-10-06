@@ -441,39 +441,47 @@ pub fn python_int_parse(s: &str) -> Option<BigInt> {
     Some(v)
 }
 
-/// Python's `str(Decimal)` — the to-scientific-string algorithm from the
-/// General Decimal Arithmetic spec. Needed because `has_decimal` checks
-/// `"." in str(number)` and `to_ordinal_num`'s base default returns the
-/// value itself, which the dispatcher then str()s.
+/// Python's `str(Decimal)` in positional notation — the fixed-point branch of
+/// the General Decimal Arithmetic to-scientific-string algorithm, applied to
+/// every value. Python switches to scientific form (`1E+3`, `1E-7`) for a
+/// positive exponent or a small adjusted exponent; every language reader
+/// downstream `int()`s or digit-walks this string, so the exponent form made
+/// them crash or read the mantissa (gladiaio/num2words2#211). Values are
+/// therefore always written out: `Decimal('1E+3')` -> `"1000"`,
+/// `Decimal('1E-7')` -> `"0.0000001"`. Needed because `has_decimal` checks
+/// `"." in str(number)` and the language readers walk its digits.
 pub fn python_decimal_str(d: &BigDecimal) -> String {
     let (mant, scale) = d.as_bigint_and_exponent();
     let exponent = -scale; // Python's as_tuple().exponent
     let neg = mant.sign() == num_bigint::Sign::Minus;
     let digits = mant.magnitude().to_string();
     let ndigits = digits.len() as i64;
-    let adjusted = exponent + ndigits - 1;
     let sign = if neg { "-" } else { "" };
 
-    if exponent <= 0 && adjusted >= -6 {
-        // Fixed-point notation.
-        if exponent == 0 {
-            return format!("{}{}", sign, digits);
-        }
-        let point = ndigits + exponent;
-        if point <= 0 {
-            return format!("{}0.{}{}", sign, "0".repeat((-point) as usize), digits);
-        }
-        let (i, f) = digits.split_at(point as usize);
-        return format!("{}{}.{}", sign, i, f);
+    if exponent >= 0 {
+        return format!("{}{}{}", sign, digits, "0".repeat(exponent as usize));
     }
-    // Scientific notation.
-    let exp = adjusted;
-    let mantissa = if digits.len() == 1 {
-        digits
-    } else {
-        format!("{}.{}", &digits[..1], &digits[1..])
-    };
-    format!("{}{}E{}{}", sign, mantissa, if exp >= 0 { "+" } else { "" }, exp)
+    let point = ndigits + exponent;
+    if point <= 0 {
+        return format!("{}0.{}{}", sign, "0".repeat((-point) as usize), digits);
+    }
+    let (i, f) = digits.split_at(point as usize);
+    format!("{}{}.{}", sign, i, f)
+}
+
+#[cfg(test)]
+mod decimal_str_tests {
+    use super::*;
+
+    #[test]
+    fn never_scientific() {
+        for (s, want) in [("1E+3", "1000"), ("1.5E+3", "1500"), ("1E-7", "0.0000001"),
+                          ("0.00001", "0.00001"), ("-12.50", "-12.50"), ("0", "0"),
+                          ("0.0", "0.0"), ("123", "123")] {
+            let d = BigDecimal::from_str(s).unwrap();
+            assert_eq!(python_decimal_str(&d), want, "{}", s);
+        }
+    }
 }
 
 #[cfg(test)]
