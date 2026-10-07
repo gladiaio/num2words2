@@ -87,6 +87,11 @@ def _parity_failures(lang):
         a, ea = _call(f, lang, "cardinal")
         b, eb = _call(s, lang, "cardinal")
         c, ec = _call(Decimal(s), lang, "cardinal")
+        errs = {type(e) for e in (ea, eb, ec)}
+        if len(errs) == 1 and None not in {ea, eb, ec}:
+            # All three input types raise the same typed error: they agree
+            # (ksw has no word for the decimal point or minus, #143).
+            continue
         if ea or eb or ec or not (a == b == c):
             out.append((s, a, b, c, type(ea or eb or ec).__name__))
     return out

@@ -6,9 +6,11 @@ from unittest import TestCase
 
 from num2words2 import num2words
 
+# ksw is covered by tests/lang/test_ksw.py: since gladiaio/num2words2#143
+# it spells 1..9999 only and raises for currency.
 NEW_LANG_CODES = [
     "ban", "bm", "ceb", "ckb", "cnh", "ff", "fil", "hmn", "ki", "kok",
-    "ksw", "ku", "ky", "lg", "lus", "om", "or", "pap", "pli", "rw",
+    "ku", "ky", "lg", "lus", "om", "or", "pap", "pli", "rw",
     "ti", "xh", "zu",
 ]
 
