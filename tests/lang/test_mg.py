@@ -215,11 +215,11 @@ class Num2WordsMGTest(TestCase):
             num2words(999999999, lang="mg"),
             "sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
         )
-        self.assertEqual(num2words(1000000000, lang="mg"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="mg"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="mg"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="mg"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="mg"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="mg"), "iray lavitrisa")
+        self.assertEqual(num2words(1234567890, lang="mg"), "iray lavitrisa roa zato telopolo efatra tapitrisa dimy zato enimpolo fito arivo valo zato sivifolo")
+        self.assertEqual(num2words(9999999999, lang="mg"), "sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy")
+        self.assertEqual(num2words(10000000000, lang="mg"), "folo lavitrisa")
+        self.assertEqual(num2words(99999999999, lang="mg"), "sivifolo sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

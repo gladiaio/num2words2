@@ -202,11 +202,11 @@ class Num2WordsUZTest(TestCase):
             num2words(999999999, lang="uz"),
             "to'qqiz yuz to'qson to'qqiz million to'qqiz yuz to'qson to'qqiz ming to'qqiz yuz to'qson to'qqiz",
         )
-        self.assertEqual(num2words(1000000000, lang="uz"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="uz"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="uz"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="uz"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="uz"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="uz"), "bir milliard")
+        self.assertEqual(num2words(1234567890, lang="uz"), "bir milliard ikki yuz o'ttiz to'rt million besh yuz oltmish yetti ming sakkiz yuz to'qson")
+        self.assertEqual(num2words(9999999999, lang="uz"), "to'qqiz milliard to'qqiz yuz to'qson to'qqiz million to'qqiz yuz to'qson to'qqiz ming to'qqiz yuz to'qson to'qqiz")
+        self.assertEqual(num2words(10000000000, lang="uz"), "o'n milliard")
+        self.assertEqual(num2words(99999999999, lang="uz"), "to'qson to'qqiz milliard to'qqiz yuz to'qson to'qqiz million to'qqiz yuz to'qson to'qqiz ming to'qqiz yuz to'qson to'qqiz")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

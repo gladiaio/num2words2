@@ -190,11 +190,11 @@ class Num2WordsHTTest(TestCase):
             num2words(999999999, lang="ht"),
             "nèf san katrevendis nèf milyon nèf san katrevendis nèf mil nèf san katrevendis nèf",
         )
-        self.assertEqual(num2words(1000000000, lang="ht"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="ht"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="ht"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="ht"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="ht"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="ht"), "en milya")
+        self.assertEqual(num2words(1234567890, lang="ht"), "en milya de san trant kat milyon senk san swasant sèt mil uit san katrevendis")
+        self.assertEqual(num2words(9999999999, lang="ht"), "nèf milya nèf san katrevendis nèf milyon nèf san katrevendis nèf mil nèf san katrevendis nèf")
+        self.assertEqual(num2words(10000000000, lang="ht"), "dis milya")
+        self.assertEqual(num2words(99999999999, lang="ht"), "katrevendis nèf milya nèf san katrevendis nèf milyon nèf san katrevendis nèf mil nèf san katrevendis nèf")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

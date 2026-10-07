@@ -1,5 +1,13 @@
 //! Port of `lang_WO.py` (Wolof).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. No
+//! scale word above a million is attested for this language, so the port
+//! raises `OverflowError` from 10^9, which `maxval()` reports. Where the notes
+//! below describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Registry check: `__init__.py` maps `"wo"` → `lang_WO.Num2Word_WO()`, which is
 //! the class ported here.
 //!
@@ -167,7 +175,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -175,6 +183,7 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword` — note the trailing space, which is load-bearing: `to_cardinal`
 /// concatenates it directly onto the magnitude with no separator.
@@ -220,6 +229,21 @@ const MILLION: &str = "tamndareet";
 
 /// The value at which `_int_to_word` gives up and returns `str(number)` (bug 1).
 const BILLION: u32 = 1_000_000_000;
+
+/// The exclusive ceiling (gladiaio/num2words2#147): no scale word above
+/// a million is attested, so 10^9 raises `OverflowError` instead of
+/// coming back as digits.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(9))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
 
 pub struct LangWo {
     /// `Num2Word_WO.CURRENCY_FORMS`, built once. The registry caches the
@@ -558,7 +582,7 @@ fn cardinal_from_str(n: &str) -> Result<String> {
         let mut ret = format!(
             "{}{} {} ",
             ret_prefix,
-            int_to_word(&parse_int(left)?),
+            checked_int_to_word(&parse_int(left)?)?,
             POINTWORD
         );
         // for digit in right: ret += int_to_word(int(digit)) + " "
@@ -570,20 +594,24 @@ fn cardinal_from_str(n: &str) -> Result<String> {
                     ch
                 ))
             })?;
-            ret.push_str(&int_to_word(&BigInt::from(d)));
+            ret.push_str(&checked_int_to_word(&BigInt::from(d))?);
             ret.push(' ');
         }
         // return ret.strip()
         Ok(ret.trim().to_string())
     } else {
         // return (ret + int_to_word(int(n))).strip()
-        Ok(format!("{}{}", ret_prefix, int_to_word(&parse_int(n)?))
+        Ok(format!("{}{}", ret_prefix, checked_int_to_word(&parse_int(n)?)?)
             .trim()
             .to_string())
     }
 }
 
 impl Lang for LangWo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -682,7 +710,7 @@ impl Lang for LangWo {
         // Python's trailing `.strip()`: a no-op in practice (negword's trailing
         // space is consumed by the word that follows, and _int_to_word never
         // returns a padded string), but reproduced for fidelity.
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -843,7 +871,7 @@ impl Lang for LangWo {
         let one = BigInt::one();
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -852,7 +880,7 @@ impl Lang for LangWo {
         // way base's `_cents_terse` would (bug 9).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }
@@ -942,10 +970,15 @@ mod float_tests {
         assert_eq!(dec("0.01"), "zero point zero benn");
         assert_eq!(dec("1.10"), "benn point benn zero");
         assert_eq!(dec("12.345"), "fukk ñaar point ñett ñeent juróom");
-        assert_eq!(
-            dec("98746251323029.99"),
-            "98746251323029 point juróom-ñeent juróom-ñeent"
-        );
+        // Past 10^9 the left part raises OverflowError (#147), not digits.
+        let big = FloatValue::Decimal {
+            value: BigDecimal::from_str("98746251323029.99").unwrap(),
+            precision: 2,
+        };
+        assert!(matches!(
+            LangWo::new().to_cardinal_float(&big, None),
+            Err(N2WError::Overflow(_))
+        ));
         assert_eq!(dec("0.001"), "zero point zero zero benn");
     }
 
@@ -954,8 +987,9 @@ mod float_tests {
     fn float_edges() {
         // -0.0 keeps its sign bit, so the negword survives.
         assert_eq!(f(-0.0), "minus zero point zero");
-        // A tie CPython breaks to even: repr is "670352580196876.2", so ñaar.
-        assert_eq!(f(670352580196876.25), "670352580196876 point ñaar");
+        // A tie CPython breaks to even: repr is "670352580196876.2". (The
+        // integer part is past the 10^9 ceiling, so only the repr is checked.)
+        assert_eq!(python_float_repr(670352580196876.25), "670352580196876.2");
         // Decimal with no fractional part takes the else branch.
         assert_eq!(dec("5"), "juróom");
         assert_eq!(dec("-5"), "minus juróom");

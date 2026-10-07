@@ -1,5 +1,14 @@
 //! Port of `lang_SO.py` (Somali).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "bilyan" (10^9; so.wikipedia "Bilyan"), composed like the million
+//! arm, and raises `OverflowError` from 10^12, which `maxval()` reports. 10^12
+//! is spelled inconsistently (tiriliyan / tirilyan), so it is not used. Where
+//! the notes below describe the digit fallback ("1000000000", "no overflow
+//! check"), they describe Python; that arm is now unreachable.
+//!
 //! Registry check: `CONVERTER_CLASSES["so"]` is `lang_SO.Num2Word_SO()`, which
 //! is the class ported here.
 //!
@@ -91,7 +100,7 @@
 //! "euros"). USD and EUR use doolar / yuuro with senti. Examples in these docs
 //! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -100,6 +109,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.ones`. Index 0 is `""` and is unreachable — see bug 1.
 const ONES: [&str; 10] = [
@@ -173,6 +183,16 @@ const SEPARATOR_UNSET: &str = ",";
 /// SO's own `to_currency` default, restored when [`SEPARATOR_UNSET`] arrives.
 const SEPARATOR_DEFAULT: &str = " ";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "bilyan")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
 pub struct LangSo {
     /// `CURRENCY_FORMS`, built once in [`LangSo::new`] and cached by the caller
     /// (`num2words2-py` holds this in a `OnceLock`), never per call.
@@ -193,6 +213,13 @@ impl Default for LangSo {
 }
 
 impl LangSo {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         let mut forms = HashMap::with_capacity(3);
         forms.insert(
@@ -231,6 +258,22 @@ impl LangSo {
         // `else: return str(number)` — the digit fallback (bug 2). Must stay on
         // BigInt: `number` is unbounded here.
         if *number >= BigInt::from(DIGIT_FALLBACK_FLOOR) {
+            // Scale words above a million (gladiaio/num2words2#147), composed like
+            // the million arm. Every entry point rejects values at or above
+            // `maxval_ceiling()` first, so the top quotient is always below 1000.
+            for &(exp, word) in SCALES.iter().rev() {
+                let scale = pow10_big(exp);
+                if number >= &scale {
+                    let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                    let rest = number % &scale;
+                    if !rest.is_zero() {
+                        result.push(' ');
+                        result.push_str(&self.int_to_word(&rest));
+                    }
+                    return result;
+                }
+            }
+            // Unreachable: callers check `maxval_ceiling()` first.
             return number.to_string();
         }
 
@@ -354,7 +397,7 @@ impl LangSo {
         if let Some((left, right)) = n.split_once('.') {
             // `ret += self._int_to_word(int(left)) + " " + self.pointword + " "`
             let mut out = String::from(ret);
-            out.push_str(&self.int_to_word(&python_int(left)?));
+            out.push_str(&self.checked_int_to_word(&python_int(left)?)?);
             out.push(' ');
             out.push_str(self.pointword());
             out.push(' ');
@@ -366,14 +409,14 @@ impl LangSo {
                         ch
                     ))
                 })?;
-                out.push_str(&self.int_to_word(&BigInt::from(d)));
+                out.push_str(&self.checked_int_to_word(&BigInt::from(d))?);
                 out.push(' ');
             }
             // `return ret.strip()`
             Ok(out.trim().to_string())
         } else {
             // `return (ret + self._int_to_word(int(n))).strip()`
-            Ok(format!("{}{}", ret, self.int_to_word(&python_int(n)?))
+            Ok(format!("{}{}", ret, self.checked_int_to_word(&python_int(n)?)?)
                 .trim()
                 .to_string())
         }
@@ -381,6 +424,10 @@ impl LangSo {
 }
 
 impl Lang for LangSo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -468,7 +515,7 @@ impl Lang for LangSo {
         };
 
         // `_int_to_word` receives a non-negative value here — hence bug 5.
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -693,7 +740,7 @@ impl Lang for LangSo {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -705,7 +752,7 @@ impl Lang for LangSo {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                self.int_to_word(&right),
+                self.checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }

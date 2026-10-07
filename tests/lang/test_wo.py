@@ -244,11 +244,17 @@ class Num2WordsWOTest(TestCase):
             num2words(999999999, lang="wo"),
             "juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent tamndareet juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent junni juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent",
         )
-        self.assertEqual(num2words(1000000000, lang="wo"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="wo"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="wo"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="wo"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="wo"), "99999999999")
+        # No attested Wolof scale word above tamndareet (#147).
+        with self.assertRaises(OverflowError):
+            num2words(1000000000, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(1234567890, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(9999999999, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(10000000000, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(99999999999, lang="wo")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

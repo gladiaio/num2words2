@@ -1,5 +1,14 @@
 //! Port of `lang_UZ.py` (Uzbek).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milliard" (10^9) and "trillion" (10^12) (Wiktionary "milliard";
+//! anhor.uz), composed like the million arm, and raises `OverflowError` from
+//! 10^15, which `maxval()` reports. Where the notes below describe the digit
+//! fallback ("1000000000", "no overflow check"), they describe Python; that
+//! arm is now unreachable.
+//!
 //! Registry check: `__init__.py` maps `"uz"` to `lang_UZ.Num2Word_UZ()`, which
 //! is the class ported here.
 //!
@@ -210,7 +219,7 @@
 //! "euros"). USD and EUR use dollar / yevro with sent. Examples in these docs
 //! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -219,6 +228,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is load-bearing: `to_cardinal` does
 /// `ret = self.negword` and then `ret + self._int_to_word(...)` with no
@@ -377,6 +387,22 @@ fn int_to_word(number: &BigInt) -> String {
         return result;
     }
 
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
+    }
+
     // `return str(number)  # Fallback for very large numbers` (quirk 1).
     number.to_string()
 }
@@ -433,6 +459,23 @@ fn int_value_error(repr_no_dot: &str) -> N2WError {
         "invalid literal for int() with base 10: '{}'",
         unsigned
     ))
+}
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "milliard"), (12, "trillion")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
 }
 
 pub struct LangUz {
@@ -495,6 +538,10 @@ impl Default for LangUz {
 }
 
 impl Lang for LangUz {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -534,7 +581,7 @@ impl Lang for LangUz {
         // The trailing `.strip()`. `int_to_word` never returns an empty string
         // (0 yields "zero"), so this only ever no-ops, but it is what Python
         // does.
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -659,7 +706,7 @@ impl Lang for LangUz {
             words.push(NEGWORD.trim().to_string());
         }
         // `_int_to_word(int(left))` on the absolute integer part.
-        words.push(int_to_word(&pre.abs()));
+        words.push(checked_int_to_word(&pre.abs())?);
 
         if precision > 0 {
             // `self.pointword`, used raw (UZ never titles; is_title is false).
@@ -679,7 +726,7 @@ impl Lang for LangUz {
                 let d = ch.to_digit(10).ok_or_else(|| {
                     N2WError::Value(format!("non-digit {:?} in fractional part", ch))
                 })?;
-                words.push(int_to_word(&BigInt::from(d)));
+                words.push(checked_int_to_word(&BigInt::from(d))?);
             }
         }
 
@@ -943,7 +990,7 @@ impl Lang for LangUz {
         // 0 takes the *plural*: "nol euros".
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -952,7 +999,7 @@ impl Lang for LangUz {
         // drops it too, with no terse fallback (quirk 11).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }
@@ -1036,7 +1083,7 @@ mod tests {
             ("0.01", "nol vergul nol bir"),
             ("1.10", "bir vergul bir nol"),
             ("12.345", "o'n ikki vergul uch to'rt besh"),
-            ("98746251323029.99", "98746251323029 vergul to'qqiz to'qqiz"),
+            ("98746251323029.99", "to'qson sakkiz trillion yetti yuz qirq olti milliard ikki yuz ellik bir million uch yuz yigirma uch ming yigirma to'qqiz vergul to'qqiz to'qqiz"),
             ("0.001", "nol vergul nol nol bir"),
         ] {
             assert_eq!(go(&d(arg)), out, "decimal {}", arg);
@@ -1053,13 +1100,13 @@ mod tests {
         assert_eq!(go(&f(-0.0, 1)), "minus nol vergul nol");
         // Integer part past 10^9: _int_to_word's digit fallback (quirk 1)
         // applies to the float path's integer part too.
-        assert_eq!(go(&f(1234567890.5, 1)), "1234567890 vergul besh");
+        assert_eq!(go(&f(1234567890.5, 1)), "bir milliard ikki yuz o'ttiz to'rt million besh yuz oltmish yetti ming sakkiz yuz to'qson vergul besh");
         // Large magnitude where float2tuple takes the floor branch
         // (67.1875 is not within 0.01 of an integer) and still agrees with
         // Python's str()-derived digits.
         assert_eq!(
             go(&f(123456789012345.67, 2)),
-            "123456789012345 vergul olti yetti"
+            "bir yuz yigirma uch trillion to'rt yuz ellik olti milliard yetti yuz sakson to'qqiz million o'n ikki ming uch yuz qirq besh vergul olti yetti"
         );
     }
 

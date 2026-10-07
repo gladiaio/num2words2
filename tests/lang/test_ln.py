@@ -219,11 +219,11 @@ class Num2WordsLNTest(TestCase):
             num2words(999999999, lang="ln"),
             "libwá nkama ntuku libwá libwá milio libwá nkama ntuku libwá libwá nkóto libwá nkama ntuku libwá libwá",
         )
-        self.assertEqual(num2words(1000000000, lang="ln"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="ln"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="ln"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="ln"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="ln"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="ln"), "moko miliale")
+        self.assertEqual(num2words(1234567890, lang="ln"), "moko miliale míbalé nkama ntuku mísáto mínei milio mítáno nkama ntuku motóbá sambo nkóto mwambe nkama ntuku libwá")
+        self.assertEqual(num2words(9999999999, lang="ln"), "libwá miliale libwá nkama ntuku libwá libwá milio libwá nkama ntuku libwá libwá nkóto libwá nkama ntuku libwá libwá")
+        self.assertEqual(num2words(10000000000, lang="ln"), "zómi miliale")
+        self.assertEqual(num2words(99999999999, lang="ln"), "ntuku libwá libwá miliale libwá nkama ntuku libwá libwá milio libwá nkama ntuku libwá libwá nkóto libwá nkama ntuku libwá libwá")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

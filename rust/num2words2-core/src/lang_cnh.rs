@@ -1,5 +1,13 @@
 //! Port of `lang_CNH.py` (Hakha Chin).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. No
+//! scale word above a million is attested for this language, so the port
+//! raises `OverflowError` from 10^9, which `maxval()` reports. Where the notes
+//! below describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Registry check: `CONVERTER_CLASSES["cnh"]` is `lang_CNH.Num2Word_CNH`, which
 //! is the class ported here.
 //!
@@ -208,7 +216,7 @@
 //! faithful substitute and the dispatcher needs no special-casing. The
 //! `CURRENCY_FORMS` table is immutable after construction.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -376,6 +384,14 @@ fn pick_form(n: &BigInt, forms: &[String]) -> Result<String> {
         .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147): no scale word above
+/// a million is attested, so 10^9 raises `OverflowError` instead of
+/// coming back as digits.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(9))
+}
+
 /// Holds the `CURRENCY_FORMS` table, built once in [`LangCnh::new`].
 ///
 /// The four integer modes are stateless — `setup()` only assigns constant
@@ -399,6 +415,13 @@ impl Default for LangCnh {
 }
 
 impl LangCnh {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // `Num2Word_CNH.CURRENCY_FORMS`, verbatim — three codes, two forms per
         // side. Both forms of every pair are identical (Hakha Chin does not
@@ -608,7 +631,7 @@ impl LangCnh {
                     ))
                 })?;
                 // `_int_to_word(int(left)) + " " + self.pointword`
-                let mut ret = format!("{} {}", self.int_to_word(&left_int), POINTWORD);
+                let mut ret = format!("{} {}", self.checked_int_to_word(&left_int)?, POINTWORD);
                 // Each fractional character maps to one `ones` word, or "zero"
                 // for '0' (because `ones[0]` is "" and `"" or "zero"` is "zero")
                 // — bug 18. Iterated as chars, per fidelity rule.
@@ -633,7 +656,7 @@ impl LangCnh {
                         s
                     ))
                 })?;
-                self.int_to_word(&n)
+                self.checked_int_to_word(&n)?
             }
         };
 
@@ -650,6 +673,10 @@ impl LangCnh {
 }
 
 impl Lang for LangCnh {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -709,10 +736,10 @@ impl Lang for LangCnh {
     /// anyway).
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let inner = self.int_to_word(&value.abs());
+            let inner = self.checked_int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        Ok(self.checked_int_to_word(value)?)
     }
 
     /// Port of `Num2Word_CNH.to_ordinal`: `self.to_cardinal(number) + "-nak"`.
@@ -985,7 +1012,7 @@ impl Lang for LangCnh {
 
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             pick_form(&left, &forms.unit)?
         );
 
@@ -1000,7 +1027,7 @@ impl Lang for LangCnh {
             // between the cents number and the subunit name, not after the
             // separator; adding one there yields "euro  pathum".
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(&pick_form(&right, &forms.subunit)?);
         }
@@ -1073,8 +1100,15 @@ mod float_tests {
         assert_eq!(d("0.01", 2), "zero decimal zero pakhat");
         assert_eq!(d("1.10", 2), "pakhat decimal pakhat zero");
         assert_eq!(d("12.345", 3), "pahra le pahnih decimal pathum pali panga");
-        // Left part past 10^9 degrades to bare digits (bug 1/19).
-        assert_eq!(d("98746251323029.99", 2), "98746251323029 decimal pakua pakua");
+        // Left part past 10^9 raises OverflowError (#147), not digits.
+        let big = FloatValue::Decimal {
+            value: BigDecimal::from_str("98746251323029.99").unwrap(),
+            precision: 2,
+        };
+        assert!(matches!(
+            LangCnh::new().to_cardinal_float(&big, None),
+            Err(N2WError::Overflow(_))
+        ));
         assert_eq!(d("0.001", 3), "zero decimal zero zero pakhat");
     }
 

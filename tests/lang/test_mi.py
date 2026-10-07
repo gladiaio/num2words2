@@ -205,11 +205,11 @@ class Num2WordsMITest(TestCase):
             num2words(999999999, lang="mi"),
             "iwa rau iwa tekau iwa miriona iwa rau iwa tekau iwa mano iwa rau iwa tekau iwa",
         )
-        self.assertEqual(num2words(1000000000, lang="mi"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="mi"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="mi"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="mi"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="mi"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="mi"), "tahi piriona")
+        self.assertEqual(num2words(1234567890, lang="mi"), "tahi piriona rua rau toru tekau whā miriona rima rau ono tekau whitu mano waru rau iwa tekau")
+        self.assertEqual(num2words(9999999999, lang="mi"), "iwa piriona iwa rau iwa tekau iwa miriona iwa rau iwa tekau iwa mano iwa rau iwa tekau iwa")
+        self.assertEqual(num2words(10000000000, lang="mi"), "tekau piriona")
+        self.assertEqual(num2words(99999999999, lang="mi"), "iwa tekau iwa piriona iwa rau iwa tekau iwa miriona iwa rau iwa tekau iwa mano iwa rau iwa tekau iwa")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

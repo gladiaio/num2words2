@@ -1,5 +1,14 @@
 //! Port of `lang_LN.py` (Lingala).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "miliale" (10^9; dic.lingala.be), composed like the million arm,
+//! and raises `OverflowError` from 10^12, which `maxval()` reports. No word
+//! for 10^12 is attested. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_LN` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
@@ -105,7 +114,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -115,6 +124,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword` — note the trailing space; `to_cardinal` concatenates it
 /// directly onto the worded magnitude and `.strip()`s the result.
@@ -254,6 +264,22 @@ fn int_to_word(n: &BigInt) -> String {
             result.push_str(&int_to_word(&remainder));
         }
         return result;
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if n >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(n / &scale)), word);
+            let rest = n % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // `return str(number)` — the fallback for "very large numbers".
@@ -441,14 +467,14 @@ fn cardinal_from_str(s: &str) -> Result<String> {
         // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
         let left_int = parse_int(left)?;
         let mut out = String::from(ret);
-        out.push_str(&int_to_word(&left_int));
+        out.push_str(&checked_int_to_word(&left_int)?);
         out.push(' ');
         out.push_str(POINTWORD);
         out.push(' ');
         // for digit in right: ret += self._int_to_word(int(digit)) + " "
         for ch in right.chars() {
             let d = parse_digit(ch)?;
-            out.push_str(&int_to_word(&d));
+            out.push_str(&checked_int_to_word(&d)?);
             out.push(' ');
         }
         // return ret.strip()
@@ -456,8 +482,25 @@ fn cardinal_from_str(s: &str) -> Result<String> {
     } else {
         // return (ret + self._int_to_word(int(n))).strip()
         let ni = parse_int(n)?;
-        Ok(format!("{}{}", ret, int_to_word(&ni)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&ni)?).trim().to_string())
     }
+}
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "miliale")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
 }
 
 pub struct LangLn {
@@ -508,6 +551,10 @@ impl LangLn {
 }
 
 impl Lang for LangLn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -552,7 +599,7 @@ impl Lang for LangLn {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -845,7 +892,7 @@ impl Lang for LangLn {
         // ("zero euros", quirk 10).
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -854,7 +901,7 @@ impl Lang for LangLn {
         // drops it too, with no terse fallback (quirk 9).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }

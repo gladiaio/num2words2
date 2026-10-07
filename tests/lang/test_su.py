@@ -224,11 +224,11 @@ class Num2WordsSUTest(TestCase):
             num2words(999999999, lang="su"),
             "salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan",
         )
-        self.assertEqual(num2words(1000000000, lang="su"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="su"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="su"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="su"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="su"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="su"), "hiji miliar")
+        self.assertEqual(num2words(1234567890, lang="su"), "hiji miliar dua ratus tilu puluh opat juta lima ratus genep puluh tujuh rebu dalapan ratus salapan puluh")
+        self.assertEqual(num2words(9999999999, lang="su"), "salapan miliar salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan")
+        self.assertEqual(num2words(10000000000, lang="su"), "sapuluh miliar")
+        self.assertEqual(num2words(99999999999, lang="su"), "salapan puluh salapan miliar salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

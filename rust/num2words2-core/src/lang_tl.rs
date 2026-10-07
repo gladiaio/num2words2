@@ -1,5 +1,14 @@
 //! Port of `lang_TL.py` (Tagalog).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "bilyon" (10^9) and "trilyon" (10^12) (tl.wikipedia "Bilyon";
+//! Wiktionary), composed like the million arm, and raises `OverflowError` from
+//! 10^15, which `maxval()` reports. Where the notes below describe the digit
+//! fallback ("1000000000", "no overflow check"), they describe Python; that
+//! arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_TL` subclasses `Num2Word_Base` but its
 //! `setup()` defines no `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
@@ -127,7 +136,7 @@
 //! "euros"). USD and EUR use dolyar / euro with sentimo, as fil does. Examples
 //! in these docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -136,6 +145,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`, verbatim from `setup()` — note the **trailing space**, which
 /// is load-bearing: `to_cardinal` concatenates it directly (it does not go
@@ -224,6 +234,16 @@ const FALLBACK_CURRENCY: &str = "PHP";
 /// consults `CURRENCY_PRECISION`, so this stays 100 even for KWD/BHD/JPY.
 const CENT_DIVISOR: i64 = 100;
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "bilyon"), (12, "trilyon")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangTl {
     /// `Num2Word_TL.CURRENCY_FORMS`.
     ///
@@ -247,6 +267,13 @@ impl Default for LangTl {
 }
 
 impl LangTl {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // Insertion order is irrelevant to a HashMap; FALLBACK_CURRENCY
         // captures the one place Python's ordering was observable.
@@ -386,6 +413,22 @@ impl LangTl {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Python: `return str(number)` — "Fallback for very large numbers".
         // Emits digits, not words. See bug 2.
         number.to_string()
@@ -443,13 +486,13 @@ impl LangTl {
 
         let Some(dot) = n.find('.') else {
             // else: (ret + self._int_to_word(int(n))).strip()
-            ret.push_str(&self.int_to_word(&py_int(n)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(n)?)?);
             return Ok(ret.trim().to_string());
         };
 
         // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
         let (left, right) = (&n[..dot], &n[dot + 1..]);
-        ret.push_str(&self.int_to_word(&py_int(left)?));
+        ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
         ret.push(' ');
         ret.push_str(POINTWORD);
         ret.push(' ');
@@ -463,13 +506,17 @@ impl LangTl {
             }
             first = false;
             let mut buf = [0u8; 4];
-            ret.push_str(&self.int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+            ret.push_str(&self.checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
         }
         Ok(ret.trim().to_string())
     }
 }
 
 impl Lang for LangTl {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -605,7 +652,7 @@ impl Lang for LangTl {
         // `.strip()` — only ever trims NEGWORD's trailing space when
         // _int_to_word returns "" (which it cannot), so it is a no-op in
         // practice. Kept for fidelity.
-        Ok(format!("{}{}", ret, self.int_to_word(&n))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?)
             .trim()
             .to_string())
     }
@@ -746,7 +793,7 @@ impl Lang for LangTl {
         };
 
         let one = BigInt::one();
-        let left_str = self.int_to_word(&left);
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -761,7 +808,7 @@ impl Lang for LangTl {
         // the type of `val`. This is what makes `1.0` print "isa euro" with no
         // cents segment even though it is a float.
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = self.checked_int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');

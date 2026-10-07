@@ -1,5 +1,14 @@
 //! Port of `lang_MI.py` (Maori / te reo Māori).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "piriona" (10^9; Te Aka Māori dictionary), composed like the
+//! million arm, and raises `OverflowError` from 10^12, which `maxval()`
+//! reports. No word for 10^12 is attested. Where the notes below describe the
+//! digit fallback ("1000000000", "no overflow check"), they describe Python;
+//! that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_MI` subclasses `Num2Word_Base` but its
 //! `setup()` defines no `high_numwords`/`mid_numwords`/`low_numwords`, so the
 //! `any(hasattr(...))` guard in `Num2Word_Base.__init__` never fires: Python
@@ -114,7 +123,7 @@
 //! reliable Māori noun, so USD and EUR raise NotImplementedError. Examples in
 //! these docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::ParsedNumber;
@@ -122,6 +131,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `_int_to_word`'s zero case. Python's `self.ones[0] if self.ones[0] else
 /// "zero"` always takes the `else` — `ones[0]` is `""`. See quirk 4.
@@ -234,6 +244,22 @@ fn int_to_word(number: &BigInt) -> String {
         return result;
     }
 
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
+    }
+
     // `return str(number)` — "Fallback for very large numbers". See quirk 1.
     number.to_string()
 }
@@ -287,6 +313,23 @@ fn python_float_repr_abs(f: f64) -> String {
 /// than left to iteration order.
 const FALLBACK_CURRENCY: &str = "NZD";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "piriona")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangMi {
     /// `CURRENCY_FORMS`, built once. Every entry carries exactly two unit forms
     /// and two subunit forms, matching Python's tuple arity — `to_currency`
@@ -320,6 +363,10 @@ impl Default for LangMi {
 }
 
 impl Lang for LangMi {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -359,7 +406,7 @@ impl Lang for LangMi {
         // Python: `(ret + self._int_to_word(int(n))).strip()`. The strip only
         // ever matters via negword's trailing space, which is always followed
         // by a word — but it is in the original, so it is here.
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Python's `to_ordinal`. Special forms for 1..=5 only; everything else,
@@ -465,7 +512,7 @@ impl Lang for LangMi {
                 }
                 let magnitude: BigInt = n.parse().expect("all-ASCII-digit string parses");
                 let ret = if value.is_negative() { NEGWORD } else { "" };
-                Ok(format!("{}{}", ret, int_to_word(&magnitude))
+                Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
                     .trim()
                     .to_string())
             }
@@ -602,7 +649,7 @@ impl Lang for LangMi {
         // arm: the bare integer word, no pointword. A plain float always has a
         // "." in its repr, so precision >= 1 there.
         if precision == 0 {
-            let mut ret = int_to_word(&left);
+            let mut ret = checked_int_to_word(&left)?;
             if is_negative {
                 ret = format!("{}{}", NEGWORD, ret);
             }
@@ -619,14 +666,14 @@ impl Lang for LangMi {
         );
 
         // ret = _int_to_word(int(left)) + " " + self.pointword
-        let mut ret = format!("{} {}", int_to_word(&left), POINTWORD);
+        let mut ret = format!("{} {}", checked_int_to_word(&left)?, POINTWORD);
         // for digit in right: ret += " " + self._int_to_word(int(digit))
         for ch in post_str.chars().take(precision as usize) {
             let d = ch.to_digit(10).ok_or_else(|| {
                 N2WError::Value(format!("non-digit {:?} in fractional part", ch))
             })?;
             ret.push(' ');
-            ret.push_str(&int_to_word(&BigInt::from(d)));
+            ret.push_str(&checked_int_to_word(&BigInt::from(d))?);
         }
 
         // Python: `ret = self.negword + ...` was set up front; negword keeps
@@ -827,7 +874,7 @@ impl Lang for LangMi {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -837,7 +884,7 @@ impl Lang for LangMi {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }

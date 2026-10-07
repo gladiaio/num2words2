@@ -1,5 +1,14 @@
 //! Port of `lang_TK.py` (Turkmen).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milliard" (10^9) and "trillion" (10^12) (Wiktionary;
+//! business.com.tm, ashgabat.in), composed like the million arm, and raises
+//! `OverflowError` from 10^15, which `maxval()` reports. Where the notes below
+//! describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_TK` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
 //! `set_high_numwords`/`merge`, so Python never builds `self.cards` and never
@@ -171,7 +180,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -179,6 +188,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is the empty string, exactly as in Python — the
 /// `_int_to_word(0)` guard depends on its falsiness (see quirk 2).
@@ -329,6 +339,22 @@ fn int_to_word(n: &BigInt) -> String {
         return format!("{}{}", NEGWORD, int_to_word(&n.abs()));
     }
 
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if n >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(n / &scale)), word);
+            let rest = n % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
+    }
+
     // Below 10^9 the value fits a u64 comfortably; at or above it, Python
     // stops producing words and just prints the digits, so BigInt values of
     // any size (the corpus goes to 10^21) land in the fallback unharmed.
@@ -475,7 +501,7 @@ fn tk_cardinal_from_str(n: &str, negword: &str, pointword: &str) -> Result<Strin
                 field
             ))
         })?;
-        Ok(int_to_word(&val))
+        Ok(checked_int_to_word(&val)?)
     };
 
     // Python: `if "." in n:` — split on the *first* dot only (`split(".", 1)`).
@@ -534,6 +560,23 @@ const SEPARATOR_UNSET: &str = ",";
 /// TK's own `to_currency` default, restored when [`SEPARATOR_UNSET`] arrives.
 const SEPARATOR_DEFAULT: &str = " ";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "milliard"), (12, "trillion")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangTk {
     /// `CURRENCY_FORMS`, built once. Every entry carries exactly two unit forms
     /// and two subunit forms, matching Python's tuple arity — `to_currency`
@@ -567,6 +610,10 @@ impl Default for LangTk {
 }
 
 impl Lang for LangTk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -607,7 +654,7 @@ impl Lang for LangTk {
         // matters if the word part were empty; it never is, but `trim()`
         // matches Python's `str.strip()` (both strip Unicode whitespace) and
         // the word tables contain no leading/trailing spaces.
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Python's `to_ordinal`: the cardinal with the harmonised ending on its
@@ -820,7 +867,7 @@ impl Lang for LangTk {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -831,7 +878,7 @@ impl Lang for LangTk {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }
@@ -906,7 +953,7 @@ mod float_tests {
             ("0.01", "nol point nol bir"),
             ("1.10", "bir point bir nol"),
             ("12.345", "on iki point üç dört bäş"),
-            ("98746251323029.99", "98746251323029 point dokuz dokuz"),
+            ("98746251323029.99", "togsan sekiz trillion ýedi ýüz kyrk alty milliard iki ýüz elli bir million üç ýüz ýigrimi üç müň ýigrimi dokuz point dokuz dokuz"),
             ("0.001", "nol point nol nol bir"),
         ];
         for (s, want) in cases {
@@ -960,7 +1007,7 @@ mod float_tests {
         // Above 10^9 the integer field degrades to bare digits (quirk 1).
         assert_eq!(
             l.cardinal_float_entry(&fv_f(1e9, 1), None).unwrap(),
-            "1000000000 point nol"
+            "bir milliard point nol"
         );
         // Decimal without a visible point takes the integer words...
         assert_eq!(l.cardinal_float_entry(&fv_d("5", 0), None).unwrap(), "bäş");

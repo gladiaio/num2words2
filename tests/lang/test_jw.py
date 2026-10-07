@@ -214,11 +214,11 @@ class Num2WordsJWTest(TestCase):
             num2words(999999999, lang="jw"),
             "sanga atus sanga puluh sanga yuta sanga atus sanga puluh sanga ewu sanga atus sanga puluh sanga",
         )
-        self.assertEqual(num2words(1000000000, lang="jw"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="jw"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="jw"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="jw"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="jw"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="jw"), "siji milyar")
+        self.assertEqual(num2words(1234567890, lang="jw"), "siji milyar loro atus telung puluh papat yuta lima atus sewidak pitu ewu wolu atus sanga puluh")
+        self.assertEqual(num2words(9999999999, lang="jw"), "sanga milyar sanga atus sanga puluh sanga yuta sanga atus sanga puluh sanga ewu sanga atus sanga puluh sanga")
+        self.assertEqual(num2words(10000000000, lang="jw"), "sepuluh milyar")
+        self.assertEqual(num2words(99999999999, lang="jw"), "sanga puluh sanga milyar sanga atus sanga puluh sanga yuta sanga atus sanga puluh sanga ewu sanga atus sanga puluh sanga")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

@@ -1,5 +1,14 @@
 //! Port of `lang_TT.py` (Tatar).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "миллиард" (10^9) and "триллион" (10^12) (Wiktionary), composed
+//! like the million arm, and raises `OverflowError` from 10^15, which
+//! `maxval()` reports. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_TT` subclasses `Num2Word_Base`, but
 //! its `setup` defines only flat `ones`/`tens` lists plus three scale words —
 //! no `high_numwords`/`mid_numwords`/`low_numwords`. Python therefore never
@@ -145,7 +154,7 @@
 //! numeral). Examples in these docs that quote English nouns record Python's
 //! output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -155,6 +164,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is the empty string — see bug 1; it is never read as
 /// a word, only as the (always-falsy) zero guard.
@@ -460,6 +470,16 @@ fn python_str_number(v: &FloatValue) -> String {
     }
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "миллиард"), (12, "триллион")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangTt {
     /// `Num2Word_TT.CURRENCY_FORMS`, built once in [`LangTt::new`].
     ///
@@ -471,6 +491,13 @@ pub struct LangTt {
 }
 
 impl LangTt {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // CURRENCY_FORMS = {
         //     "RUB": (("сум", "сум"), ("тиен", "тиен")),
@@ -587,6 +614,22 @@ impl LangTt {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Bug 2: "Fallback for very large numbers" — bare digits, no words.
         number.to_string()
     }
@@ -599,6 +642,10 @@ impl Default for LangTt {
 }
 
 impl Lang for LangTt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -643,7 +690,7 @@ impl Lang for LangTt {
         // The trailing .strip() is a no-op for every integer input: NEGWORD's
         // trailing space is always followed by a non-empty word (bug 1
         // guarantees even zero yields "нуль"). Ported anyway for fidelity.
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Python's `to_ordinal`: cardinal plus a hyphenated suffix, no stem
@@ -788,14 +835,14 @@ impl Lang for LangTt {
         match n.split_once('.') {
             Some((left, right)) => {
                 // `ret += self._int_to_word(int(left)) + " " + self.pointword + " "`
-                ret.push_str(&self.int_to_word(&python_int(left)?));
+                ret.push_str(&self.checked_int_to_word(&python_int(left)?)?);
                 ret.push(' ');
                 ret.push_str(POINTWORD);
                 ret.push(' ');
                 // `for digit in right: ret += self._int_to_word(int(digit)) + " "`
                 // — one character at a time; `int(digit)` on a non-digit raises.
                 for ch in right.chars() {
-                    ret.push_str(&self.int_to_word(&python_int(&ch.to_string())?));
+                    ret.push_str(&self.checked_int_to_word(&python_int(&ch.to_string())?)?);
                     ret.push(' ');
                 }
                 // `return ret.strip()`
@@ -803,7 +850,7 @@ impl Lang for LangTt {
             }
             None => {
                 // `return (ret + self._int_to_word(int(n))).strip()`
-                ret.push_str(&self.int_to_word(&python_int(n)?));
+                ret.push_str(&self.checked_int_to_word(&python_int(n)?)?);
                 Ok(ret.trim().to_string())
             }
         }
@@ -933,7 +980,7 @@ impl Lang for LangTt {
         let (cr1, cr2) = (&forms.unit, &forms.subunit);
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
-        let left_str = self.int_to_word(&left);
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -949,7 +996,7 @@ impl Lang for LangTt {
             // Note the separator stands alone — TT adds no space of its own
             // after it, which is why its `" "` default is load-bearing.
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }

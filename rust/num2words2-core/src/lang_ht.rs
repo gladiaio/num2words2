@@ -1,5 +1,14 @@
 //! Port of `lang_HT.py` (Haitian Creole / Kreyòl ayisyen).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milya" (10^9; ht.wikipedia "Milya"), composed like the million
+//! arm, and raises `OverflowError` from 10^12, which `maxval()` reports. No
+//! word for 10^12 is attested. Where the notes below describe the digit
+//! fallback ("1000000000", "no overflow check"), they describe Python; that
+//! arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_HT` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `__init__` never enters the `if any(hasattr(...))` branch: `self.cards` is
@@ -68,7 +77,7 @@
 //! "euros"). USD and EUR use dola / ewo with santim. Examples in these docs
 //! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -77,6 +86,7 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword` — note the **trailing space**, which `to_cardinal` relies on
 /// as the separator before the number words (and `.strip()` later trims when
@@ -167,6 +177,22 @@ fn int_to_word(number: &BigInt) -> String {
 
     // `else: return str(number)` — the digit fallback for >= 10^9.
     if number >= &billion() {
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+        // Unreachable: callers check `maxval_ceiling()` first.
         return number.to_string();
     }
 
@@ -569,6 +595,23 @@ fn positional_parts(value: &FloatValue) -> (bool, BigInt, Option<String>) {
     (neg, pre, Some(frac))
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "milya")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangHt {
     /// `Num2Word_HT.CURRENCY_FORMS`, built once here rather than per call.
     currency_forms: HashMap<&'static str, CurrencyForms>,
@@ -613,6 +656,10 @@ impl LangHt {
 }
 
 impl Lang for LangHt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -710,7 +757,7 @@ impl Lang for LangHt {
             ("", value.clone())
         };
 
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -807,7 +854,7 @@ impl Lang for LangHt {
         if neg {
             ret.push_str(NEGWORD); // "mwens " — trailing space preserved
         }
-        ret.push_str(&int_to_word(&pre));
+        ret.push_str(&checked_int_to_word(&pre)?);
 
         if let Some(frac) = frac {
             ret.push(' ');
@@ -822,7 +869,7 @@ impl Lang for LangHt {
                     ))
                 })?;
                 ret.push(' ');
-                ret.push_str(&int_to_word(&BigInt::from(d)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(d))?);
             }
         }
 
@@ -983,14 +1030,14 @@ impl Lang for LangHt {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
         // Bugs 8 and 9: a *value* test, not a type test, and not a terse form.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }

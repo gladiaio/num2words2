@@ -1,5 +1,14 @@
 //! Port of `lang_MG.py` (Malagasy).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "lavitrisa" (10^9; mg.wikipedia "Fanisana amin' ny teny
+//! malagasy"), composed like the million arm, and raises `OverflowError` from
+//! 10^12, which `maxval()` reports. The native words above it are rare and not
+//! used. Where the notes below describe the digit fallback ("1000000000", "no
+//! overflow check"), they describe Python; that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_MG` subclasses `Num2Word_Base` but its
 //! `setup()` defines no `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
@@ -152,7 +161,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::ParsedNumber;
@@ -161,6 +170,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`. Note the **trailing space** — MG uses it raw rather than
 /// going through `Num2Word_Base.parse_minus`, which would `.strip()` it.
@@ -205,6 +215,23 @@ const BILLION: u32 = 1_000_000_000;
 /// `list(c.CURRENCY_FORMS.values())[0]` -> `(('ariary', 'ariary'),
 /// ('iraimbilanja', 'iraimbilanja'))`.
 const FALLBACK_CODE: &str = "MGA";
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "lavitrisa")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
 
 pub struct LangMg {
     /// `CURRENCY_FORMS`, built once here rather than per call.
@@ -270,6 +297,22 @@ fn int_to_word(number: &BigInt) -> String {
     // `else: return str(number)` — the fallback for very large numbers. This
     // must render the full BigInt; the value is NOT bounded here.
     if number >= &BigInt::from(BILLION) {
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+        // Unreachable: callers check `maxval_ceiling()` first.
         return number.to_string();
     }
 
@@ -365,6 +408,10 @@ fn python_float_repr_abs(f: f64) -> String {
 }
 
 impl Lang for LangMg {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -415,7 +462,7 @@ impl Lang for LangMg {
         // Python's trailing `.strip()`: a no-op in practice (negword's space is
         // consumed by the word that follows, and _int_to_word never returns a
         // padded string), but reproduced for fidelity.
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -522,7 +569,7 @@ impl Lang for LangMg {
                 }
                 let magnitude: BigInt = n.parse().expect("all-ASCII-digit string parses");
                 let ret = if value.is_negative() { NEGWORD } else { "" };
-                Ok(format!("{}{}", ret, int_to_word(&magnitude))
+                Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
                     .trim()
                     .to_string())
             }
@@ -699,7 +746,7 @@ impl Lang for LangMg {
         if is_negative {
             ret.push_str(NEGWORD); // "minus " — trailing space is load-bearing.
         }
-        ret.push_str(&int_to_word(&int_left));
+        ret.push_str(&checked_int_to_word(&int_left)?);
 
         // Python emits the point + digit words only when `"." in n`, i.e. when
         // there is a fractional part (precision > 0). precision == 0 reproduces
@@ -715,7 +762,7 @@ impl Lang for LangMg {
                         ch
                     ))
                 })?;
-                ret.push_str(&int_to_word(&BigInt::from(digit)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(digit))?);
             }
         }
 
@@ -856,7 +903,7 @@ impl Lang for LangMg {
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`.
         // Indexing is unconditional in Python and every entry has arity 2.
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         let unit = &forms.unit[if left == one { 0 } else { 1 }];
         let mut result = format!("{} {}", left_str, unit);
 
@@ -864,7 +911,7 @@ impl Lang for LangMg {
         // cents=False; there is no terse branch. And `right == 0` is falsy, so
         // a whole float like 1.0 never renders cents.
         if cents && !right.is_zero() {
-            let cents_str = int_to_word(&right);
+            let cents_str = checked_int_to_word(&right)?;
             let subunit = &forms.subunit[if right == one { 0 } else { 1 }];
             result.push_str(separator);
             result.push_str(&cents_str);

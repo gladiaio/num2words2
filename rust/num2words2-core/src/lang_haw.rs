@@ -1,5 +1,14 @@
 //! Port of `lang_HAW.py` (Hawaiian).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "piliona" (10^9) and "kiliona" (10^12) (Pukui-Elbert via
+//! wehe.hilo.hawaii.edu), composed like the million arm, and raises
+//! `OverflowError` from 10^15, which `maxval()` reports. Where the notes below
+//! describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_HAW` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
 //! `set_high_numwords`, so Python never builds `self.cards` and never sets
@@ -96,7 +105,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -104,6 +113,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword = "minus "`. The trailing space matters — see
 /// [`LangHaw::to_cardinal`], which concatenates it then trims.
@@ -240,6 +250,22 @@ fn int_to_word(number: &BigInt) -> String {
         return result;
     }
 
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
+    }
+
     // Python: `else: return str(number)  # Fallback for very large numbers`.
     // No OverflowError, no words — just the decimal digits. Quirk 1.
     number.to_string()
@@ -334,6 +360,23 @@ const SEPARATOR_UNSET: &str = ",";
 /// HAW's own `to_currency` default, restored when [`SEPARATOR_UNSET`] arrives.
 const SEPARATOR_DEFAULT: &str = " ";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "piliona"), (12, "kiliona")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangHaw {
     /// `CURRENCY_FORMS`, built once. Both entries carry exactly two unit forms
     /// and two subunit forms, matching Python's tuple arity — `to_currency`
@@ -363,6 +406,10 @@ impl Default for LangHaw {
 }
 
 impl Lang for LangHaw {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -406,7 +453,7 @@ impl Lang for LangHaw {
         } else {
             (value.clone(), "")
         };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_HAW.to_ordinal`.
@@ -558,7 +605,7 @@ impl Lang for LangHaw {
         if is_negative {
             ret.push_str(NEGWORD); // "minus " — trailing space is load-bearing.
         }
-        ret.push_str(&int_to_word(&int_left));
+        ret.push_str(&checked_int_to_word(&int_left)?);
 
         // Python emits the point + digit words only when `"." in n`, i.e. when
         // there is a fractional part (precision > 0). precision == 0 reproduces
@@ -574,7 +621,7 @@ impl Lang for LangHaw {
                         ch
                     ))
                 })?;
-                ret.push_str(&int_to_word(&BigInt::from(digit)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(digit))?);
             }
         }
 
@@ -851,7 +898,7 @@ impl Lang for LangHaw {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -861,7 +908,7 @@ impl Lang for LangHaw {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }

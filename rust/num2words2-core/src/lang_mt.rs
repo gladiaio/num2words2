@@ -1,5 +1,15 @@
 //! Port of `lang_MT.py` (Maltese).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "biljun" (10^9) and "triljun" (10^12) (Wiktionary;
+//! newsbook.com.mt), composed like the million arm, and raises `OverflowError`
+//! from 10^15, which `maxval()` reports. The plural ("żewġ biljuni") is not
+//! applied, as for miljun. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_MT` subclasses `Num2Word_Base` but
 //! defines only `setup()` — no `high_numwords`/`mid_numwords`/`low_numwords`.
 //! `Num2Word_Base.__init__` guards its card-table build behind
@@ -195,7 +205,7 @@
 //! "euros"). USD uses dollaru/dollari with ċenteżmu/ċenteżmi, like EUR.
 //! Examples in these docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -203,6 +213,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword = "minus "` — the trailing space is load-bearing in
 /// Python's `ret + self._int_to_word(...)` seam, then removed by `.strip()`.
@@ -379,6 +390,16 @@ fn python_str(v: &FloatValue) -> String {
     }
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "biljun"), (12, "triljun")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangMt {
     /// `Num2Word_MT.CURRENCY_FORMS`. Built once in [`LangMt::new`] and stored;
     /// the py binding holds the `LangMt` in a `OnceLock`, so this table is
@@ -401,6 +422,13 @@ impl Default for LangMt {
 }
 
 impl LangMt {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // CURRENCY_FORMS = {
         //     "EUR": (("ewro", "ewro"), ("ċenteżmu", "ċenteżmi")),
@@ -507,6 +535,22 @@ impl LangMt {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Python: `return str(number)  # Fallback for very large numbers`.
         // No words, no error — the raw decimal string (bug 4). Only reachable
         // at top level: every recursive call above passes a value < 10^9.
@@ -515,6 +559,10 @@ impl LangMt {
 }
 
 impl Lang for LangMt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -549,7 +597,7 @@ impl Lang for LangMt {
         let ret = if value.is_negative() { NEGWORD } else { "" };
         let magnitude = value.abs();
         // Python: `return (ret + self._int_to_word(int(n))).strip()`.
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -654,7 +702,7 @@ impl Lang for LangMt {
             // Python: `ret += self._int_to_word(int(left)) + " " + self.pointword + " "`.
             // `int(left)` on a huge integer part re-enters the digit-leaking
             // fallback (bug 4); `_int_to_word` already reproduces that.
-            ret.push_str(&self.int_to_word(&py_int(left)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
@@ -664,7 +712,7 @@ impl Lang for LangMt {
             // is unreachable in the positional regime this path targets.
             for ch in right.chars() {
                 let d = py_int(&ch.to_string())?;
-                ret.push_str(&self.int_to_word(&d));
+                ret.push_str(&self.checked_int_to_word(&d)?);
                 ret.push(' ');
             }
             // Python: `return ret.strip()`.
@@ -672,7 +720,7 @@ impl Lang for LangMt {
         } else {
             // No dot in the reconstructed string. Python:
             // `return (ret + self._int_to_word(int(n))).strip()`.
-            ret.push_str(&self.int_to_word(&py_int(mag)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(mag)?)?);
             Ok(ret.trim().to_string())
         }
     }
@@ -855,7 +903,7 @@ impl Lang for LangMt {
 
         // Python: `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`.
         // Both table entries have arity 2, so index 1 is always populated.
-        let left_str = self.int_to_word(&left);
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -865,7 +913,7 @@ impl Lang for LangMt {
         // Python: `if cents and right:` — `right` is truthiness-tested, so zero
         // cents drop the whole segment even when `cents=True` (bug 13).
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = self.checked_int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');

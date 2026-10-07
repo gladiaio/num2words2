@@ -191,11 +191,11 @@ class Num2WordsTKTest(TestCase):
             num2words(999999999, lang="tk"),
             "dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
         )
-        self.assertEqual(num2words(1000000000, lang="tk"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="tk"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="tk"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="tk"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="tk"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="tk"), "bir milliard")
+        self.assertEqual(num2words(1234567890, lang="tk"), "bir milliard iki ýüz otuz dört million bäş ýüz altmyş ýedi müň sekiz ýüz togsan")
+        self.assertEqual(num2words(9999999999, lang="tk"), "dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz")
+        self.assertEqual(num2words(10000000000, lang="tk"), "on milliard")
+        self.assertEqual(num2words(99999999999, lang="tk"), "togsan dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

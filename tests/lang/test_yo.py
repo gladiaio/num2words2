@@ -220,11 +220,11 @@ class Num2WordsYOTest(TestCase):
             num2words(999999999, lang="yo"),
             "mẹsan ọgọrun àádọrún mẹsan miliọnu mẹsan ọgọrun àádọrún mẹsan ẹgbẹrun mẹsan ọgọrun àádọrún mẹsan",
         )
-        self.assertEqual(num2words(1000000000, lang="yo"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="yo"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="yo"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="yo"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="yo"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="yo"), "ọkan biliọnu")
+        self.assertEqual(num2words(1234567890, lang="yo"), "ọkan biliọnu méjì ọgọrun ọgbọn mẹrin miliọnu marun ọgọrun ọgọta meje ẹgbẹrun mẹjọ ọgọrun àádọrún")
+        self.assertEqual(num2words(9999999999, lang="yo"), "mẹsan biliọnu mẹsan ọgọrun àádọrún mẹsan miliọnu mẹsan ọgọrun àádọrún mẹsan ẹgbẹrun mẹsan ọgọrun àádọrún mẹsan")
+        self.assertEqual(num2words(10000000000, lang="yo"), "mẹwa biliọnu")
+        self.assertEqual(num2words(99999999999, lang="yo"), "àádọrún mẹsan biliọnu mẹsan ọgọrun àádọrún mẹsan miliọnu mẹsan ọgọrun àádọrún mẹsan ẹgbẹrun mẹsan ọgọrun àádọrún mẹsan")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

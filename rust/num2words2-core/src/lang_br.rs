@@ -1,5 +1,16 @@
 //! Port of `lang_BR.py` (Breton).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "miliard" (10^9) and "bilion" (10^12) — long scale, so bilion is
+//! a million million (br.wiktionary "miliard"; niverel.brezhoneg.bzh Meurgorf
+//! 21519, 4294), composed like the million arm, and raises `OverflowError`
+//! from 10^15, which `maxval()` reports. Mutations ("daou viliard") are not
+//! applied, as for milion. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Registry check: `__init__.py` maps `"br"` → `lang_BR.Num2Word_BR()`, so this
 //! file ports `Num2Word_BR` — the class the key actually resolves to.
 //!
@@ -220,7 +231,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -229,6 +240,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword`. Trailing space is intentional — see quirk 6.
 const NEGWORD: &str = "lei ";
@@ -362,6 +374,22 @@ pub fn int_to_word(number: &BigInt) -> String {
             result.push_str(&int_to_word(&remainder));
         }
         return result;
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // Python: `return str(number)  # Fallback for very large numbers`.
@@ -601,7 +629,7 @@ fn cardinal_from_py_str(number: &str) -> Result<String> {
         Some((left, right)) => {
             // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
             let mut out = String::from(ret);
-            out.push_str(&int_to_word(&py_int(left)?));
+            out.push_str(&checked_int_to_word(&py_int(left)?)?);
             out.push(' ');
             out.push_str(POINTWORD);
             out.push(' ');
@@ -615,7 +643,7 @@ fn cardinal_from_py_str(number: &str) -> Result<String> {
             // away with the exception.
             for digit in right.chars() {
                 let d = py_int(digit.encode_utf8(&mut [0u8; 4]))?;
-                out.push_str(&int_to_word(&d));
+                out.push_str(&checked_int_to_word(&d)?);
                 out.push(' ');
             }
 
@@ -623,10 +651,27 @@ fn cardinal_from_py_str(number: &str) -> Result<String> {
             Ok(out.trim().to_string())
         }
         // return (ret + self._int_to_word(int(n))).strip()
-        None => Ok(format!("{}{}", ret, int_to_word(&py_int(n)?))
+        None => Ok(format!("{}{}", ret, checked_int_to_word(&py_int(n)?)?)
             .trim()
             .to_string()),
     }
+}
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "miliard"), (12, "bilion")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
 }
 
 pub struct LangBr {
@@ -674,6 +719,10 @@ impl Default for LangBr {
 }
 
 impl Lang for LangBr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -765,7 +814,7 @@ impl Lang for LangBr {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// The float/Decimal arm of `Num2Word_BR.to_cardinal` — *not* an override
@@ -953,7 +1002,7 @@ impl Lang for LangBr {
         // the plural: "mann euroioù".
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -962,7 +1011,7 @@ impl Lang for LangBr {
         // drops it too, with no terse fallback (quirk 11).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }
@@ -1051,7 +1100,7 @@ mod tests {
         assert_eq!(ok(d("12.345")), "dek daou skej tri pevar pemp");
         assert_eq!(
             ok(d("98746251323029.99")),
-            "98746251323029 skej nav nav"
+            "dek ha pevar-ugent eizh bilion seizh kant daou-ugent c'hwec'h miliard daou kant hanter-kant unan milion tri kant ugent tri mil ugent nav skej nav nav"
         );
         assert_eq!(ok(d("0.001")), "mann skej mann mann unan");
     }
@@ -1145,7 +1194,8 @@ mod tests {
     #[test]
     fn repr_thresholds() {
         // 1e15 is positional, 1e16 is not.
-        assert_eq!(ok(f(1e15)), "1000000000000000 skej mann");
+        // 10^15 is the ceiling (#147): OverflowError, not digits.
+        assert!(matches!(f(1e15), Err(N2WError::Overflow(_))));
         assert!(f(1e16).is_err());
         // 1e-4 is positional, 1e-5 is not.
         assert_eq!(ok(f(1e-4)), "mann skej mann mann mann unan");
@@ -1198,14 +1248,18 @@ mod tests {
         assert_eq!(py_decimal_str(&BigDecimal::from_str("-1.10").unwrap()), "-1.10");
     }
 
-    /// Quirk 19 / issue #603: the integer part goes through the 10^9 digit
-    /// fallback (quirk 1), and the Decimal arm keeps the trillion-scale digits
-    /// a float cast would have rounded away.
+    /// Quirk 19 / issue #603: the Decimal arm keeps the trillion-scale digits
+    /// a float cast would have rounded away; since #147 they are spelled
+    /// with miliard/bilion instead of falling back to digits.
     #[test]
     fn large_values() {
-        assert_eq!(ok(d("98746251323029.99")), "98746251323029 skej nav nav");
-        assert_eq!(ok(f(1234567890.5)), "1234567890 skej pemp");
-        // Just under the fallback: still spelled.
+        assert_eq!(ok(d("98746251323029.99")), "dek ha pevar-ugent eizh bilion seizh kant daou-ugent c'hwec'h miliard daou kant hanter-kant unan milion tri kant ugent tri mil ugent nav skej nav nav");
+        assert_eq!(
+            ok(f(1234567890.5)),
+            "unan miliard daou kant tregont pevar milion pemp kant tri-ugent \
+             seizh mil eizh kant dek ha pevar-ugent skej pemp"
+        );
+        // Just under a milliard.
         assert_eq!(
             ok(f(123456789.5)),
             "unan kant ugent tri milion pevar kant hanter-kant c'hwec'h mil \

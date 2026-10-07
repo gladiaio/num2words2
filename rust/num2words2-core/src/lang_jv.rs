@@ -1,5 +1,14 @@
 //! Port of `lang_JW.py` (Javanese).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milyar" (10^9) and "triliun" (10^12), the forms in use
+//! (jv.wikipedia "UNDP"), composed like the million arm, and raises
+//! `OverflowError` from 10^15, which `maxval()` reports. Where the notes below
+//! describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Registry note: the key `"jv"` resolves to `Num2Word_JW` — `__init__.py` has
 //! both `"jw": lang_JW.Num2Word_JW()` (line 342) and
 //! `"jv": lang_JW.Num2Word_JW()` (line 406, "Alias for Javanese (modern ISO
@@ -168,7 +177,7 @@
 //! "euros"). USD and EUR use dolar / euro with sen. Examples in these docs
 //! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -178,6 +187,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`, set in `setup()`. Note the trailing space: `to_cardinal`
 /// concatenates it directly and relies on `.strip()` only for the ends.
@@ -244,6 +254,23 @@ const BASE_DEFAULT_SEPARATOR: &str = ",";
 /// EUR, and dicts have preserved insertion order since 3.7, so the first value
 /// is IDR's.
 const FALLBACK_CURRENCY: &str = "IDR";
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "milyar"), (12, "triliun")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
 
 pub struct LangJv {
     /// `Num2Word_JW.CURRENCY_FORMS`, built once in [`LangJv::new`] and never
@@ -373,6 +400,22 @@ fn int_to_word(number: &BigInt) -> String {
             result.push_str(&int_to_word(&remainder));
         }
         return result;
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // `return str(number)  # Fallback for very large numbers` (bug 3).
@@ -589,24 +632,28 @@ fn cardinal_from_repr(n: &str) -> Result<String> {
         Some((left, right)) => {
             // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
             let mut ret = ret;
-            ret.push_str(&int_to_word(&py_int(left)?));
+            ret.push_str(&checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
             // for digit in right: ret += self._int_to_word(int(digit)) + " "
             for digit in right.chars() {
-                ret.push_str(&int_to_word(&BigInt::from(py_int_digit(digit)?)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(py_int_digit(digit)?))?);
                 ret.push(' ');
             }
             // return ret.strip()
             Ok(ret.trim().to_string())
         }
         // else: return (ret + self._int_to_word(int(n))).strip()
-        None => Ok(format!("{}{}", ret, int_to_word(&py_int(n)?)).trim().to_string()),
+        None => Ok(format!("{}{}", ret, checked_int_to_word(&py_int(n)?)?).trim().to_string()),
     }
 }
 
 impl Lang for LangJv {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -718,7 +765,7 @@ impl Lang for LangJv {
         // Python's `.strip()`. Only ever trims NEGWORD's trailing space in the
         // (impossible) event of an empty word — `_int_to_word` never returns
         // "" — but reproduced so the shape matches.
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// `return cardinal + "-e"` — one suffix for every number, no agreement,
@@ -936,7 +983,7 @@ impl Lang for LangJv {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left.is_one() { &cr1[0] } else { &cr1[1] }
         );
 
@@ -944,7 +991,7 @@ impl Lang for LangJv {
         // with zero cents drops the whole segment (bug 6).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }
@@ -1027,7 +1074,7 @@ mod float_tests {
             ("0.01", "nol koma nol siji"),
             ("1.10", "siji koma siji nol"),
             ("12.345", "sepuluh loro koma telu papat lima"),
-            ("98746251323029.99", "98746251323029 koma sanga sanga"),
+            ("98746251323029.99", "sanga puluh wolu triliun pitu atus patang puluh enem milyar loro atus seket siji yuta telu atus rong puluh telu ewu rong puluh sanga koma sanga sanga"),
             ("0.001", "nol koma nol nol siji"),
         ];
         for (arg, want) in cases {
@@ -1043,7 +1090,7 @@ mod float_tests {
 
     #[test]
     fn extra_live_interpreter_rows() {
-        assert_eq!(card_float("1000000000.5"), "1000000000 koma lima");
+        assert_eq!(card_float("1000000000.5"), "siji milyar koma lima");
         assert_eq!(
             card_float("12345.678"),
             "sepuluh loro ewu telu atus patang puluh lima koma enem pitu wolu"

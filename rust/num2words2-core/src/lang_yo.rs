@@ -1,5 +1,14 @@
 //! Port of `lang_YO.py` (Yoruba).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "biliọnu" (10^9; Wiktionary "biliọnu", spelled like miliọnu),
+//! composed like the million arm, and raises `OverflowError` from 10^12, which
+//! `maxval()` reports. The 10^12 word has a single source and is not used.
+//! Where the notes below describe the digit fallback ("1000000000", "no
+//! overflow check"), they describe Python; that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_YO` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `Num2Word_Base.__init__` never enters the `if any(hasattr(...))` branch:
@@ -214,7 +223,7 @@
 //! NotImplementedError. Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -224,6 +233,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `_int_to_word(0)`. Python writes `self.ones[0] if self.ones[0] else "zero"`,
 /// and `ones[0]` is `""`, so this constant is the only reachable result.
@@ -301,6 +311,16 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     // USD/EUR were English ("dollars", "cents"); no reliable Yoruba subunit
     // noun was found, so they raise NotImplementedError (#222).
     m
+}
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "biliọnu")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
 }
 
 pub struct LangYo {
@@ -541,6 +561,13 @@ impl Default for LangYo {
 }
 
 impl LangYo {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         LangYo {
             currency_forms: build_currency_forms(),
@@ -568,6 +595,22 @@ impl LangYo {
         // (bug 5). Reproduced for fidelity, not because a test can hit it.
         if number.is_negative() {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+        }
+
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
         }
 
         match number.to_u64() {
@@ -632,6 +675,10 @@ impl LangYo {
 }
 
 impl Lang for LangYo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -724,7 +771,7 @@ impl Lang for LangYo {
         } else {
             ("", value.clone())
         };
-        let words = self.int_to_word(&n);
+        let words = self.checked_int_to_word(&n)?;
         Ok(format!("{}{}", ret, words).trim().to_string())
     }
 
@@ -809,7 +856,7 @@ impl Lang for LangYo {
                 // Python: `ret += self._int_to_word(int(left)) + " " +
                 //          self.pointword + " "`
                 let mut out = String::from(ret);
-                out.push_str(&self.int_to_word(&py_int(left)?));
+                out.push_str(&self.checked_int_to_word(&py_int(left)?)?);
                 out.push(' ');
                 out.push_str(self.pointword());
                 out.push(' ');
@@ -817,7 +864,7 @@ impl Lang for LangYo {
                 //          int(digit)) + " "` — a '0' char renders "òdo",
                 //          which is how 1.005 keeps its leading zeros.
                 for ch in right.chars() {
-                    out.push_str(&self.int_to_word(&py_int(&ch.to_string())?));
+                    out.push_str(&self.checked_int_to_word(&py_int(&ch.to_string())?)?);
                     out.push(' ');
                 }
                 // Python: `return ret.strip()`.
@@ -825,7 +872,7 @@ impl Lang for LangYo {
             }
             // Python's `else` — a dotless text (scientific repr, inf/nan).
             // `int(n)` raises ValueError with the full literal (bug 13).
-            None => Ok(format!("{}{}", ret, self.int_to_word(&py_int(&n)?))
+            None => Ok(format!("{}{}", ret, self.checked_int_to_word(&py_int(&n)?)?)
                 .trim()
                 .to_string()),
         }
@@ -987,7 +1034,7 @@ impl Lang for LangYo {
         // Python: `result = self._int_to_word(left) + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             pick(&forms.unit, !left.is_one())?
         );
 
@@ -996,7 +1043,7 @@ impl Lang for LangYo {
         if cents && !right.is_zero() {
             // Python: `result += separator + cents_str + " " + (cr2[1] if right != 1 else cr2[0])`
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(&pick(&forms.subunit, !right.is_one())?);
         }
@@ -1089,14 +1136,17 @@ mod tests {
             ("0.01", "òdo point òdo ọkan"),
             ("1.10", "ọkan point ọkan òdo"),
             ("12.345", "mẹwa méjì point mẹta mẹrin marun"),
-            // Trillion-scale: the integer part takes the str(number)
-            // fallback of bug 1, in full precision.
-            ("98746251323029.99", "98746251323029 point mẹsan mẹsan"),
             ("0.001", "òdo point òdo òdo ọkan"),
             ("-12.345", "minus mẹwa méjì point mẹta mẹrin marun"),
         ] {
             assert_eq!(card_d(s).unwrap(), want, "value {}", s);
         }
+        // Trillion-scale integer parts are past the 10^12 ceiling (#147):
+        // OverflowError, where Python printed the digits.
+        assert!(matches!(
+            card_d("98746251323029.99"),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// Bug 13: scientific-notation spellings raise ValueError with Python's

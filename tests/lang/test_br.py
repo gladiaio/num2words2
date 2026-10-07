@@ -210,11 +210,11 @@ class Num2WordsBRTest(TestCase):
             num2words(999999999, lang="br"),
             "nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
         )
-        self.assertEqual(num2words(1000000000, lang="br"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="br"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="br"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="br"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="br"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="br"), "unan miliard")
+        self.assertEqual(num2words(1234567890, lang="br"), "unan miliard daou kant tregont pevar milion pemp kant tri-ugent seizh mil eizh kant dek ha pevar-ugent")
+        self.assertEqual(num2words(9999999999, lang="br"), "nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav")
+        self.assertEqual(num2words(10000000000, lang="br"), "dek miliard")
+        self.assertEqual(num2words(99999999999, lang="br"), "dek ha pevar-ugent nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

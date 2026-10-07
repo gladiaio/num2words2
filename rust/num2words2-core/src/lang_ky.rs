@@ -1,5 +1,14 @@
 //! Port of `lang_KY.py` (Kyrgyz).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "миллиард" (10^9) and "триллион" (10^12) (Wiktionary; banks.kg,
+//! azattyk.org), composed like the million arm, and raises `OverflowError`
+//! from 10^15, which `maxval()` reports. Where the notes below describe the
+//! digit fallback ("1000000000", "no overflow check"), they describe Python;
+//! that arm is now unreachable.
+//!
 //! # Deliberate divergences from upstream
 //!
 //! Two, both documented below: the **script** (Cyrillic, not Latin) and the
@@ -160,7 +169,7 @@
 //! is "минус " and `_int_to_word` never returns a blank for a non-negative
 //! input) but is kept for fidelity.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -168,6 +177,7 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword`. Note the trailing space — it is the word/number
 /// separator, and the concatenation is `.strip()`ed afterwards.
@@ -317,7 +327,18 @@ const THOUSAND: &str = "миң";
 /// `setup`: `self.million`.
 const MILLION: &str = "миллион";
 
-/// 10^9 — the ceiling past which `_int_to_word` gives up and returns digits.
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`: миллиард (https://en.wiktionary.org/wiki/миллиард,
+/// banks.kg "727,3 миллиард сомго") and триллион (azattyk.org "1 триллион").
+const SCALES: [(u32, &str); 2] = [(9, "миллиард"), (12, "триллион")];
+
+/// The exclusive ceiling: 1000 триллион, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// 10^9 — the first value that needs a scale word above a million.
 fn one_e9() -> BigInt {
     BigInt::from(1_000_000_000u64)
 }
@@ -622,11 +643,24 @@ impl LangKy {
             };
         }
 
-        // Quirk 1: the final `return str(number)`. No OverflowError, no
-        // milliard word — just the decimal digits. Must be checked on the
-        // BigInt, since `number` is unbounded above.
+        // Upstream's final `return str(number)` printed bare digits from 10^9
+        // up. Fixed (gladiaio/num2words2#147): миллиард and триллион are
+        // composed like the million arm ("бир миллиард"), and from 10^15 the
+        // module raises `OverflowError` rather than stacking scale words.
         if number >= &one_e9() {
-            return Ok(number.to_string());
+            check_maxval(number, maxval_ceiling())?;
+            for &(exp, word) in SCALES.iter().rev() {
+                let scale = pow10_big(exp);
+                if number >= &scale {
+                    let mut s = format!("{} {}", self.int_to_word(&(number / &scale))?, word);
+                    let rest = number % &scale;
+                    if !rest.is_zero() {
+                        s.push(' ');
+                        s.push_str(&self.int_to_word(&rest)?);
+                    }
+                    return Ok(s);
+                }
+            }
         }
 
         // Proven: 0 < number < 10^9, so a u64 is lossless from here down.
@@ -724,6 +758,10 @@ impl LangKy {
 }
 
 impl Lang for LangKy {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -1316,7 +1354,7 @@ mod currency_tests {
 
         // The 10^9 digit fallback reaches the currency path too.
         let v = CurrencyValue::parse("1000000000", true, false, false).unwrap();
-        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "1000000000 евро");
+        assert_eq!(ky.to_currency(&v, "EUR", true, None, false).unwrap(), "бир миллиард евро");
     }
 
     /// `str(1e+21) == "1e+21"` → `int("1e+21")` → ValueError. The parsed
@@ -1476,7 +1514,7 @@ mod float_tests {
         assert_eq!(d("0.01"), "нөл үтүр нөл бир");
         assert_eq!(d("1.10"), "бир үтүр бир нөл");
         assert_eq!(d("12.345"), "он эки үтүр үч төрт беш");
-        assert_eq!(d("98746251323029.99"), "98746251323029 үтүр тогуз тогуз");
+        assert_eq!(d("98746251323029.99"), "токсон сегиз триллион жети жүз кырк алты миллиард эки жүз элүү бир миллион үч жүз жыйырма үч миң жыйырма тогуз үтүр тогуз тогуз");
         assert_eq!(d("0.001"), "нөл үтүр нөл нөл бир");
     }
 
@@ -1524,7 +1562,7 @@ mod entry_routing_tests {
         // The >= 10^9 digit fallback composes with the ".0" tail.
         assert_eq!(
             ky.cardinal_float_entry(&fv(1e9, 1), None).unwrap(),
-            "1000000000 үтүр нөл"
+            "бир миллиард үтүр нөл"
         );
         // Decimals: trailing zeros of the literal are all spelled.
         assert_eq!(ky.cardinal_float_entry(&dv("5.00"), None).unwrap(), "беш үтүр нөл нөл");
@@ -1558,13 +1596,15 @@ mod entry_routing_tests {
             other => panic!("expected ValueError, got {:?}", other),
         }
         // #211: str(Decimal) is written out ("100"), so these read.
-        for (s, n) in [("1E+2", 2u32), ("1E+20", 20)] {
-            assert_eq!(
-                ky.cardinal_float_entry(&dv(s), None).unwrap(),
-                ky.to_cardinal(&BigInt::from(10).pow(n)).unwrap(),
-                "{}", s
-            );
-        }
+        assert_eq!(
+            ky.cardinal_float_entry(&dv("1E+2"), None).unwrap(),
+            ky.to_cardinal(&BigInt::from(100)).unwrap()
+        );
+        // 10^20 is past the 10^15 ceiling (#147).
+        assert!(matches!(
+            ky.cardinal_float_entry(&dv("1E+20"), None),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// `to_ordinal(float)` = cardinal + the harmonised ending; errors

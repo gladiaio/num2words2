@@ -222,11 +222,11 @@ class Num2WordsHAWTest(TestCase):
             num2words(999999999, lang="haw"),
             "'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
         )
-        self.assertEqual(num2words(1000000000, lang="haw"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="haw"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="haw"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="haw"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="haw"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="haw"), "'ekahi piliona")
+        self.assertEqual(num2words(1234567890, lang="haw"), "'ekahi piliona 'elua haneli kanakolu 'ehā miliona 'elima haneli kanaono 'ehiku kaukani 'ewalu haneli kanaiwa")
+        self.assertEqual(num2words(9999999999, lang="haw"), "'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa")
+        self.assertEqual(num2words(10000000000, lang="haw"), "'umi piliona")
+        self.assertEqual(num2words(99999999999, lang="haw"), "kanaiwa 'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa")
 
     def test_negative_numbers(self):
         """Test negative numbers."""
