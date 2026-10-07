@@ -2804,3 +2804,24 @@ def test_es_handles_10_27_and_above():
     from num2words2 import num2words
     assert "quintillón" in num2words(10**30, lang="es")
     assert "nonillón" in num2words(10**54, lang="es")
+
+
+def test_es_ordinal_suffix_currency_after_apocope():
+    # The "Nro"/"Nda" stash turns the whole-number word of a currency
+    # reading into the ordinal ("2da" -> "segunda euros"). The currency
+    # path now apocopates a final "uno" ("veintiún euros", "treinta y un
+    # euros"), and the ordinal must still replace it for 21, 31, 101, ...
+    from num2words2 import num2words
+    assert num2words("2da", lang="es", to="currency") == "segunda euros"
+    assert num2words("21va", lang="es", to="currency") == (
+        "vigesimoprimera euros")
+    assert num2words("21ro", lang="es", to="currency", currency="GBP") == (
+        "vigesimoprimero libras")
+    assert num2words("31ro", lang="es", to="currency") == (
+        "trigésimo primero euros")
+    assert num2words("101ro", lang="es", to="currency") == (
+        "centésimo primero euros")
+    assert num2words("21ro", lang="es_CO", to="currency") == (
+        "vigesimoprimero pesos")
+    # 1 stays apocopated in es (the ordinal never fires there).
+    assert num2words("1ro", lang="es", to="currency") == "un euro"

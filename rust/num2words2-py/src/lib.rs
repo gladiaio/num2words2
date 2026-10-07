@@ -773,15 +773,37 @@ fn from_string_core(
                         // it is the first token of the currency string ("un").
                         match (normal, l.to_ordinal_kw(&n, &gkw)) {
                             (Ok(norm), Ok(ord)) => {
-                                let card = if one {
+                                // The currency path spells the whole part in
+                                // its attributive form: a final "uno" becomes
+                                // "un"/"una" ("treinta y un euros") and
+                                // "veintiuno" becomes "veintiún". Try the
+                                // standalone cardinal and each apocopated
+                                // form, so 21, 31, 101, ... still take the
+                                // ordinal.
+                                let cands: Vec<String> = if one {
                                     norm.split_once(' ').map(|(a, _)| a.to_string())
-                                        .unwrap_or_default()
+                                        .into_iter().collect()
                                 } else {
-                                    l.to_cardinal(&n).unwrap_or_default()
+                                    let card = l.to_cardinal(&n).unwrap_or_default();
+                                    let mut v = vec![card.clone()];
+                                    if let Ok(mv) = l.money_verbose(&n, cur) {
+                                        v.push(mv);
+                                    }
+                                    if let Some(stem) = card.strip_suffix("uno") {
+                                        for end in ["un", "ún", "una"] {
+                                            v.push(format!("{stem}{end}"));
+                                        }
+                                    }
+                                    v
                                 };
-                                Ok(norm.strip_prefix(&card)
-                                    .map(|rest| format!("{}{}", ord, rest))
-                                    .unwrap_or(norm))
+                                let rest = cands.iter().filter(|c| !c.is_empty()).find_map(|c| {
+                                    norm.strip_prefix(c.as_str())
+                                        .filter(|r| r.is_empty() || r.starts_with(' '))
+                                });
+                                Ok(match rest {
+                                    Some(rest) => format!("{}{}", ord, rest),
+                                    None => norm,
+                                })
                             }
                             (other, _) => other,
                         }
