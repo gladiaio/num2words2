@@ -228,8 +228,6 @@ class Num2WordsBNTest(TestCase):
 
 def test_bn_currency_single_digit_paisa():
     # gladiaio/num2words2#255: 3.05 is 5 paisa, not 50
-    from decimal import Decimal
-
     for v in (3.05, "3.05", Decimal("3.05")):
         assert num2words(v, lang="bn", to="currency") == "তিন টাকা পাঁচ পয়সা"
     assert num2words(3.5, lang="bn", to="currency") == "তিন টাকা পঞ্চাশ পয়সা"
