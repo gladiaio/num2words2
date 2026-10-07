@@ -4,9 +4,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives the recursive
-//! `_int_to_word` helper. Consequently `cards`/`maxval`/`merge` stay at their
-//! trait defaults here, and there is **no overflow check** — see the "10^9
-//! cliff" note below for what happens instead.
+//! `_int_to_word` helper. Consequently `cards`/`merge` stay at their trait
+//! defaults here. Python has **no overflow check** — see the "10^9 cliff"
+//! note below; this port raises `OverflowError` from 10^12 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base`, but every in-scope entry point is
 //! overridden by `Num2Word_FF`, so nothing from the base engine is reachable:
@@ -28,23 +28,21 @@
 //! This is a port, not a rewrite. The following all look wrong but are
 //! exactly what Python emits, and are confirmed by the frozen corpus:
 //!
-//! 1. **The 10^9 cliff.** `_int_to_word` handles 0, <10, <100, <1000, <10^6
-//!    and <10^9, then falls off the end with a bare `return str(number)`.
-//!    Every value >= 1_000_000_000 is therefore returned as **bare digits**,
-//!    not words. Corpus: `cardinal(1000000000)` == `"1000000000"`,
-//!    `cardinal(1234567890)` == `"1234567890"`, `cardinal(10**12)` ==
-//!    `"1000000000000"`. This is not an error path — no exception, no
-//!    `OverflowError` — so the language never raises for integer input and
-//!    accepts arbitrarily large `BigInt` values. It also means
-//!    `to_ordinal(10**9)` == `"1000000000ɓal"`, which is byte-for-byte
-//!    identical to `to_ordinal_num(10**9)`. Both are in the corpus.
+//! 1. **The 10^9 cliff (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` handles 0, <10, <100, <1000, <10^6 and <10^9, then falls
+//!    off the end with a bare `return str(number)`, so `cardinal(10**9)` was
+//!    `"1000000000"` and `to_ordinal(10**9)` `"1000000000ɓal"`. This port
+//!    adds miliyaar (10^9; Pulaar usage, e.g. "138 miliyaar" at
+//!    https://pulaar.org/2015/05/05/kariim-wad-kasoo-duu%C9%93i-6-e-138-miliyaar-2/),
+//!    composed exactly like the million branch: `cardinal(10**9)` ==
+//!    `"go'o miliyaar"`. No 10^12 word is attested, so 10^12 raises
+//!    `OverflowError` (`maxval`).
 //! 2. **`negword` is the English word "less "**, not a Fulah word, and it is
 //!    concatenated *without* a separating join — the trailing space in the
 //!    literal is what separates it. Hence `cardinal(-1)` == `"less go'o"`.
 //!    The `.strip()` Python applies afterwards is a no-op for every integer
 //!    input (nothing produces leading/trailing whitespace), but it is
-//!    reproduced anyway. Combined with bug 1, `cardinal(-10**9)` ==
-//!    `"less 1000000000"`.
+//!    reproduced anyway.
 //! 3. **The millions branch has no `m > 1` guard**, unlike the hundreds and
 //!    thousands branches. `100` → `"teemerre"` and `1000` → `"ujunere"` (bare,
 //!    no "go'o"), but `1000000` → `"go'o miliyon"` (with "go'o"). Corpus
@@ -137,7 +135,8 @@
 //! `_money_verbose`, `_cents_verbose` and `_cents_terse` are inherited
 //! unchanged. Only `_money_verbose` is reachable (from `to_cheque`), and it
 //! delegates to FF's `to_cardinal` — which is why a cheque at or above 10^9
-//! would print bare digits (bug 1) in the words position.
+//! printed bare digits in Python (bug 1); here it gets miliyaar, and raises
+//! `OverflowError` from 10^12.
 //!
 //! # Further faithfully reproduced Python behaviour (currency)
 //!
@@ -188,7 +187,7 @@
 //! flags between calls; every method is a pure function of its argument. The
 //! stateless Rust path is safe to dispatch to.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -227,6 +226,14 @@ const HUNDRED: &str = "teemerre";
 const THOUSAND: &str = "ujunere";
 /// `setup(): self.million`.
 const MILLION: &str = "miliyon";
+/// 10^9, absent from Python (gladiaio/num2words2#147): Pulaar "miliyaar".
+const BILLION: &str = "miliyaar";
+
+/// The exclusive ceiling (#147): no attested Pulaar word for 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 /// `setup(): self.negword`. The trailing space is load-bearing — Python
 /// concatenates it directly (`self.negword + self.to_cardinal(...)`) with no
 /// separator of its own.
@@ -246,10 +253,11 @@ const ORDINAL_SUFFIX: &str = "ɓal";
 /// strips the sign before recursing, and every internal recursion passes a
 /// quotient or remainder of a non-negative dividend. `div_rem` therefore
 /// agrees with Python's `divmod` (they differ only for negative operands).
-fn int_to_word(number: &BigInt) -> String {
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     // if number == 0: return "sufri"
     if number.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
 
     // if number < 10: return self.ones[number]
@@ -257,7 +265,7 @@ fn int_to_word(number: &BigInt) -> String {
         let i = number
             .to_usize()
             .expect("value proven < 10 by the guard above");
-        return ONES[i].to_string();
+        return Ok(ONES[i].to_string());
     }
 
     // if number < 100:
@@ -272,7 +280,7 @@ fn int_to_word(number: &BigInt) -> String {
             s.push_str(" e ");
             s.push_str(ONES[o]);
         }
-        return s;
+        return Ok(s);
     }
 
     // if number < 1000:
@@ -292,9 +300,9 @@ fn int_to_word(number: &BigInt) -> String {
         }
         if !r.is_zero() {
             s.push_str(" e ");
-            s.push_str(&int_to_word(&r));
+            s.push_str(&int_to_word(&r)?);
         }
-        return s;
+        return Ok(s);
     }
 
     // if number < 1000000:
@@ -307,13 +315,13 @@ fn int_to_word(number: &BigInt) -> String {
         // NB: `t > 1`, so 1000 is bare "ujunere" with no "go'o".
         if t > BigInt::one() {
             s.push(' ');
-            s.push_str(&int_to_word(&t));
+            s.push_str(&int_to_word(&t)?);
         }
         if !r.is_zero() {
             s.push_str(" e ");
-            s.push_str(&int_to_word(&r));
+            s.push_str(&int_to_word(&r)?);
         }
-        return s;
+        return Ok(s);
     }
 
     // if number < 1000000000:
@@ -324,20 +332,29 @@ fn int_to_word(number: &BigInt) -> String {
         let (m, r) = number.div_rem(&BigInt::from(1_000_000));
         // NB: no `m > 1` guard here, unlike the two branches above — this is
         // why 10**6 is "go'o miliyon" but 10**3 is bare "ujunere".
-        let mut s = int_to_word(&m);
+        let mut s = int_to_word(&m)?;
         s.push(' ');
         s.push_str(MILLION);
         if !r.is_zero() {
             s.push_str(" e ");
-            s.push_str(&int_to_word(&r));
+            s.push_str(&int_to_word(&r)?);
         }
-        return s;
+        return Ok(s);
     }
 
     // return str(number)
     //
-    // The 10^9 cliff: no words, no exception, just the decimal digits.
-    number.to_string()
+    // The 10^9 cliff in Python (bug 1). The miliyaar branch instead, composed
+    // like the million one (#147); the maxval check above keeps `m` < 1000.
+    let (m, r) = number.div_rem(&BigInt::from(1_000_000_000));
+    let mut s = int_to_word(&m)?;
+    s.push(' ');
+    s.push_str(BILLION);
+    if !r.is_zero() {
+        s.push_str(" e ");
+        s.push_str(&int_to_word(&r)?);
+    }
+    Ok(s)
 }
 
 /// Python's `int(s)` on a fragment of `str(val)`, inside `to_currency`.
@@ -401,7 +418,7 @@ fn to_cardinal_from_str(s: &str) -> Result<String> {
     if let Some((left, right)) = s.split_once('.') {
         // ret = self._int_to_word(int(left)) + " " + self.pointword
         let left_int = parse_int(left)?;
-        let mut ret = format!("{} {}", int_to_word(&left_int), POINTWORD);
+        let mut ret = format!("{} {}", int_to_word(&left_int)?, POINTWORD);
         // for digit in right: ret += " " + (self.ones[int(digit)] or "sufri")
         for ch in right.chars() {
             ret.push(' ');
@@ -410,7 +427,7 @@ fn to_cardinal_from_str(s: &str) -> Result<String> {
         return Ok(ret.trim().to_string());
     }
     // return self._int_to_word(int(n))
-    Ok(int_to_word(&parse_int(s)?))
+    int_to_word(&parse_int(s)?)
 }
 
 /// Reconstruct Python's `str(number)` from a `FloatValue`.
@@ -571,6 +588,10 @@ impl LangFf {
 }
 
 impl Lang for LangFf {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -619,10 +640,10 @@ impl Lang for LangFf {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
             // (self.negword + self.to_cardinal(n[1:])).strip()
-            let inner = int_to_word(&value.abs());
+            let inner = int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(int_to_word(value))
+        int_to_word(value)
     }
 
     /// Port of `Num2Word_FF.to_ordinal`: `self.to_cardinal(number) + "ɓal"`.
@@ -675,9 +696,8 @@ impl Lang for LangFf {
     ///     `"."` branch fires and a trailing `"0"` digit -> `"sufri"`.
     ///   * `Decimal("1.10")` -> `"go'o feccere go'o sufri"`: the trailing zero is
     ///     a real fractional digit (unlike the float `1.1`).
-    ///   * `Decimal("98746251323029.99")` -> `"98746251323029 feccere jeenayi
-    ///     jeenayi"`: the >=10^9 integer part falls off `_int_to_word`'s cliff to
-    ///     bare digits, but the fraction is still spelled (issue #603 value).
+    ///   * `Decimal("98746251323029.99")` raises `OverflowError`: the integer
+    ///     part is past the 10^12 maxval (#147; Python returned its digits).
     ///   * A negative with a zero integer part keeps its sign because the sign
     ///     lives in the *string* (`"-0.5"`), not in a truncated int:
     ///     `-0.5` -> `"less sufri feccere jowi"`.
@@ -839,9 +859,9 @@ impl Lang for LangFf {
     /// the cents are zero.
     ///
     /// The words come from `_int_to_word`, **not** `to_cardinal`, so they
-    /// inherit the silent digit fallback above 10^9 without inheriting the
-    /// negword handling: `to_currency(1000000000.0, "EUR")` is
-    /// `"1000000000 yero"`. `is_negative` is captured from the *original* value
+    /// share its scales and 10^12 ceiling (#147; Python's digit fallback gave
+    /// `"1000000000 yero"`) without inheriting the negword handling.
+    /// `is_negative` is captured from the *original* value
     /// and re-applied at the end, which is why taking `abs` up front is safe.
     fn to_currency(
         &self,
@@ -911,7 +931,7 @@ impl Lang for LangFf {
         let one = BigInt::one();
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -921,7 +941,7 @@ impl Lang for LangFf {
             // Python concatenates the separator raw, with no space of its own
             // (bug 9).
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }

@@ -187,11 +187,27 @@ class Num2WordsPSTest(TestCase):
             num2words(999999999, lang="ps"),
             "نهه سل نوي نهه میلیون نهه سل نوي نهه زره نهه سل نوي نهه",
         )
-        self.assertEqual(num2words(1000000000, lang="ps"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="ps"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="ps"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="ps"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="ps"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="ps"),
+            "یو میلیارد",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="ps"),
+            "یو میلیارد دوه سل دېرش څلور میلیون پنځه سل شپېته اووه زره اته سل نوي",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="ps"),
+            "نهه میلیارد نهه سل نوي نهه میلیون نهه سل نوي نهه زره نهه سل نوي نهه",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="ps"),
+            "لس میلیارد",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="ps"),
+            "نوي نهه میلیارد نهه سل نوي نهه میلیون نهه سل نوي نهه زره نهه سل نوي نهه",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""

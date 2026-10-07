@@ -16,13 +16,18 @@ NEW_LANG_CODES = [
 
 
 class TestLargeNumberFallback(TestCase):
-    """Hit the str(number) fallback path for numbers >= 1e9."""
+    """Numbers >= 1e9: words, or OverflowError where a language has no
+    attested scale word (gladiaio/num2words2#147; the digit check itself is
+    `no_digit_output` in tests/test_invariants.py)."""
 
     def test_billion_plus(self):
         for code in NEW_LANG_CODES:
             with self.subTest(code=code):
                 # 10^12 — beyond the explicit million scale in most templates
-                result = num2words(10 ** 12, lang=code)
+                try:
+                    result = num2words(10 ** 12, lang=code)
+                except OverflowError:
+                    continue
                 self.assertIsInstance(result, str)
                 self.assertTrue(len(result) > 0)
 
