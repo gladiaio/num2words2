@@ -3,7 +3,7 @@ members = ["num2words2-core", "num2words2-py"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 # Same licence as the Python package (pyproject.toml) and upstream num2words:
 # the core is a port of that LGPL engine (gladiaio/num2words2#242).
