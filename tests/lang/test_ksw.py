@@ -3,7 +3,8 @@
 
 Words from Omniglot "Numbers in Sgaw Karen" and Wiktionary's S'gaw Karen
 numerals; composition after Gilmore, A Grammar of the Sgaw Karen (1898).
-Only whole numbers 1..9999 have verified words; the rest raises.
+10^4 and 10^5 from Wiktionary and the S'gaw Karen Common Bible (#262).
+Only whole numbers 1..999999 have verified words; the rest raises.
 """
 from __future__ import unicode_literals
 
@@ -42,9 +43,28 @@ class Num2WordsKSWTest(TestCase):
         )
         self.assertEqual(num2words(Decimal("5"), lang="ksw"), "ယဲၢ်")
 
+    def test_ten_and_hundred_thousand(self):
+        # #262: Wiktionary ကလး / ကလီၢ်, and the KSWC Bible's counts
+        # (Psalm 91:7; Numbers 1:46 = 603,550; Numbers 26:51 = 601,730).
+        self.assertEqual(num2words(10000, lang="ksw"), "တကလး")
+        self.assertEqual(num2words(20000, lang="ksw"), "ခံကလး")
+        self.assertEqual(num2words(100000, lang="ksw"), "တကလီၢ်")
+        self.assertEqual(
+            num2words(603550, lang="ksw"), "ဃုကလီၢ် သၢကထိ ယဲၢ်ကယၤ ယဲၢ်ဆံ"
+        )
+        self.assertEqual(
+            num2words(601730, lang="ksw"), "ဃုကလီၢ် တကထိ နွံကယၤ သၢဆံ"
+        )
+        self.assertEqual(num2words(10001, lang="ksw"), "တကလး တၢ")
+        self.assertEqual(
+            num2words(999999, lang="ksw"),
+            "ခွံကလီၢ် ခွံကလး ခွံကထိ ခွံကယၤ ခွံဆံခွံ",
+        )
+
     def test_ceiling(self):
-        self.assertEqual(maxval("ksw"), 10**4)
-        for n in (10**4, -(10**4), 10**9, 10**21):
+        # No place word above 10^5 is attested twice (#262).
+        self.assertEqual(maxval("ksw"), 10**6)
+        for n in (10**6, -(10**6), 10**9, 10**21):
             with self.assertRaises(OverflowError):
                 num2words(n, lang="ksw")
 

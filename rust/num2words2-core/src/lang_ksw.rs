@@ -24,8 +24,8 @@
 //! | 5 | ယဲၢ် | | 40 | လွံၢ်ဆံ |
 //! | 6 | ဃု | | 100 | တကယၤ |
 //! | 7 | နွံ | | 1000 | တကထိ |
-//! | 8 | ဃိး | | | |
-//! | 9 | ခွံ | | | |
+//! | 8 | ဃိး | | 10^4 | တကလး |
+//! | 9 | ခွံ | | 10^5 | တကလီၢ် |
 //!
 //! Composition, as in Gilmore, *A Grammar of the Sgaw Karen* (1898) §88:
 //! place values high to low, each `digit + place word` (the multiplier "one"
@@ -35,19 +35,34 @@
 //! ဟ although its 5 is ယဲၢ် and its transliteration of 50 is "ye hsee";
 //! this module uses the regular ယဲၢ်ဆံ, as Gilmore's 52 does.
 //!
+//! # Ten thousand and a hundred thousand (#262)
+//!
+//! ကလး (10^4) and ကလီၢ် (10^5) are on Wiktionary (*ကလး*, *ကလီၢ်*; ကလး is
+//! filed as a classifier, as is the ကထိ this module already used for 1000),
+//! and the S'gaw Karen Common Bible (KSWC, bible.com) uses both as place
+//! words, with values the English text pins down: Psalm 91:7 pairs တကထိ
+//! (a thousand) with တကလး (ten thousand); Numbers 1:46 counts 603,550 as
+//! ဃုကလီၢ်သၢကထိယဲၢ်ကယၤယဲၢ်ဆံ and Numbers 26:51 counts 601,730 as
+//! ဃုကလီၢ်တကထိနွံကယၤသၢဆံ. They compose like the lower places
+//! (`digit + place word`, an empty place skipped, multiplier one တ), and
+//! keep this module's space between places.
+//!
 //! # What raises, and why
 //!
 //! No source found gives a S'gaw Karen word for zero, the minus sign, the
 //! decimal point, an ordinal form (Gilmore's ordinals need noun classifiers),
-//! a currency unit, or a place above 1000 that two sources agree on
-//! (Wiktionary lists 10^4 and 10^5 only as classifiers). So:
+//! a currency unit, or a place above 10^5 that two sources agree on (KSWC
+//! 1 Chronicles 22:14 has တကကွဲၢ် for "a thousand thousand", but 2
+//! Chronicles 14:9 renders the same phrase ကလီၢ်တကယၤ, and Wiktionary has no
+//! entry for ကကွဲၢ်). A five-model review (#262) agreed on none of these.
+//! So:
 //!
-//! * `abs(n) >= 10^4` -> `OverflowError` (`maxval` is 10^4; #147).
+//! * `abs(n) >= 10^6` -> `OverflowError` (`maxval` is 10^6; #147, #262).
 //! * zero, negative numbers, and any float/Decimal whose `str()` has a
 //!   decimal point (including `5.0`) -> `NotImplementedError`. An integral
 //!   `Decimal("5")` reads like the integer 5.
 //! * `to='ordinal'`, `to='ordinal_num'`, `to='currency'`, `to='cheque'`
-//!   -> `NotImplementedError`. `to='year'` reads the cardinal (1..9999).
+//!   -> `NotImplementedError`. `to='year'` reads the cardinal (1..999999).
 //!
 //! A scientific `str(number)` ("1e+16") still raises `ValueError` from
 //! `int()`, as before.
@@ -72,12 +87,16 @@ const TEN: &str = "ဆံ";
 const HUNDRED: &str = "ကယၤ";
 /// The thousands place word: `digit + ကထိ` (1000 တကထိ).
 const THOUSAND: &str = "ကထိ";
+/// The ten-thousands place word: `digit + ကလး` (10^4 တကလး; #262).
+const TEN_THOUSAND: &str = "ကလး";
+/// The hundred-thousands place word: `digit + ကလီၢ်` (10^5 တကလီၢ်; #262).
+const HUNDRED_THOUSAND: &str = "ကလီၢ်";
 
-/// The exclusive ceiling: no place word above 1000 is attested by two
-/// sources (gladiaio/num2words2#143, #147).
+/// The exclusive ceiling: no place word above 10^5 is attested by two
+/// sources (gladiaio/num2words2#143, #147, #262).
 fn maxval_ceiling() -> &'static BigInt {
     static M: OnceLock<BigInt> = OnceLock::new();
-    M.get_or_init(|| pow10_big(4))
+    M.get_or_init(|| pow10_big(6))
 }
 
 /// `NotImplementedError` for something the sources give no word for. It
@@ -85,7 +104,7 @@ fn maxval_ceiling() -> &'static BigInt {
 /// on some paths, and leaves a message that already has it alone.
 fn no_word(what: &str) -> N2WError {
     N2WError::NotImplemented(format!(
-        "lang='ksw' does not support {}: no verified S'gaw Karen word for it; only whole numbers 1-9999 are supported",
+        "lang='ksw' does not support {}: no verified S'gaw Karen word for it; only whole numbers 1-999999 are supported",
         what
     ))
 }
@@ -99,12 +118,19 @@ impl LangKsw {
     }
 }
 
-/// Words for `1 <= n <= 9999` (see the module docs for the composition).
+/// Words for `1 <= n <= 999999` (see the module docs for the composition).
 fn words(n: u32) -> String {
-    debug_assert!((1..=9999).contains(&n));
+    debug_assert!((1..=999_999).contains(&n));
     let digit = |d: u32| ONES[d as usize];
-    let (th, h, t, o) = (n / 1000, n / 100 % 10, n / 10 % 10, n % 10);
+    let (ht, tt) = (n / 100_000, n / 10_000 % 10);
+    let (th, h, t, o) = (n / 1000 % 10, n / 100 % 10, n / 10 % 10, n % 10);
     let mut parts: Vec<String> = Vec::new();
+    if ht != 0 {
+        parts.push(format!("{}{}", digit(ht), HUNDRED_THOUSAND));
+    }
+    if tt != 0 {
+        parts.push(format!("{}{}", digit(tt), TEN_THOUSAND));
+    }
     if th != 0 {
         parts.push(format!("{}{}", digit(th), THOUSAND));
     }
@@ -122,7 +148,7 @@ fn words(n: u32) -> String {
     parts.join(" ")
 }
 
-/// The integer cardinal: 1..=9999, `OverflowError` beyond, and
+/// The integer cardinal: 1..=999999, `OverflowError` beyond, and
 /// `NotImplementedError` for zero and negatives.
 fn int_to_word(number: &BigInt) -> Result<String> {
     check_maxval(number, maxval_ceiling())?;
@@ -132,7 +158,7 @@ fn int_to_word(number: &BigInt) -> Result<String> {
     if number.is_negative() {
         return Err(no_word("negative numbers"));
     }
-    Ok(words(number.to_u32().expect("1 <= n < 10^4 after the checks above")))
+    Ok(words(number.to_u32().expect("1 <= n < 10^6 after the checks above")))
 }
 
 /// Reconstruct Python's `str(f)` (== `repr(f)`) for a finite/`inf`/`nan` f64.
@@ -297,7 +323,7 @@ impl Lang for LangKsw {
         Err(no_word("to='ordinal_num'"))
     }
 
-    /// The plain cardinal, 1..=9999.
+    /// The plain cardinal, 1..=999999.
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -355,7 +381,13 @@ mod tests {
         assert_eq!(c(200), "ခံကယၤ");
         assert_eq!(c(1000), "တကထိ");
         assert_eq!(c(9999), "ခွံကထိ ခွံကယၤ ခွံဆံခွံ");
-        assert!(matches!(k.to_cardinal(&BigInt::from(10_000)), Err(N2WError::Overflow(_))));
+        // #262: KSWC Psalm 91:7, Numbers 1:46 and 26:51.
+        assert_eq!(c(10_000), "တကလး");
+        assert_eq!(c(100_000), "တကလီၢ်");
+        assert_eq!(c(603_550), "ဃုကလီၢ် သၢကထိ ယဲၢ်ကယၤ ယဲၢ်ဆံ");
+        assert_eq!(c(601_730), "ဃုကလီၢ် တကထိ နွံကယၤ သၢဆံ");
+        assert_eq!(c(999_999), "ခွံကလီၢ် ခွံကလး ခွံကထိ ခွံကယၤ ခွံဆံခွံ");
+        assert!(matches!(k.to_cardinal(&BigInt::from(1_000_000)), Err(N2WError::Overflow(_))));
         assert!(matches!(k.to_cardinal(&BigInt::from(0)), Err(N2WError::NotImplemented(_))));
         assert!(matches!(k.to_cardinal(&BigInt::from(-1)), Err(N2WError::NotImplemented(_))));
     }
