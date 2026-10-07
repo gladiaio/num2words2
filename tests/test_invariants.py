@@ -271,8 +271,7 @@ ALLOW = {
     "currency_nouns_native": set(),
     # gladiaio/num2words2#147
     "no_digit_output": {
-        # fixed on sibling branches fix/a5-indic and fix/a5-latin
-        "kok", "ml", "ne", "or", "pa", "pli", "sa", "sd", "si", "ur",
+        # fixed on sibling branch fix/a5-latin
         "br", "cnh", "haw", "ht", "jv", "jw", "ky", "ln", "mg", "mi", "mt",
         "so", "su", "tk", "tl", "tt", "uz", "wo", "yo",
     },
