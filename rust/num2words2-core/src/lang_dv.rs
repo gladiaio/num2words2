@@ -95,15 +95,12 @@
 //! `pluralize`, and no `separator`/`adjective` kwargs, so those trait hooks all
 //! stay at their defaults and are never consulted.
 //!
-//! The dispatcher passes `currency=<ISO code>` straight through, and DV
-//! interpolates whatever it is given **verbatim** as the unit word: there is no
-//! lookup, so `to_currency(1, currency="EUR")` is `"އެއް EUR"` and no code can
-//! ever raise `NotImplementedError`. Every code is "supported", which is
-//! exactly what the corpus records for all nine it tries. Omitting `currency=`
-//! instead yields the class's own default word — `to_currency(1)` is
-//! `"އެއް ރުފިޔާ"` (rufiyaa), the real Maldivian unit — which is what the
-//! generated [`Lang::default_currency`] override carries; the binding resolves
-//! it before `to_currency` runs, so the `&str` arriving here is already right.
+//! Python interpolated `currency=` **verbatim** as the unit word, so
+//! `to_currency(1, currency="EUR")` was `"އެއް EUR"` — a raw ISO code in
+//! Dhivehi text. DV knows one currency, the rufiyaa: the port accepts its
+//! default word ރުފިޔާ (what the binding passes when `currency=` is omitted)
+//! and the code `MVR`, and raises `NotImplementedError` for every other code,
+//! as `base.to_currency` does for an unknown one (#219).
 //!
 //! Continuing the quirk list above, all verified against the interpreter:
 //!
@@ -115,7 +112,7 @@
 //!    rufiyaa and laari, and puts the negword in front once.
 //!
 //! 7. **Either segment vanishes when its part is zero**, so 0.01 is
-//!    `"އެއް ލާރި"` (no unit word) and 1.0 is `"އެއް EUR"` (no cents). Python
+//!    `"އެއް ލާރި"` (no unit word) and 1.0 is `"އެއް ރުފިޔާ"` (no cents). Python
 //!    returned the **empty string** when both parts round to zero (0.001); the
 //!    port says zero units, like `to_currency(0)`.
 //!
@@ -124,9 +121,9 @@
 //!    `to_currency(1e21)` was "one EUR". Counting in whole laari expands the
 //!    exponent, so the full amount is read.
 //!
-//! `to_cheque` does not exist on the class at all, so it surfaces as
-//! `AttributeError` from the dispatcher's `getattr`, not as the
-//! `NotImplementedError` that `default_to_cheque` would produce.
+//! `to_cheque` does not exist on the class at all (Python raised
+//! `AttributeError`); the port raises NotImplementedError ("does not support
+//! to='cheque'", #223).
 //!
 //! # Float/Decimal routing
 //!
@@ -193,15 +190,10 @@
 //!
 //! # Fraction
 //!
-//! `Num2Word_DV` has no `to_fraction` — like `to_cheque`, the dispatcher's
-//! attribute lookup fails, so every fraction-corpus row and every "n/d"
-//! string (whatever `to=` says) is `AttributeError`, including `"1/0"`,
-//! which dies on lookup before any division could raise ZeroDivisionError.
-//! Known gap: `to='fraction'` with a *plain* numeric string ("5", "1.5")
-//! cannot be reproduced from this file — the pyo3 shim's `dec_mode`
-//! hardcodes the base-class TypeError (`to_fraction() missing 1 required
-//! positional argument`) for that combination and never consults the
-//! language, while Python raises AttributeError on the `getattr`.
+//! `Num2Word_DV` has no `to_fraction` (Python raised AttributeError). DV has
+//! no fraction rules, so `to='fraction'` and "n/d" strings raise
+//! NotImplementedError, and "1/0" ZeroDivisionError, like every language
+//! without fraction rules (#217).
 //!
 //! # Grammatical kwargs
 //!
@@ -1007,6 +999,7 @@ impl Lang for LangDv {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_full(value, true)
     }
 
@@ -1019,6 +1012,7 @@ impl Lang for LangDv {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_full(value, true)
     }
 
@@ -1026,6 +1020,7 @@ impl Lang for LangDv {
     /// non-integral, then on negative — quirk 12), then the float grammar
     /// with `nominal=False` (quirk 13) plus the ordword.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.verify_ordinal_float(value)?;
         Ok(format!(
             "{} {}",
@@ -1038,6 +1033,7 @@ impl Lang for LangDv {
     /// `"{} {}".format(value, ordword)` — `repr_str` is Python's
     /// `str(value)`, so `-0.0` (which passes verify) prints as `-0.0 ވަނަ`.
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.verify_ordinal_float(value)?;
         Ok(format!("{} {}", repr_str, ORDWORD))
     }
@@ -1046,6 +1042,7 @@ impl Lang for LangDv {
     /// so negative years carry no negword; [1100, 2000) splits into
     /// still-float `high`/`low` halves rendered independently.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value {
             FloatValue::Float { value: f, .. } => {
                 let mut v = *f;
@@ -1164,15 +1161,8 @@ impl Lang for LangDv {
         }
     }
 
-    /// Like `to_cheque`, `Num2Word_DV` defines no `to_fraction` and inherits
-    /// none, so the dispatcher's attribute lookup raises `AttributeError`
-    /// before the arguments are even parsed — `to_fraction("1", "0")` never
-    /// reaches a division, so no ZeroDivisionError either.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_DV' object has no attribute 'to_fraction'".into(),
-        ))
-    }
+    // `Num2Word_DV` had no `to_fraction` (AttributeError). DV has no fraction
+    // rules, so the trait default raises NotImplementedError (#217).
 
     /// `to_currency(self, value, currency="ރުފިޔާ", cents="ލާރި")`.
     ///
@@ -1193,6 +1183,17 @@ impl Lang for LangDv {
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
+        // Only the rufiyaa has words (#219): never print a raw ISO code.
+        let currency = match currency {
+            "ރުފިޔާ" | "MVR" => "ރުފިޔާ",
+            other => {
+                return Err(N2WError::NotImplemented(format!(
+                    "Currency code \"{}\" not implemented for \"{}\"",
+                    other,
+                    self.lang_name()
+                )))
+            }
+        };
         // decimal_value = self.to_decimal(value). Decimal(int) and
         // Decimal(str(float)) — which is what the shim already handed us.
         let decimal_value = match val {
@@ -1234,25 +1235,15 @@ impl Lang for LangDv {
         }
 
         if !frac_part.is_zero() {
-            result.push(self.to_cardinal_float_dec(&frac_part, false)?);
-            // Python appends `cents` — a *word*, defaulting to ލާރި. The trait
-            // hands us a bool, because `base.to_currency`'s `cents=` is a
-            // verbosity flag. The shim sends `kwargs.get("cents", True)`, so
-            // `true` is the only value an ordinary call produces and the
-            // default word is what Python would have used.
-            //
-            // `false` can only mean the caller explicitly passed `cents=False`,
-            // and Python then puts the bool itself into the list and dies in
-            // `" ".join(...)`. Reproduced rather than papered over — but note
-            // it fires only once the cents segment exists at all, which is why
-            // `to_currency(1.0, cents=False)` still returns "އެއް EUR", and why
-            // this sits after frac_part has been rendered and pushed: an
-            // OverflowError from that render happens first in Python too.
-            if !cents {
-                return Err(N2WError::Type(format!(
-                    "sequence item {}: expected str instance, bool found",
-                    result.len() - negative as usize
-                )));
+            // Python appends `cents` — a *word*, defaulting to ލާރި; the trait
+            // hands us `base.to_currency`'s verbosity flag instead. Python's
+            // `cents=False` put the bool itself into the list and died in
+            // `" ".join(...)`; it now gives the laari as digits, like every
+            // other language (#220).
+            if cents {
+                result.push(self.to_cardinal_float_dec(&frac_part, false)?);
+            } else {
+                result.push(format!("{:0>2}", frac_part.to_string()));
             }
             result.push(CENTSWORD.to_string());
         }
@@ -1260,15 +1251,11 @@ impl Lang for LangDv {
         Ok(result.join(" "))
     }
 
-    /// `Num2Word_DV` defines no `to_cheque`, and inherits none — it has no base
-    /// class. The dispatcher's `getattr(converter, "to_cheque")` is what fails,
-    /// before any conversion runs, so this is an `AttributeError` and *not* the
-    /// `NotImplementedError` that `default_to_cheque` would raise on the empty
-    /// forms table. The corpus records `AttributeError` for all nine codes.
+    // `Num2Word_DV` had no `to_cheque` (AttributeError).
+    // No cheque rules, so NotImplementedError ("lang='dv' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_DV' object has no attribute 'to_cheque'".into(),
-        ))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 
@@ -1535,6 +1522,7 @@ fn py_slice(s: &str, start: isize, end: isize) -> String {
     chars[a..b].iter().collect()
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -1754,10 +1742,15 @@ mod float_tests {
         ));
         assert!(matches!(l.str_to_number("1e3"), Ok(ParsedNumber::Dec(_))));
 
-        // to_fraction: AttributeError on lookup, even for 1/0.
+        // to_fraction: no fraction rules (#217) — NotImplementedError, and
+        // ZeroDivisionError for 1/0.
+        assert!(matches!(
+            l.to_fraction(&BigInt::from(2), &BigInt::from(3)),
+            Err(N2WError::NotImplemented(_))
+        ));
         assert!(matches!(
             l.to_fraction(&BigInt::from(1), &BigInt::from(0)),
-            Err(N2WError::Attribute(_))
+            Err(N2WError::ZeroDivision(_))
         ));
 
         // nominal= kwarg (the kwargs corpus rows).

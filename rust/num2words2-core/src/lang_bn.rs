@@ -52,12 +52,14 @@
 //!    `9999999999999999999999999999 * 10**279` (the largest value that is
 //!    already 28-significant and stays under 10^307).
 //!
-//! 3. **`to_ordinal_num` and `to_year` silently discard the sign.** Both do
-//!    `self.to_cardinal(int(abs(number)))`, so the negword is never applied:
-//!    `to_ordinal_num(-1)` == "একতম" (not "ঋণাত্মক একতম") and
-//!    `to_year(-500)` == "পাঁচশত সাল". Corpus-confirmed. Note `to_ordinal`
-//!    is a bare alias for `to_cardinal` and *does* keep the sign, so
-//!    `to_ordinal(-1)` == "ঋণাত্মক এক" while `to_ordinal_num(-1)` == "একতম".
+//! 3. ~~**`to_ordinal_num` and `to_year` silently discard the sign.**~~
+//!    Both did `self.to_cardinal(int(abs(number)))`, so `to_year(-44)` ==
+//!    `to_year(44)`, and `to_ordinal` was a bare alias for `to_cardinal`.
+//!    Fixed (gladiaio/num2words2#250): `to_ordinal` returns the ordinal
+//!    word (প্রথম … দশম, then cardinal + "তম"), `to_ordinal_num` the
+//!    abbreviation (১ম, ২য়, ৩য়, ৪র্থ, ৬ষ্ঠ, ১১তম, …), both reject a
+//!    negative with Base's TypeError, and a negative year reads
+//!    "খ্রিস্টপূর্ব … সাল".
 //!
 //! 4. **`DOSOK[61]` is `"একাত্তর "` with a stray trailing space** where every
 //!    other entry has none. It is invisible in practice: the tens branch is
@@ -67,12 +69,9 @@
 //!    later edit ever appends after the tens branch, the space becomes
 //!    observable exactly as it would in Python.
 //!
-//! 5. **`to_ordinal_num` picks its suffix by a bare `endswith("ত")` test**,
-//!    which is orthographic happenstance rather than grammar:
-//!    `to_ordinal_num(-7)` == "সাতম" (সাত ends in ত → "ম"), but
-//!    `to_ordinal_num(11)` == "এগারোতম" ("তম"). Also `to_ordinal_num(0)` is
-//!    "শূন্যতম" — 0 is outside `range(1, 11)`, so it falls to the generic
-//!    path instead of hitting `RANKING`.
+//! 5. ~~**The ordinal suffix was picked by a bare `endswith("ত")` test**~~,
+//!    so 100 read "একশতম" for একশততম. Fixed (#250): every ordinal past
+//!    দশম takes "তম".
 //!
 //! # The currency surface
 //!
@@ -95,26 +94,24 @@
 //!    `str_to_number` (`abs(...)`) and never consults `negword`, so
 //!    `to_currency(-12.34)` == `to_currency(12.34)`. Corpus-confirmed.
 //!
-//! 8. **`parse_paisa`'s trailing-zero fix corrupts leading zeros.** It does
+//! 8. ~~**`parse_paisa`'s trailing-zero fix corrupts leading zeros.**~~ It did
 //!    `str(int(paisa_str) * 100)[:2]` to re-pad a `Decimal`-stripped trailing
-//!    zero, but `int()` also eats *leading* zeros, so the digit count it
-//!    assumes is wrong: `0.01` → "01" → `int` 1 → 100 → `"100"[:2]` == "10" →
-//!    **10 paisa**, and the corpus really does say
-//!    "শূন্য টাকা দশ পয়সা" ("zero taka *ten* paisa") for `0.01`. `0.5` → "5"
-//!    → 500 → "50" → 50 paisa is right by luck. The `[:2]` truncates rather
-//!    than rounds, so `2.675` → 67 paisa, and it clamps everything to 0..=99.
+//!    zero, but `int()` also eats *leading* zeros, so `0.01` → "01" → `int` 1
+//!    → 100 → `"100"[:2]` == "10" → **10 paisa**, and 3.05 taka read as 3.50.
+//!    Fixed (gladiaio/num2words2#255): the paisa are the first two fraction
+//!    digits, right-padded ("05" → 5, "5" → 50). Still truncating rather than
+//!    rounding, so `2.675` → 67 paisa, and clamped to 0..=99.
 //!
 //! 9. **`to_cheque` does not exist.** No base class means no inherited
-//!    `to_cheque`, so all 9 cheque rows are `AttributeError`. See
-//!    [`LangBn::to_cheque`].
+//!    `to_cheque`, so Python raised `AttributeError`; the port raises
+//!    NotImplementedError ("does not support to='cheque'", #223).
 //!
-//! 10. **`(Decimal(str(val)) * 100) % 1` raises for `abs(val) >= 1e26`.** The
-//!     `has_fractional_cents` probe runs under the *default* decimal context
-//!     (`prec=28`), and `Decimal.__mod__` raises
-//!     `InvalidOperation(DivisionImpossible)` once the integer quotient needs
-//!     more than 28 digits. It sits *above* the `isinstance(val, int)` split,
-//!     so plain ints raise too: `to_currency(10**26)` raises where
-//!     `to_currency(10**26 - 1)` succeeds. Boundary verified exactly.
+//! 10. ~~**`(Decimal(str(val)) * 100) % 1` raises for `abs(val) >= 1e26`.**~~
+//!     The `has_fractional_cents` probe ran under the *default* decimal
+//!     context (`prec=28`), so `to_currency(10**26)` raised
+//!     `InvalidOperation(DivisionImpossible)` while `to_cardinal(10**26)`
+//!     answered. Fixed (gladiaio/num2words2#215): the probe's result is never
+//!     observable (see below), so the port no longer evaluates it.
 //!
 //! ## The `has_fractional_cents` branch is dead code
 //!
@@ -151,11 +148,7 @@
 //!   `NumberTooLargeError`, but with a **different message** ("Number is too
 //!   large. Max: ..." vs `_is_smaller_than_max_number`'s "Too Large number
 //!   maximum value=...").
-//! * `to_currency` for `1e26 <= abs(val) < MAX_NUMBER` → `decimal`'s
-//!   `InvalidOperation` (bug 10), as `N2WError::Custom { module: "decimal",
-//!   class: "InvalidOperation" }`, following the precedent in `lang_hy.rs`
-//!   which ports the identical Python expression.
-//! * `to_cheque` → `N2WError::Attribute` for every input (bug 9).
+//! * `to_cheque` → `N2WError::NotImplemented` for every input (bug 9).
 //!
 //! # The float/Decimal cardinal path
 //!
@@ -181,20 +174,18 @@
 //!
 //! ## Further faithfully reproduced Python bugs (float path)
 //!
-//! 11. **`int()` eats the fraction's leading zeros.** `parse_number` recovers
-//!     the digit run after the "." and then calls `int()` on it, collapsing
-//!     "01" to 1 and "005" to 5 — the same class of bug as [`parse_paisa`]'s,
-//!     but from a bare `int()` rather than a `[:2]`. So `0.01` → "শূন্য দশমিক
-//!     এক" ("zero point *one*") and `1.005` → "এক দশমিক পাঁচ" ("one point
-//!     *five*"). Both are corpus rows; `Decimal("0.001")` likewise → "এক".
+//! 11. ~~**`int()` eats the fraction's leading zeros.**~~ `parse_number`
+//!     recovers the digit run after the "." and then calls `int()` on it,
+//!     collapsing "01" to 1 and "005" to 5, so in Python `0.01` read
+//!     "শূন্য দশমিক এক" ("zero point *one*") and `0.05` read like `0.5`. Fixed
+//!     (gladiaio/num2words2#205): the port reads the digit run itself, so
+//!     `0.05` is "শূন্য দশমিক শূন্য পাঁচ".
 //!
-//! 12. **An interior zero digit emits a bare double space.** `AKOK[0]` is `""`
-//!     and `_dosomik_to_bengali_word` appends `" " + AKOK[d]` per digit, so a
-//!     0 contributes a lone space: `1.102` → `'এক দশমিক এক  দুই'` (two spaces).
-//!     `.strip()` only saves the ends, so `Decimal("1.10")` → decimal_part 10
-//!     → " এক " → stripped to "এক দশমিক এক" (a corpus row), while an interior
-//!     zero survives. `0.1 + 0.2` → decimal_part 30000000000000004 → sixteen
-//!     spaces mid-string. Interpreter-verified.
+//! 12. ~~**An interior zero digit emits a bare double space.**~~ `AKOK[0]` is
+//!     `""`, so in Python `1.102` read `'এক দশমিক এক  দুই'`. Fixed with 11:
+//!     every zero digit reads "শূন্য" ("এক দশমিক এক শূন্য দুই"); trailing zeros
+//!     of a Decimal (`Decimal("1.10")`) are still dropped, as Python's strip
+//!     did.
 //!
 //! 13. **The 1e-7 cliff, and a `ValueError` just past it.** `parse_number`
 //!     splits `str(fraction)` on "." — but `str(Decimal)` switches to
@@ -212,22 +203,24 @@
 //!     happens between `str_to_number` and that `int()`, so
 //!     [`float_str_to_number`] raises them up front. Verified.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{strictly_negative, verify_ordinal, verify_ordinal_float, Lang, N2WError, Result};
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{One, Signed, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::str::FromStr;
 use std::sync::OnceLock;
 
+/// NFC spelling: য় is য + nukta (U+09AF U+09BC), as in the cardinal tables;
+/// the precomposed U+09DF is a composition exclusion that NFC never emits.
 const RANKING: &[&str] = &[
     "", // 0 — unreachable: `number in range(1, 11)` excludes 0
     "প্রথম", // 1
-    "দ্বিতীয়", // 2
-    "তৃতীয়", // 3
+    "দ্বিতীয়", // 2
+    "তৃতীয়", // 3
     "চতুর্থ", // 4
     "পঞ্চম", // 5
     "ষষ্ঠ", // 6
@@ -351,6 +344,12 @@ const SHATA: &str = "শত ";
 const ZERO_WORD: &str = "শূন্য";
 const NEGWORD: &str = "ঋণাত্মক";
 const SHAL: &str = " সাল";
+
+/// The era word for a negative year: খ্রিস্টপূর্ব, "before Christ" (#250).
+const BCE: &str = "খ্রিস্টপূর্ব ";
+
+/// Bengali digits ০..৯, for `to_ordinal_num`.
+const BN_DIGITS: [char; 10] = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
 /// দশমিক — the fractional separator, interpolated as `f" দশমিক{...}"`. BN's
 /// stand-in for `pointword`, which it does not define (the trait default
 /// "(.)" is therefore unreachable here).
@@ -434,16 +433,6 @@ fn max_number_decimal() -> &'static BigDecimal {
     MAX.get_or_init(|| BigDecimal::from(max_number_ref().clone()))
 }
 
-/// `10**DECIMAL_PREC` — the point past which `(Decimal(str(val)) * 100) % 1`
-/// needs an integer quotient wider than the default context's precision and
-/// `Decimal.__mod__` raises `InvalidOperation(DivisionImpossible)`.
-///
-/// See module bug 10. Mirrors `lang_hy.rs`, which ports the same expression.
-fn decimal_prec_limit() -> &'static BigDecimal {
-    static LIMIT: OnceLock<BigDecimal> = OnceLock::new();
-    LIMIT.get_or_init(|| BigDecimal::from(BigInt::from(10u8).pow(DECIMAL_PREC as u32)))
-}
-
 /// Python's `raise NumberTooLargeError(f"Number is too large. Max: {MAX_NUMBER}")`
 /// — `to_currency`'s own guard, whose message differs from
 /// `_is_smaller_than_max_number`'s. Same class, so the same `Custom` variant.
@@ -452,18 +441,6 @@ fn number_too_large_currency() -> N2WError {
         module: "num2words2.lang_BN",
         class: "NumberTooLargeError",
         msg: format!("Number is too large. Max: {}", max_number_ref()),
-    }
-}
-
-/// Python's `decimal.InvalidOperation` from `(decimal_val * 100) % 1`.
-///
-/// The message reproduces `str(e)` for the real exception, whose `args` are the
-/// list of raised signal classes: `[<class 'decimal.DivisionImpossible'>]`.
-fn invalid_operation() -> N2WError {
-    N2WError::Custom {
-        module: "decimal",
-        class: "InvalidOperation",
-        msg: "[<class 'decimal.DivisionImpossible'>]".to_string(),
     }
 }
 
@@ -544,7 +521,7 @@ fn frac_after_dot(number: &BigDecimal) -> Option<String> {
     let adjusted = exp + digits.chars().count() as i64 - 1;
     if adjusted >= -6 {
         // Plain: "0." + the coefficient left-padded with zeros to `scale`.
-        Some(format!("{:0>width$}", digits, width = scale as usize))
+        Some(crate::strnum::zero_pad_left(&digits, scale as usize))
     } else if digits.chars().count() == 1 {
         // Scientific with a single digit: "1E-8" — no ".", so no fraction.
         None
@@ -567,7 +544,8 @@ fn frac_after_dot(number: &BigDecimal) -> Option<String> {
 /// return int(number), int(paisa_str)
 /// ```
 ///
-/// The `* 100` then `[:2]` is the buggy trailing-zero fix of module bug 8.
+/// The `* 100` then `[:2]` is the buggy trailing-zero fix of module bug 8,
+/// replaced by a right-pad of the digit run (#255).
 fn parse_paisa(number: &BigDecimal) -> Result<(BigInt, u32)> {
     // int(number) — truncation, and `number` is non-negative here.
     let int_part = number.with_scale(0).as_bigint_and_exponent().0;
@@ -578,16 +556,17 @@ fn parse_paisa(number: &BigDecimal) -> Result<(BigInt, u32)> {
         None => 0u32,
         // `if paisa_str:` — any non-empty string is truthy, "0" included.
         Some(s) => {
-            let f = BigInt::from_str(&s).map_err(|_| {
+            BigInt::from_str(&s).map_err(|_| {
                 // int("5E-8") → ValueError, Python's message verbatim.
                 N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
             })?;
-            // str(int(paisa_str) * 100)[:2] — truncating, never rounding, and
-            // clamping the result to 0..=99.
-            let scaled = f * BigInt::from(100u8);
-            let two: String = scaled.to_string().chars().take(2).collect();
+            // The first two fraction digits, right-padded: "05" -> 5, "5" -> 50,
+            // "675" -> 67 (truncating, never rounding). Python's
+            // `str(int(paisa_str) * 100)[:2]` dropped the leading zero first,
+            // so 3.05 read as 50 paisa (bug 8, #255).
+            let two: String = format!("{:0<2}", s).chars().take(2).collect();
             two.parse::<u32>()
-                .expect("digits of a non-negative BigInt, at most 2 of them")
+                .expect("two decimal digits of the fraction")
         }
     };
     Ok((int_part, paisa))
@@ -614,20 +593,25 @@ fn parse_paisa(number: &BigDecimal) -> Result<(BigInt, u32)> {
 /// Unlike [`parse_paisa`] there is no `* 100` / `[:2]` fix-up — the digit run
 /// goes straight into `int()`, which is what eats the leading zeros (module
 /// bug 11) and what chokes on a scientific tail (module bug 13).
-fn parse_number(number: &BigDecimal) -> Result<(BigInt, BigInt)> {
+fn parse_number(number: &BigDecimal) -> Result<(BigInt, BigInt, String)> {
     // int(number) — truncation, and `number` is non-negative here.
     let int_part = number.with_scale(0).as_bigint_and_exponent().0;
 
-    let decimal_part = match frac_after_dot(number) {
+    let (decimal_part, digits) = match frac_after_dot(number) {
         // `dosomik_str = 0`, the int — so `int(dosomik_str)` is `int(0)`.
-        None => BigInt::zero(),
-        // `int(dosomik_str)`: leading zeros are silently dropped (bug 11).
-        Some(s) => BigInt::from_str(&s).map_err(|_| {
-            // int("5E-7") → ValueError, Python's message verbatim (bug 13).
-            N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
-        })?,
+        None => (BigInt::zero(), String::new()),
+        // `int(dosomik_str)` validates the run (and in Python dropped its
+        // leading zeros, bug 11); the digit string itself is kept for
+        // reading, so 0.05 no longer reads like 0.5.
+        Some(s) => (
+            BigInt::from_str(&s).map_err(|_| {
+                // int("5E-7") → ValueError, Python's message verbatim (bug 13).
+                N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
+            })?,
+            s,
+        ),
     };
-    Ok((int_part, decimal_part))
+    Ok((int_part, decimal_part, digits))
 }
 
 /// `Decimal(str(value))` for an `f64` — the float arm of `str_to_number`.
@@ -786,18 +770,19 @@ impl LangBn {
     /// ```
     ///
     /// Every digit contributes a leading space, so the result always starts
-    /// with one — that is what separates it from the "দশমিক" before it. A zero
-    /// digit hits `AKOK[0] == ""` and contributes a *bare* space, which is
-    /// module bug 12. Callers only reach here with `decimal_part > 0`, so
-    /// `to_string()` is a plain digit run with no sign.
-    fn dosomik_to_bengali_word(&self, number: &BigInt) -> String {
+    /// with one — that is what separates it from the "দশমিক" before it.
+    /// Python read `str(int(digits))`, dropping the leading zeros (bug 11),
+    /// and a zero digit hit `AKOK[0] == ""`, leaving a bare space (bug 12).
+    /// The port reads the digit run itself, minus insignificant trailing
+    /// zeros, and says "শূন্য" for every zero in it (gladiaio/num2words2#205).
+    /// Callers only reach here with `decimal_part > 0`, so the run holds a
+    /// non-zero digit.
+    fn dosomik_to_bengali_word(&self, digits: &str) -> String {
         let mut word = String::new();
-        for ch in number.to_string().chars() {
-            let d = ch
-                .to_digit(10)
-                .expect("decimal_part is a non-negative BigInt, so all digits");
+        for ch in digits.trim_end_matches('0').chars() {
+            let d = ch.to_digit(10).expect("parse_number validated the digit run");
             word.push(' ');
-            word.push_str(AKOK[d as usize]);
+            word.push_str(if d == 0 { ZERO_WORD } else { AKOK[d as usize] });
         }
         word
     }
@@ -858,83 +843,70 @@ impl Lang for LangBn {
         self.cardinal_inner(value, value.is_negative())
     }
 
+    /// The ordinal word: প্রথম … দশম for 1..=10, then the cardinal + "তম"
+    /// (এগারোতম, একুশতম, একশততম). Python's `to_ordinal` was a bare alias
+    /// for `to_cardinal` and its `to_ordinal_num` held these words
+    /// (gladiaio/num2words2#250).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        // Python: `def to_ordinal(self, number): return self.to_cardinal(number)`
-        // — a bare alias, so the negword survives here.
-        self.to_cardinal(value)
-    }
-
-    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        // Guard runs on the RAW signed value, so any negative trivially passes
-        // (MAX_NUMBER >= negative). The real ceiling check happens inside
-        // to_cardinal below, on the rounded magnitude.
+        verify_ordinal(value)?;
         self.check_max(value)?;
-
-        // Python: `if number in range(1, 11)` → 1..=10.
         if *value >= BigInt::one() && *value <= BigInt::from(10u8) {
             let idx = usize::try_from(value).expect("1..=10 here");
             return Ok(RANKING[idx].to_string());
         }
+        // Always "তম": Python glued a bare "ম" onto a cardinal ending in ত,
+        // so 100 read "একশতম" for একশততম (শত + তম, as in শততম).
+        Ok(format!("{}তম", self.cardinal_inner(value, false)?))
+    }
 
-        // `int(abs(number))` — the sign is dropped, so no negword (bug 3).
-        let rank = self.cardinal_inner(&value.abs(), false)?;
-        // Python: `if rank.endswith("ত")`. Plain suffix test on the Bengali
-        // letter ত (U+09A4); byte-wise suffix compare is equivalent for UTF-8.
-        if rank.ends_with('ত') {
-            Ok(format!("{}ম", rank))
-        } else {
-            Ok(format!("{}তম", rank))
-        }
+    /// Bengali digits + the written ordinal suffix: ১ম, ২য়, ৩য়, ৪র্থ, ৫ম,
+    /// ৬ষ্ঠ, ৭ম … ১০ম, then ১১তম, ২১তম, … (#250; Python returned the words).
+    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
+        self.check_max(value)?;
+        let digits: String = value
+            .to_string()
+            .chars()
+            .map(|c| BN_DIGITS[c.to_digit(10).expect("decimal digit") as usize])
+            .collect();
+        let suffix = match value.to_u8() {
+            Some(2) | Some(3) => "য়",
+            Some(4) => "র্থ",
+            Some(6) => "ষ্ঠ",
+            Some(1..=10) => "ম",
+            _ => "তম",
+        };
+        Ok(format!("{}{}", digits, suffix))
     }
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        // Same raw-value guard, then `to_cardinal(int(abs(number)))` — the
-        // sign is dropped here too (bug 3).
+        // Same raw-value guard, then `to_cardinal(int(abs(number)))`. Python
+        // dropped the sign; a negative year now carries the era word
+        // খ্রিস্টপূর্ব ("before Christ") in front, as en adds "BC" (#250).
         self.check_max(value)?;
         let words = self.cardinal_inner(&value.abs(), false)?;
+        if value.is_negative() {
+            return Ok(format!("{}{}{}", BCE, words, SHAL));
+        }
         Ok(format!("{}{}", words, SHAL))
     }
 
     // ---- float / Decimal entry routing --------------------------------
 
-    /// `to_ordinal_num(float/Decimal)` — Python's body with a non-int:
-    ///
-    /// ```python
-    /// self._is_smaller_than_max_number(number)   # raw value vs MAX_NUMBER
-    /// if number in range(1, 11):                 # True iff whole and 1..=10
-    ///     return RANKING[number]                 # TypeError: bad list index!
-    /// rank = self.to_cardinal(int(abs(number)))  # truncate toward zero
-    /// return rank + ("ম" if rank.endswith("ত") else "তম")
-    /// ```
-    ///
-    /// `5.0 in range(1, 11)` is True (numeric equality), and `RANKING[5.0]`
-    /// then raises `TypeError: list indices must be integers or slices, not
-    /// float` — `not decimal.Decimal` for a Decimal. Every other value
-    /// (fractional, negative, zero, or > 10) truncates and ordinalises:
-    /// `2.5` -> "দুইতম", `-21.0` -> "একুশতম", `-0.0` -> "শূন্যতম".
+    /// `to_ordinal(float/Decimal)` / `to_ordinal_num(float/Decimal)`: a
+    /// whole, non-negative value reads like the integer; anything else raises
+    /// Base's ordinal `TypeError`. (Python's `to_ordinal_num` truncated, and
+    /// raised a "list indices" TypeError for 1.0..=10.0.)
+    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        self.check_max_float(value)?;
+        let i = verify_ordinal_float(value)?;
+        self.to_ordinal(&i)
+    }
+
     fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
         self.check_max_float(value)?;
-
-        if let Some(i) = value.as_whole_int() {
-            if i >= BigInt::one() && i <= BigInt::from(10u8) {
-                return Err(N2WError::Type(match value {
-                    FloatValue::Float { .. } => {
-                        "list indices must be integers or slices, not float".to_string()
-                    }
-                    FloatValue::Decimal { .. } => {
-                        "list indices must be integers or slices, not decimal.Decimal"
-                            .to_string()
-                    }
-                }));
-            }
-        }
-
-        let rank = self.cardinal_inner(&fv_trunc_abs(value)?, false)?;
-        if rank.ends_with('ত') {
-            Ok(format!("{}ম", rank))
-        } else {
-            Ok(format!("{}তম", rank))
-        }
+        let i = verify_ordinal_float(value)?;
+        self.to_ordinal_num(&i)
     }
 
     /// `to_year(float/Decimal)`: the raw-value guard, then
@@ -943,6 +915,9 @@ impl Lang for LangBn {
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.check_max_float(value)?;
         let words = self.cardinal_inner(&fv_trunc_abs(value)?, false)?;
+        if strictly_negative(value) {
+            return Ok(format!("{}{}{}", BCE, words, SHAL));
+        }
         Ok(format!("{}{}", words, SHAL))
     }
 
@@ -976,17 +951,8 @@ impl Lang for LangBn {
 
     // ---- fractions ------------------------------------------------------
 
-    /// `Num2Word_BN` defines **no** `to_fraction` and inherits none (it has no
-    /// base class), so both the dispatcher's `"n/d"` string branch
-    /// (`converter.to_fraction(n, d)`) and `to="fraction"` raise
-    /// `AttributeError` at the attribute lookup, before any argument is
-    /// inspected — `"1/0"` is AttributeError too, never ZeroDivisionError.
-    /// The message is the interpreter's own, reproduced verbatim.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_BN' object has no attribute 'to_fraction'".to_string(),
-        ))
-    }
+    // `Num2Word_BN` had no `to_fraction` (AttributeError). BN has no fraction
+    // rules, so the trait default raises NotImplementedError (#217).
 
     /// `Num2Word_BN.to_cardinal` for float / `Decimal` input.
     ///
@@ -1031,7 +997,7 @@ impl Lang for LangBn {
 
         // `number, decimal_part = self.parse_number(number)` — Python rebinds
         // `number` to the integer part here.
-        let (number, decimal_part) = parse_number(&number)?;
+        let (number, decimal_part, digits) = parse_number(&number)?;
         self.check_max(&number)?;
 
         // `if decimal_part > 0:` — note `> 0`, not "is there a fraction". A
@@ -1041,7 +1007,7 @@ impl Lang for LangBn {
             Some(format!(
                 "{}{}",
                 DOSHOMIK,
-                self.dosomik_to_bengali_word(&decimal_part)
+                self.dosomik_to_bengali_word(&digits)
             ))
         } else {
             None
@@ -1110,25 +1076,10 @@ impl Lang for LangBn {
             return Err(number_too_large_currency());
         }
 
-        // decimal_val = Decimal(str(val)) — already parsed from `str(val)` by
-        // the shim, so no re-stringification here (see currency.rs).
-        let decimal_val: BigDecimal = match val {
-            CurrencyValue::Int(i) => BigDecimal::from(i.clone()),
-            CurrencyValue::Decimal { value, .. } => value.clone(),
-        };
-
-        // Guard 2: `has_fractional_cents = (decimal_val * 100) % 1 != 0`.
-        //
-        // Only the *raise* is observable — the flag itself selects between two
-        // provably identical branches (see the module docs). The `%` runs under
-        // the default context (prec=28) and raises once the integer quotient of
-        // `decimal_val * 100` needs more than 28 digits. Sign does not affect a
-        // digit count, so the test is on the magnitude. This sits above the
-        // isinstance split, so ints raise here too.
-        let scaled = decimal_val.abs() * BigDecimal::from(100);
-        if scaled >= *decimal_prec_limit() {
-            return Err(invalid_operation());
-        }
+        // Python then evaluated `(Decimal(str(val)) * 100) % 1` for a flag
+        // that selects between two identical branches (see the module docs);
+        // only its 1e26 InvalidOperation was observable, and that is gone
+        // (bug 10, #215).
 
         // `if isinstance(val, int):` — pure ints get no paisa segment at all.
         // Note this is the *type* test, not a whole-number test: 1.0 is a float
@@ -1183,17 +1134,11 @@ impl Lang for LangBn {
         Ok(format!("{}{}", words, dosomik_word))
     }
 
-    /// `Num2Word_BN` has **no** `to_cheque` (module bug 9).
-    ///
-    /// With no base class there is nothing to inherit it from, so Python fails
-    /// on the attribute lookup — before any conversion, and regardless of the
-    /// currency code. Overridden rather than left at the trait default, which
-    /// would consult `currency_forms` and invent a NotImplementedError that
-    /// Python never raises. All 9 corpus cheque rows expect AttributeError.
+    // `Num2Word_BN` had no `to_cheque` (AttributeError).
+    // No cheque rules, so NotImplementedError ("lang='bn' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(N2WError::Attribute(
-            "'Num2Word_BN' object has no attribute 'to_cheque'".to_string(),
-        ))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 
     // cards/maxval/merge: Num2Word_BN has no base class and never defines
@@ -1201,6 +1146,7 @@ impl Lang for LangBn {
     // overridden above and never calls splitnum/clean.
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -1249,10 +1195,10 @@ mod float_tests {
         assert_eq!(f(1.5), "এক দশমিক পাঁচ");
         assert_eq!(f(2.25), "দুই দশমিক দুই পাঁচ");
         assert_eq!(f(3.14), "তিন দশমিক এক চার");
-        assert_eq!(f(0.01), "শূন্য দশমিক এক");
+        assert_eq!(f(0.01), "শূন্য দশমিক শূন্য এক");
         assert_eq!(f(0.1), "শূন্য দশমিক এক");
         assert_eq!(f(0.99), "শূন্য দশমিক নয় নয়");
-        assert_eq!(f(1.01), "এক দশমিক এক");
+        assert_eq!(f(1.01), "এক দশমিক শূন্য এক");
         assert_eq!(f(12.34), "বারো দশমিক তিন চার");
         assert_eq!(f(99.99), "নিরানব্বই দশমিক নয় নয়");
         assert_eq!(f(100.5), "একশত দশমিক পাঁচ");
@@ -1260,44 +1206,45 @@ mod float_tests {
         assert_eq!(f(-0.5), "ঋণাত্মক শূন্য দশমিক পাঁচ");
         assert_eq!(f(-1.5), "ঋণাত্মক এক দশমিক পাঁচ");
         assert_eq!(f(-12.34), "ঋণাত্মক বারো দশমিক তিন চার");
-        assert_eq!(f(1.005), "এক দশমিক পাঁচ");
+        assert_eq!(f(1.005), "এক দশমিক শূন্য শূন্য পাঁচ");
         assert_eq!(f(2.675), "দুই দশমিক ছয় সাত পাঁচ");
     }
 
     /// Every `"lang": "bn", "to": "cardinal_dec"` corpus row.
     #[test]
     fn corpus_cardinal_dec() {
-        assert_eq!(d("0.01"), "শূন্য দশমিক এক");
+        assert_eq!(d("0.01"), "শূন্য দশমিক শূন্য এক");
         assert_eq!(d("1.10"), "এক দশমিক এক");
         assert_eq!(d("12.345"), "বারো দশমিক তিন চার পাঁচ");
         assert_eq!(
             d("98746251323029.99"),
             "আটানব্বই লাখ চুয়াত্তর হাজার ছয়শত পঁচিশ কোটি তেরো লাখ তেইশ হাজার উনত্রিশ দশমিক নয় নয়"
         );
-        assert_eq!(d("0.001"), "শূন্য দশমিক এক");
+        assert_eq!(d("0.001"), "শূন্য দশমিক শূন্য শূন্য এক");
     }
 
-    /// Module bug 11: `int()` on the digit run drops the fraction's leading
-    /// zeros, so 0.01 and 0.001 both read as "point one".
+    /// Module bug 11 (fixed, #205): Python's `int()` on the digit run dropped
+    /// the fraction's leading zeros, so 0.05 read like 0.5.
     #[test]
-    fn leading_zeros_are_eaten() {
-        assert_eq!(f(0.01), f(0.1));
-        assert_eq!(d("0.001"), d("0.1"));
-        assert_eq!(f(1.005), "এক দশমিক পাঁচ");
-        assert_eq!(f(3.001), "তিন দশমিক এক");
+    fn leading_zeros_are_kept() {
+        assert_ne!(f(0.01), f(0.1));
+        assert_ne!(f(0.05), f(0.5));
+        assert_eq!(f(0.05), "শূন্য দশমিক শূন্য পাঁচ");
+        assert_eq!(f(1.005), "এক দশমিক শূন্য শূন্য পাঁচ");
+        assert_eq!(f(3.001), "তিন দশমিক শূন্য শূন্য এক");
     }
 
-    /// Module bug 12: `AKOK[0] == ""`, so an interior zero digit leaves a bare
-    /// double space that `.strip()` cannot reach.
+    /// Module bug 12 (fixed, #205): `AKOK[0] == ""` left a bare double space
+    /// for an interior zero digit; it now reads "শূন্য".
     #[test]
-    fn interior_zero_double_space() {
-        assert_eq!(f(1.102), "এক দশমিক এক  দুই");
-        assert_eq!(f(1.507), "এক দশমিক পাঁচ  সাত");
+    fn interior_zero_reads_zero() {
+        assert_eq!(f(1.102), "এক দশমিক এক শূন্য দুই");
+        assert_eq!(f(1.507), "এক দশমিক পাঁচ শূন্য সাত");
         // A *trailing* zero digit strips away instead — the corpus "1.10" row.
         assert_eq!(d("1.10"), "এক দশমিক এক");
         assert_eq!(d("0.10"), "শূন্য দশমিক এক");
         // 0.1 + 0.2 == 0.30000000000000004 -> fifteen interior zeros.
-        assert_eq!(f(0.1 + 0.2), "শূন্য দশমিক তিন                চার");
+        assert_eq!(f(0.1 + 0.2), format!("শূন্য দশমিক তিন{} চার", " শূন্য".repeat(15)));
     }
 
     /// The float path is decimal-string based, so the f64 artefacts that
@@ -1312,7 +1259,7 @@ mod float_tests {
     /// is no "." to split on — or worse, a garbage tail for int().
     #[test]
     fn sci_notation_cliff() {
-        assert_eq!(f(1e-5), "শূন্য দশমিক এক");
+        assert_eq!(f(1e-5), "শূন্য দশমিক শূন্য শূন্য শূন্য শূন্য এক");
         assert_eq!(f(1e-7), "শূন্য");
         assert_eq!(f(5e-324), "শূন্য");
         match f_err(1.5e-7) {

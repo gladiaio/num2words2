@@ -24,6 +24,9 @@ entry points and the exception types, nothing more.
 """
 from __future__ import unicode_literals
 
+from decimal import Decimal
+from typing import Any, Literal, Optional, Union
+
 from . import _rust as _RUST
 from .grouping import group_digits  # noqa: F401  (re-exported)
 
@@ -38,9 +41,7 @@ try:
 except PackageNotFoundError:
     # Imported from a source tree that was never installed.
     __version__ = "unknown"
-__version_tuple__ = tuple(
-    int(p) if p.isdigit() else p for p in __version__.split(".")
-)
+__version_tuple__ = tuple(int(p) if p.isdigit() else p for p in __version__.split("."))
 
 # Exception types defined in the compiled core and re-exported so
 # ``from num2words2 import NumberTooLargeError`` (and ``except`` on it) keep
@@ -61,21 +62,57 @@ __all__ = [
 ]
 
 CONVERTES_TYPES = [
-    "cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque",
+    "cardinal",
+    "ordinal",
+    "ordinal_num",
+    "year",
+    "currency",
+    "cheque",
     "fraction",
 ]
 CONVERTER_TYPES = CONVERTES_TYPES  # Alias for compatibility
 
+# The values of CONVERTER_TYPES, for type checkers (#244).
+ConverterType = Literal[
+    "cardinal",
+    "ordinal",
+    "ordinal_num",
+    "year",
+    "currency",
+    "cheque",
+    "fraction",
+]
 
-def num2words(number, ordinal=False, lang="en", to="cardinal", **kwargs):
-    return _RUST.num2words(number, ordinal, lang, to, **kwargs)
+
+# What to do with input that has no reading (#228): raise ValueError naming
+# the token, or return it as written.
+ErrorsMode = Literal["raise", "ignore"]
 
 
-def num2words_sentence(sentence, lang="en", to="cardinal", **kwargs):
-    return _RUST.num2words_sentence(sentence, lang, to, **kwargs)
+def num2words(
+    number: Union[int, float, Decimal, str],
+    ordinal: bool = False,
+    lang: str = "en",
+    to: ConverterType = "cardinal",
+    *,
+    errors: ErrorsMode = "raise",
+    **kwargs: Any,
+) -> Optional[str]:
+    return _RUST.num2words(number, ordinal, lang, to, errors=errors, **kwargs)
 
 
-def maxval(lang="en"):
+def num2words_sentence(
+    sentence: str,
+    lang: Optional[str] = "en",
+    to: ConverterType = "cardinal",
+    *,
+    errors: ErrorsMode = "ignore",
+    **kwargs: Any,
+) -> str:
+    return _RUST.num2words_sentence(sentence, lang, to, errors=errors, **kwargs)
+
+
+def maxval(lang: str = "en") -> Optional[int]:
     return _RUST.maxval(lang)
 
 

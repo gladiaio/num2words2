@@ -393,10 +393,10 @@ class Num2WordsTRTest(TestCase):
         self.assertEqual(num2words(1000, lang="tr"), num2words("1000", lang="tr"))
 
 
-
 def test_tr_bir_inserted_between_hundred_and_thousand_in_6_digit_numbers():
     # Regression for num2words2#64 (ports savoirfairelinux/num2words#621/#564).
     from num2words2 import num2words
+
     assert num2words(401607, lang="tr") == "dörtyüzbirbinaltıyüzyedi"
     assert num2words(301661, lang="tr") == "üçyüzbirbinaltıyüzaltmışbir"
     assert num2words(201605, lang="tr") == "ikiyüzbirbinaltıyüzbeş"
@@ -433,8 +433,10 @@ def test_tr_spaced_precision_decimal_word_kwargs():
     assert num2words("1.50", lang="tr", decimal_word="nokta") == "birnoktaelli"
 
     # Combined
-    assert num2words(3.14, lang="tr", spaced=True, decimal_word="nokta") == "üç nokta on dört"
-
+    assert (
+        num2words(3.14, lang="tr", spaced=True, decimal_word="nokta")
+        == "üç nokta on dört"
+    )
 
 
 def test_tr_currency_int_matches_float():

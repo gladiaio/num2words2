@@ -15,9 +15,7 @@ class LegacyAliasTest(unittest.TestCase):
 
     def test_dk_alias_routes_to_da(self):
         self.assertEqual(num2words(5, lang="dk"), num2words(5, lang="da"))
-        self.assertEqual(
-            num2words(1829794, lang="dk"), num2words(1829794, lang="da")
-        )
+        self.assertEqual(num2words(1829794, lang="dk"), num2words(1829794, lang="da"))
 
     def test_cz_no_longer_raises(self):
         # Previously raised NotImplementedError. Pre-ISO-639 callers had to

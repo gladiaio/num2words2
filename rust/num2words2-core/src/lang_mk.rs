@@ -4,9 +4,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives a recursive `_int_to_word`. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check at all** — `_int_to_word` has a catch-all `else` that
-//! returns `str(number)` (see bug 3 below), so no input ever raises.
+//! `cards`/`merge` stay at their trait defaults here. Python has no overflow
+//! check at all — `_int_to_word` has a catch-all `else` that returns
+//! `str(number)`; this port spells the scales up to 10^18 and raises
+//! `OverflowError` from 10^21 (see bug 3 below).
 //!
 //! MK overrides all four in-scope modes, so nothing is inherited from
 //! `Num2Word_Base` except the `__init__` → `setup()` call that installs the
@@ -30,13 +31,13 @@
 //!    ("ten one") rather than the correct "единаесет". Likewise 12 ==
 //!    "десет два". Real Macedonian has dedicated teen forms; this module has
 //!    no table for them.
-//! 3. **Numbers >= 10^9 render as digits.** The `_int_to_word` chain stops at
-//!    the millions branch and the final `else` is
-//!    `return str(number)  # Fallback for very large numbers`. So
-//!    `to_cardinal(10**9)` == "1000000000" (the literal digit string) and
-//!    `to_ordinal(10**9)` == "1000000000-ти". This is why the value must stay
-//!    a `BigInt`: the fallback is reached at 10^9 and must still print exact
-//!    digits at 10^21 and beyond, which no fixed-width int could hold.
+//! 3. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` chain stops at the millions branch and the final `else`
+//!    is `return str(number)`, so `to_cardinal(10**9)` was the digit string
+//!    "1000000000". This port continues the same `N <scale>` composition with
+//!    the Macedonian long-scale words милијарда (10^9), билион (10^12),
+//!    билијарда (10^15) and трилион (10^18), and raises `OverflowError` at
+//!    10^21 (`maxval`), where no word is attested.
 //! 4. **`hundred`/`thousand`/`million` are never inflected or elided.** 100 ==
 //!    "еден сто" ("one hundred", where Macedonian says "сто"), 200 == "два сто"
 //!    (vs. "двесте"), 1000 == "еден илјада", and there is no plural agreement:
@@ -116,9 +117,9 @@
 //!
 //! # Error variants
 //!
-//! The four integer modes are total and never raise (the `_int_to_word`
-//! recursion is bounded and the catch-all `else` terminates it), and
-//! `bench/corpus.jsonl` records no `ok: false` row for any of them.
+//! The four integer modes raise only `OverflowError`, for `abs(n) >= 10^21`
+//! (gladiaio/num2words2#147); the float and currency paths share that
+//! ceiling because every one of them goes through `_int_to_word`.
 //!
 //! On the currency surface only `to_cheque` raises, via the inherited
 //! `Num2Word_Base.to_cheque`: a code absent from `CURRENCY_FORMS` is a
@@ -128,8 +129,14 @@
 //! `to_cheque` — no override needed. `to_currency` itself has no raising
 //! path for any value the shim can hand it (see the scientific-notation note
 //! on `plain_decimal_string`).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use долар/долари and евро/евра with цент/центи.
+//! Examples in these docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -139,11 +146,11 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword = "minus "`; this port uses the Macedonian word
 /// (#154). The trailing space is load-bearing — MK's `to_cardinal`
 /// concatenates it raw (see bug 5).
-
 const NEGWORD: &str = "минус ";
 
 /// `setup`: `self.pointword = "point"`, replaced by the Macedonian decimal
@@ -177,6 +184,25 @@ const HUNDRED: &str = "сто";
 const THOUSAND: &str = "илјада";
 /// `setup`: `self.million`.
 const MILLION: &str = "милион";
+
+/// The scales above `million` that Python lacks (gladiaio/num2words2#147),
+/// largest first, as `(power of ten, word)`. Macedonian uses the long scale:
+/// милијарда 10^9, билион 10^12, билијарда 10^15, трилион 10^18
+/// (Wiktionary милијарда, билион; mk.wikipedia Трилион). Composed like
+/// `million` — multiplier, space, uninflected word.
+const HIGH_SCALES: [(u32, &str); 4] = [
+    (18, "трилион"),
+    (15, "билијарда"),
+    (12, "билион"),
+    (9, "милијарда"),
+];
+
+/// The exclusive ceiling: 10^21 would need a трилијарда, which the sources
+/// the scale table is drawn from do not attest (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(21))
+}
 
 /// What `_int_to_word` returns for 0: Macedonian "нула", where Python says
 /// the English "zero" — see bug 1.
@@ -371,8 +397,8 @@ impl LangMk {
         // `cr1[1]`/`cr1[0]` directly, mirroring Python's tuple subscript.
         let table = [
             ("MKD", &["денар", "денари"][..], &["дени", "дени"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
+            ("USD", &["долар", "долари"][..], &["цент", "центи"][..]),
+            ("EUR", &["евро", "евра"][..], &["цент", "центи"][..]),
         ];
 
         let (_, fallback_unit, fallback_subunit) = table[0];
@@ -391,9 +417,10 @@ impl LangMk {
 
     /// Port of `Num2Word_MK._int_to_word`.
     ///
-    /// Total over the integers and never raises: each branch recurses on a
-    /// strictly smaller magnitude and the final `else` (bug 3) terminates the
-    /// chain at 10^9 by stringifying.
+    /// Each branch recurses on a strictly smaller magnitude. Python's final
+    /// `else` stringified everything from 10^9 (bug 3); here the
+    /// [`HIGH_SCALES`] branches take over and [`maxval_ceiling`] raises
+    /// `OverflowError` beyond them (gladiaio/num2words2#147).
     ///
     /// `//` and `%` are Python's floor semantics, so `div_mod_floor` is used
     /// rather than Rust's truncating `/` and `%`. Every call site below is
@@ -401,11 +428,12 @@ impl LangMk {
     /// `to_cardinal` strips the sign before calling in — so the two agree
     /// here; `div_mod_floor` is used to keep the correspondence exact rather
     /// than because a negative can reach it.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // `self.ones[0] if self.ones[0] else "zero"` — ones[0] == "" is
         // falsy, so this is unconditionally the zero word. See bug 1.
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
 
         // Unreachable from the four in-scope modes: `to_cardinal` detaches the
@@ -413,19 +441,18 @@ impl LangMk {
         // ever sees a non-negative value. Ported anyway for fidelity — and
         // note it would emit "минус " (with its trailing space) un-stripped.
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
         let ten = BigInt::from(10);
         let hundred = BigInt::from(100);
         let thousand = BigInt::from(1000);
         let million = BigInt::from(1_000_000);
-        let billion = BigInt::from(1_000_000_000);
 
         if number < &ten {
             // Bounded by the branch guard: 1..=9.
             let d = number.to_usize().expect("number < 10 fits usize");
-            return ONES[d].to_string();
+            return Ok(ONES[d].to_string());
         }
 
         if number < &hundred {
@@ -434,9 +461,9 @@ impl LangMk {
             let t = tens_val.to_usize().expect("number < 100 => tens fit usize");
             let o = ones_val.to_usize().expect("mod 10 fits usize");
             if o == 0 {
-                return TENS[t].to_string();
+                return Ok(TENS[t].to_string());
             }
-            return format!("{} {}", TENS[t], ONES[o]);
+            return Ok(format!("{} {}", TENS[t], ONES[o]));
         }
 
         if number < &thousand {
@@ -449,37 +476,55 @@ impl LangMk {
             let mut result = format!("{} {}", ONES[h], HUNDRED);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         if number < &million {
             let (thousands_val, remainder) = number.div_mod_floor(&thousand);
-            let mut result = format!("{} {}", self.int_to_word(&thousands_val), THOUSAND);
+            let mut result = format!("{} {}", self.int_to_word(&thousands_val)?, THOUSAND);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
-        if number < &billion {
+        if number < &BigInt::from(1_000_000_000) {
             let (millions_val, remainder) = number.div_mod_floor(&million);
-            let mut result = format!("{} {}", self.int_to_word(&millions_val), MILLION);
+            let mut result = format!("{} {}", self.int_to_word(&millions_val)?, MILLION);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
-        // `return str(number)  # Fallback for very large numbers` — bug 3.
-        number.to_string()
+        // Python: `return str(number)  # Fallback for very large numbers` —
+        // bug 3. The scales above million instead, same composition (#147);
+        // the maxval check above keeps the multiplier below 1000.
+        for &(exp, word) in HIGH_SCALES.iter() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let (scale_val, remainder) = number.div_mod_floor(&scale);
+                let mut result = format!("{} {}", self.int_to_word(&scale_val)?, word);
+                if !remainder.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&remainder)?);
+                }
+                return Ok(result);
+            }
+        }
+        unreachable!("every value >= 10^9 and below maxval has a HIGH_SCALES entry")
     }
 }
 
 impl Lang for LangMk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -521,7 +566,7 @@ impl Lang for LangMk {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         let ret = if value.is_negative() { NEGWORD } else { "" };
         let magnitude = value.abs();
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -623,7 +668,7 @@ impl Lang for LangMk {
                 // left, right = n.split(".", 1); ret += _int_to_word(int(left))
                 let left_int = py_int(left)?;
                 let mut out = String::from(ret);
-                out.push_str(&self.int_to_word(&left_int));
+                out.push_str(&self.int_to_word(&left_int)?);
                 out.push(' ');
                 out.push_str(POINTWORD);
                 out.push(' ');
@@ -633,7 +678,7 @@ impl Lang for LangMk {
                 for ch in right.chars() {
                     let mut buf = [0u8; 4];
                     let d = py_int(ch.encode_utf8(&mut buf))?;
-                    out.push_str(&self.int_to_word(&d));
+                    out.push_str(&self.int_to_word(&d)?);
                     out.push(' ');
                 }
                 Ok(out.trim().to_string())
@@ -643,7 +688,7 @@ impl Lang for LangMk {
                 // "1E+3") and integral Decimals ("5") land here; the former
                 // raise through py_int, the latter word normally.
                 let int = py_int(n)?;
-                Ok(format!("{}{}", ret, self.int_to_word(&int))
+                Ok(format!("{}{}", ret, self.int_to_word(&int)?)
                     .trim()
                     .to_string())
             }
@@ -822,13 +867,13 @@ impl Lang for LangMk {
         let one = BigInt::one();
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
-        let left_str = self.int_to_word(&left);
+        let left_str = self.int_to_word(&left)?;
         let mut result = format!("{} {}", left_str, if left != one { &cr1[1] } else { &cr1[0] });
 
         // `if cents and right:` — zero cents suppress the segment outright,
         // and `cents=False` drops it without a `_cents_terse` fallback.
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = self.int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",

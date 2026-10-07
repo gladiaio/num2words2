@@ -1,5 +1,22 @@
 //! Port of `lang_LN.py` (Lingala).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "libúngútulú" (zero) — best candidate:
+//!   dic.lingala.be/en/libungutulu.
+//! UNVERIFIED (#154): "virgule" (decimal) and "moins" (minus) — best
+//!   candidates: the French words of DR Congo / Congo school mathematics, which
+//!   Lingala borrows; no Lingala reading found.
+//!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "miliale" (10^9; dic.lingala.be), composed like the million arm,
+//! and raises `OverflowError` from 10^12, which `maxval()` reports. No word
+//! for 10^12 is attested. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_LN` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
@@ -37,7 +54,7 @@
 //!    all; 10^9 is simply where wording stops (see 1).
 //! 3. **`to_ordinal` is cardinal + "-e", unconditionally.** No negative guard
 //!    (Python's `errmsg_negord` is never consulted), so `to_ordinal(-1)` ==
-//!    "minus moko-e", and the suffix lands on the *last word* with no space:
+//!    "moins moko-e", and the suffix lands on the *last word* with no space:
 //!    `to_ordinal(11)` == "zómi moko-e". It also glues onto the digit
 //!    fallback, hence "1000000000-e".
 //! 4. **`to_ordinal_num` ignores the language entirely** and is `str(number)
@@ -96,9 +113,16 @@
 //!    back to `_cents_terse` and print "34"; LN has no `else`, so the cents
 //!    simply vanish.
 //! 10. **Zero takes the plural.** `cr1[1] if left != 1 else cr1[0]` keys off
-//!     `!= 1`, so `0` renders "zero euros".
+//!     `!= 1`, so `0` renders "libúngútulú faranga" (CDF).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Lingala cent noun was found, so USD and EUR raise
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -108,10 +132,11 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword` — note the trailing space; `to_cardinal` concatenates it
 /// directly onto the worded magnitude and `.strip()`s the result.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "moins ";
 
 /// `self.ones`. Index 0 is `""` in Python and is only ever reached through
 /// the dead `_int_to_word(0)` branch documented above.
@@ -136,12 +161,15 @@ const TENS: [&str; 10] = [
 
 const HUNDRED: &str = "nkama";
 const THOUSAND: &str = "nkóto";
+/// "milio" and "milioni" are both attested loans (ln.wikipedia uses "milio"
+/// more often); the native word is "efúku" (dic.lingala.be, Omniglot). Kept
+/// as is (#258).
 const MILLION: &str = "milio";
 
 /// `self.pointword`, interpolated raw between the integer part and the digits
 /// on the float path: `... + " " + self.pointword + " "`. LN never calls
 /// `self.title()`, so it is emitted verbatim (mirrors [`LangLn::pointword`]).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "virgule";
 
 /// `Num2Word_LN.to_currency`'s own default `separator=" "`, confirmed against
 /// the interpreter: `Num2Word_LN.to_currency.__defaults__` is
@@ -168,7 +196,7 @@ const BASE_DEFAULT_SEPARATOR: &str = ",";
 /// The value `_int_to_word(0)` returns. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""`, so the
 /// conditional always takes the `else`.
-const ZERO_WORD: &str = "zero";
+const ZERO_WORD: &str = "libúngútulú";
 
 /// Narrow a `BigInt` to a table index.
 ///
@@ -247,6 +275,22 @@ fn int_to_word(n: &BigInt) -> String {
             result.push_str(&int_to_word(&remainder));
         }
         return result;
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if n >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(n / &scale)), word);
+            let rest = n % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // `return str(number)` — the fallback for "very large numbers".
@@ -434,14 +478,14 @@ fn cardinal_from_str(s: &str) -> Result<String> {
         // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
         let left_int = parse_int(left)?;
         let mut out = String::from(ret);
-        out.push_str(&int_to_word(&left_int));
+        out.push_str(&checked_int_to_word(&left_int)?);
         out.push(' ');
         out.push_str(POINTWORD);
         out.push(' ');
         // for digit in right: ret += self._int_to_word(int(digit)) + " "
         for ch in right.chars() {
             let d = parse_digit(ch)?;
-            out.push_str(&int_to_word(&d));
+            out.push_str(&checked_int_to_word(&d)?);
             out.push(' ');
         }
         // return ret.strip()
@@ -449,8 +493,25 @@ fn cardinal_from_str(s: &str) -> Result<String> {
     } else {
         // return (ret + self._int_to_word(int(n))).strip()
         let ni = parse_int(n)?;
-        Ok(format!("{}{}", ret, int_to_word(&ni)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&ni)?).trim().to_string())
     }
+}
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "miliale")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
 }
 
 pub struct LangLn {
@@ -487,14 +548,8 @@ impl LangLn {
             "CDF",
             CurrencyForms::new(&["faranga", "faranga"], &["santimi", "santimi"]),
         );
-        currency_forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        currency_forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"); no reliable Lingala cent noun was found, so
+        // they raise NotImplementedError (#222).
         let fallback_forms = currency_forms
             .get("CDF")
             .expect("CURRENCY_FORMS[\"CDF\"] is inserted directly above")
@@ -507,6 +562,10 @@ impl LangLn {
 }
 
 impl Lang for LangLn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -526,7 +585,7 @@ impl Lang for LangLn {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "virgule"
     }
 
     /// Python:
@@ -551,7 +610,7 @@ impl Lang for LangLn {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -590,16 +649,16 @@ impl Lang for LangLn {
     /// `str()` does.
     ///
     /// Faithfully reproduced quirks:
-    ///   * `1.0` (float) -> `"moko point zero"`: `str(1.0)` is `"1.0"`, so the
+    ///   * `1.0` (float) -> `"moko virgule libúngútulú"`: `str(1.0)` is `"1.0"`, so the
     ///     `"."` branch fires and the trailing `"0"` digit -> `"zero"`.
-    ///   * `Decimal("1.10")` -> `"moko point moko zero"`: the trailing zero is a
+    ///   * `Decimal("1.10")` -> `"moko virgule moko libúngútulú"`: the trailing zero is a
     ///     real fractional digit (unlike the float `1.1`).
     ///   * `Decimal("98746251323029.99")` -> `"98746251323029 point libwá
     ///     libwá"`: the >=10^9 integer part falls off `int_to_word`'s cliff to
     ///     bare digits (issue #603 value), but the fraction is still spelled.
     ///   * A negative with a zero integer part keeps its sign because the sign
     ///     lives in the *string* (`"-0.5"`), not in a truncated int:
-    ///     `-0.5` -> `"minus zero point mítáno"`.
+    ///     `-0.5` -> `"moins libúngútulú virgule mítáno"`.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -610,8 +669,8 @@ impl Lang for LangLn {
 
     /// `to_cardinal(float/Decimal)` — the FULL entry. Python routes *every*
     /// float/Decimal through the `str(number)` algorithm, so a whole value
-    /// keeps its visible point: `5.0` -> "mítáno point zero", `-0.0` ->
-    /// "minus zero point zero", `Decimal("5.00")` -> "mítáno point zero zero".
+    /// keeps its visible point: `5.0` -> "mítáno virgule libúngútulú", `-0.0` ->
+    /// "moins libúngútulú virgule libúngútulú", `Decimal("5.00")` -> "mítáno virgule libúngútulú libúngútulú".
     /// The base default's whole-value integer shortcut must not fire here.
     /// Exponent-form values (`1e16`, `Decimal("1E+2")`) raise `int()`'s
     /// ValueError from inside the string algorithm, exactly as Python.
@@ -841,10 +900,10 @@ impl Lang for LangLn {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`. Note that this
         // is `self._int_to_word(left)`, *not* `self.to_cardinal(left)` — so the
         // 10^9 digit fallback applies here too. Zero takes the plural
-        // ("zero euros", quirk 10).
+        // ("libúngútulú faranga", quirk 10).
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -853,7 +912,7 @@ impl Lang for LangLn {
         // drops it too, with no terse fallback (quirk 9).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }

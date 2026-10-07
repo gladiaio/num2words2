@@ -1,5 +1,20 @@
 //! Port of `lang_SO.py` (Somali).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "taban" (minus) — best candidate: "negative"
+//!   ("tirooyinka taban" = negative numbers, Somali grade-7 maths material); no
+//!   source reads a negative number aloud.
+//!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "bilyan" (10^9; so.wikipedia "Bilyan"), composed like the million
+//! arm, and raises `OverflowError` from 10^12, which `maxval()` reports. 10^12
+//! is spelled inconsistently (tiriliyan / tirilyan), so it is not used. Where
+//! the notes below describe the digit fallback ("1000000000", "no overflow
+//! check"), they describe Python; that arm is now unreachable.
+//!
 //! Registry check: `CONVERTER_CLASSES["so"]` is `lang_SO.Num2Word_SO()`, which
 //! is the class ported here.
 //!
@@ -20,7 +35,8 @@
 //!   * `to_year`        — overridden (delegates to `to_cardinal`, ignoring
 //!     its own `longval=True` parameter entirely)
 //!
-//! `setup()` also sets `pointword = "point"`, used only by the float branch of
+//! `setup()` also sets `pointword = "point"` (English; the port says "dhibic",
+//! gladiaio/num2words2#154: "sero dhibic shan" = 0.5), used only by the float branch of
 //! `to_cardinal`, which is out of scope (integer input only) and unreachable
 //! here: an integer's decimal repr never contains ".".
 //!
@@ -43,13 +59,11 @@
 //! This is a port, not a rewrite. Everything below looks wrong but is exactly
 //! what Python emits, and every item is confirmed against the frozen corpus:
 //!
-//! 1. **Zero is the English word "zero".** `setup` makes `ones[0]` the empty
-//!    string, and `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `""` is falsy, so the
-//!    guard always takes the `else`: the table's own entry for 0 is dead and
-//!    Somali emits English "zero". Hence `to_cardinal(0)` == "zero" and
-//!    `to_ordinal(0)` == "zero-aad". (Contrast `lang_PL`, where `to_ordinal(0)`
-//!    crashes — Somali does not crash, it just answers in English.)
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** `setup` makes `ones[0]` the
+//!    empty string, and `_int_to_word` opens with
+//!    `return self.ones[0] if self.ones[0] else "zero"`, so Python always
+//!    answered the English "zero". The port says the Somali "eber":
+//!    `to_cardinal(0)` == "eber" and `to_ordinal(0)` == "eber-aad".
 //! 2. **Numbers >= 10^9 come back as digits, not words.** `_int_to_word`'s
 //!    final `else` is `return str(number)  # Fallback for very large numbers`.
 //!    There is no `MAXVAL` and no `OverflowError` — the function silently
@@ -58,7 +72,8 @@
 //!    "1000000000000000000000". All four are corpus rows. This is why
 //!    [`LangSo::int_to_word`] takes a `BigInt`: the fallback must render
 //!    arbitrarily large values, so the input is genuinely unbounded.
-//! 3. **The negword is the English "minus ".** Not a Somali word.
+//! 3. **The negword was the English "minus ".** It is now the best
+//!    candidate "taban " (see UNVERIFIED above).
 //! 4. **Teens and compounds are bare juxtaposition.** 11 is "toban kow"
 //!    ("ten one"), not the idiomatic "kow iyo toban"; 100 is "kow boqol"
 //!    ("one hundred"), never a bare "boqol". No conjunction is ever inserted
@@ -84,8 +99,14 @@
 //! for cardinal/ordinal/ordinal_num/year, so those four modes return `Ok`
 //! unconditionally. The currency surface added here raises only where Python
 //! does: `to_cheque` on a code outside SOS/USD/EUR (`NotImplementedError`).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use doolar / yuuro with senti. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -94,6 +115,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.ones`. Index 0 is `""` and is unreachable — see bug 1.
 const ONES: [&str; 10] = [
@@ -120,10 +142,10 @@ const THOUSAND: &str = "kun";
 const MILLION: &str = "milyan";
 
 /// `setup`: `self.negword`. English, and kept that way — see bug 3.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "taban ";
 
 /// The literal in `_int_to_word`'s zero guard — see bug 1.
-const ZERO_WORD: &str = "zero";
+const ZERO_WORD: &str = "eber";
 
 /// `_int_to_word`'s `else` threshold: at or above this, Python returns
 /// `str(number)` rather than words (bug 2).
@@ -167,6 +189,16 @@ const SEPARATOR_UNSET: &str = ",";
 /// SO's own `to_currency` default, restored when [`SEPARATOR_UNSET`] arrives.
 const SEPARATOR_DEFAULT: &str = " ";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "bilyan")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
 pub struct LangSo {
     /// `CURRENCY_FORMS`, built once in [`LangSo::new`] and cached by the caller
     /// (`num2words2-py` holds this in a `OnceLock`), never per call.
@@ -187,6 +219,13 @@ impl Default for LangSo {
 }
 
 impl LangSo {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         let mut forms = HashMap::with_capacity(3);
         forms.insert(
@@ -195,11 +234,11 @@ impl LangSo {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["doolar", "doolar"], &["senti", "senti"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["yuuro", "yuuro"], &["senti", "senti"]),
         );
         LangSo { forms }
     }
@@ -225,6 +264,22 @@ impl LangSo {
         // `else: return str(number)` — the digit fallback (bug 2). Must stay on
         // BigInt: `number` is unbounded here.
         if *number >= BigInt::from(DIGIT_FALLBACK_FLOOR) {
+            // Scale words above a million (gladiaio/num2words2#147), composed like
+            // the million arm. Every entry point rejects values at or above
+            // `maxval_ceiling()` first, so the top quotient is always below 1000.
+            for &(exp, word) in SCALES.iter().rev() {
+                let scale = pow10_big(exp);
+                if number >= &scale {
+                    let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                    let rest = number % &scale;
+                    if !rest.is_zero() {
+                        result.push(' ');
+                        result.push_str(&self.int_to_word(&rest));
+                    }
+                    return result;
+                }
+            }
+            // Unreachable: callers check `maxval_ceiling()` first.
             return number.to_string();
         }
 
@@ -327,7 +382,7 @@ impl LangSo {
     ///
     /// * The sign is stripped off the *string*, then `ret` (the negword) prefixes
     ///   both branches — so a negative with zero integer part still prints
-    ///   `"minus zero ..."` (`int_to_word(0)` is "zero", bug 1), and the "."
+    ///   `"taban eber ..."` (`int_to_word(0)` is "zero", bug 1), and the "."
     ///   branch keeps its negword too.
     /// * `int(digit)` runs per **character**, so a malformed fraction character
     ///   raises `ValueError` quoting that one char, where a malformed whole `n`
@@ -348,7 +403,7 @@ impl LangSo {
         if let Some((left, right)) = n.split_once('.') {
             // `ret += self._int_to_word(int(left)) + " " + self.pointword + " "`
             let mut out = String::from(ret);
-            out.push_str(&self.int_to_word(&python_int(left)?));
+            out.push_str(&self.checked_int_to_word(&python_int(left)?)?);
             out.push(' ');
             out.push_str(self.pointword());
             out.push(' ');
@@ -360,14 +415,14 @@ impl LangSo {
                         ch
                     ))
                 })?;
-                out.push_str(&self.int_to_word(&BigInt::from(d)));
+                out.push_str(&self.checked_int_to_word(&BigInt::from(d))?);
                 out.push(' ');
             }
             // `return ret.strip()`
             Ok(out.trim().to_string())
         } else {
             // `return (ret + self._int_to_word(int(n))).strip()`
-            Ok(format!("{}{}", ret, self.int_to_word(&python_int(n)?))
+            Ok(format!("{}{}", ret, self.checked_int_to_word(&python_int(n)?)?)
                 .trim()
                 .to_string())
         }
@@ -375,6 +430,10 @@ impl LangSo {
 }
 
 impl Lang for LangSo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -389,7 +448,7 @@ impl Lang for LangSo {
 
     /// `to_ordinal(float/Decimal)`. SO's `to_ordinal` is
     /// `self.to_cardinal(number) + "-aad"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "kow point shan-aad".
+    /// entry is the float cardinal plus the suffix — "kow dhibic shan-aad".
     /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
     /// ValueError inside the cardinal, before the suffix is ever appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -439,7 +498,7 @@ impl Lang for LangSo {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "dhibic"
     }
 
     /// Python's `Num2Word_SO.to_cardinal`.
@@ -462,13 +521,13 @@ impl Lang for LangSo {
         };
 
         // `_int_to_word` receives a non-negative value here — hence bug 5.
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
 
     /// `return cardinal + "-aad"`. Applied to the whole string, so the suffix
-    /// lands on the last word only: `to_ordinal(-1)` == "minus kow-aad" and
+    /// lands on the last word only: `to_ordinal(-1)` == "taban kow-aad" and
     /// `to_ordinal(10**9)` == "1000000000-aad" (bug 2).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}-aad", self.to_cardinal(value)?))
@@ -687,7 +746,7 @@ impl Lang for LangSo {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -699,7 +758,7 @@ impl Lang for LangSo {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                self.int_to_word(&right),
+                self.checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }

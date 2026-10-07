@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Rust",
     "Topic :: Software Development :: Internationalization",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -61,7 +62,18 @@ python-source = "."
 module-name = "num2words2._rust"
 features = ["pyo3/extension-module"]
 strip = true
-include = ["num2words2/py.typed"]
+include = [
+    "num2words2/py.typed",
+    "num2words2/_rust.pyi",
+    # Ship the test suite (and the files it reads) in the sdist so a source
+    # build can be verified, e.g. by the AUR package's check().
+    { path = "tests/**/*.py", format = "sdist" },
+    { path = "tests/**/*.csv", format = "sdist" },
+    { path = "tests/requirements-test.txt", format = "sdist" },
+    { path = "migration/*.py", format = "sdist" },
+    { path = "README_num2words2.md", format = "sdist" },
+    { path = "REFERENCE.md", format = "sdist" },
+]
 
 [tool.isort]
 profile = "black"

@@ -9,12 +9,12 @@ class TestOR(LangTest, TestCase):
 
     cardinal_tests = [
         (0, "ଶୂନ୍ୟ"),
-        # Teens are lexicalised; 20..99 are composed as tens + ଓ + units.
+        # Every number below a hundred has its own word (#247).
         (11, "ଏଗାର"),
         (17, "ସତର"),
         (20, "କୋଡ଼ିଏ"),
-        (21, "କୋଡ଼ିଏ ଓ ଏକ"),
-        (42, "ଚାଳିଶ ଓ ଦୁଇ"),
+        (21, "ଏକୋଇଶି"),
+        (42, "ବୟାଳିଶି"),
         (100, "ଏକ ଶହ"),
         (101, "ଏକ ଶହ ଓ ଏକ"),
         (1000, "ଏକ ହଜାର"),
@@ -24,8 +24,20 @@ class TestOR(LangTest, TestCase):
     # rendered as ସତର. These three pin the fix.
     seventy_tests = [
         (17, "ସତର"),
-        (70, "ସତୁରୀ"),
-        (77, "ସତୁରୀ ଓ ସାତ"),
+        (70, "ସତୁରି"),
+        (77, "ସତସ୍ତରି"),
+    ]
+
+    # 70..78 end in short -ି per the Purnachandra Odia Bhashakosha and
+    # Wiktionary, except 73 ତେସ୍ତରୀ, which both spell long (#263).
+    seventies_tests = [
+        (71, "ଏକସ୍ତରି"),
+        (72, "ବାସ୍ତରି"),
+        (73, "ତେସ୍ତରୀ"),
+        (74, "ଚଉସ୍ତରି"),
+        (75, "ପଞ୍ଚସ୍ତରି"),
+        (76, "ଛଅସ୍ତରି"),
+        (78, "ଅଠସ୍ତରି"),
     ]
 
     # 1..10 are suppletive Sanskrit-derived forms; 11 and up take ମ.
@@ -65,18 +77,19 @@ class TestOR(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "ତିରିଶ ଓ ଆଠ ଟଙ୍କା", {"cents": False, "currency": "INR"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "ଅଠତିରିଶି ଟଙ୍କା 40 ପଇସା", {"cents": False, "currency": "INR"}),
         ("0", "ଶୂନ୍ୟ ଟଙ୍କା", {"cents": True, "currency": "INR"}),
         ("1.50", "ଏକ ଟଙ୍କା ପଚାଶ ପଇସା", {"cents": True, "currency": "INR"}),
-        (12.34, "ବାର ଡଲାର ତିରିଶ ଓ ଚାରି ସେଣ୍ଟ", {"currency": "USD"}),
-        (12.34, "ବାର ୟୁରୋ ତିରିଶ ଓ ଚାରି ସେଣ୍ଟ", {"currency": "EUR"}),
+        (12.34, "ବାର ଡଲାର ଚଉତିରିଶି ସେଣ୍ଟ", {"currency": "USD"}),
+        (12.34, "ବାର ୟୁରୋ ଚଉତିରିଶି ସେଣ୍ଟ", {"currency": "EUR"}),
     ]
 
     # to_year ignores longval and delegates to to_cardinal — no year pairing.
     year_tests = [
         (1990, "ଏକ ହଜାର ନଅ ଶହ ଓ ନବେ"),
         (2017, "ଦୁଇ ହଜାର ସତର"),
-        (1066, "ଏକ ହଜାର ଷାଠିଏ ଓ ଛଅ"),
+        (1066, "ଏକ ହଜାର ଛଅଷଠି"),
     ]
 
     def test_cardinal(self):
@@ -105,6 +118,11 @@ class TestOR(LangTest, TestCase):
             with self.subTest(num=num):
                 self.assertEqual(num2words(num, lang="or"), expected)
 
+    def test_seventies_short_final_vowel(self):
+        for num, expected in self.seventies_tests:
+            with self.subTest(num=num):
+                self.assertEqual(num2words(num, lang="or"), expected)
+
     def test_ordinal_still_accepts_zero_and_negatives(self):
         # Upstream Num2Word_OR never calls verify_ordinal, and this module
         # keeps that: only the 1..=10 forms changed, not the guard. The
@@ -114,16 +132,19 @@ class TestOR(LangTest, TestCase):
         self.assertEqual(num2words(-1, to="ordinal_num", lang="or"), "-1ମ")
 
     def test_ordinal_num_non_integer_takes_odia_suffix(self):
-        # The float / Decimal / Infinity / NaN paths of to_ordinal_num are
+        # The float / Decimal paths of to_ordinal_num are
         # separate entry points from the integer one; all of them must glue
         # the same Odia ମ, never the transliterated "ma".
-        # (An integral float such as 5.0 is routed to the integer path, so a
-        # fractional value is what reaches the float entry point.)
-        self.assertEqual(num2words(5.5, to="ordinal_num", lang="or"), "5.5ମ")
-        self.assertEqual(num2words("3.10", to="ordinal_num", lang="or"), "3.10ମ")
-        self.assertEqual(num2words("Infinity", to="ordinal_num", lang="or"), "Infinityମ")
-        self.assertEqual(num2words("-Infinity", to="ordinal_num", lang="or"), "-Infinityମ")
-        self.assertEqual(num2words("NaN", to="ordinal_num", lang="or"), "NaNମ")
+        # A fractional value is a TypeError since #214; integral floats are
+        # routed to the integer path.
+        with self.assertRaises(TypeError):
+            num2words(5.5, to="ordinal_num", lang="or")
+        with self.assertRaises(TypeError):
+            num2words("3.10", to="ordinal_num", lang="or")
+        # Infinity/NaN have no numeric ordinal in any language (#224).
+        for token in ("Infinity", "-Infinity", "NaN"):
+            with self.assertRaises(ValueError):
+                num2words(token, to="ordinal_num", lang="or")
 
 
 def test_or_is_written_in_odia_not_transliteration():

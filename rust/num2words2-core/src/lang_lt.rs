@@ -18,7 +18,7 @@
 //!
 //! Unlike `lang_PL`, LT's `to_cardinal` strips the sign *before* the digits
 //! ever reach `splitbyx`/`get_digits`, so negatives are safe everywhere:
-//! `to_cardinal(-1)` == "minus vienas" and `to_ordinal(-1)` == "minus vienasas"
+//! `to_cardinal(-1)` == "minus vienas" and `to_ordinal(-1)` == "minus pirmas"
 //! rather than the `ValueError` Polish produces.
 //!
 //! # Faithfully reproduced Python bugs
@@ -26,19 +26,18 @@
 //! This is a port, not a rewrite. The following are all wrong-looking but are
 //! exactly what Python emits, verified against the interpreter:
 //!
-//! 1. **`to_ordinal` just glues "as" onto the cardinal** for anything outside
-//!    its small lookup table ("For other numbers, add 'as' suffix to the
-//!    cardinal / This is a simplified implementation"). The results are not
-//!    Lithuanian words, but they are the spec:
-//!      * `to_ordinal(0)`   == "nulisas"  (0 is absent from the table)
-//!      * `to_ordinal(21)`  == "dvidešimt vienasas"
-//!      * `to_ordinal(200)` == "du šimtaias"
-//!      * `to_ordinal(999)` == "devyni šimtai devyniasdešimt devynias"
-//!      * `to_ordinal(10**11)` == "vienas šimtas milijardųas"
-//!      * `to_ordinal(-1)`  == "minus vienasas" (sign kept, suffix appended)
-//! 2. The ordinal table itself is internally inconsistent: `100` maps to the
-//!    definite form "šimtasis" while `1000` maps to "tūkstantas" (the definite
-//!    form would be "tūkstantasis"). Both kept verbatim.
+//! 1. *(Fixed, #248.)* Python glued "as" onto the cardinal outside its
+//!    small table ("dvidešimt vienasas", "du šimtaias", "minus vienasas").
+//!    Compound ordinals now inflect their last word
+//!    ([`crate::compound_ordinal`]): 21 == "dvidešimt pirmas", 101 ==
+//!    "vienas šimtas pirmas", 1001 == "vienas tūkstantis pirmas", 0 ==
+//!    "nulinis", 10**6 == "milijoninis", -1 == "minus pirmas". Round
+//!    hundreds above 100, round thousands above 1000 and other round values
+//!    (200, 2000, 10**11, …) still take the "as" fallback ("du šimtaias");
+//!    that remains a known gap.
+//! 2. *(Fixed, #248.)* The table mapped 1000 to the cardinal noun
+//!    "tūkstantas"; it is now the ordinal "tūkstantasis", matching
+//!    100 == "šimtasis".
 //! 3. Typos in `THOUSANDS`, kept verbatim: index 7 is "sikstilijonas" (not
 //!    "sekstilijonas") and index 10 is "naintilijonas" — an English "nine"
 //!    transliteration where Lithuanian would use "nonilijonas". Hence
@@ -230,8 +229,8 @@ fn get_digits(n: u32) -> [usize; 3] {
 /// The `ordinals` dict rebuilt on every `Num2Word_LT.to_ordinal` call.
 ///
 /// Keys: 1..=20, then the round tens 30..=90, then 100 and 1000. Anything else
-/// (including 0 and every negative) misses and falls through to the
-/// cardinal-plus-"as" path — bug 1.
+/// (including 0 and every negative) misses; [`LangLt::to_ordinal`] composes
+/// it (#248).
 ///
 /// `to_u32` returns `None` for negatives and for anything above `u32::MAX`,
 /// which is exactly the "not in ordinals" answer Python gives for those.
@@ -265,7 +264,7 @@ fn ordinal_lookup(n: &BigInt) -> Option<&'static str> {
         80 => "aštuoniasdešimtas",
         90 => "devyniasdešimtas",
         100 => "šimtasis",
-        1000 => "tūkstantas",
+        1000 => "tūkstantasis", // Python: the cardinal "tūkstantas" (#248)
         _ => return None,
     })
 }
@@ -662,14 +661,32 @@ impl Lang for LangLt {
     /// ```
     ///
     /// The `int()` guard cannot fire for integral input, so it is not modelled.
-    /// Everything outside the table gets the cardinal with "as" glued on
-    /// (bug 1), and an `OverflowError` from `to_cardinal` propagates
-    /// unchanged (bug 4).
+    /// Outside the table the last word of the cardinal is inflected (#248);
+    /// round values without a rule keep Python's "as" fallback (bug 1), and
+    /// an `OverflowError` from `to_cardinal` propagates unchanged (bug 4).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
+        }
+        if value.is_zero() {
+            return Ok("nulinis".to_string());
+        }
         if let Some(word) = ordinal_lookup(value) {
             return Ok(word.to_string());
         }
-        Ok(format!("{}as", self.to_cardinal(value)?))
+        let cardinal = self.to_cardinal(value)?;
+        if let Some(n) = value.to_u64() {
+            if n == 1_000_000 {
+                return Ok("milijoninis".to_string());
+            }
+            let small = |v: u64| ordinal_lookup(&BigInt::from(v));
+            if let Some(word) =
+                crate::compound_ordinal::last_word_ordinal(n, &cardinal, small, None)
+            {
+                return Ok(word);
+            }
+        }
+        Ok(format!("{}as", cardinal))
     }
 
     /// Port of the **float/Decimal arm of `Num2Word_LT.to_cardinal`**.
@@ -735,7 +752,11 @@ impl Lang for LangLt {
             let left = &n[..dot];
             let right = &n[dot + 1..];
             // leading_zero_count = len(right) - len(right.lstrip("0"))
-            let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+            // The final int(right) word already says one zero, so an all-zero
+            // fraction gets len - 1 leading zeros: exactly the digits written
+            // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+            let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+                .min(right.len().saturating_sub(1));
             // decimal_part = (ZERO[0] + " ") * leading_zero_count
             //                + self._int2word(int(right))
             let decimal_part = format!(
@@ -762,9 +783,9 @@ impl Lang for LangLt {
     ///
     /// * a **visible point** (any finite float below 1e16, or a Decimal with
     ///   positive scale) takes the fractional branch even for whole values —
-    ///   `5.0` -> "penki kablelis nulis nulis" (one "nulis" per leading zero
-    ///   of the fractional string plus `_int2word(0)`), `Decimal("5.00")` ->
-    ///   three "nulis".
+    ///   `5.0` -> "penki kablelis nulis" (one "nulis" per
+    ///   fractional digit written; Python added one more, #237),
+    ///   `Decimal("5.00")` -> two "nulis".
     /// * **no point** funnels the whole string into `int(n)`: plain digit
     ///   Decimals reach the integer path, while exponent forms (`str(1e16) ==
     ///   "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and inf/nan raise
@@ -797,7 +818,7 @@ impl Lang for LangLt {
     /// ```
     ///
     /// `int()` **truncates**: `to_ordinal(2.5)` == `to_ordinal(2)` ==
-    /// "antras", `to_ordinal(-0.0)` == "nulisas" (int(-0.0) is 0, sign gone),
+    /// "antras", `to_ordinal(-0.0)` == "nulinis" (int(-0.0) is 0, sign gone),
     /// and `to_ordinal(1e16)` succeeds — int(float) never raises ValueError
     /// for a finite value, so the ordinal table + "as" suffix run on the
     /// truncated integer. `int(nan)` raises ValueError, which the except arm
@@ -1079,6 +1100,7 @@ impl Lang for LangLt {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1365,9 +1387,9 @@ mod tests {
     fn cardinal_float_corpus_rows() {
         let lt = LangLt::new();
         let rows: Vec<(FloatValue, &str)> = vec![
-            (flt(0.0, 1), "nulis kablelis nulis nulis"),
+            (flt(0.0, 1), "nulis kablelis nulis"), // #237
             (flt(0.5, 1), "nulis kablelis penki"),
-            (flt(1.0, 1), "vienas kablelis nulis nulis"),
+            (flt(1.0, 1), "vienas kablelis nulis"),
             (flt(1.5, 1), "vienas kablelis penki"),
             (flt(2.25, 2), "du kablelis dvidešimt penki"),
             (flt(3.14, 2), "trys kablelis keturiolika"),
@@ -1421,10 +1443,11 @@ mod tests {
         let lt = LangLt::new();
         // str(Decimal("5")) == "5" -> no "." -> integer branch.
         assert_eq!(lt.to_cardinal_float(&dec("5", 0), None).unwrap(), "penki");
-        // str(Decimal("5.00")) == "5.00" -> right "00" -> two leading zeros + 0.
+        // str(Decimal("5.00")) == "5.00" -> right "00" -> one zero per digit
+        // written (#237: Python said three).
         assert_eq!(
             lt.to_cardinal_float(&dec("5.00", 2), None).unwrap(),
-            "penki kablelis nulis nulis nulis"
+            "penki kablelis nulis nulis"
         );
         // str(Decimal("1.100")) == "1.100" -> right "100" -> int("100") == 100.
         assert_eq!(
@@ -1462,11 +1485,11 @@ mod tests {
     fn cardinal_float_messy_reprs() {
         let lt = LangLt::new();
         let rows: Vec<(FloatValue, &str)> = vec![
-            (flt(10.0, 1), "dešimt kablelis nulis nulis"),
+            (flt(10.0, 1), "dešimt kablelis nulis"),
             (flt(0.25, 2), "nulis kablelis dvidešimt penki"),
             (flt(123.456, 3), "vienas šimtas dvidešimt trys kablelis keturi šimtai penkiasdešimt šeši"),
             (flt(1000000.001, 3), "vienas milijonas kablelis nulis nulis vienas"),
-            (flt(3.0, 1), "trys kablelis nulis nulis"),
+            (flt(3.0, 1), "trys kablelis nulis"),
             (flt(0.0001, 4), "nulis kablelis nulis nulis nulis vienas"),
             (flt(-0.01, 2), "minus nulis kablelis nulis vienas"),
             // 0.1 + 0.2 == 0.30000000000000004 in IEEE-754 (precision 17).

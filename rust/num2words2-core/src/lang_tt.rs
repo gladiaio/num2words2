@@ -1,5 +1,14 @@
 //! Port of `lang_TT.py` (Tatar).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "миллиард" (10^9) and "триллион" (10^12) (Wiktionary), composed
+//! like the million arm, and raises `OverflowError` from 10^15, which
+//! `maxval()` reports. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_TT` subclasses `Num2Word_Base`, but
 //! its `setup` defines only flat `ones`/`tens` lists plus three scale words —
 //! no `high_numwords`/`mid_numwords`/`low_numwords`. Python therefore never
@@ -13,7 +22,8 @@
 //! in-scope methods is overridden by TT, so nothing is inherited from
 //! `Num2Word_Base` on the in-scope paths:
 //!   * `to_cardinal`    — overridden (below)
-//!   * `to_ordinal`     — overridden: `to_cardinal(n) + "-нче"`
+//!   * `to_ordinal`     — overridden: `to_cardinal(n)` + a harmonised ending
+//!     (upstream: a fixed "-нче"; fixed, see bug 5)
 //!   * `to_ordinal_num` — overridden: `str(n) + "."` (the base returns `n`
 //!     bare, so the trait default is *not* correct here)
 //!   * `to_year`        — overridden: `to_cardinal(val)`, ignoring `longval`
@@ -32,7 +42,7 @@
 //!    is the empty string (a placeholder so the list can be indexed by
 //!    digit), which is falsy, so Python always answered with the English
 //!    "zero". This port says the Tatar "нуль" (as the Bashkir module does):
-//!    `to_cardinal(0)` == "нуль" and `to_ordinal(0)` == "нуль-нче".
+//!    `to_cardinal(0)` == "нуль" and `to_ordinal(0)` == "нуленче".
 //! 2. **Numbers >= 10^9 come back as digits.** The `elif` ladder in
 //!    `_int_to_word` stops at `number < 1000000000` and the trailing `else`
 //!    is `return str(number)` — a "fallback for very large numbers" that
@@ -51,10 +61,11 @@
 //!    self.hundred` with no `hundreds_val == 1` special case. Likewise
 //!    `to_cardinal(1000)` == "бер мең" and `to_cardinal(10**6)` ==
 //!    "бер миллион". Idiomatic or not, it is what ships.
-//! 5. **Ordinals are cardinal + a hyphenated suffix, unconditionally.** No
-//!    stem changes, no vowel harmony, no special-casing of the digit-fallback
-//!    range — `to_ordinal` is a bare string concatenation, so the digit
-//!    fallback of bug 2 flows straight through it.
+//! 5. **Ordinals (fixed, gladiaio/num2words2#148).** Python glued "-нче" onto
+//!    the cardinal unconditionally ("бер-нче", "ун-нче", "өч-нче"). The port
+//!    harmonises the ending on the last word instead ("беренче", "унынчы",
+//!    "өченче", "кырыгынчы"); see [`join_ordinal`]. The digit fallback of
+//!    bug 2 still flows through, hyphenated ("1000000000-нче").
 //!
 //! # Error variants
 //!
@@ -135,8 +146,15 @@
 //!    TT's `if cents and right:` drops the whole segment.
 //! 10. **`adjective` is accepted and completely ignored** — no
 //!     `prefix_currency` call, and `CURRENCY_ADJECTIVES` is empty regardless.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use доллар / евро with цент (singular after a
+//! numeral). Examples in these docs that quote English nouns record Python's
+//! output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -146,6 +164,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is the empty string — see bug 1; it is never read as
 /// a word, only as the (always-falsy) zero guard.
@@ -174,6 +193,46 @@ const POINTWORD: &str = "өтер";
 
 /// What `_int_to_word(0)` returns. Python's English "zero"; Tatar here (#154).
 const ZERO_WORD: &str = "нуль";
+
+/// Attach the ordinal ending to the **last word** of a spelled cardinal
+/// (gladiaio/num2words2#148). Upstream glued a fixed "-нче" onto the whole
+/// cardinal ("бер-нче", "ун-нче"). Tatar ordinals take *-(ы)нчы/-(е)нче*,
+/// harmonised for backness only — no rounding, so өч gives өченче
+/// (Wiktionary, `Module:number_list/data/tt`):
+///
+/// * back stem (last vowel а ы о у): *-ынчы* after a consonant, *-нчы* after
+///   a vowel — унынчы, алтынчы, миллионынчы;
+/// * front stem (ә е и ө ү э): *-енче* / *-нче* — беренче, икенче, йөзенче;
+/// * a final soft sign is dropped and the stem counts as front: нуль ->
+///   нуленче;
+/// * кырык voices its final к: кырыгынчы.
+///
+/// 123rd is therefore "бер йөз егерме өченче". A cardinal that is not a word
+/// at all — the digit fallback above 10^9 — keeps a hyphen
+/// ("1000000000-нче").
+fn join_ordinal(cardinal: &str) -> String {
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal),
+    };
+    if let Some(soft) = stem.strip_suffix('ь') {
+        return format!("{}{}енче", head, soft);
+    }
+    let last = match stem.chars().filter(|c| "аыоуяюёәеиөүэ".contains(*c)).last() {
+        Some(v) => v,
+        None => return format!("{}-нче", cardinal),
+    };
+    let back = "аыоуяюё".contains(last);
+    let after_vowel = stem.ends_with(|c: char| "аыоуяюёәеиөүэ".contains(c));
+    let stem = if stem == "кырык" { "кырыг" } else { stem };
+    let ending = match (back, after_vowel) {
+        (true, true) => "нчы",
+        (true, false) => "ынчы",
+        (false, true) => "нче",
+        (false, false) => "енче",
+    };
+    format!("{}{}{}", head, stem, ending)
+}
 
 /// `Num2Word_TT.to_currency`'s own default: `separator=" "`. Note this is
 /// *not* `Num2Word_Base`'s `","` — see [`BASE_DEFAULT_SEPARATOR`].
@@ -411,6 +470,16 @@ fn python_str_number(v: &FloatValue) -> String {
     }
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "миллиард"), (12, "триллион")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangTt {
     /// `Num2Word_TT.CURRENCY_FORMS`, built once in [`LangTt::new`].
     ///
@@ -422,6 +491,13 @@ pub struct LangTt {
 }
 
 impl LangTt {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // CURRENCY_FORMS = {
         //     "RUB": (("сум", "сум"), ("тиен", "тиен")),
@@ -439,11 +515,11 @@ impl LangTt {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["доллар", "доллар"], &["цент", "цент"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["евро", "евро"], &["цент", "цент"]),
         );
         LangTt { forms }
     }
@@ -538,6 +614,22 @@ impl LangTt {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Bug 2: "Fallback for very large numbers" — bare digits, no words.
         number.to_string()
     }
@@ -550,6 +642,10 @@ impl Default for LangTt {
 }
 
 impl Lang for LangTt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -594,13 +690,13 @@ impl Lang for LangTt {
         // The trailing .strip() is a no-op for every integer input: NEGWORD's
         // trailing space is always followed by a non-empty word (bug 1
         // guarantees even zero yields "нуль"). Ported anyway for fidelity.
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Python's `to_ordinal`: cardinal plus a hyphenated suffix, no stem
     /// change. See bug 5.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}-нче", self.to_cardinal(value)?))
+        Ok(join_ordinal(&self.to_cardinal(value)?))
     }
 
     /// Python's `to_ordinal_num`: `str(number) + "."`.
@@ -639,11 +735,11 @@ impl Lang for LangTt {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-нче"`, no
-    /// type guard — floats get the full decimal phrase plus the suffix
-    /// ("биш өтер нуль-нче"); the exponential-form ValueError propagates.
+    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number)` + the ordinal
+    /// ending, no type guard — floats get the full decimal phrase plus the
+    /// ending ("биш өтер нуленче"); the exponential-form ValueError propagates.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}-нче", self.cardinal_float_entry(value, None)?))
+        Ok(join_ordinal(&self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "."` — no `int()`, so
@@ -739,14 +835,14 @@ impl Lang for LangTt {
         match n.split_once('.') {
             Some((left, right)) => {
                 // `ret += self._int_to_word(int(left)) + " " + self.pointword + " "`
-                ret.push_str(&self.int_to_word(&python_int(left)?));
+                ret.push_str(&self.checked_int_to_word(&python_int(left)?)?);
                 ret.push(' ');
                 ret.push_str(POINTWORD);
                 ret.push(' ');
                 // `for digit in right: ret += self._int_to_word(int(digit)) + " "`
                 // — one character at a time; `int(digit)` on a non-digit raises.
                 for ch in right.chars() {
-                    ret.push_str(&self.int_to_word(&python_int(&ch.to_string())?));
+                    ret.push_str(&self.checked_int_to_word(&python_int(&ch.to_string())?)?);
                     ret.push(' ');
                 }
                 // `return ret.strip()`
@@ -754,7 +850,7 @@ impl Lang for LangTt {
             }
             None => {
                 // `return (ret + self._int_to_word(int(n))).strip()`
-                ret.push_str(&self.int_to_word(&python_int(n)?));
+                ret.push_str(&self.checked_int_to_word(&python_int(n)?)?);
                 Ok(ret.trim().to_string())
             }
         }
@@ -884,7 +980,7 @@ impl Lang for LangTt {
         let (cr1, cr2) = (&forms.unit, &forms.subunit);
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
-        let left_str = self.int_to_word(&left);
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -900,7 +996,7 @@ impl Lang for LangTt {
             // Note the separator stands alone — TT adds no space of its own
             // after it, which is why its `" "` default is load-bearing.
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }

@@ -1,12 +1,20 @@
 name: Publish crate
 
-# Publishes num2words2-core to crates.io. Idempotent: skips when the manifest
-# version is already published, so re-runs and tag pushes are safe. Requires a
-# repository secret CARGO_REGISTRY_TOKEN (crates.io API token, publish-update
-# scope; publish-new for the first release).
+# Publishes num2words2-core to crates.io. Requires a repository secret
+# CARGO_REGISTRY_TOKEN (crates.io API token, publish-update scope).
+#
+# The crate is versioned on its own (0.x, semver for the Rust API), separate
+# from the Python package (1.0.x, tagged vX.Y.Z for release.yml). To release:
+#   1. bump `version` in rust/Cargo.toml ([workspace.package]) and merge;
+#   2. push a tag `core-vX.Y.Z` matching that version.
+# The job fails loudly when the tag does not match the manifest or when the
+# version is already on crates.io, instead of silently skipping: a skipped
+# publish is how the #168 fixes never reached crates.io (issue #243).
+# workflow_dispatch publishes the manifest version as is, with the same
+# already-published check.
 on:
   push:
-    tags: ['v*']
+    tags: ['core-v*']
   workflow_dispatch:
 
 permissions:
@@ -22,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: publish (skip if version already on crates.io)
+      - name: check version, then publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -31,10 +39,17 @@ jobs:
           VER=$(cargo metadata --no-deps --format-version 1 \
             | python3 -c "import json,sys;print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name']=='$CRATE'))")
           echo "resolved $CRATE $VER"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG_VER="${GITHUB_REF_NAME#core-v}"
+            if [ "$TAG_VER" != "$VER" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match $CRATE version $VER in rust/Cargo.toml"
+              exit 1
+            fi
+          fi
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'User-Agent: gh-actions-publish' \
             "https://crates.io/api/v1/crates/$CRATE/$VER")
           if [ "$code" = "200" ]; then
-            echo "$CRATE $VER already published — skipping."
-          else
-            cargo publish -p "$CRATE"
+            echo "::error::$CRATE $VER is already on crates.io; bump the version in rust/Cargo.toml"
+            exit 1
           fi
+          cargo publish -p "$CRATE"

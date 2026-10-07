@@ -34,7 +34,7 @@ from num2words2 import num2words_sentence
         ("um 14.75 Uhr", "um 14.75 Uhr"),
         # Unchanged: ordinals without a digit after the dot, comma decimals,
         # dot thousands grouping (#177).
-        ("1. Mai", "Erste Mai"),
+        ("1. Mai", "Erster Mai"),  # strong ending, no article (#195)
         ("am 3. Oktober", "am dritten Oktober"),
         ("der 1.", "der eins."),
         ("1,5 Leute", "Eins Komma fünf Leute"),

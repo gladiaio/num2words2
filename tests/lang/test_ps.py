@@ -187,11 +187,27 @@ class Num2WordsPSTest(TestCase):
             num2words(999999999, lang="ps"),
             "نهه سل نوي نهه میلیون نهه سل نوي نهه زره نهه سل نوي نهه",
         )
-        self.assertEqual(num2words(1000000000, lang="ps"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="ps"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="ps"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="ps"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="ps"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="ps"),
+            "یو میلیارد",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="ps"),
+            "یو میلیارد دوه سل دېرش څلور میلیون پنځه سل شپېته اووه زره اته سل نوي",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="ps"),
+            "نهه میلیارد نهه سل نوي نهه میلیون نهه سل نوي نهه زره نهه سل نوي نهه",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="ps"),
+            "لس میلیارد",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="ps"),
+            "نوي نهه میلیارد نهه سل نوي نهه میلیون نهه سل نوي نهه زره نهه سل نوي نهه",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -299,41 +315,26 @@ class Num2WordsPSTest(TestCase):
             "یو افغانۍ پنځوس پول",
         )
         self.assertEqual(
-            num2words(0, lang="ps", to="currency", currency="USD"), "صفر dollars"
+            num2words(0, lang="ps", to="currency", currency="USD"), "صفر ډالر"
         )
         self.assertEqual(
             num2words(0.01, lang="ps", to="currency", currency="USD"),
-            "صفر dollars یو cent",
+            "صفر ډالر یو سنټ",
         )
         self.assertEqual(
             num2words(0.5, lang="ps", to="currency", currency="USD"),
-            "صفر dollars پنځوس cents",
+            "صفر ډالر پنځوس سنټ",
         )
         self.assertEqual(
-            num2words(1, lang="ps", to="currency", currency="USD"), "یو dollar"
+            num2words(1, lang="ps", to="currency", currency="USD"), "یو ډالر"
         )
         self.assertEqual(
             num2words(1.5, lang="ps", to="currency", currency="USD"),
-            "یو dollar پنځوس cents",
+            "یو ډالر پنځوس سنټ",
         )
-        self.assertEqual(
-            num2words(0, lang="ps", to="currency", currency="EUR"), "صفر euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="ps", to="currency", currency="EUR"),
-            "صفر euros یو cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="ps", to="currency", currency="EUR"),
-            "صفر euros پنځوس cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="ps", to="currency", currency="EUR"), "یو euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="ps", to="currency", currency="EUR"),
-            "یو euro پنځوس cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="ps", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -377,4 +378,3 @@ class Num2WordsPSTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ps"), num2words("100", lang="ps"))
         self.assertEqual(num2words(1000, lang="ps"), num2words("1000", lang="ps"))
-

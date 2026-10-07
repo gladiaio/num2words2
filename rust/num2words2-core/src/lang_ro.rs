@@ -54,11 +54,12 @@
 //!    stray English key "three") that `to_ordinal` never reads — RO's
 //!    `to_ordinal` is pure string concatenation. Not ported; it has no
 //!    observable effect.
-//! 7. **`to_ordinal` just glues "lea" on.** `"al %slea" % cardinal`, with two
-//!    prior blind `str.replace`s ("o sută"→"una sută", "o mie"→"una mie",
-//!    in that order and applied to *every* occurrence). This yields
-//!    `to_ordinal(100)` == "al una sutălea" and `to_ordinal(10**15)` ==
-//!    "al biliard/elea" — the slash survives into the ordinal too.
+//! 7. **`to_ordinal` just glues "lea" on.** `"al %slea" % cardinal`, so
+//!    `to_ordinal(10**15)` == "al biliard/elea" — the slash survives into
+//!    the ordinal too. Python also rewrote "o sută"/"o mie" to "una …"
+//!    ("al una sutălea", "al una mielea"); fixed (gladiaio/num2words2#252):
+//!    "al o sutălea", "al o miilea", "al o mie unulea", "al un
+//!    milionulea".
 //!
 //! # Cross-call mutable state: `to_currency`'s `gen_numwords[1]` flip
 //!
@@ -694,18 +695,24 @@ impl Lang for LangRo {
 
     /// `Num2Word_RO.to_ordinal`.
     ///
-    /// Pure concatenation — `self.ords` is never consulted (bug 6). The two
-    /// replaces are order-dependent and global: on "o mie o sută" the hundreds
-    /// pass runs first, giving "o mie una sută", and the thousands pass then
-    /// yields "una mie una sută" → "al una mie una sutălea".
+    /// Concatenation — `self.ords` is never consulted (bug 6) — with the
+    /// DOOM stems for a final "mie"/"milion" (bug 7).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
         if value.is_one() {
             return Ok("primul".to_string());
         }
-        let cardinal = self.to_cardinal(value)?;
-        let cardinal = cardinal.replace("o sută", "una sută");
-        let cardinal = cardinal.replace("o mie", "una mie");
+        let mut cardinal = self.to_cardinal(value)?;
+        // Python rewrote "o sută"/"o mie" to "una …" ("al una sutălea");
+        // DOOM keeps the feminine article: "al o sutălea", "al o mie
+        // unulea". A final "mie" takes the plural stem, "al o miilea", and a
+        // final "milion" the linking "u", "al un milionulea" (#252).
+        if cardinal.ends_with("mie") {
+            cardinal.truncate(cardinal.len() - "e".len());
+            cardinal.push('i');
+        } else if cardinal.ends_with("milion") {
+            cardinal.push('u');
+        }
         Ok(format!("al {}lea", cardinal))
     }
 
@@ -1196,7 +1203,7 @@ mod tests {
         assert_eq!(l.to_cardinal(&hundred).unwrap(), "o sută");
         assert_eq!(l.to_cardinal(&BigInt::from(1000)).unwrap(), "o mie");
         assert_eq!(l.to_cardinal(&BigInt::from(1234)).unwrap(), "o mie două sute treizeci și patru");
-        assert_eq!(l.to_ordinal(&hundred).unwrap(), "al una sutălea");
+        assert_eq!(l.to_ordinal(&hundred).unwrap(), "al o sutălea");
 
         // ... including after a currency call that succeeds ...
         let v = CurrencyValue::parse("100", true, false, false).unwrap();

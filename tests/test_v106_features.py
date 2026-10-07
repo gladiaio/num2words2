@@ -24,9 +24,13 @@ def test_maxval_helper():
 
 def test_runpy_invocation():
     # Issue #348 — python -m num2words2 N -l X
-    out = subprocess.check_output(
-        [sys.executable, "-m", "num2words2", "1234", "-l", "fr"]
-    ).decode().strip()
+    out = (
+        subprocess.check_output(
+            [sys.executable, "-m", "num2words2", "1234", "-l", "fr"]
+        )
+        .decode()
+        .strip()
+    )
     assert out == "mille deux cent trente-quatre"
 
 
@@ -40,8 +44,10 @@ def test_runpy_list_languages():
 
 def test_precision_kwarg():
     # Issue #580 — precision= overrides default 2-digit fractional precision.
-    assert num2words2.num2words(3.14159, lang="en", precision=5) == \
-        "three point one four one five nine"
+    assert (
+        num2words2.num2words(3.14159, lang="en", precision=5)
+        == "three point one four one five nine"
+    )
     # Default precision (2) unchanged when no kwarg.
     assert num2words2.num2words(3.14, lang="en") == "three point one four"
 
@@ -81,7 +87,8 @@ class TestCliEntryPoint(TestCase):
     def test_list_languages(self):
         code, out, _ = self._run(["--list-languages"])
         self.assertEqual(code, 0)
-        langs = out.split()
+        # One canonical code per line, aliases in parentheses after it (#245).
+        langs = [line.split(" ")[0] for line in out.splitlines() if line]
         self.assertIn("en", langs)
         self.assertIn("fr", langs)
         # Sorted, and the full set the core accepts — not a hand-kept list.

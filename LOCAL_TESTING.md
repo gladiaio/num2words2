@@ -76,7 +76,7 @@ pre-commit install
 - **check-merge-conflicts**: Checks for merge conflict markers
 - **isort**: Sorts and formats imports
 - **autoflake**: Removes unused imports and variables
-- **autopep8**: Formats code to PEP 8 standards
+- **black**: Formats code (line length 88)
 - **flake8**: Checks code style and quality
 
 #### Manual usage:
@@ -99,7 +99,7 @@ git commit --no-verify
 
 #### Fixing issues:
 If pre-commit fails:
-1. Most issues are automatically fixed by autopep8 and autoflake
+1. Most issues are automatically fixed by black, isort and autoflake
 2. Review the changes with `git diff`
 3. Stage the fixed files with `git add`
 4. Commit again
@@ -222,7 +222,7 @@ docker search python
 
 ### Common Test Failures:
 1. **Import errors**: Check if package is installed correctly
-2. **Missing dependencies**: Install requirements-test.txt
+2. **Missing dependencies**: Install `tests/requirements-test.txt`
 3. **Version conflicts**: Use fresh virtual environments
 4. **Permission issues**: Check file permissions on scripts
 
@@ -235,7 +235,7 @@ The local testing setup matches the CI configuration:
 make ci-test
 
 # Or with tox
-tox -e py38,py39,py310,py311,py312,py313
+tox -e py310,py311,py312,py313,py314,py315
 ```
 
 ## Performance Tips
@@ -277,5 +277,4 @@ make show-python-versions
 ```
 
 For issues or questions, please check:
-- [GitHub Issues](https://github.com/jqueguiner/num2words/issues)
-- [GitHub Discussions](https://github.com/jqueguiner/num2words/discussions)
+- [GitHub Issues](https://github.com/gladiaio/num2words2/issues)

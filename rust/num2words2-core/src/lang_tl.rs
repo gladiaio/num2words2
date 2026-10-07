@@ -1,5 +1,14 @@
 //! Port of `lang_TL.py` (Tagalog).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "bilyon" (10^9) and "trilyon" (10^12) (tl.wikipedia "Bilyon";
+//! Wiktionary), composed like the million arm, and raises `OverflowError` from
+//! 10^15, which `maxval()` reports. Where the notes below describe the digit
+//! fallback ("1000000000", "no overflow check"), they describe Python; that
+//! arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_TL` subclasses `Num2Word_Base` but its
 //! `setup()` defines no `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
@@ -61,14 +70,15 @@
 //! 3. **`to_ordinal` accepts negatives and zero and emits nonsense.** It has
 //!    no sign/zero guard (unlike most modules, which raise `TypeError` via
 //!    `errmsg_negord`), so it just prefixes the cardinal:
-//!    `to_ordinal(0) == "ika-zero"` and `to_ordinal(-1) == "ika-minus isa"`.
+//!    `to_ordinal(0) == "ika-sero"` and `to_ordinal(-1) == "ika-minus isa"`.
 //!    The `"ika-"` prefix is also glued onto multi-word cardinals, giving
 //!    `to_ordinal(10**6) == "ika-isa milyon"` (prefix binds the first word only).
 //! 4. **`ones[0]` is `""`,** and `_int_to_word` guards with
 //!    `return self.ones[0] if self.ones[0] else "zero"` — a conditional whose
-//!    true arm is unreachable, since `""` is falsy. Zero is therefore always
-//!    the English loanword `"zero"` (Tagalog "sero"/"wala" never appears).
-//!    Likewise `pointword` is the English `"point"`.
+//!    true arm is unreachable, since `""` is falsy, so Python always said the
+//!    English "zero"; its `pointword` was "point". Fixed
+//!    (gladiaio/num2words2#154): the port says "sero" and "punto", the
+//!    spoken Tagalog forms ("isa punto lima").
 //! 5. **The `number < 0` arm of `_int_to_word` is dead code** on *every* path,
 //!    not just the cardinal one: `to_cardinal` strips the `"-"` from the
 //!    *string* before calling `int()`, and `to_currency` does `val = abs(val)`
@@ -88,8 +98,8 @@
 //!    empty anyway, so this is unobservable *through TL* — but it means a
 //!    3-decimal code (KWD/BHD) and a 0-decimal one (JPY) are both treated as
 //!    2-decimal, on top of bug 6 renaming them "piso". Corpus:
-//!    `currency:KWD 0.01 -> "zero piso isa sentimo"` (not `.../1000`), and
-//!    `currency:JPY 0.5 -> "zero piso limampu sentimo"` — a subunit for a
+//!    `currency:KWD 0.01 -> "sero piso isa sentimo"` (not `.../1000`), and
+//!    `currency:JPY 0.5 -> "sero piso limampu sentimo"` — a subunit for a
 //!    currency that has none.
 //! 8. **`to_currency`'s `adjective` parameter is declared and never read.**
 //!    `adjective=True` changes nothing. (`CURRENCY_ADJECTIVES` is `{}` too, so
@@ -119,8 +129,14 @@
 //! from `currency::default_to_cheque` via [`LangTl::currency_forms`] returning
 //! `None`, so nothing here needs to construct it. 7 of the 9 cheque corpus rows
 //! take that path.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dolyar / euro with sentimo, as fil does. Examples
+//! in these docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -129,18 +145,19 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`, verbatim from `setup()` — note the **trailing space**, which
 /// is load-bearing: `to_cardinal` concatenates it directly (it does not go
 /// through `Num2Word_Base.parse_minus`, which would `.strip()` and re-add one).
 const NEGWORD: &str = "minus ";
 
-/// `self.pointword`. The English loanword, reached on the float/Decimal path
+/// `self.pointword`: "punto" (Python had the English "point"; #154), reached on the float/Decimal path
 /// (see [`LangTl::cardinal_from_str`] / [`LangTl::to_cardinal_float`]).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "punto";
 
-/// The `"zero"` literal from `_int_to_word`'s falsy-`ones[0]` guard.
-const ZERO_WORD: &str = "zero";
+/// `_int_to_word`'s zero: "sero" where Python said the English "zero" (#154).
+const ZERO_WORD: &str = "sero";
 
 /// `self.ones`. Index 0 is `""` and is never returned (see bug 4).
 const ONES: [&str; 10] = [
@@ -217,6 +234,16 @@ const FALLBACK_CURRENCY: &str = "PHP";
 /// consults `CURRENCY_PRECISION`, so this stays 100 even for KWD/BHD/JPY.
 const CENT_DIVISOR: i64 = 100;
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "bilyon"), (12, "trilyon")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangTl {
     /// `Num2Word_TL.CURRENCY_FORMS`.
     ///
@@ -240,13 +267,20 @@ impl Default for LangTl {
 }
 
 impl LangTl {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // Insertion order is irrelevant to a HashMap; FALLBACK_CURRENCY
         // captures the one place Python's ordering was observable.
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             ("PHP", &["piso", "piso"][..], &["sentimo", "sentimo"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
+            ("USD", &["dolyar", "dolyar"][..], &["sentimo", "sentimo"][..]),
+            ("EUR", &["euro", "euro"][..], &["sentimo", "sentimo"][..]),
         ]
         .into_iter()
         .map(|(k, u, s)| (k, CurrencyForms::new(u, s)))
@@ -379,6 +413,22 @@ impl LangTl {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Python: `return str(number)` — "Fallback for very large numbers".
         // Emits digits, not words. See bug 2.
         number.to_string()
@@ -409,7 +459,7 @@ impl LangTl {
     ///
     /// * The sign is stripped **textually** (`n.startswith("-")`), so `-0.0`
     ///   — whose `str` is `"-0.0"` — keeps its negword even though the value is
-    ///   not `< 0`: Python answers "minus zero point zero". (Reachable only for
+    ///   not `< 0`: Python answers "minus sero punto sero". (Reachable only for
     ///   `FloatValue::Float`; a `BigDecimal` cannot carry negative zero — see
     ///   the report.)
     /// * `split(".", 1)` caps at one split, so a second dot would stay inside
@@ -436,13 +486,13 @@ impl LangTl {
 
         let Some(dot) = n.find('.') else {
             // else: (ret + self._int_to_word(int(n))).strip()
-            ret.push_str(&self.int_to_word(&py_int(n)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(n)?)?);
             return Ok(ret.trim().to_string());
         };
 
         // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
         let (left, right) = (&n[..dot], &n[dot + 1..]);
-        ret.push_str(&self.int_to_word(&py_int(left)?));
+        ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
         ret.push(' ');
         ret.push_str(POINTWORD);
         ret.push(' ');
@@ -456,13 +506,17 @@ impl LangTl {
             }
             first = false;
             let mut buf = [0u8; 4];
-            ret.push_str(&self.int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+            ret.push_str(&self.checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
         }
         Ok(ret.trim().to_string())
     }
 }
 
 impl Lang for LangTl {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -479,7 +533,7 @@ impl Lang for LangTl {
     /// first — `number == 1` / `number == 2` are *numeric* equality, so the
     /// whole floats 1.0 / 2.0 (and `Decimal("1.0")`) hit the special forms
     /// "una" / "ikalawa". Everything else is `"ika-" + self.to_cardinal(number)`,
-    /// i.e. the float string grammar with the prefix: "ika-lima point zero".
+    /// i.e. the float string grammar with the prefix: "ika-lima punto sero".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let (is_one, is_two) = match value {
             FloatValue::Float { value, .. } => (*value == 1.0, *value == 2.0),
@@ -540,7 +594,7 @@ impl Lang for LangTl {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "punto"
     }
 
     /// The float/Decimal path. `Num2Word_TL` never defines `to_cardinal_float`;
@@ -598,7 +652,7 @@ impl Lang for LangTl {
         // `.strip()` — only ever trims NEGWORD's trailing space when
         // _int_to_word returns "" (which it cannot), so it is a no-op in
         // practice. Kept for fidelity.
-        Ok(format!("{}{}", ret, self.int_to_word(&n))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?)
             .trim()
             .to_string())
     }
@@ -739,7 +793,7 @@ impl Lang for LangTl {
         };
 
         let one = BigInt::one();
-        let left_str = self.int_to_word(&left);
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -754,7 +808,7 @@ impl Lang for LangTl {
         // the type of `val`. This is what makes `1.0` print "isa euro" with no
         // cents segment even though it is a float.
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = self.checked_int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');
@@ -940,7 +994,7 @@ fn py_float_repr(value: f64) -> String {
 ///
 /// `Decimal` carries `_sign` independently, so `Decimal("-0.0")` is signed zero
 /// and `str()` gives `'-0.0'`; TL then strips that minus textually and answers
-/// "minus zero point zero". A `BigDecimal` cannot represent it — its `int_val`
+/// "minus sero punto sero". A `BigDecimal` cannot represent it — its `int_val`
 /// is a `BigInt` with no negative zero, so `BigDecimal::from_str("-0.0")` has
 /// already discarded the sign before this function runs. We emit `'0.0'` and
 /// drop the negword. The discriminator is the original string, which the

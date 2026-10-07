@@ -93,6 +93,7 @@ def test_am_no_latin_prefix_in_high_words():
     # Regression for savoirfairelinux/num2words#591 — stray Latin "m"
     # appeared between thousands and "ሚሊዮን" in big numbers.
     from num2words2 import num2words
+
     out = num2words(568476685, lang="am")
     # No ASCII letters allowed; everything must be Ethiopic + spaces.
     assert all(c.isspace() or not c.isascii() for c in out), out

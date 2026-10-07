@@ -50,28 +50,28 @@
 //!
 //! # Faithfully reproduced Python bugs
 //!
-//! `to_ordinal` is the interesting one. It carries a hardcoded lookup for
-//! 1..=20, the round tens 30..=90, 100 and 1000. **Everything else** falls
-//! through to `self.to_cardinal(num) + "ý"` — a bare suffix glued onto the
-//! cardinal with no separator, no stem change, and no regard for what the
-//! cardinal actually ends in. The Python comment calls this "a simplified
-//! implementation". The results are not Czech, but they are the spec:
+//! `to_ordinal` was the interesting one. Python carries a hardcoded lookup
+//! for 1..=20, the round tens 30..=90, 100 and 1000, and glues `"ý"` onto
+//! the cardinal for everything else ("dvacet jednaý" for 21, "dvě stěý" for
+//! 200, "nulaý" for 0). Fixed (gladiaio/num2words2#216): every component of
+//! a compound ordinal is now itself an ordinal, as in standard Czech:
 //!
-//! | input      | output                | why it is wrong                    |
-//! |------------|-----------------------|------------------------------------|
-//! | 0          | `nulaý`               | 0 is not in the table              |
-//! | 21         | `dvacet jednaý`       | suffix lands on the *units* word   |
-//! | 200        | `dvě stěý`            | suffix lands after a two-word form |
-//! | 700        | `sedm setý`           | ditto                              |
-//! | 2000       | `dva tisíceý`         | ditto                              |
-//! | 10^6       | `milioný`             | 10^6 is not in the table           |
-//! | 10^7       | `deset milionůý`      | suffix on a genitive plural        |
-//! | 10^21      | `triliardaý`          |                                    |
-//! | -1         | `mínus jednaý`        | negatives are not rejected         |
+//! | input | output                     |
+//! |-------|----------------------------|
+//! | 0     | `nultý`                    |
+//! | 21    | `dvacátý první`            |
+//! | 101   | `stý první`                |
+//! | 200   | `dvoustý`                  |
+//! | 2021  | `dvoutisící dvacátý první` |
+//! | 10^6  | `miliontý`                 |
+//! | -1    | `mínus první`              |
 //!
-//! All nine are corpus-verified. Note the contrast with `lang_PL`: Polish
-//! *crashes* on `to_ordinal(0)` and on every negative, whereas Czech happily
-//! returns a malformed word for both. Do not "fix" these.
+//! Thousands with a multiplier of 10..=19, a round ten or 100 compound on
+//! its combining form ("desetitisící", "dvanáctitisící první",
+//! "stotisící"; was "deset tisícý", #259). Other multipliers keep the
+//! cardinal when a lower part follows ("dvacet jedna tisíc první"), and
+//! the round values the tables do not reach (21 000, 2·10^6, …) still take
+//! Python's `to_cardinal(n) + "ý"` fallback; that remains a known gap.
 //!
 //! Two further quirks worth naming:
 //!
@@ -105,7 +105,7 @@ use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{One, Signed, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
 fn key_error(msg: impl Into<String>) -> N2WError {
@@ -151,8 +151,7 @@ const TWENTIES: [&str; 10] = [
 ];
 
 /// `HUNDREDS`, keys 1..=9. Index 0 is absent in Python (guarded by `n3 > 0`).
-/// Several entries are two words ("dvě stě", "pět set"); this matters because
-/// `to_ordinal` suffixes the joined string blindly → "dvě stěý".
+/// Several entries are two words ("dvě stě", "pět set").
 const HUNDREDS: [&str; 10] = [
     "",
     "sto",
@@ -195,7 +194,7 @@ fn thousands_at(i: usize) -> Result<(&'static str, &'static str, &'static str)> 
 }
 
 /// `Num2Word_CS.to_ordinal`'s hardcoded table: 1..=20, round tens, 100, 1000.
-/// Everything else falls through to `to_cardinal(n) + "ý"`.
+/// [`ordinal_below_1000`] composes the rest from it (#216).
 const ORDINALS: [(u16, &str); 29] = [
     (1, "první"),
     (2, "druhý"),
@@ -227,6 +226,70 @@ const ORDINALS: [(u16, &str); 29] = [
     (100, "stý"),
     (1000, "tisící"),
 ];
+
+/// Ordinal hundreds 100..=900 (#216). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "stý", "dvoustý", "třístý", "čtyřstý", "pětistý", "šestistý", "sedmistý", "osmistý",
+    "devítistý",
+];
+
+/// Combining prefix for 2..=9 thousand ("dvoutisící", "pětitisící"). Index
+/// 0 and 1 are unused.
+const MULT_PREFIX: [&str; 10] = [
+    "", "", "dvou", "tří", "čtyř", "pěti", "šesti", "sedmi", "osmi", "devíti",
+];
+
+/// The combining (genitive) form of a multiplier above 9 in a compound
+/// ordinal: "desetitisící", "dvacetitisící", "stotisící" (#259).
+fn thousands_prefix(n: u64) -> Option<&'static str> {
+    Some(match n {
+        10 => "deseti",
+        11 => "jedenácti",
+        12 => "dvanácti",
+        13 => "třinácti",
+        14 => "čtrnácti",
+        15 => "patnácti",
+        16 => "šestnácti",
+        17 => "sedmnácti",
+        18 => "osmnácti",
+        19 => "devatenácti",
+        20 => "dvaceti",
+        30 => "třiceti",
+        40 => "čtyřiceti",
+        50 => "padesáti",
+        60 => "šedesáti",
+        70 => "sedmdesáti",
+        80 => "osmdesáti",
+        90 => "devadesáti",
+        100 => "sto",
+        _ => return None,
+    })
+}
+
+fn ordinal_table(n: u64) -> Option<&'static str> {
+    ORDINALS.iter().find(|(k, _)| u64::from(*k) == n).map(|(_, w)| *w)
+}
+
+/// Ordinal of `1..=999` with every component ordinal: 21 → "dvacátý první",
+/// 101 → "stý první", 345 → "třístý čtyřicátý pátý" (#216).
+fn ordinal_below_1000(n: u64) -> String {
+    debug_assert!(n > 0 && n < 1000);
+    let mut parts: Vec<&str> = Vec::new();
+    if n >= 100 {
+        parts.push(HUNDREDS_ORD[(n / 100) as usize]);
+    }
+    let r = n % 100;
+    if r != 0 {
+        match ordinal_table(r) {
+            Some(w) => parts.push(w),
+            None => {
+                parts.push(ordinal_table(r / 10 * 10).expect("round tens are tabled"));
+                parts.push(ordinal_table(r % 10).expect("units are tabled"));
+            }
+        }
+    }
+    parts.join(" ")
+}
 
 /// Port of `utils.splitbyx(n, x)` with `format_int=True`, specialised to the
 /// only way CS calls it: `splitbyx(str(n), 3)` where `n` is a **non-negative**
@@ -315,6 +378,42 @@ fn pluralize<'a>(n: &BigInt, forms: (&'a str, &'a str, &'a str)) -> &'a str {
     }
 }
 
+/// Grammatical gender of a currency noun, which 1 and 2 agree with.
+#[derive(Clone, Copy, PartialEq)]
+enum Gender {
+    Masculine,
+    Feminine,
+    Neuter,
+}
+
+/// Gender of the unit / subunit noun of each code (#253): koruna is
+/// feminine, euro neuter; dolar, cent and haléř masculine.
+fn currency_gender(currency: &str, subunit: bool) -> Gender {
+    match (currency, subunit) {
+        ("CZK", false) => Gender::Feminine,
+        ("EUR", false) => Gender::Neuter,
+        _ => Gender::Masculine,
+    }
+}
+
+/// The numeral before a noun of gender `g` (#253): 1 is jeden/jedna/jedno and
+/// 2 is dva/dvě/dvě, where the standalone cardinal says "jedna" and "dva".
+/// Compounds keep the cardinal's form.
+fn cs_attributive(n: &BigInt, cardinal: String, g: Gender) -> String {
+    if n.is_one() {
+        return match g {
+            Gender::Masculine => "jeden",
+            Gender::Feminine => "jedna",
+            Gender::Neuter => "jedno",
+        }
+        .to_string();
+    }
+    if n == &BigInt::from(2) && g != Gender::Masculine {
+        return "dvě".to_string();
+    }
+    cardinal
+}
+
 /// `Num2Word_CS.CURRENCY_FORMS`, transcribed from the class body.
 ///
 /// CS descends from `Num2Word_Base`, not `Num2Word_EUR`, so nothing here is
@@ -325,12 +424,11 @@ fn pluralize<'a>(n: &BigInt, forms: (&'a str, &'a str, &'a str)) -> &'a str {
 /// All six tuples carry three forms, and the arity is load-bearing:
 /// `pluralize` indexes 0/1/2, and `to_cheque` takes `cr1[-1]`.
 ///
-/// Two entries are deliberately degenerate, per the Python comments:
-///   * EUR's unit is `("euro", "euro", "euro")` — euro does not decline in
-///     Czech, so all three forms collide.
-///   * EUR's subunit is `("centů", "centů", "centů")` — always the genitive
-///     plural. That is why `0.01 EUR` reads "nula euro, jedna centů": the
-///     singular slot holds a plural word.
+/// Python's EUR entry was degenerate — `("euro", "euro", "euro")` on the
+/// claim that euro does not decline, and `("centů", "centů", "centů")` — so
+/// `0.01 EUR` read "nula euro, jedna centů". Euro is a declinable neuter
+/// (jedno euro, dvě eura, pět eur) and cent a regular masculine (jeden cent,
+/// dva centy, pět centů); the entry now carries their real forms (#253).
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert(
@@ -343,10 +441,9 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert(
         "EUR",
         CurrencyForms::new(
-            // Euro doesn't decline in Czech.
-            &["euro", "euro", "euro"],
-            // Cents always in genitive plural.
-            &["centů", "centů", "centů"],
+            // Neuter: jedno euro, dvě eura, pět eur (#253).
+            &["euro", "eura", "eur"],
+            &["cent", "centy", "centů"],
         ),
     );
     m.insert(
@@ -642,26 +739,57 @@ impl Lang for LangCs {
     /// so the `except (ValueError, TypeError): return str(number)` fallback is
     /// unreachable and is not modelled.
     ///
-    /// The table covers 1..=20, the round tens 30..=90, 100 and 1000. Every
-    /// other input — including 0 and all negatives — takes the
-    /// `to_cardinal(num) + "ý"` path, producing the malformed-but-correct
-    /// outputs documented in the module header ("nulaý", "dvě stěý",
-    /// "mínus jednaý", ...). Reproduced verbatim; see PORTING.md fidelity rules.
+    /// Python's table covers 1..=20, the round tens 30..=90, 100 and 1000
+    /// and glues "ý" onto the cardinal for the rest. Compounds are now built
+    /// component by component (#216); see the module header for the rules
+    /// and the remaining fallback.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        for (k, word) in ORDINALS.iter() {
-            if *value == BigInt::from(*k) {
-                return Ok((*word).to_string());
-            }
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
         }
-        let cardinal = self.to_cardinal(value)?;
-        Ok(cardinal + "ý")
+        let n = match value.to_u64() {
+            Some(n) => n,
+            None => return Ok(self.to_cardinal(value)? + "ý"),
+        };
+        if n == 0 {
+            return Ok("nultý".to_string());
+        }
+        if let Some(w) = ordinal_table(n) {
+            return Ok(w.to_string());
+        }
+        if n < 1000 {
+            return Ok(ordinal_below_1000(n));
+        }
+        let (high, low) = (n / 1000 * 1000, n % 1000);
+        let thousands = n / 1000;
+        let high_ord = match thousands {
+            1 => Some("tisící".to_string()),
+            2..=9 => Some(format!("{}tisící", MULT_PREFIX[thousands as usize])),
+            // Python read 10^4 as "deset tisícý" (#259).
+            _ => thousands_prefix(thousands).map(|p| format!("{}tisící", p)),
+        };
+        if low == 0 {
+            return Ok(match (high_ord, n) {
+                (Some(w), _) => w,
+                (None, 1_000_000) => "miliontý".to_string(),
+                (None, 1_000_000_000) => "miliardtý".to_string(),
+                // Known gap: no standard form tabled for this round value.
+                (None, _) => self.to_cardinal(value)? + "ý",
+            });
+        }
+        let head = match high_ord {
+            Some(w) => w,
+            None => self.to_cardinal(&BigInt::from(high))?,
+        };
+        Ok(format!("{} {}", head, ordinal_below_1000(low)))
     }
 
     /// `to_ordinal(float/Decimal)`: Python's first line is `num =
     /// int(number)` — truncation toward zero — so `2.5` → "druhý",
-    /// `-1.5` → "mínus jednaý", `Decimal("1E+2")` → "stý", and the huge
+    /// `-1.5` → "mínus první", `Decimal("1E+2")` → "stý", and the huge
     /// e-form floats that make the *cardinal* path raise ValueError
-    /// (`1e+16`) convert cleanly here ("deset biliardý"). The
+    /// (`1e+16`) convert cleanly here ("deset biliardý", a round value still on the
+    /// cardinal + "ý" fallback). The
     /// `except (ValueError, TypeError)` rescue is unreachable for a
     /// finite float/Decimal; `int(inf)`'s OverflowError and `int(nan)`'s
     /// ValueError are modelled for completeness.
@@ -915,8 +1043,7 @@ impl Lang for LangCs {
     /// that is unreachable — but it is mapped to `Index` rather than panicking
     /// so the exception type survives if the table ever changes.
     ///
-    /// Reached only from `Num2Word_Base.to_currency`'s float path; CS's own
-    /// int path pointedly does *not* call this (see `to_currency`).
+    /// Both currency paths select the unit form with this (#253).
     fn pluralize(&self, n: &BigInt, forms: &[String]) -> Result<String> {
         forms
             .get(plural_form_index(n))
@@ -924,36 +1051,34 @@ impl Lang for LangCs {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// The whole-unit numeral, agreeing with the unit noun (#253).
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(cs_attributive(number, self.to_cardinal(number)?, currency_gender(currency, false)))
+    }
+
+    /// The subunit numeral, agreeing with the subunit noun (#253).
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(cs_attributive(number, self.to_cardinal(number)?, currency_gender(currency, true)))
+    }
+
     /// Port of `Num2Word_CS.to_currency`.
     ///
     /// CS intercepts **`isinstance(val, int)`** — a true Python `int`, never a
     /// whole float — and hands everything else to `Num2Word_Base.to_currency`.
-    /// The split is why `currency:USD` of `1` is "jedna dolar" (no cents) while
-    /// `1.0` is "jedna dolar, nula centů".
+    /// The split is why `currency:USD` of `1` is "jeden dolar" (no cents) while
+    /// `1.0` is "jeden dolar, nula centů".
     ///
-    /// # The int path's plural bug, reproduced
+    /// # The int path's plural bug, fixed
     ///
-    /// Python picks the currency word by hand here instead of calling
-    /// `self.pluralize`:
-    ///
-    /// ```python
-    /// if abs_val == 1:
-    ///     currency_str = cr1[0]
-    /// else:
-    ///     currency_str = cr1[1] if len(cr1) > 1 else cr1[0]
-    /// ```
-    ///
-    /// So *every* count other than 1 takes `cr1[1]`, the paucal (2-4) form,
-    /// including 0, 5+ and the teens — where `pluralize` would correctly pick
-    /// `cr1[2]`. The corpus locks the wrong answers in: `currency:USD` of `0`
-    /// is "nula dolary", of `100` is "sto dolary", of `1000000` is
-    /// "milion dolary" — all should be "dolarů", and the float path one line
-    /// below *does* say "dolarů" for the same magnitudes ("nula dolarů,
-    /// padesát centů" at 0.5). EUR hides the bug entirely because its three
-    /// forms are identical. Do not "fix" this into a `pluralize` call.
+    /// Python picked the currency word by hand here, `cr1[0]` for 1 and
+    /// `cr1[1]` (the 2-4 form) for every other count, so `0`/`5`/`100` USD
+    /// were "nula dolary"/"pět dolary"/"sto dolary", and the numeral was the
+    /// standalone cardinal ("jedna dolar", "jedna euro"). Both paths now use
+    /// `pluralize` and the gender-agreeing `money_verbose`: "jeden dolar",
+    /// "jedno euro", "dvě eura", "pět eur", "sto dolarů" (#253).
     ///
     /// `abs(val)` is taken before the comparison, so `-1` is singular too:
-    /// "mínus jedna dolar".
+    /// "mínus jeden dolar".
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -975,14 +1100,10 @@ impl Lang for LangCs {
                 // whitespace, so the two agree, but the shapes differ.
                 let minus_str = if v.is_negative() { NEGWORD } else { "" };
                 let abs_val = v.abs();
-                let money_str = self.to_cardinal(&abs_val)?;
-
-                let currency_str = if abs_val.is_one() {
-                    forms.unit.first().cloned()
-                } else {
-                    forms.unit.get(1).or_else(|| forms.unit.first()).cloned()
-                }
-                .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
+                let money_str = self.money_verbose(&abs_val, currency)?;
+                // 1 / 2-4 / 5+ like the float path ("pět eur", "sto dolarů");
+                // Python took the 2-4 form for every count but 1 (#253).
+                let currency_str = self.pluralize(&abs_val, &forms.unit)?;
 
                 // Python: ("%s %s %s" % (minus_str, money_str, currency_str))
                 //             .strip()

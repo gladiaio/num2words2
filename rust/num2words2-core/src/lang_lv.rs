@@ -31,16 +31,16 @@
 //! 1. `THOUSANDS[7]` is **"sikstiljons"** — a typo for "sekstiljons". Kept
 //!    verbatim; it is corpus-visible (`to_cardinal(10**21)` == "sikstiljons").
 //!    `THOUSANDS[10]` is likewise "nontiljons" (rather than "noniljons").
-//! 2. `to_ordinal` is, in the module's own words, "a simplified
-//!    implementation": outside its 28-entry lookup table it just strips a
-//!    trailing "s" from the cardinal and glues on "ais". This produces
-//!    non-words for most inputs, e.g. `to_ordinal(0)` == "nulleais",
-//!    `to_ordinal(200)` == "divi simtiais", `to_ordinal(2000)` ==
-//!    "divi tūkstošiais". All corpus-confirmed. Do not "fix" these.
-//! 3. `to_ordinal` accepts negatives (unlike e.g. Polish) because it routes
-//!    through `to_cardinal`, which strips the sign before chunking. The suffix
-//!    is then appended to the whole phrase: `to_ordinal(-7)` ==
-//!    "mīnus septiņiais", `to_ordinal(-1)` == "mīnus vienais". Corpus-confirmed.
+//! 2. *(Fixed, #248.)* Outside its lookup table Python stripped a trailing
+//!    "s" from the cardinal and glued on "ais" ("divdesmit vienais",
+//!    "nulleais"). Compound ordinals now inflect their last word
+//!    ([`crate::compound_ordinal`]): 21 == "divdesmit pirmais", 101 ==
+//!    "simtu pirmais", 1001 == "tūkstotis pirmais", 0 == "nultais". Round
+//!    values without a rule keep the old fallback: it is right for 10**6
+//!    ("miljonais") but still wrong for e.g. 200 ("divi simtiais") and 2000
+//!    ("divi tūkstošiais"), a known gap.
+//! 3. *(Fixed, #248.)* A negative ordinal is "mīnus" + the ordinal
+//!    (`to_ordinal(-1)` == "mīnus pirmais"); it still does not raise.
 //! 4. Fixed (gladiaio/num2words2#159): Python has no `MAXVAL`. `_int2word`
 //!    indexes `THOUSANDS[i]` with the chunk index, and the table stops at 10,
 //!    so Python's `10**33` raised `KeyError: 11`. `maxval()` is now 10^33 and
@@ -174,8 +174,7 @@ const THOUSANDS: [[&str; 3]; 11] = [
 /// The `ordinals` dict literal in `Num2Word_LV.to_ordinal`, in source order.
 ///
 /// Sparse: 1..=20, then the round tens 30..=90, then 100 and 1000 — 29 entries.
-/// Anything else falls through to the "strip s, append ais" fallback. Note the
-/// absence of 0 — hence `to_ordinal(0)` == "nulleais" (bug 2).
+/// [`LangLv::to_ordinal`] composes the rest from it (#248).
 const ORDINALS: [(i64, &str); 29] = [
     (1, "pirmais"),
     (2, "otrais"),
@@ -569,19 +568,33 @@ impl Lang for LangLv {
     /// The `try: int(number) except (ValueError, TypeError): return str(number)`
     /// guard is unreachable for integer input and is not modelled.
     ///
-    /// Outside the `ordinals` table this is the module's self-described
-    /// "simplified implementation": strip one trailing "s" from the cardinal,
-    /// then append "ais" — see bug 2 in the module docs.
+    /// Outside the `ordinals` table the last word of the cardinal is
+    /// inflected (#248); round values without a rule keep the module's
+    /// "simplified implementation" (strip one trailing "s", append "ais") —
+    /// see bug 2 in the module docs.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
+        }
+        if value.is_zero() {
+            return Ok("nultais".to_string());
+        }
+        let small = |v: u64| {
+            ORDINALS.iter().find(|(key, _)| *key as u64 == v).map(|(_, w)| *w)
+        };
         // `if num in ordinals` — the table is keyed by exact int value. A value
-        // too large for i64 simply cannot be in a table topping out at 1000.
-        if let Some(k) = value.to_i64() {
-            if let Some((_, word)) = ORDINALS.iter().find(|(key, _)| *key == k) {
-                return Ok(word.to_string());
-            }
+        // too large for u64 simply cannot be in a table topping out at 1000.
+        let n = value.to_u64();
+        if let Some(word) = n.and_then(small) {
+            return Ok(word.to_string());
         }
 
         let cardinal = self.to_cardinal(value)?;
+        if let Some(word) = n.and_then(|n| {
+            crate::compound_ordinal::last_word_ordinal(n, &cardinal, small, None)
+        }) {
+            return Ok(word);
+        }
         // Python: `cardinal[:-1] + "ais"` — drops exactly one character, which
         // is the ASCII "s" we just matched, so this is char-safe.
         match cardinal.strip_suffix('s') {
@@ -662,7 +675,11 @@ impl Lang for LangLv {
             "0".repeat(precision.saturating_sub(post_str.len())),
             post_str
         );
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
 
         let mut decimal_part = String::new();
         for _ in 0..leading_zero_count {
@@ -688,9 +705,9 @@ impl Lang for LangLv {
     ///
     /// * a **visible point** (any finite float below 1e16, or a Decimal with
     ///   positive scale) takes the fractional branch even for whole values —
-    ///   `5.0` -> "pieci komats nulle nulle" (one "nulle" per leading zero of
-    ///   the fractional string plus `_int2word(0)`), `Decimal("5.00")` ->
-    ///   three "nulle".
+    ///   `5.0` -> "pieci komats nulle" (one "nulle" per
+    ///   fractional digit written; Python added one more, #237),
+    ///   `Decimal("5.00")` -> two "nulle".
     /// * **no point** funnels the whole string into `int(n)`: plain digit
     ///   Decimals reach the integer path, while exponent forms (`str(1e16) ==
     ///   "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and inf/nan raise
@@ -723,9 +740,9 @@ impl Lang for LangLv {
     /// ```
     ///
     /// `int()` **truncates**: `to_ordinal(2.5)` == `to_ordinal(2)` ==
-    /// "otrais", `to_ordinal(-0.0)` == "nulleais" via the table-miss suffix
-    /// path (int(-0.0) is 0, sign gone), and `to_ordinal(1e16)` succeeds —
-    /// the ordinal table + "ais" suffix run on the truncated integer.
+    /// "otrais", `to_ordinal(-0.0)` == "nultais" (int(-0.0) is 0, sign
+    /// gone), and `to_ordinal(1e16)` succeeds — the integer ordinal runs on
+    /// the truncated value.
     /// `int(nan)` raises ValueError, which the except arm converts to
     /// `str(number)` == "nan"; `int(inf)` raises OverflowError, which is
     /// *not* in the except tuple and propagates.

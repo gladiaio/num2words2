@@ -1022,12 +1022,10 @@ impl Lang for LangPt {
     ///
     /// * **int** — hand-rolled here, and it never shows cents. Two quirks
     ///   worth naming, both preserved:
-    ///   1. An unknown currency code does **not** raise. Python's
-    ///      `except KeyError: return self.to_cardinal(val)` silently drops the
-    ///      currency name, so `num2words(100, lang="pt", to="currency",
-    ///      currency="KWD")` is just `"cem"`. The corpus pins this for
-    ///      KWD/BHD/CHF, which is why those codes have *passing* int rows and
-    ///      *raising* float rows.
+    ///   1. An unknown currency code raises (fixed, #219). Python's
+    ///      `except KeyError: return self.to_cardinal(val)` silently dropped
+    ///      the currency name (`currency="KWD"` gave just `"cem"`); the port
+    ///      raises NotImplementedError, as the float path always did.
     ///   2. `adjective` is ignored outright — the int branch never consults
     ///      `CURRENCY_ADJECTIVES`, so `adjective=True` is a no-op on ints
     ///      while it works on floats.
@@ -1050,9 +1048,9 @@ impl Lang for LangPt {
         if let CurrencyValue::Int(v) = val {
             let forms = match self.currency_forms(currency) {
                 Some(f) => f,
-                // `except KeyError: return self.to_cardinal(val)` — note it
-                // takes the *signed* value, so -5 KWD is "menos cinco".
-                None => return self.to_cardinal(v),
+                // Python's `except KeyError: return self.to_cardinal(val)`
+                // printed a bare number; raise like the float path (#219).
+                None => return Err(crate::currency::unknown_currency(self, currency)),
             };
 
             let minus_str = if v.is_negative() {

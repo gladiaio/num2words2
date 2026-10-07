@@ -39,9 +39,8 @@
 //!   the integer part goes through `to_cardinal` directly and the subunits
 //!   through ZH's own `to_currency_float`.
 //!
-//! `to_cheque`, by contrast, is **not** overridden by ZH, so Base's runs — and
-//! Base's assumes the tuple shape that ZH does not have. That mismatch is
-//! bug #7 below, and it is the whole story of this file's `to_cheque`.
+//! `to_cheque`, by contrast, is **not** overridden by ZH, so Base's ran — and
+//! Base's assumes the tuple shape that ZH does not have (bug #7 below).
 //!
 //! # The `lang_EUR.py` mutation trap does not apply here
 //!
@@ -125,9 +124,9 @@
 //! 6. **`merge`'s `stuff_zero == 2` arm re-tests its own guard.** The inner
 //!    `if len(str(lnum)) - len(str(rnum)) > 1 and ...` repeats a condition the
 //!    outer `if` already proved. Harmless; kept as a comment, not as code.
-//! 7. **`to_cheque` unpacks a string as if it were a tuple, and is broken for
-//!    15 of ZH_HK's 17 currency codes.** See [`LangZhHk::to_cheque`] — the
-//!    single largest quirk in this file.
+//! 7. **`to_cheque` unpacked a string as if it were a tuple** (half a currency
+//!    name for 2-character names, ValueError otherwise). The port raises
+//!    NotImplementedError ("does not support to='cheque'", #223).
 //! 8. **`to_currency` ignores `has_decimal`, so `1.999` prints no cents.**
 //!    Base gates the cents segment on `isinstance(val, float) or "." in
 //!    str(val)`; ZH's source says `# has_decimal is not implemented` and gates
@@ -1048,89 +1047,12 @@ impl Lang for LangZhHk {
         Ok(cr_pre)
     }
 
-    /// `Num2Word_Base.to_cheque`, inherited unchanged — `Num2Word_ZH` overrides
-    /// `to_currency` but leaves this alone. Reimplemented here instead of
-    /// delegating to [`crate::currency::default_to_cheque`] for exactly one
-    /// reason: Base unpacks the currency entry as a 2-tuple, and ZH's entries
-    /// are strings.
-    ///
-    /// ```python
-    /// try:
-    ///     cr1, _cr2 = self.CURRENCY_FORMS[currency]
-    /// except KeyError:
-    ///     raise NotImplementedError(...)
-    /// ...
-    /// unit = cr1[-1] if isinstance(cr1, tuple) else cr1
-    /// ```
-    ///
-    /// **Bug #7.** Unpacking a `str` iterates its *characters*, so `cr1, _cr2 =
-    /// "歐羅"` binds `cr1 = "歐"`, `_cr2 = "羅"` — and the `except` clause
-    /// catches only `KeyError`, so the unpack's `ValueError` escapes uncaught.
-    /// Every outcome below is pinned by the frozen corpus:
-    ///
-    /// | code | value | chars | `to_cheque(1234.56)` |
-    /// |---|---|---|---|
-    /// | EUR | 歐羅 | 2 | `"一千二百三十四 AND 56/100 歐"` — **half the name** |
-    /// | CNY | 人民幣 | 3 | `ValueError: too many values to unpack (expected 2)` |
-    /// | CHF | 瑞士法郎 | 4 | `ValueError: too many values to unpack (expected 2)` |
-    /// | XXX | 元 | 1 | `ValueError: not enough values to unpack (expected 2, got 1)` |
-    /// | KWD | — | — | `KeyError` → `NotImplementedError` |
-    ///
-    /// So `to_cheque` "succeeds" for only 9 of the 17 codes (AUD CAD EUR GBP
-    /// HKD JPY KRW THB USD — the two-character ones), and even then prints just
-    /// the first half of the currency name. The other 8 raise `ValueError` on a
-    /// perfectly valid code. `N2WError::Value` is the right variant precisely
-    /// *because* Python's failure is a `ValueError` and not a currency error —
-    /// mapping it to `NotImplemented` would erase the distinction the corpus
-    /// tests. Do not "fix" any of this.
-    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
-        let cr = self.currency_string(currency)?;
-
-        // `cr1, _cr2 = <str>` — an iterable unpack over characters.
-        let chars: Vec<char> = cr.chars().collect();
-        if chars.len() != 2 {
-            return Err(N2WError::Value(if chars.len() < 2 {
-                format!(
-                    "not enough values to unpack (expected 2, got {})",
-                    chars.len()
-                )
-            } else {
-                "too many values to unpack (expected 2)".to_string()
-            }));
-        }
-        // `unit = cr1[-1] if isinstance(cr1, tuple) else cr1` — cr1 is a
-        // one-character `str`, never a tuple, so `unit` is cr1 itself.
-        let unit = chars[0];
-
-        // `self.CURRENCY_PRECISION.get(currency, 100)` — empty dict, so 100 for
-        // every code. Read through the hook, as Base reads the dict.
-        let divisor = self.currency_precision(currency);
-        let is_negative = val.is_negative();
-        let abs_val = val.abs();
-        // `whole = int(abs_val)` — truncation, which on a non-negative equals
-        // the floor `with_scale(0)` performs.
-        let whole = abs_val.with_scale(0).as_bigint_and_exponent().0;
-
-        let fraction_str = if divisor > 1 {
-            let sub = (&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(divisor);
-            let sub = sub.with_scale(0).as_bigint_and_exponent().0;
-            let digits = divisor.to_string().len() - 1;
-            format!("{:0>width$}/{}", sub.to_string(), divisor, width = digits)
-        } else {
-            String::new()
-        };
-
-        // Base's `_money_verbose`, i.e. `self.to_cardinal(whole)` — ZH's
-        // wrapped one, so 1234 → 一千二百三十四.
-        let words = self.money_verbose(&whole, currency)?;
-        let sign = if is_negative { "MINUS " } else { "" };
-        let body = if fraction_str.is_empty() {
-            format!("{} {}", words, unit)
-        } else {
-            format!("{} AND {} {}", words, fraction_str, unit)
-        };
-        // `.upper()` — a no-op on CJK; the literals are already uppercase.
-        Ok(format!("{}{}", sign, body).to_uppercase())
+    // ZH_HK's CURRENCY_FORMS are bare strings, so Base's unpack split the
+    // name into characters: half a name for 2-char codes, ValueError otherwise.
+    // No cheque rules, so NotImplementedError ("lang='zh_HK' does not support
+    // to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 
     // ---- float/Decimal entry routing --------------------------------------
@@ -1141,6 +1063,7 @@ impl Lang for LangZhHk {
     /// (`int(-0.0) == -0.0`, `abs(-0.0) == -0.0`) → "第零". A whole value
     /// then takes `to_cardinal`'s integer path, prefixed with 第.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as ordinal.",
@@ -1168,6 +1091,7 @@ impl Lang for LangZhHk {
     /// TypeError(`errmsg_floatyear`); whole values render digit-by-digit
     /// through the integer `to_year` (`int(-0.0)` is 0 → no 公元前 prefix).
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as year.",
@@ -1391,6 +1315,7 @@ impl Lang for LangZhHk {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;

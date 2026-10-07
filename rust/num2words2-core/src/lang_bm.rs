@@ -4,9 +4,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so the base
 //! `__init__` never builds `self.cards` and never sets `MAXVAL`. `to_cardinal`
 //! is overridden outright and drives a private `_int_to_word` recursion.
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here,
-//! and there is **no overflow check** — see the ceiling note below, which is a
-//! silent fallback rather than an `OverflowError`.
+//! Consequently `cards`/`merge` stay at their trait defaults here. Python has
+//! **no overflow check** — see the ceiling note below, which was a silent
+//! fallback; this port raises `OverflowError` from 10^12 (`maxval`).
 //!
 //! `setup()` only assigns constants; there is no cross-call mutable state and
 //! no `str_to_number` handshake (BM inherits `Num2Word_Base.str_to_number`,
@@ -38,25 +38,23 @@
 //!
 //! This is a port, not a rewrite. Both of these look wrong and are kept:
 //!
-//! 1. **The ceiling is a silent fallback to digits.** `_int_to_word` handles
-//!    values below 10^9 and then simply `return str(number)`. So
-//!    `to_cardinal(10**9)` == `"1000000000"` — bare digits, no words, no
-//!    exception. Bambara has no word above `miliyɔn` in this table, and the
-//!    module degrades rather than raising `OverflowError`. Corpus rows confirm
-//!    this all the way up to 10^21, which is why [`int_to_word`] keeps
-//!    everything in `BigInt` and never casts the input to a fixed-width int.
-//! 2. **`to_ordinal` inherits that fallback**, so at or above 10^9 it collapses
-//!    onto `to_ordinal_num`: both `to_ordinal(10**9)` and
-//!    `to_ordinal_num(10**9)` return `"1000000000nan"`. Below 10^9 they differ
-//!    ("miliyɔnnan" vs "1000000nan").
-//! 3. **The two paths spell the sign differently**, which the collapse in (2)
-//!    makes visible: `to_cardinal`/`to_ordinal` render the sign as the *word*
-//!    `dɔgɔ` (they strip "-" and prepend `negword`), while `to_ordinal_num`
-//!    stringifies the input untouched and keeps the ASCII "-". So at 10^9 the
-//!    two do **not** converge for negatives:
-//!    `to_ordinal(-10**9)` == `"dɔgɔ 1000000000nan"` but
-//!    `to_ordinal_num(-10**9)` == `"-1000000000nan"`. No corpus row covers
-//!    this combination; both were verified against the live interpreter.
+//! 1. **The 10^9 ceiling (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` handles values below 10^9 and then simply
+//!    `return str(number)`, so `to_cardinal(10**9)` was `"1000000000"` — bare
+//!    digits, no exception. This port adds miliyari (10^9; Bamadaba
+//!    "míliyari", http://cormand.huma-num.fr/Bamadaba/lexicon/m.htm, tone
+//!    marks dropped like the module's miliyɔn), composed exactly like the
+//!    million branch: `to_cardinal(10**9)` == `"miliyari"`,
+//!    `to_cardinal(2 * 10**9)` == `"miliyari fila"`. No 10^12 word is
+//!    attested, so 10^12 raises `OverflowError` (`maxval`).
+//! 2. **`to_ordinal` inherited that fallback**, so at or above 10^9 Python's
+//!    collapsed onto `to_ordinal_num` (`"1000000000nan"`); since #147 it is
+//!    `"miliyarinan"`.
+//! 3. **The two paths spell the sign differently**: `to_cardinal`/
+//!    `to_ordinal` render the sign as the *word* `dɔgɔ` (they strip "-" and
+//!    prepend `negword`), while `to_ordinal_num` stringifies the input
+//!    untouched and keeps the ASCII "-": `to_ordinal(-10**9)` ==
+//!    `"dɔgɔ miliyarinan"` but `to_ordinal_num(-10**9)` == `"-1000000000nan"`.
 //!
 //! Two further behaviours are unremarkable but worth stating, since they are
 //! where sibling languages tend to crash:
@@ -135,7 +133,7 @@
 //! (100), `money_verbose` (→ `to_cardinal`) and the rest stay at their trait
 //! defaults, which already mirror `Num2Word_Base`.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -144,6 +142,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.pointword`. Live on the float path, where BM interpolates it raw.
 const POINTWORD: &str = "ni";
@@ -179,6 +178,15 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "kɛmɛ";
 const THOUSAND: &str = "ba";
 const MILLION: &str = "miliyɔn";
+/// 10^9, absent from Python (gladiaio/num2words2#147): Bamadaba "míliyari"
+/// ("milliard"), tones dropped like [`MILLION`].
+const BILLION: &str = "miliyari";
+
+/// The exclusive ceiling (#147): no attested Bambara word for 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 
 /// `self.negword`. The trailing space is Python's, not a typo — see module docs.
 const NEGWORD: &str = "dɔgɔ ";
@@ -295,7 +303,7 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -314,7 +322,8 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
 /// sign before recursing, so the `self.ones[number]` / `self.tens[t]` lookups
 /// can never hit Python's negative-index wraparound. The `to_usize` calls below
 /// are each guarded by the range test immediately preceding them.
-fn int_to_word(number: &BigInt) -> String {
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     let ten = BigInt::from(10);
     let hundred = BigInt::from(100);
     let thousand = BigInt::from(1000);
@@ -322,13 +331,13 @@ fn int_to_word(number: &BigInt) -> String {
     let billion = BigInt::from(1_000_000_000);
 
     if number.is_zero() {
-        return ONES[0].to_string();
+        return Ok(ONES[0].to_string());
     }
 
     if number < &ten {
         // 0 < number < 10, so the cast is total.
         let i = number.to_usize().expect("guarded: 0 < number < 10");
-        return ONES[i].to_string();
+        return Ok(ONES[i].to_string());
     }
 
     if number < &hundred {
@@ -341,7 +350,7 @@ fn int_to_word(number: &BigInt) -> String {
         } else {
             String::new()
         };
-        return format!("{}{}", TENS[ti], tail);
+        return Ok(format!("{}{}", TENS[ti], tail));
     }
 
     if number < &thousand {
@@ -354,48 +363,61 @@ fn int_to_word(number: &BigInt) -> String {
             HUNDRED.to_string()
         };
         let tail = if !r.is_zero() {
-            format!(" ni {}", int_to_word(&r))
+            format!(" ni {}", int_to_word(&r)?)
         } else {
             String::new()
         };
-        return format!("{}{}", base, tail);
+        return Ok(format!("{}{}", base, tail));
     }
 
     if number < &million {
         let (t, r) = number.div_rem(&thousand);
         // `t > 1`: exactly 1000 is bare "ba", never "ba kelen".
         let base = if t > BigInt::from(1) {
-            format!("{} {}", THOUSAND, int_to_word(&t))
+            format!("{} {}", THOUSAND, int_to_word(&t)?)
         } else {
             THOUSAND.to_string()
         };
         let tail = if !r.is_zero() {
-            format!(" ni {}", int_to_word(&r))
+            format!(" ni {}", int_to_word(&r)?)
         } else {
             String::new()
         };
-        return format!("{}{}", base, tail);
+        return Ok(format!("{}{}", base, tail));
     }
 
     if number < &billion {
         let (m, r) = number.div_rem(&million);
         // `m > 1`: exactly 10^6 is bare "miliyɔn", never "miliyɔn kelen".
         let base = if m > BigInt::from(1) {
-            format!("{} {}", MILLION, int_to_word(&m))
+            format!("{} {}", MILLION, int_to_word(&m)?)
         } else {
             MILLION.to_string()
         };
         let tail = if !r.is_zero() {
-            format!(" ni {}", int_to_word(&r))
+            format!(" ni {}", int_to_word(&r)?)
         } else {
             String::new()
         };
-        return format!("{}{}", base, tail);
+        return Ok(format!("{}{}", base, tail));
     }
 
-    // Python: `return str(number)`. The silent digit fallback — see module
-    // docs quirk 1. BigInt, not a fixed-width cast: the corpus exercises 10^21.
-    number.to_string()
+    // Python: `return str(number)`, the silent digit fallback — see module
+    // docs quirk 1. The miliyari branch instead, composed like the million
+    // one (#147); the maxval check above keeps `b` below 1000.
+    let (b, r) = number.div_rem(&billion);
+    // `b > 1`: exactly 10^9 is bare "miliyari", like "miliyɔn".
+    let base = if b > BigInt::from(1) {
+        format!("{} {}", BILLION, int_to_word(&b)?)
+    } else {
+        BILLION.to_string()
+    };
+    let tail = if !r.is_zero() {
+        format!(" ni {}", int_to_word(&r)?)
+    } else {
+        String::new()
+    };
+    Ok(format!("{}{}", base, tail))
 }
 
 /// CPython's `repr(float)` — which for a `float` is also `str(float)`, and
@@ -705,7 +727,7 @@ impl LangBm {
 
         if let Some((left, right)) = n.split_once('.') {
             // `int(left)` runs before the loop, so a bad left raises first.
-            let mut ret = format!("{} {}", int_to_word(&python_int(left)?), POINTWORD);
+            let mut ret = format!("{} {}", int_to_word(&python_int(left)?)?, POINTWORD);
             for ch in right.chars() {
                 let d = ch.to_digit(10).ok_or_else(|| {
                     N2WError::Value(format!(
@@ -721,11 +743,15 @@ impl LangBm {
             return Ok(ret.trim().to_string());
         }
 
-        Ok(int_to_word(&python_int(n)?))
+        int_to_word(&python_int(n)?)
     }
 }
 
 impl Lang for LangBm {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -829,7 +855,7 @@ impl Lang for LangBm {
             // negword is always absorbed, so this only ever no-ops.
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(int_to_word(value))
+        int_to_word(value)
     }
 
     /// Python: `return self.to_cardinal(number) + "nan"`.
@@ -925,9 +951,9 @@ impl Lang for LangBm {
     /// Points of order:
     ///
     /// * The unit word comes from `_int_to_word`, **not** `to_cardinal`, so it
-    ///   inherits the silent digit fallback above 10^9 without inheriting the
-    ///   negword handling: `to_currency(1000000000.0, "EUR")` is
-    ///   `"1000000000 ero"`. `is_negative` is taken from the *original* value
+    ///   shares the scales and the 10^12 ceiling (#147; Python's digit
+    ///   fallback gave `"1000000000 ero"`) without inheriting the negword
+    ///   handling. `is_negative` is taken from the *original* value
     ///   and re-applied at the end, which is why stripping the sign first is
     ///   safe here.
     /// * `cents and right` is an `and` over a Python int, so a zero `right`
@@ -974,7 +1000,7 @@ impl Lang for LangBm {
         } else {
             &forms.unit[0]
         };
-        let mut result = format!("{} {}", int_to_word(&left), unit);
+        let mut result = format!("{} {}", int_to_word(&left)?, unit);
 
         if cents && !right.is_zero() {
             let subunit = if right != one {
@@ -987,7 +1013,7 @@ impl Lang for LangBm {
             result.push_str(&format!(
                 "{}{} {}",
                 separator,
-                int_to_word(&right),
+                int_to_word(&right)?,
                 subunit
             ));
         }
@@ -999,6 +1025,7 @@ impl Lang for LangBm {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1073,31 +1100,28 @@ mod tests {
         assert_eq!(y(-44), "dɔgɔ binaani ni naani");
     }
 
-    /// Quirk 1/2: the silent digit fallback at and above 10^9, and BigInt reach.
+    /// Quirk 1/2 (#147): miliyari at and above 10^9, OverflowError at 10^12.
     #[test]
-    fn digit_fallback_above_billion() {
-        assert_eq!(c(1_000_000_000), "1000000000");
-        assert_eq!(o(1_000_000_000), "1000000000nan");
+    fn billion_scale_and_ceiling() {
+        assert_eq!(c(1_000_000_000), "miliyari");
+        assert_eq!(c(2_000_000_005), "miliyari fila ni duuru");
+        assert_eq!(o(1_000_000_000), "miliyarinan");
         assert_eq!(on(1_000_000_000), "1000000000nan");
 
-        let big: BigInt = "1000000000000000000000".parse().unwrap();
+        let big: BigInt = "1000000000000".parse().unwrap();
         let lang = LangBm::new();
-        assert_eq!(lang.to_cardinal(&big).unwrap(), "1000000000000000000000");
-        assert_eq!(
-            lang.to_ordinal(&big).unwrap(),
-            "1000000000000000000000nan"
-        );
+        assert!(matches!(lang.to_cardinal(&big), Err(N2WError::Overflow(_))));
+        assert!(matches!(lang.to_ordinal(&big), Err(N2WError::Overflow(_))));
     }
 
-    /// Quirk 3: negatives past the fallback spell the sign as the word "dɔgɔ"
-    /// in cardinal/ordinal but as ASCII "-" in ordinal_num. Not corpus-covered;
-    /// expectations captured from the live Python interpreter.
+    /// Quirk 3: negatives spell the sign as the word "dɔgɔ" in
+    /// cardinal/ordinal but as ASCII "-" in ordinal_num.
     #[test]
-    fn negative_past_fallback_sign_asymmetry() {
-        assert_eq!(c(-1_000_000_000), "dɔgɔ 1000000000");
-        assert_eq!(o(-1_000_000_000), "dɔgɔ 1000000000nan");
+    fn negative_sign_asymmetry() {
+        assert_eq!(c(-1_000_000_000), "dɔgɔ miliyari");
+        assert_eq!(o(-1_000_000_000), "dɔgɔ miliyarinan");
         assert_eq!(on(-1_000_000_000), "-1000000000nan");
-        assert_eq!(y(-1_000_000_000), "dɔgɔ 1000000000");
+        assert_eq!(y(-1_000_000_000), "dɔgɔ miliyari");
     }
 
     /// The three declared codes, straight from the corpus.
@@ -1160,8 +1184,8 @@ mod tests {
     /// Not corpus-covered; verified against the live interpreter.
     #[test]
     fn currency_edges() {
-        // The digit fallback reaches to_currency through _int_to_word.
-        assert_eq!(cur("1000000000.0", "EUR"), "1000000000 ero");
+        // The scales reach to_currency through _int_to_word (#147).
+        assert_eq!(cur("1000000000.0", "EUR"), "miliyari ero");
         // Truncation past the second decimal, no rounding.
         assert_eq!(cur("12.349", "EUR"), "tan ni fila ero bisaba ni naani santimu");
         assert_eq!(cur("0.005", "EUR"), "fu ero");
@@ -1193,8 +1217,12 @@ mod tests {
             LangBm::new().to_currency(&v, "EUR", true, None, false),
             Err(N2WError::Value(_))
         ));
-        // The same magnitude as an int stringifies plainly and does not raise.
-        assert_eq!(cur("10000000000000000", "EUR"), "10000000000000000 ero");
+        // The same magnitude as an int is past maxval (#147): OverflowError.
+        let v = CurrencyValue::parse("10000000000000000", false, true, true).unwrap();
+        assert!(matches!(
+            LangBm::new().to_currency(&v, "EUR", true, None, false),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// `to_cheque` is inherited from `Num2Word_Base`, so unlike `to_currency`
@@ -1290,10 +1318,12 @@ mod tests {
         assert_eq!(d("1.10").unwrap(), "kelen ni kelen fu");
         assert_eq!(d("12.345").unwrap(), "tan ni fila ni saba naani duuru");
         // Issue #603: the Decimal arm never float-casts, so the ".99" survives
-        // at trillion scale. The left part is past 10^9, hence the digits.
+        // at trillion scale. The left part is past the 10^12 maxval (#147;
+        // Python returned its digits).
+        assert!(matches!(d("98746251323029.99"), Err(N2WError::Overflow(_))));
         assert_eq!(
-            d("98746251323029.99").unwrap(),
-            "98746251323029 ni kɔnɔntɔn kɔnɔntɔn"
+            d("987462513.99").unwrap(),
+            "miliyɔn kɛmɛ kɔnɔntɔn ni bisegi ni wolonfila ni ba kɛmɛ naani ni biwɔɔrɔ ni fila ni kɛmɛ duuru ni tan ni saba ni kɔnɔntɔn kɔnɔntɔn"
         );
         assert_eq!(d("0.001").unwrap(), "fu ni fu fu kelen");
     }
@@ -1317,20 +1347,13 @@ mod tests {
     /// 670352580196876.25 is exactly between ...876.2 and ...876.3, both of
     /// which round-trip. Python says `fila` (2). Verified against the live
     /// interpreter.
+    /// (The integer parts are past maxval since #147, so the repr itself is
+    /// pinned rather than the cardinal.)
     #[test]
     fn shortest_repr_ties_go_to_even() {
-        assert_eq!(
-            f(670352580196876.2).unwrap(),
-            "670352580196876 ni fila"
-        );
-        assert_eq!(
-            f(161834668665500.12).unwrap(),
-            "161834668665500 ni kelen fila"
-        );
-        assert_eq!(
-            f(-29489152302236.812).unwrap(),
-            "dɔgɔ 29489152302236 ni segi kelen fila"
-        );
+        assert_eq!(python_float_repr(670352580196876.2), "670352580196876.2");
+        assert_eq!(python_float_repr(161834668665500.12), "161834668665500.12");
+        assert_eq!(python_float_repr(-29489152302236.812), "-29489152302236.812");
     }
 
     /// `str(float)`'s two formatting quirks, both observable here.
@@ -1341,11 +1364,11 @@ mod tests {
         assert_eq!(f(-1.0).unwrap(), "dɔgɔ kelen ni fu");
         // repr(-0.0) keeps the sign bit; `value < 0.0` would not.
         assert_eq!(f(-0.0).unwrap(), "dɔgɔ fu ni fu");
-        // The digit fallback in _int_to_word reaches the float path too.
-        assert_eq!(f(1000000000.5).unwrap(), "1000000000 ni duuru");
-        assert_eq!(f(1e15).unwrap(), "1000000000000000 ni fu");
-        // Just inside the exponent threshold (decpt == 16).
-        assert_eq!(f(9999999999999998.0).unwrap(), "9999999999999998 ni fu");
+        // The scales and the 10^12 ceiling reach the float path too (#147).
+        assert_eq!(f(1000000000.5).unwrap(), "miliyari ni duuru");
+        assert!(matches!(f(1e15), Err(N2WError::Overflow(_))));
+        // Just inside the exponent threshold (decpt == 16): past maxval.
+        assert!(matches!(f(9999999999999998.0), Err(N2WError::Overflow(_))));
         // 1e-4 stays positional (decpt == -3); 1e-5 does not.
         assert_eq!(f(0.0001).unwrap(), "fu ni fu fu fu kelen");
     }

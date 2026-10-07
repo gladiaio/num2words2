@@ -23,117 +23,76 @@ from num2words2 import num2words
 
 
 class Num2WordsUZCYRTest(TestCase):
-
     def test_cardinal(self):
         # Upstream impl always prefixes hundreds with "бир";
         # bare "юз" for 100 differs from upstream PR behavior.
-        self.assertEqual(num2words(100, lang='uz_cyr'), "бир юз")
-        self.assertEqual(num2words(101, lang='uz_cyr'), "бир юз бир")
-        self.assertEqual(num2words(110, lang='uz_cyr'), "бир юз ўн")
-        self.assertEqual(num2words(115, lang='uz_cyr'), "бир юз ўн беш")
-        self.assertEqual(num2words(123, lang='uz_cyr'), "бир юз йигирма уч")
-        self.assertEqual(num2words(1000, lang='uz_cyr'), "бир минг")
-        self.assertEqual(num2words(1001, lang='uz_cyr'), "бир минг бир")
-        self.assertEqual(num2words(2012, lang='uz_cyr'), "икки минг ўн икки")
+        self.assertEqual(num2words(100, lang="uz_cyr"), "бир юз")
+        self.assertEqual(num2words(101, lang="uz_cyr"), "бир юз бир")
+        self.assertEqual(num2words(110, lang="uz_cyr"), "бир юз ўн")
+        self.assertEqual(num2words(115, lang="uz_cyr"), "бир юз ўн беш")
+        self.assertEqual(num2words(123, lang="uz_cyr"), "бир юз йигирма уч")
+        self.assertEqual(num2words(1000, lang="uz_cyr"), "бир минг")
+        self.assertEqual(num2words(1001, lang="uz_cyr"), "бир минг бир")
+        self.assertEqual(num2words(2012, lang="uz_cyr"), "икки минг ўн икки")
         self.assertEqual(
-            num2words(12519.85, lang='uz_cyr'),
-            "ўн икки минг беш юз ўн тўққиз вергул саксон беш")
+            num2words(12519.85, lang="uz_cyr"),
+            "ўн икки минг беш юз ўн тўққиз вергул саксон беш",
+        )
 
-        self.assertEqual(num2words(5, lang='uz_cyr'), "беш")
-        self.assertEqual(num2words(15, lang='uz_cyr'), "ўн беш")
-        self.assertEqual(num2words(154, lang='uz_cyr'), "бир юз эллик тўрт")
+        self.assertEqual(num2words(5, lang="uz_cyr"), "беш")
+        self.assertEqual(num2words(15, lang="uz_cyr"), "ўн беш")
+        self.assertEqual(num2words(154, lang="uz_cyr"), "бир юз эллик тўрт")
+        self.assertEqual(num2words(1135, lang="uz_cyr"), "бир минг бир юз ўттиз беш")
         self.assertEqual(
-            num2words(1135, lang='uz_cyr'), "бир минг бир юз ўттиз беш"
+            num2words(418531, lang="uz_cyr"), "тўрт юз ўн саккиз минг беш юз ўттиз бир"
         )
         self.assertEqual(
-            num2words(418531, lang='uz_cyr'),
-            "тўрт юз ўн саккиз минг беш юз ўттиз бир"
+            num2words(1000139, lang="uz_cyr"), "бир миллион бир юз ўттиз тўққиз"
         )
-        self.assertEqual(
-            num2words(1000139, lang='uz_cyr'), "бир миллион бир юз ўттиз тўққиз"
-        )
-        self.assertEqual(num2words(-1, lang='uz_cyr'), "минус бир")
-        self.assertEqual(num2words(-15, lang='uz_cyr'), "минус ўн беш")
-        self.assertEqual(num2words(-100, lang='uz_cyr'), "минус бир юз")
+        self.assertEqual(num2words(-1, lang="uz_cyr"), "минус бир")
+        self.assertEqual(num2words(-15, lang="uz_cyr"), "минус ўн беш")
+        self.assertEqual(num2words(-100, lang="uz_cyr"), "минус бир юз")
 
     def test_floating_point(self):
-        self.assertEqual(num2words(5.2, lang='uz_cyr'), "беш вергул икки")
+        self.assertEqual(num2words(5.2, lang="uz_cyr"), "беш вергул икки")
         self.assertEqual(
-            num2words(561.42, lang='uz_cyr'),
-            "беш юз олтмиш бир вергул қирқ икки"
+            num2words(561.42, lang="uz_cyr"), "беш юз олтмиш бир вергул қирқ икки"
         )
 
     def test_to_ordinal(self):
-        self.assertEqual(
-            num2words(1, lang='uz_cyr', to='ordinal'),
-            'биринчи'
-        )
-        self.assertEqual(
-            num2words(5, lang='uz_cyr', to='ordinal'),
-            'бешинчи'
-        )
-        self.assertEqual(
-            num2words(10, lang='uz_cyr', to='ordinal'),
-            'ўнинчи'
-        )
+        self.assertEqual(num2words(1, lang="uz_cyr", to="ordinal"), "биринчи")
+        self.assertEqual(num2words(5, lang="uz_cyr", to="ordinal"), "бешинчи")
+        self.assertEqual(num2words(10, lang="uz_cyr", to="ordinal"), "ўнинчи")
 
+        self.assertEqual(num2words(13, lang="uz_cyr", to="ordinal"), "ўн учинчи")
+        self.assertEqual(num2words(20, lang="uz_cyr", to="ordinal"), "йигирманчи")
+        self.assertEqual(num2words(23, lang="uz_cyr", to="ordinal"), "йигирма учинчи")
+        self.assertEqual(num2words(40, lang="uz_cyr", to="ordinal"), "қирқинчи")
+        self.assertEqual(num2words(70, lang="uz_cyr", to="ordinal"), "етмишинчи")
+        self.assertEqual(num2words(100, lang="uz_cyr", to="ordinal"), "юзинчи")
         self.assertEqual(
-            num2words(13, lang='uz_cyr', to='ordinal'),
-            'ўн учинчи'
+            num2words(136, lang="uz_cyr", to="ordinal"), "бир юз ўттиз олтинчи"
         )
-        self.assertEqual(
-            num2words(20, lang='uz_cyr', to='ordinal'),
-            'йигирманчи'
-        )
-        self.assertEqual(
-            num2words(23, lang='uz_cyr', to='ordinal'),
-            'йигирма учинчи'
-        )
-        self.assertEqual(
-            num2words(40, lang='uz_cyr', to='ordinal'),
-            'қирқинчи'
-        )
-        self.assertEqual(
-            num2words(70, lang='uz_cyr', to='ordinal'),
-            'етмишинчи'
-        )
-        self.assertEqual(
-            num2words(100, lang='uz_cyr', to='ordinal'),
-            'юзинчи'
-        )
-        self.assertEqual(
-            num2words(136, lang='uz_cyr', to='ordinal'),
-            'бир юз ўттиз олтинчи'
-        )
-        self.assertEqual(
-            num2words(500, lang='uz_cyr', to='ordinal'),
-            'беш юзинчи'
-        )
-        self.assertEqual(
-            num2words(1000, lang='uz_cyr', to='ordinal'),
-            'мингинчи'
-        )
-        self.assertEqual(
-            num2words(1001, lang='uz_cyr', to='ordinal'),
-            'минг биринчи'
-        )
+        self.assertEqual(num2words(500, lang="uz_cyr", to="ordinal"), "беш юзинчи")
+        self.assertEqual(num2words(1000, lang="uz_cyr", to="ordinal"), "мингинчи")
+        self.assertEqual(num2words(1001, lang="uz_cyr", to="ordinal"), "минг биринчи")
 
     def test_to_currency(self):
         self.assertEqual(
-            num2words(1.0, lang='uz_cyr', to='currency', currency='EUR'),
-            'бир евро, нол цент'
+            num2words(1.0, lang="uz_cyr", to="currency", currency="EUR"),
+            "бир евро, нол цент",
         )
         self.assertEqual(
-            num2words(1.0, lang='uz_cyr', to='currency', currency='UZS'),
-            'бир сўм, нол тийин'
+            num2words(1.0, lang="uz_cyr", to="currency", currency="UZS"),
+            "бир сўм, нол тийин",
         )
         self.assertEqual(
-            num2words(1234.56, lang='uz_cyr', to='currency', currency='EUR'),
-            'бир минг икки юз ўттиз тўрт евро, эллик олти цент'
+            num2words(1234.56, lang="uz_cyr", to="currency", currency="EUR"),
+            "бир минг икки юз ўттиз тўрт евро, эллик олти цент",
         )
         self.assertEqual(
-            num2words(1234.56, lang='uz_cyr', to='currency', currency='UZS'),
-            'бир минг икки юз ўттиз тўрт сўм, эллик олти тийин'
+            num2words(1234.56, lang="uz_cyr", to="currency", currency="UZS"),
+            "бир минг икки юз ўттиз тўрт сўм, эллик олти тийин",
         )
         # The following assertions pass an int-with-cents value (e.g. 10111
         # representing 101.11). Upstream's base.parse_currency_parts treats
@@ -166,15 +125,38 @@ class Num2WordsUZCYRTest(TestCase):
         #     'минус ўн икки минг беш юз ўн тўққиз евро, 85 цент'
         # )
         self.assertEqual(
-            num2words('38.4', lang='uz_cyr', to='currency', separator=',',
-                      cents=False, currency='EUR'),
-            "ўттиз саккиз евро, 40 цент"
+            num2words(
+                "38.4",
+                lang="uz_cyr",
+                to="currency",
+                separator=",",
+                cents=False,
+                currency="EUR",
+            ),
+            "ўттиз саккиз евро, 40 цент",
         )
         self.assertEqual(
-            num2words('1230.56', lang='uz_cyr', to='currency', currency='USD'),
-            'бир минг икки юз ўттиз доллар, эллик олти цент'
+            num2words("1230.56", lang="uz_cyr", to="currency", currency="USD"),
+            "бир минг икки юз ўттиз доллар, эллик олти цент",
         )
         self.assertEqual(
-            num2words('1031.56', lang='uz_cyr', to='currency', currency='USD'),
-            'бир минг ўттиз бир доллар, эллик олти цент'
+            num2words("1031.56", lang="uz_cyr", to="currency", currency="USD"),
+            "бир минг ўттиз бир доллар, эллик олти цент",
         )
+
+    def test_minus_between_minus_one_and_zero(self):
+        # gladiaio/num2words2#209: int("-0") dropped the sign.
+        from decimal import Decimal
+
+        for v in (-0.25, Decimal("-0.25"), "-0.25"):
+            self.assertEqual(
+                num2words(v, lang="uz_Cyrl"), "минус нол вергул йигирма беш"
+            )
+        self.assertEqual(
+            num2words("-0.25", lang="uz_cyr"), "минус нол вергул йигирма беш"
+        )
+        self.assertEqual(
+            num2words(-1.25, lang="uz_Cyrl"), "минус бир вергул йигирма беш"
+        )
+        # Negative zero is still zero.
+        self.assertEqual(num2words(-0.0, lang="uz_Cyrl"), "нол вергул нол")

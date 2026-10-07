@@ -132,11 +132,13 @@
 //!    Both verified against the live interpreter. Reproduced in
 //!    [`LangIt::to_currency`] by dropping `adjective` on the `Int` arm only.
 //!
-//! 7. **`CURRENCIES_UNA = "GBP"` is dead data.** `lang_IT.py` defines it,
+//! 7. ~~**`CURRENCIES_UNA = "GBP"` is dead data.**~~ `lang_IT.py` defines it,
 //!    plainly intending "una sterlina" for the feminine noun, but nothing ever
-//!    reads it. So Italian emits the ungrammatical masculine article:
-//!    `to_currency(1, "GBP")` == "**uno** sterlina", and `1.0` gives "uno
-//!    sterlina e zero penny". The corpus enshrines both. Likewise
+//!    read it, and 1 stayed the standalone "uno" before every noun ("uno
+//!    euro", "uno sterlina"). Fixed (gladiaio/num2words2#253): 1 before a
+//!    currency noun is "un", "una" before a feminine one, and "uno" only
+//!    before s+consonant, z, x, y, gn, ps ("uno yen"). Compounds keep their
+//!    standalone form ("ventuno euro", also standard). Still Python's:
 //!    `to_currency(1000000, "EUR")` == "un milione euro" — no "di".
 //!
 //! Note on the `phonetic_contraction` "diciotto" guard: that one is *not* a
@@ -327,6 +329,31 @@ fn float_repr_precision(f: f64) -> u32 {
     }
 }
 
+
+/// Feminine currency nouns in the table: they take "una".
+const FEMININE_NOUNS: [&str; 2] = ["sterlina", "rupia"];
+
+/// The cardinal as it stands before a currency noun (#253). Only a bare 1
+/// changes: "un" before a masculine noun, "uno" where the indefinite article
+/// is "uno" (s+consonant, z, x, y, gn, ps: "uno yen"), "una" before a
+/// feminine noun. "ventuno euro" keeps its standalone form, which is standard.
+fn it_attributive(cardinal: String, noun: Option<&str>) -> String {
+    if cardinal != "uno" {
+        return cardinal;
+    }
+    let Some(noun) = noun else { return cardinal };
+    if FEMININE_NOUNS.contains(&noun) {
+        return "una".to_string();
+    }
+    let mut it = noun.chars();
+    let (a, b) = (it.next(), it.next());
+    let impure_s = a == Some('s') && b.is_some_and(|c| !"aeiouàèéìòù".contains(c));
+    let uno = impure_s
+        || matches!(a, Some('z' | 'x' | 'y'))
+        || noun.starts_with("gn")
+        || noun.starts_with("ps");
+    if uno { cardinal } else { "un".to_string() }
+}
 /// `Num2Word_IT.CURRENCY_FORMS`, transcribed from the class body.
 ///
 /// Unlike the 16 classes that read `Num2Word_EUR`'s mutated dict, IT declares
@@ -564,7 +591,24 @@ impl LangIt {
         } else if is_outside_teens && tens % 10 == 6 {
             Ok(self.cardinal(number)? + "esimo")
         } else {
-            let mut string = drop_last_chars(&self.cardinal(number)?, 1);
+            let mut cardinal = self.cardinal(number)?;
+            // "un milione" -> "milionesimo", "un miliardo" -> "miliardesimo":
+            // the article is not part of the ordinal (#252).
+            if let Some(rest) = cardinal.strip_prefix("un ") {
+                if !rest.contains(' ') {
+                    cardinal = rest.to_string();
+                }
+            }
+            // "due milioni" -> "duemilionesimo": a round multiple of a scale
+            // word is one word, like "duemillesimo" (#259).
+            if let Some((mult, scale)) = cardinal.split_once(' ') {
+                if !scale.contains(' ') && (scale.ends_with("ioni") || scale.ends_with("iardi")) {
+                    // The compound drops the accent: "ventitremilionesimo".
+                    let mult = mult.strip_suffix("tré").map_or(mult.to_string(), |m| format!("{}tre", m));
+                    cardinal = format!("{}{}", mult, scale);
+                }
+            }
+            let mut string = drop_last_chars(&cardinal, 1);
             // "duemila" -> "duemil" -> "duemill" -> "duemillesimo".
             if last_chars(&string, 3) == "mil" {
                 string.push('l');
@@ -1030,6 +1074,18 @@ impl Lang for LangIt {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// The whole-unit numeral before the unit noun (#253): "un euro".
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let noun = self.currency_forms.get(currency).and_then(|f| f.unit.first());
+        Ok(it_attributive(self.cardinal(number)?, noun.map(String::as_str)))
+    }
+
+    /// The subunit numeral before the subunit noun (#253): "un centesimo".
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let noun = self.currency_forms.get(currency).and_then(|f| f.subunit.first());
+        Ok(it_attributive(self.cardinal(number)?, noun.map(String::as_str)))
+    }
+
     /// `Num2Word_IT.to_currency`.
     ///
     /// Python special-cases `isinstance(val, int)` with a hand-rolled branch
@@ -1041,9 +1097,9 @@ impl Lang for LangIt {
     ///   2. It hardcodes the literal `"meno"` instead of reading
     ///      `self.negword.strip()`. Same string either way, so unobservable —
     ///      transcribed literally regardless.
-    ///   3. It calls `self.to_cardinal` directly rather than
-    ///      `self._money_verbose`. Base's `_money_verbose` *is*
-    ///      `self.to_cardinal`, so again unobservable.
+    ///   3. It called `self.to_cardinal` directly; both arms now read the
+    ///      numeral from `money_verbose`, which gives "un euro" / "una
+    ///      sterlina" rather than Python's "uno euro" (#253).
     ///
     /// The `except (KeyError, AttributeError)` fallback re-enters Base's
     /// `to_currency`, which repeats the same failed lookup and turns it into
@@ -1078,7 +1134,8 @@ impl Lang for LangIt {
             // negword. `adjective` is not consulted at all here (bug 6).
             let minus = v.is_negative();
             let abs_val = v.abs();
-            let money_str = self.cardinal(&abs_val)?;
+            // "un euro" / "una sterlina" (#253).
+            let money_str = self.money_verbose(&abs_val, currency)?;
 
             // Python: cr1[0] if abs_val == 1 else (cr1[1] if len(cr1) > 1 else
             // cr1[0]). Both arms index a tuple, so an empty one would raise

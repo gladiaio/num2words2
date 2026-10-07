@@ -5,10 +5,14 @@
 //! `set_high_numwords`/`merge`, so Python's `Num2Word_Base.__init__` never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives `_int_to_word`, a recursive Indian-system decomposition
-//! (thousand / lakh / crore / arab / kharab). `cards`/`maxval`/`merge`
-//! therefore stay at their trait defaults, and **there is no overflow check**:
-//! the `else` arm of `_int_to_word` recurses on `number // 10**11` forever, so
-//! arbitrarily large values stack `ખર્વ` suffixes instead of raising.
+//! (thousand / lakh / crore / arab / kharab). `cards`/`merge` therefore stay
+//! at their trait defaults, and Python has **no overflow check**: the `else`
+//! arm of `_int_to_word` recurses on `number // 10**11` forever, so
+//! arbitrarily large values stack `ખર્વ` suffixes instead of raising. On a
+//! large enough integer the port's recursion overflowed the native stack, so
+//! it adds a ceiling (gladiaio/num2words2#203): `maxval` is 10^22, where the
+//! multiplier would itself need `ખર્વ`, and every mode raises `OverflowError`
+//! from there.
 //!
 //! Inherited from `Num2Word_Base` (GU overrides all four in-scope modes, so
 //! nothing is left to the trait defaults):
@@ -25,17 +29,18 @@
 //! This is a port, not a rewrite. The following all look wrong but are exactly
 //! what Python emits, verified against `bench/corpus.jsonl`:
 //!
-//! 1. **No compound tens.** `_int_to_word` glues the tens word and the ones
-//!    word with a plain space instead of using the (real, irregular) Gujarati
-//!    compounds: `21` == "વીસ એક" ("twenty one"), not "એકવીસ"; `42` ==
-//!    "ચાલીસ બે"; `99` == "નેવું નવ". Only 10–19 use real single words.
-//!    Corpus-confirmed for 21/42/99/999.
-//! 2. **`to_ordinal_num` mixes numeral systems.** Cases 1/2/3 return Gujarati
-//!    digits ("૧લો", "૨જો", "૩જો") but the fallback is `str(number) + "મો"`,
-//!    i.e. **ASCII** digits — `to_ordinal_num(5)` == "5મો", not "૫મો", and
-//!    `to_ordinal_num(0)` == "0મો". Corpus-confirmed.
-//! 3. **`to_ordinal_num` has no case for 3's neighbours.** `3` maps to "૩જો",
-//!    the same suffix Python gives `2` ("૨જો"); there is no "૩ત્રીજો"-style
+//! 1. **No compound tens (fixed, gladiaio/num2words2#247).** Python's
+//!    `_int_to_word` glued the tens word and the ones word with a plain space
+//!    ("વીસ એક" for 21, "નેવું નવ" for 99) instead of the real, irregular
+//!    Gujarati words. The port reads [`BELOW_HUNDRED`]: 21 is "એકવીસ", 42
+//!    "બેતાલીસ", 99 "નવ્વાણું".
+//! 2. **`to_ordinal_num` mixed numeral systems (fixed, #224).** Python gave
+//!    Gujarati digits for 1/2/3 ("૧લો", "૨જો", "૩જો") but `str(number) + "મો"`,
+//!    i.e. ASCII digits, for everything else ("5મો"). The port writes ASCII
+//!    digits throughout, the script the module uses for every other number:
+//!    "1લો", "2જો", "3જો", "4મો".
+//! 3. **`to_ordinal_num` has no case for 3's neighbours.** `3` maps to "3જો",
+//!    the same suffix Python gives `2` ("2જો"); there is no "૩ત્રીજો"-style
 //!    form. Kept verbatim.
 //! 4. **Negative ordinals are not special-cased.** `to_ordinal(-1)` does not
 //!    hit the `number == 1` arm, so it falls through to `cardinal + "મો"` ==
@@ -45,9 +50,7 @@
 //!    1/2/3/4/6 the `cardinal` local is built and discarded. Reproduced (it is
 //!    side-effect free, but keeping it preserves the crash surface if
 //!    `to_cardinal` ever raises).
-//! 6. **`tens[1]` ("દસ") is unreachable.** The `< 100` arm only runs for
-//!    20..=99, so `number // 10` is 2..=9. The slot is kept to preserve
-//!    indexing.
+//! 6. (Python's unreachable `tens[1]` went with the `tens` table, #247.)
 //! 7. **`ones[0]` is the empty string** and `_int_to_word`'s `number < 0` arm
 //!    is dead code on every in-scope path (`to_cardinal` strips the sign
 //!    before recursing, so `_int_to_word` only ever sees non-negatives; only
@@ -57,7 +60,8 @@
 //! # Scale cascade
 //!
 //! The thresholds are the Indian system, and the recursion on the top arm is
-//! what lets the module swallow unbounded input:
+//! what lets the Python module swallow unbounded input (the port stops at
+//! 10^22):
 //!
 //! | range                   | divisor  | word   |
 //! |-------------------------|----------|--------|
@@ -72,8 +76,8 @@
 //!
 //! # Errors
 //!
-//! None of the four in-scope modes can raise for integer input: there is no
-//! card table to overflow, no dict lookup to miss, and no list index that can
+//! Below the 10^22 ceiling none of the four in-scope modes can raise for
+//! integer input: there is no card table to overflow, no dict lookup to miss, and no list index that can
 //! go out of range (every index is arithmetically bounded to 0..=9). Every
 //! `gu` row in the corpus for cardinal/ordinal/ordinal_num/year is `ok: true`.
 //!
@@ -137,13 +141,14 @@
 //!    yields no cents segment at all ("શૂન્ય રૂપિયા"), where base would have
 //!    routed 0.4 fractional cents through the float path.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `_int_to_word`'s early return for 0.
 const ZERO_WORD: &str = "શૂન્ય";
@@ -157,39 +162,26 @@ const NEGWORD: &str = "ઋણ ";
 /// in-scope modes; kept so the trait's `pointword()` reports the truth.
 const POINTWORD: &str = "દશાંશ";
 
-/// `ones`. Index 0 is the empty string in Python; `_int_to_word` guards it
-/// with the `number == 0` early return, so it is never emitted.
-const ONES: [&str; 10] = [
-    "", "એક", "બે", "ત્રણ", "ચાર", "પાંચ", "છ", "સાત", "આઠ", "નવ",
-];
-
-/// `tens`. Index 0 is empty and index 1 ("દસ") is unreachable — the `< 100`
-/// arm only runs for 20..=99. Both kept to preserve `number // 10` indexing.
-const TENS: [&str; 10] = [
-    "",
-    "દસ",
-    "વીસ",
-    "ત્રીસ",
-    "ચાલીસ",
-    "પચાસ",
-    "સાઠ",
-    "સિત્તેર",
-    "એંસી",
-    "નેવું",
-];
-
-/// `teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "દસ",
-    "અગિયાર",
-    "બાર",
-    "તેર",
-    "ચૌદ",
-    "પંદર",
-    "સોળ",
-    "સત્તર",
-    "અઢાર",
-    "ઓગણીસ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and joined a ten and a unit with a space
+/// ("વીસ એક" for 21), but Gujarati has its own word for every number below a
+/// hundred. Index 0 is never read (the `number == 0` early return). 21..=99
+/// from learningujarati.com, saralgujarati.in and atozworksheet.com, which
+/// agree entry for entry; 0..=20 and the round tens also match Wikibooks
+/// and languagesandnumbers.com. The module's ચાલીસ (40) is kept, so the 40s
+/// use -તાલીસ (Wiktionary also has ચાળીસ / -તાળીસ).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "એક", "બે", "ત્રણ", "ચાર", "પાંચ", "છ", "સાત", "આઠ", "નવ", // 0..9
+    "દસ", "અગિયાર", "બાર", "તેર", "ચૌદ", "પંદર", "સોળ", "સત્તર", "અઢાર", "ઓગણીસ", // 10..19
+    "વીસ", "એકવીસ", "બાવીસ", "તેવીસ", "ચોવીસ", "પચ્ચીસ", "છવીસ", "સત્તાવીસ", "અઠ્ઠાવીસ", "ઓગણત્રીસ", // 20..29
+    "ત્રીસ", "એકત્રીસ", "બત્રીસ", "તેત્રીસ", "ચોત્રીસ", "પાંત્રીસ", "છત્રીસ", "સાડત્રીસ", "આડત્રીસ", "ઓગણચાલીસ", // 30..39
+    "ચાલીસ", "એકતાલીસ", "બેતાલીસ", "ત્રેતાલીસ", "ચુંમાલીસ", "પિસ્તાલીસ", "છેતાલીસ", "સુડતાલીસ", "અડતાલીસ", "ઓગણપચાસ", // 40..49
+    "પચાસ", "એકાવન", "બાવન", "ત્રેપન", "ચોપન", "પંચાવન", "છપ્પન", "સત્તાવન", "અઠ્ઠાવન", "ઓગણસાઠ", // 50..59
+    "સાઠ", "એકસઠ", "બાસઠ", "ત્રેસઠ", "ચોસઠ", "પાંસઠ", "છાસઠ", "સડસઠ", "અડસઠ", "અગણોસિત્તેર", // 60..69
+    "સિત્તેર", "એકોતેર", "બોતેર", "તોતેર", "ચુમોતેર", "પંચોતેર", "છોતેર", "સિત્યોતેર", "ઇઠ્યોતેર", "ઓગણાએંસી", // 70..79
+    "એંસી", "એક્યાસી", "બ્યાસી", "ત્યાસી", "ચોર્યાસી", "પંચાસી", "છ્યાસી", "સિત્યાસી", "ઈઠ્યાસી", "નેવ્યાસી", // 80..89
+    "નેવું", "એકાણું", "બાણું", "ત્રાણું", "ચોરાણું", "પંચાણું", "છન્નું", "સત્તાણું", "અઠ્ઠાણું", "નવ્વાણું", // 90..99
 ];
 
 /// Scale words. Each carries Python's leading space, because `_int_to_word`
@@ -213,9 +205,9 @@ const ORD_6: &str = "છઠ્ઠો";
 const ORD_SUFFIX: &str = "મો";
 
 /// `to_ordinal_num`'s irregular forms — Gujarati digits, unlike the fallback.
-const ORD_NUM_1: &str = "૧લો";
-const ORD_NUM_2: &str = "૨જો";
-const ORD_NUM_3: &str = "૩જો";
+const ORD_NUM_1: &str = "1લો";
+const ORD_NUM_2: &str = "2જો";
+const ORD_NUM_3: &str = "3જો";
 
 /// `to_year`'s era prefixes. Both carry Python's trailing space.
 const YEAR_BC: &str = "ઈસવીસન પૂર્વે ";
@@ -309,29 +301,14 @@ fn int_to_word(number: &BigInt) -> String {
     }
 
     // number is now in 1..=inf, so to_usize() is safe wherever it is bounded.
-    if number < &BigInt::from(10) {
-        return ONES[number.to_usize().expect("bounded by 10")].to_string();
-    }
-
-    if number < &BigInt::from(20) {
-        let idx = (number - 10u8).to_usize().expect("bounded by 10");
-        return TEENS[idx].to_string();
-    }
-
     if number < &BigInt::from(100) {
-        let n = number.to_usize().expect("bounded by 100");
-        let mut result = TENS[n / 10].to_string();
-        if n % 10 != 0 {
-            result.push(' ');
-            result.push_str(ONES[n % 10]);
-        }
-        return result;
+        return BELOW_HUNDRED[number.to_usize().expect("bounded by 100")].to_string();
     }
 
     if number < &BigInt::from(1000) {
         let n = number.to_usize().expect("bounded by 1000");
         // ones[number // 100] + " સો" — the divisor is 1..=9 here, never 0.
-        let mut result = format!("{}{}", ONES[n / 100], HUNDRED);
+        let mut result = format!("{}{}", BELOW_HUNDRED[n / 100], HUNDRED);
         let remainder = n % 100;
         if remainder != 0 {
             result.push(' ');
@@ -632,13 +609,13 @@ fn cardinal_from_str(number: &str) -> Result<String> {
     };
 
     let Some(dot) = n.find('.') else {
-        ret.push_str(&int_to_word(&py_int(n)?));
+        ret.push_str(&checked_int_to_word(&py_int(n)?)?);
         return Ok(ret);
     };
 
     // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
     let (left, right) = (&n[..dot], &n[dot + 1..]);
-    ret.push_str(&int_to_word(&py_int(left)?));
+    ret.push_str(&checked_int_to_word(&py_int(left)?)?);
     ret.push(' ');
     ret.push_str(POINTWORD);
     ret.push(' ');
@@ -651,7 +628,7 @@ fn cardinal_from_str(number: &str) -> Result<String> {
         }
         first = false;
         let mut buf = [0u8; 4];
-        ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+        ret.push_str(&checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
     }
     Ok(ret)
 }
@@ -707,7 +684,29 @@ impl Default for LangGu {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// ખર્વ (10^11), so from 10^22 its multiplier would itself need ખર્વ and the
+/// word would stack ("એક ખર્વ ખર્વ").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(22))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl Lang for LangGu {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -758,7 +757,7 @@ impl Lang for LangGu {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_GU.to_ordinal`.
@@ -789,8 +788,8 @@ impl Lang for LangGu {
 
     /// Port of `Num2Word_GU.to_ordinal_num`.
     ///
-    /// The fallback is `str(number) + "મો"` — **ASCII** digits, unlike the
-    /// Gujarati-digit forms for 1/2/3. `BigInt::to_string()` matches Python's
+    /// The fallback is `str(number) + "મો"` — ASCII digits, like the irregular
+    /// forms for 1/2/3 (#224). `BigInt::to_string()` matches Python's
     /// `str(int)` exactly (no separators, `-` prefix for negatives).
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         if value == &BigInt::from(1) {
@@ -864,7 +863,7 @@ impl Lang for LangGu {
     }
 
     /// `to_ordinal_num(float/Decimal)` — numeric equality again for the three
-    /// Gujarati-digit irregulars, everything else `str(number) + "મો"` with
+    /// irregulars, everything else `str(number) + "મો"` with
     /// the repr verbatim: "4.0મો", "-0.0મો", "1e+16મો", "5.00મો".
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
         for (k, word) in [(1, ORD_NUM_1), (2, ORD_NUM_2), (3, ORD_NUM_3)] {
@@ -1055,7 +1054,7 @@ impl Lang for LangGu {
         // no IndexError arm is reachable.
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left.is_one() { &cr1[0] } else { &cr1[1] }
         );
 
@@ -1063,7 +1062,7 @@ impl Lang for LangGu {
         // zero cents are dropped rather than spelled out (quirk 11/14).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }

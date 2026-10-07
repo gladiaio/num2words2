@@ -25,7 +25,7 @@ class Num2WordsHTTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="ht"), "zero")
+        self.assertEqual(num2words(0, lang="ht"), "zewo")
         self.assertEqual(num2words(1, lang="ht"), "en")
         self.assertEqual(num2words(2, lang="ht"), "de")
         self.assertEqual(num2words(3, lang="ht"), "twa")
@@ -190,56 +190,65 @@ class Num2WordsHTTest(TestCase):
             num2words(999999999, lang="ht"),
             "nèf san katrevendis nèf milyon nèf san katrevendis nèf mil nèf san katrevendis nèf",
         )
-        self.assertEqual(num2words(1000000000, lang="ht"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="ht"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="ht"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="ht"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="ht"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="ht"), "en milya")
+        self.assertEqual(
+            num2words(1234567890, lang="ht"),
+            "en milya de san trant kat milyon senk san swasant sèt mil uit san katrevendis",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="ht"),
+            "nèf milya nèf san katrevendis nèf milyon nèf san katrevendis nèf mil nèf san katrevendis nèf",
+        )
+        self.assertEqual(num2words(10000000000, lang="ht"), "dis milya")
+        self.assertEqual(
+            num2words(99999999999, lang="ht"),
+            "katrevendis nèf milya nèf san katrevendis nèf milyon nèf san katrevendis nèf mil nèf san katrevendis nèf",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="ht"), "minus en")
-        self.assertEqual(num2words(-2, lang="ht"), "minus de")
-        self.assertEqual(num2words(-5, lang="ht"), "minus senk")
-        self.assertEqual(num2words(-10, lang="ht"), "minus dis")
-        self.assertEqual(num2words(-11, lang="ht"), "minus dis en")
-        self.assertEqual(num2words(-20, lang="ht"), "minus ven")
-        self.assertEqual(num2words(-50, lang="ht"), "minus senkant")
-        self.assertEqual(num2words(-99, lang="ht"), "minus katrevendis nèf")
-        self.assertEqual(num2words(-100, lang="ht"), "minus en san")
-        self.assertEqual(num2words(-101, lang="ht"), "minus en san en")
-        self.assertEqual(num2words(-200, lang="ht"), "minus de san")
-        self.assertEqual(num2words(-999, lang="ht"), "minus nèf san katrevendis nèf")
-        self.assertEqual(num2words(-1000, lang="ht"), "minus en mil")
-        self.assertEqual(num2words(-1001, lang="ht"), "minus en mil en")
-        self.assertEqual(num2words(-10000, lang="ht"), "minus dis mil")
-        self.assertEqual(num2words(-100000, lang="ht"), "minus en san mil")
-        self.assertEqual(num2words(-1000000, lang="ht"), "minus en milyon")
+        self.assertEqual(num2words(-1, lang="ht"), "mwens en")
+        self.assertEqual(num2words(-2, lang="ht"), "mwens de")
+        self.assertEqual(num2words(-5, lang="ht"), "mwens senk")
+        self.assertEqual(num2words(-10, lang="ht"), "mwens dis")
+        self.assertEqual(num2words(-11, lang="ht"), "mwens dis en")
+        self.assertEqual(num2words(-20, lang="ht"), "mwens ven")
+        self.assertEqual(num2words(-50, lang="ht"), "mwens senkant")
+        self.assertEqual(num2words(-99, lang="ht"), "mwens katrevendis nèf")
+        self.assertEqual(num2words(-100, lang="ht"), "mwens en san")
+        self.assertEqual(num2words(-101, lang="ht"), "mwens en san en")
+        self.assertEqual(num2words(-200, lang="ht"), "mwens de san")
+        self.assertEqual(num2words(-999, lang="ht"), "mwens nèf san katrevendis nèf")
+        self.assertEqual(num2words(-1000, lang="ht"), "mwens en mil")
+        self.assertEqual(num2words(-1001, lang="ht"), "mwens en mil en")
+        self.assertEqual(num2words(-10000, lang="ht"), "mwens dis mil")
+        self.assertEqual(num2words(-100000, lang="ht"), "mwens en san mil")
+        self.assertEqual(num2words(-1000000, lang="ht"), "mwens en milyon")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="ht"), "zero point en")
-        self.assertEqual(num2words(0.5, lang="ht"), "zero point senk")
-        self.assertEqual(num2words(0.9, lang="ht"), "zero point nèf")
-        self.assertEqual(num2words(1.1, lang="ht"), "en point en")
-        self.assertEqual(num2words(1.5, lang="ht"), "en point senk")
-        self.assertEqual(num2words(2.5, lang="ht"), "de point senk")
-        self.assertEqual(num2words(3.14, lang="ht"), "twa point en kat")
-        self.assertEqual(num2words(10.5, lang="ht"), "dis point senk")
-        self.assertEqual(num2words(11.11, lang="ht"), "dis en point en en")
-        self.assertEqual(num2words(20.2, lang="ht"), "ven point de")
-        self.assertEqual(num2words(99.99, lang="ht"), "katrevendis nèf point nèf nèf")
-        self.assertEqual(num2words(100.01, lang="ht"), "en san point zero en")
-        self.assertEqual(num2words(100.5, lang="ht"), "en san point senk")
-        self.assertEqual(num2words(123.45, lang="ht"), "en san ven twa point kat senk")
-        self.assertEqual(num2words(1000.5, lang="ht"), "en mil point senk")
+        self.assertEqual(num2words(0.1, lang="ht"), "zewo vigil en")
+        self.assertEqual(num2words(0.5, lang="ht"), "zewo vigil senk")
+        self.assertEqual(num2words(0.9, lang="ht"), "zewo vigil nèf")
+        self.assertEqual(num2words(1.1, lang="ht"), "en vigil en")
+        self.assertEqual(num2words(1.5, lang="ht"), "en vigil senk")
+        self.assertEqual(num2words(2.5, lang="ht"), "de vigil senk")
+        self.assertEqual(num2words(3.14, lang="ht"), "twa vigil en kat")
+        self.assertEqual(num2words(10.5, lang="ht"), "dis vigil senk")
+        self.assertEqual(num2words(11.11, lang="ht"), "dis en vigil en en")
+        self.assertEqual(num2words(20.2, lang="ht"), "ven vigil de")
+        self.assertEqual(num2words(99.99, lang="ht"), "katrevendis nèf vigil nèf nèf")
+        self.assertEqual(num2words(100.01, lang="ht"), "en san vigil zewo en")
+        self.assertEqual(num2words(100.5, lang="ht"), "en san vigil senk")
+        self.assertEqual(num2words(123.45, lang="ht"), "en san ven twa vigil kat senk")
+        self.assertEqual(num2words(1000.5, lang="ht"), "en mil vigil senk")
         self.assertEqual(
-            num2words(1234.56, lang="ht"), "en mil de san trant kat point senk sis"
+            num2words(1234.56, lang="ht"), "en mil de san trant kat vigil senk sis"
         )
-        self.assertEqual(num2words(10000.01, lang="ht"), "dis mil point zero en")
-        self.assertEqual(num2words(-0.5, lang="ht"), "minus zero point senk")
-        self.assertEqual(num2words(-1.5, lang="ht"), "minus en point senk")
-        self.assertEqual(num2words(-10.5, lang="ht"), "minus dis point senk")
+        self.assertEqual(num2words(10000.01, lang="ht"), "dis mil vigil zewo en")
+        self.assertEqual(num2words(-0.5, lang="ht"), "mwens zewo vigil senk")
+        self.assertEqual(num2words(-1.5, lang="ht"), "mwens en vigil senk")
+        self.assertEqual(num2words(-10.5, lang="ht"), "mwens dis vigil senk")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -284,15 +293,15 @@ class Num2WordsHTTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="ht", to="currency", currency="HTG"), "zero goud"
+            num2words(0, lang="ht", to="currency", currency="HTG"), "zewo goud"
         )
         self.assertEqual(
             num2words(0.01, lang="ht", to="currency", currency="HTG"),
-            "zero goud en santim",
+            "zewo goud en santim",
         )
         self.assertEqual(
             num2words(0.5, lang="ht", to="currency", currency="HTG"),
-            "zero goud senkant santim",
+            "zewo goud senkant santim",
         )
         self.assertEqual(
             num2words(1, lang="ht", to="currency", currency="HTG"), "en goud"
@@ -302,40 +311,40 @@ class Num2WordsHTTest(TestCase):
             "en goud senkant santim",
         )
         self.assertEqual(
-            num2words(0, lang="ht", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="ht", to="currency", currency="USD"), "zewo dola"
         )
         self.assertEqual(
             num2words(0.01, lang="ht", to="currency", currency="USD"),
-            "zero dollars en cent",
+            "zewo dola en santim",
         )
         self.assertEqual(
             num2words(0.5, lang="ht", to="currency", currency="USD"),
-            "zero dollars senkant cents",
+            "zewo dola senkant santim",
         )
         self.assertEqual(
-            num2words(1, lang="ht", to="currency", currency="USD"), "en dollar"
+            num2words(1, lang="ht", to="currency", currency="USD"), "en dola"
         )
         self.assertEqual(
             num2words(1.5, lang="ht", to="currency", currency="USD"),
-            "en dollar senkant cents",
+            "en dola senkant santim",
         )
         self.assertEqual(
-            num2words(0, lang="ht", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="ht", to="currency", currency="EUR"), "zewo ewo"
         )
         self.assertEqual(
             num2words(0.01, lang="ht", to="currency", currency="EUR"),
-            "zero euros en cent",
+            "zewo ewo en santim",
         )
         self.assertEqual(
             num2words(0.5, lang="ht", to="currency", currency="EUR"),
-            "zero euros senkant cents",
+            "zewo ewo senkant santim",
         )
         self.assertEqual(
-            num2words(1, lang="ht", to="currency", currency="EUR"), "en euro"
+            num2words(1, lang="ht", to="currency", currency="EUR"), "en ewo"
         )
         self.assertEqual(
             num2words(1.5, lang="ht", to="currency", currency="EUR"),
-            "en euro senkant cents",
+            "en ewo senkant santim",
         )
 
     def test_year(self):
@@ -365,7 +374,7 @@ class Num2WordsHTTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="ht"), "zero")
+        self.assertEqual(num2words("0", lang="ht"), "zewo")
         self.assertEqual(num2words("1", lang="ht"), "en")
         self.assertEqual(num2words("10", lang="ht"), "dis")
         self.assertEqual(num2words("100", lang="ht"), "en san")
@@ -377,9 +386,8 @@ class Num2WordsHTTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="ht"), "zero")
+        self.assertEqual(num2words(0, lang="ht"), "zewo")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ht"), num2words("100", lang="ht"))
         self.assertEqual(num2words(1000, lang="ht"), num2words("1000", lang="ht"))
-

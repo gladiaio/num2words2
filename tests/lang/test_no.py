@@ -66,7 +66,8 @@ class Num2WordsNOTest(TestCase):
             num2words(1435, to="ordinal", lang="no"),
             "ett tusen fire hundre og trettifemte",
         )
-        self.assertEqual(num2words(1000000, to="ordinal", lang="no"), "en millionte")
+        # #252: "en millionte" reads as the fraction 1/10**6.
+        self.assertEqual(num2words(1000000, to="ordinal", lang="no"), "millionte")
 
     def test_ordinal_num(self):
         self.assertEqual(num2words(1, to="ordinal_num", lang="no"), "1.")

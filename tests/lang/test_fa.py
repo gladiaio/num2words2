@@ -90,3 +90,17 @@ class Num2WordsFATest(TestCase):
         self.assertEqual(num2words(-0.4, lang="fa"), "منفی چهار دهم")
         self.assertEqual(num2words(-0.5, lang="fa"), "منفی نیم")
         self.assertEqual(num2words(-1.4, lang="fa"), "منفی یک و چهار دهم")
+
+    def test_overflow_past_the_largest_scale_word(self):
+        # gladiaio/num2words2#200: farsiBig ends at تریلیارد (10**15), so
+        # 10**18 and up used to return '' (and ' تومان' for currency).
+        from num2words2 import maxval
+
+        self.assertEqual(maxval("fa"), 10**18)
+        self.assertTrue(
+            num2words(10**18 - 1, lang="fa").startswith("نهصد و نود و نه تریلیارد")
+        )
+        for to in ("cardinal", "ordinal", "year", "currency"):
+            for v in (10**18, 10**21, -(10**21), 10**18 + 1):
+                with self.assertRaises(OverflowError):
+                    num2words(v, lang="fa", to=to)

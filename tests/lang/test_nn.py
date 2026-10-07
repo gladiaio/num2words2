@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -36,15 +38,15 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(8, lang="nn"), "åtte")
         self.assertEqual(num2words(9, lang="nn"), "ni")
         self.assertEqual(num2words(10, lang="nn"), "ti")
-        self.assertEqual(num2words(11, lang="nn"), "ti ein")
-        self.assertEqual(num2words(12, lang="nn"), "ti to")
-        self.assertEqual(num2words(13, lang="nn"), "ti tre")
-        self.assertEqual(num2words(14, lang="nn"), "ti fire")
-        self.assertEqual(num2words(15, lang="nn"), "ti fem")
-        self.assertEqual(num2words(16, lang="nn"), "ti seks")
-        self.assertEqual(num2words(17, lang="nn"), "ti sju")
-        self.assertEqual(num2words(18, lang="nn"), "ti åtte")
-        self.assertEqual(num2words(19, lang="nn"), "ti ni")
+        self.assertEqual(num2words(11, lang="nn"), "elleve")
+        self.assertEqual(num2words(12, lang="nn"), "tolv")
+        self.assertEqual(num2words(13, lang="nn"), "tretten")
+        self.assertEqual(num2words(14, lang="nn"), "fjorten")
+        self.assertEqual(num2words(15, lang="nn"), "femten")
+        self.assertEqual(num2words(16, lang="nn"), "seksten")
+        self.assertEqual(num2words(17, lang="nn"), "sytten")
+        self.assertEqual(num2words(18, lang="nn"), "atten")
+        self.assertEqual(num2words(19, lang="nn"), "nitten")
         self.assertEqual(num2words(20, lang="nn"), "tjue")
         self.assertEqual(num2words(21, lang="nn"), "tjue ein")
         self.assertEqual(num2words(22, lang="nn"), "tjue to")
@@ -77,7 +79,7 @@ class Num2WordsNNTest(TestCase):
         """Test cardinal numbers from 100 to 999."""
         self.assertEqual(num2words(101, lang="nn"), "ein hundre ein")
         self.assertEqual(num2words(110, lang="nn"), "ein hundre ti")
-        self.assertEqual(num2words(111, lang="nn"), "ein hundre ti ein")
+        self.assertEqual(num2words(111, lang="nn"), "ein hundre elleve")
         self.assertEqual(num2words(120, lang="nn"), "ein hundre tjue")
         self.assertEqual(num2words(125, lang="nn"), "ein hundre tjue fem")
         self.assertEqual(num2words(150, lang="nn"), "ein hundre femti")
@@ -110,7 +112,7 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(1001, lang="nn"), "ein tusen ein")
         self.assertEqual(num2words(1010, lang="nn"), "ein tusen ti")
         self.assertEqual(num2words(1100, lang="nn"), "ein tusen ein hundre")
-        self.assertEqual(num2words(1111, lang="nn"), "ein tusen ein hundre ti ein")
+        self.assertEqual(num2words(1111, lang="nn"), "ein tusen ein hundre elleve")
         self.assertEqual(num2words(1234, lang="nn"), "ein tusen to hundre tretti fire")
         self.assertEqual(num2words(1500, lang="nn"), "ein tusen fem hundre")
         self.assertEqual(num2words(1999, lang="nn"), "ein tusen ni hundre nitti ni")
@@ -138,10 +140,8 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(9999, lang="nn"), "ni tusen ni hundre nitti ni")
         self.assertEqual(num2words(10000, lang="nn"), "ti tusen")
         self.assertEqual(num2words(10001, lang="nn"), "ti tusen ein")
-        self.assertEqual(num2words(11111, lang="nn"), "ti ein tusen ein hundre ti ein")
-        self.assertEqual(
-            num2words(12345, lang="nn"), "ti to tusen tre hundre førti fem"
-        )
+        self.assertEqual(num2words(11111, lang="nn"), "elleve tusen ein hundre elleve")
+        self.assertEqual(num2words(12345, lang="nn"), "tolv tusen tre hundre førti fem")
         self.assertEqual(num2words(20000, lang="nn"), "tjue tusen")
         self.assertEqual(num2words(50000, lang="nn"), "femti tusen")
         self.assertEqual(
@@ -168,7 +168,7 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(1000001, lang="nn"), "ein million ein")
         self.assertEqual(
             num2words(1111111, lang="nn"),
-            "ein million ein hundre ti ein tusen ein hundre ti ein",
+            "ein million ein hundre elleve tusen ein hundre elleve",
         )
         self.assertEqual(
             num2words(1234567, lang="nn"),
@@ -183,7 +183,7 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(10000000, lang="nn"), "ti million")
         self.assertEqual(
             num2words(12345678, lang="nn"),
-            "ti to million tre hundre førti fem tusen seks hundre sytti åtte",
+            "tolv million tre hundre førti fem tusen seks hundre sytti åtte",
         )
         self.assertEqual(
             num2words(99999999, lang="nn"),
@@ -198,11 +198,27 @@ class Num2WordsNNTest(TestCase):
             num2words(999999999, lang="nn"),
             "ni hundre nitti ni million ni hundre nitti ni tusen ni hundre nitti ni",
         )
-        self.assertEqual(num2words(1000000000, lang="nn"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="nn"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="nn"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="nn"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="nn"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="nn"),
+            "ein milliard",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="nn"),
+            "ein milliard to hundre tretti fire million fem hundre seksti sju tusen åtte hundre nitti",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="nn"),
+            "ni milliard ni hundre nitti ni million ni hundre nitti ni tusen ni hundre nitti ni",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="nn"),
+            "ti milliard",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="nn"),
+            "nitti ni milliard ni hundre nitti ni million ni hundre nitti ni tusen ni hundre nitti ni",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -210,7 +226,7 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(-2, lang="nn"), "minus to")
         self.assertEqual(num2words(-5, lang="nn"), "minus fem")
         self.assertEqual(num2words(-10, lang="nn"), "minus ti")
-        self.assertEqual(num2words(-11, lang="nn"), "minus ti ein")
+        self.assertEqual(num2words(-11, lang="nn"), "minus elleve")
         self.assertEqual(num2words(-20, lang="nn"), "minus tjue")
         self.assertEqual(num2words(-50, lang="nn"), "minus femti")
         self.assertEqual(num2words(-99, lang="nn"), "minus nitti ni")
@@ -234,7 +250,7 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(2.5, lang="nn"), "to komma fem")
         self.assertEqual(num2words(3.14, lang="nn"), "tre komma ein fire")
         self.assertEqual(num2words(10.5, lang="nn"), "ti komma fem")
-        self.assertEqual(num2words(11.11, lang="nn"), "ti ein komma ein ein")
+        self.assertEqual(num2words(11.11, lang="nn"), "elleve komma ein ein")
         self.assertEqual(num2words(20.2, lang="nn"), "tjue komma to")
         self.assertEqual(num2words(99.99, lang="nn"), "nitti ni komma ni ni")
         self.assertEqual(num2words(100.01, lang="nn"), "ein hundre komma null ein")
@@ -254,43 +270,43 @@ class Num2WordsNNTest(TestCase):
 
     def test_ordinal(self):
         """Test ordinal numbers."""
-        self.assertEqual(num2words(1, lang="nn", ordinal=True), "ein-de")
-        self.assertEqual(num2words(2, lang="nn", ordinal=True), "to-de")
-        self.assertEqual(num2words(3, lang="nn", ordinal=True), "tre-de")
-        self.assertEqual(num2words(4, lang="nn", ordinal=True), "fire-de")
-        self.assertEqual(num2words(5, lang="nn", ordinal=True), "fem-de")
-        self.assertEqual(num2words(6, lang="nn", ordinal=True), "seks-de")
-        self.assertEqual(num2words(7, lang="nn", ordinal=True), "sju-de")
-        self.assertEqual(num2words(8, lang="nn", ordinal=True), "åtte-de")
-        self.assertEqual(num2words(9, lang="nn", ordinal=True), "ni-de")
-        self.assertEqual(num2words(10, lang="nn", ordinal=True), "ti-de")
-        self.assertEqual(num2words(11, lang="nn", ordinal=True), "ti ein-de")
-        self.assertEqual(num2words(12, lang="nn", ordinal=True), "ti to-de")
-        self.assertEqual(num2words(13, lang="nn", ordinal=True), "ti tre-de")
-        self.assertEqual(num2words(14, lang="nn", ordinal=True), "ti fire-de")
-        self.assertEqual(num2words(15, lang="nn", ordinal=True), "ti fem-de")
-        self.assertEqual(num2words(16, lang="nn", ordinal=True), "ti seks-de")
-        self.assertEqual(num2words(17, lang="nn", ordinal=True), "ti sju-de")
-        self.assertEqual(num2words(18, lang="nn", ordinal=True), "ti åtte-de")
-        self.assertEqual(num2words(19, lang="nn", ordinal=True), "ti ni-de")
-        self.assertEqual(num2words(20, lang="nn", ordinal=True), "tjue-de")
-        self.assertEqual(num2words(21, lang="nn", ordinal=True), "tjue ein-de")
-        self.assertEqual(num2words(22, lang="nn", ordinal=True), "tjue to-de")
-        self.assertEqual(num2words(25, lang="nn", ordinal=True), "tjue fem-de")
-        self.assertEqual(num2words(30, lang="nn", ordinal=True), "tretti-de")
-        self.assertEqual(num2words(40, lang="nn", ordinal=True), "førti-de")
-        self.assertEqual(num2words(50, lang="nn", ordinal=True), "femti-de")
-        self.assertEqual(num2words(60, lang="nn", ordinal=True), "seksti-de")
-        self.assertEqual(num2words(70, lang="nn", ordinal=True), "sytti-de")
-        self.assertEqual(num2words(80, lang="nn", ordinal=True), "åtti-de")
-        self.assertEqual(num2words(90, lang="nn", ordinal=True), "nitti-de")
-        self.assertEqual(num2words(100, lang="nn", ordinal=True), "ein hundre-de")
-        self.assertEqual(num2words(101, lang="nn", ordinal=True), "ein hundre ein-de")
-        self.assertEqual(num2words(200, lang="nn", ordinal=True), "to hundre-de")
-        self.assertEqual(num2words(500, lang="nn", ordinal=True), "fem hundre-de")
-        self.assertEqual(num2words(1000, lang="nn", ordinal=True), "ein tusen-de")
-        self.assertEqual(num2words(1001, lang="nn", ordinal=True), "ein tusen ein-de")
-        self.assertEqual(num2words(10000, lang="nn", ordinal=True), "ti tusen-de")
+        self.assertEqual(num2words(1, lang="nn", ordinal=True), "første")
+        self.assertEqual(num2words(2, lang="nn", ordinal=True), "andre")
+        self.assertEqual(num2words(3, lang="nn", ordinal=True), "tredje")
+        self.assertEqual(num2words(4, lang="nn", ordinal=True), "fjerde")
+        self.assertEqual(num2words(5, lang="nn", ordinal=True), "femte")
+        self.assertEqual(num2words(6, lang="nn", ordinal=True), "sjette")
+        self.assertEqual(num2words(7, lang="nn", ordinal=True), "sjuande")
+        self.assertEqual(num2words(8, lang="nn", ordinal=True), "åttande")
+        self.assertEqual(num2words(9, lang="nn", ordinal=True), "niande")
+        self.assertEqual(num2words(10, lang="nn", ordinal=True), "tiande")
+        self.assertEqual(num2words(11, lang="nn", ordinal=True), "ellevte")
+        self.assertEqual(num2words(12, lang="nn", ordinal=True), "tolvte")
+        self.assertEqual(num2words(13, lang="nn", ordinal=True), "trettande")
+        self.assertEqual(num2words(14, lang="nn", ordinal=True), "fjortande")
+        self.assertEqual(num2words(15, lang="nn", ordinal=True), "femtande")
+        self.assertEqual(num2words(16, lang="nn", ordinal=True), "sekstande")
+        self.assertEqual(num2words(17, lang="nn", ordinal=True), "syttande")
+        self.assertEqual(num2words(18, lang="nn", ordinal=True), "attande")
+        self.assertEqual(num2words(19, lang="nn", ordinal=True), "nittande")
+        self.assertEqual(num2words(20, lang="nn", ordinal=True), "tjuande")
+        self.assertEqual(num2words(21, lang="nn", ordinal=True), "tjue første")
+        self.assertEqual(num2words(22, lang="nn", ordinal=True), "tjue andre")
+        self.assertEqual(num2words(25, lang="nn", ordinal=True), "tjue femte")
+        self.assertEqual(num2words(30, lang="nn", ordinal=True), "trettiande")
+        self.assertEqual(num2words(40, lang="nn", ordinal=True), "førtiande")
+        self.assertEqual(num2words(50, lang="nn", ordinal=True), "femtiande")
+        self.assertEqual(num2words(60, lang="nn", ordinal=True), "sekstiande")
+        self.assertEqual(num2words(70, lang="nn", ordinal=True), "syttiande")
+        self.assertEqual(num2words(80, lang="nn", ordinal=True), "åttiande")
+        self.assertEqual(num2words(90, lang="nn", ordinal=True), "nittiande")
+        self.assertEqual(num2words(100, lang="nn", ordinal=True), "hundrede")
+        self.assertEqual(num2words(101, lang="nn", ordinal=True), "ein hundre første")
+        self.assertEqual(num2words(200, lang="nn", ordinal=True), "to hundrede")
+        self.assertEqual(num2words(500, lang="nn", ordinal=True), "fem hundrede")
+        self.assertEqual(num2words(1000, lang="nn", ordinal=True), "tusende")
+        self.assertEqual(num2words(1001, lang="nn", ordinal=True), "ein tusen første")
+        self.assertEqual(num2words(10000, lang="nn", ordinal=True), "ti tusende")
 
     def test_currency(self):
         """Test currency conversion."""
@@ -313,40 +329,40 @@ class Num2WordsNNTest(TestCase):
             "ein krone femti øre",
         )
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="USD"), "null dollars"
+            num2words(0, lang="nn", to="currency", currency="USD"), "null dollar"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="USD"),
-            "null dollars ein cent",
+            "null dollar ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="USD"),
-            "null dollars femti cents",
+            "null dollar femti cent",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="USD"), "ein dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="nn", to="currency", currency="USD"),
-            "ein dollar femti cents",
+            "ein dollar femti cent",
         )
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="EUR"), "null euros"
+            num2words(0, lang="nn", to="currency", currency="EUR"), "null euro"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="EUR"),
-            "null euros ein cent",
+            "null euro ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="EUR"),
-            "null euros femti cents",
+            "null euro femti cent",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="EUR"), "ein euro"
         )
         self.assertEqual(
             num2words(1.5, lang="nn", to="currency", currency="EUR"),
-            "ein euro femti cents",
+            "ein euro femti cent",
         )
 
     def test_year(self):
@@ -394,3 +410,32 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(100, lang="nn"), num2words("100", lang="nn"))
         self.assertEqual(num2words(1000, lang="nn"), num2words("1000", lang="nn"))
 
+
+def test_teens_issue_216():
+    # gladiaio/num2words2#216: Python had no teens ("ti ein" for 11).
+    from num2words2 import num2words
+
+    want = [
+        "elleve",
+        "tolv",
+        "tretten",
+        "fjorten",
+        "femten",
+        "seksten",
+        "sytten",
+        "atten",
+        "nitten",
+    ]
+    assert [num2words(i, lang="nn") for i in range(11, 20)] == want
+    assert num2words(12.13, lang="nn", to="currency", currency="NOK") == (
+        "tolv kroner tretten øre"
+    )
+
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="nn") == "ein billion"
+    assert num2words(10**15, lang="nn") == "ein billiard"
+    assert num2words(10**18, lang="nn") == "ein trillion"
+    with pytest.raises(OverflowError):
+        num2words(10**21, lang="nn")

@@ -6,17 +6,20 @@
 //! `self.MAXVAL` (that block is guarded by
 //! `if any(hasattr(self, field) for field in [...])`). `to_cardinal` is
 //! overridden outright and drives the recursive `_int_to_word` below.
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here,
-//! and there is **no overflow check at all** — the recursion peels off
-//! factors of 10^7 ("কোটি") indefinitely, so arbitrarily large `BigInt`s
-//! convert without raising. All four in-scope modes are overridden by the
+//! Consequently `cards`/`merge` stay at their trait defaults here. Python has
+//! **no overflow check at all** — the recursion peels off factors of 10^7
+//! ("কোটি") indefinitely, and on a large enough integer the port overflowed
+//! the native stack and killed the process. So the port adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^14, where the crore multiplier
+//! would itself need "কোটি", and every mode raises `OverflowError` from
+//! there. All four in-scope modes are overridden by the
 //! Python class, so nothing is inherited from `Num2Word_Base` except the
 //! `negword`/`pointword` slots that `setup()` immediately replaces.
 //!
 //! The numbering system is Indian (হাজাৰ / লাখ / কোটি = 10^3 / 10^5 / 10^7),
-//! not the short scale, and `_int_to_word` recurses on the quotient — so
-//! 10^15 is "দহ কোটি কোটি" (ten crore crore) and 10^21 is
-//! "এক কোটি কোটি কোটি". Both are corpus-verified.
+//! not the short scale, and `_int_to_word` recurses on the quotient — so in
+//! Python 10^15 is "দহ কোটি কোটি" (ten crore crore) and 10^21 is
+//! "এক কোটি কোটি কোটি". Both are past the port's 10^14 ceiling.
 //!
 //! # The float/Decimal path is a *string* algorithm
 //!
@@ -41,19 +44,15 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly
 //! what Python emits, and every one is pinned by a corpus row:
 //!
-//! 1. **The hundreds branch omits the separating space.** Every other branch
-//!    of `_int_to_word` joins its remainder with `" " + ...`; the `< 1000`
-//!    branch alone writes `+ (self._int_to_word(number % 100) if ...)` with
-//!    no space. So the hundred-word "শ" fuses onto the next word:
-//!    `101` → "এক শএক", `110` → "এক শদহ", `999` → "নয় শনব্বই নয়",
-//!    `1905` → "এক হাজাৰ নয় শপাঁচ". A bare `100` is unaffected ("এক শ")
-//!    because the remainder is empty. Note the space that *does* appear is
-//!    the leading one baked into the `" শ"` literal ([`HUNDRED`]), not a
-//!    separator. See [`int_to_word`].
-//! 2. **Tens are not compounded.** `21` is "বিশ এক" (literally "twenty one"
-//!    as two juxtaposed words) rather than the idiomatic Assamese "একৈশ";
-//!    `42` is "চল্লিশ দুই". The table has no 21–99 compound forms at all.
-//!    Reproduced verbatim.
+//! 1. **The hundreds branch omitted the separating space (fixed,
+//!    gladiaio/num2words2#247).** Every other branch of `_int_to_word` joins
+//!    its remainder with `" " + ...`; Python's `< 1000` branch did not, so
+//!    the hundred-word "শ" fused onto the next word: `101` was "এক শএক",
+//!    `456` "চাৰি শপঞ্চাশ ছয়". The port adds the space: "এক শ এক",
+//!    "চাৰি শ ছাপন".
+//! 2. **Tens were not compounded (fixed, gladiaio/num2words2#247).** `21` was
+//!    "বিশ এক" (literally "twenty one") rather than the Assamese "একৈশ";
+//!    the port reads [`BELOW_HUNDRED`].
 //! 3. **`to_ordinal` inserts a stray space before the suffix**:
 //!    `cardinal + " -তম"` yields "এক -তম", not "এক-তম". `to_ordinal_num`
 //!    uses the tight `"-তম"` instead, so the two disagree by a space.
@@ -70,7 +69,7 @@
 //!
 //! # Error variants
 //!
-//! For integer input all four modes are total — Assamese has no `MAXVAL`, no
+//! For integer input below the 10^14 ceiling all four modes are total — no
 //! table lookup that can miss, and no negative-ordinal guard. The only
 //! `_int_to_word` list indexes (`ones`, `tens`, `teens`) are proven in range
 //! by the branch guards that precede them, so no `IndexError` is reachable
@@ -106,7 +105,7 @@
 //! 100 for every code, the trait default). That asymmetry is why `JPY`/`KWD`
 //! still render two decimal digits of "cents" here.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -115,6 +114,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `setup()`: `self.negword = "ঋণাত্মক "`. Note the **trailing space** — it is
 /// part of the literal and `to_cardinal` concatenates it raw (unlike
@@ -135,39 +135,30 @@ const POINTWORD: &str = "দশমিক";
 /// guard is what makes `to_cardinal(0)` produce a word at all.
 const ZERO_WORD: &str = "শূন্য";
 
-/// `ones`. Index 0 is `""` and is only ever reached via `number % 10 == 0`
-/// (guarded against) or `number // 100 == 0` (impossible for `number >= 100`).
-const ONES: [&str; 10] = [
-    "", "এক", "দুই", "তিনি", "চাৰি", "পাঁচ", "ছয়", "সাত", "আঠ", "নয়",
-];
-
-/// `tens`. Indices 0 and 1 are `""`: the `< 20` teens branch runs first, so
-/// `tens[0]`/`tens[1]` are unreachable.
-const TENS: [&str; 10] = [
-    "",
-    "",
-    "বিশ",
-    "ত্ৰিশ",
-    "চল্লিশ",
-    "পঞ্চাশ",
-    "ষাঠি",
-    "সত্তৰ",
-    "আশী",
-    "নব্বই",
-];
-
-/// `teens`, indexed `number - 10`, covering 10..=19.
-const TEENS: [&str; 10] = [
-    "দহ",
-    "এঘাৰ",
-    "বাৰ",
-    "তেৰ",
-    "চৈধ্য",
-    "পোন্ধৰ",
-    "ষোল্ল",
-    "সোতৰ",
-    "ওঠৰ",
-    "উনিশ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and juxtaposed a ten and a unit ("বিশ
+/// এক" for 21), but Assamese has its own word for every number below a
+/// hundred. Index 0 is never read. Forms from Wiktionary's Assamese
+/// cardinal-number entries and Omniglot, which write the sibilant ছ (বিছ,
+/// একৈছ); the module's শ spelling (বিশ, ত্ৰিশ, also in dailyassam.com's
+/// school list) is kept throughout. 19 and 90 follow both sources (ঊনৈশ,
+/// নব্বৈ) instead of Python's Bengali উনিশ/নব্বই; 9 keeps the module's নয়.
+/// Lower confidence, sources disagree: 44, 45, 51..=58, 59..=78.
+/// 99 নিৰান্নব্বৈ is kept (#263): amaraxom.com's 1-100 table gives it, it
+/// matches the -ান্নব্বৈ of 91..=98 (but 95), and no source gives the 4/5-model
+/// candidate নিৰানব্বৈ (Wiktionary's নিয়ান্নব্বৈ also has -ান্ন-).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "এক", "দুই", "তিনি", "চাৰি", "পাঁচ", "ছয়", "সাত", "আঠ", "নয়", // 0..9
+    "দহ", "এঘাৰ", "বাৰ", "তেৰ", "চৈধ্য", "পোন্ধৰ", "ষোল্ল", "সোতৰ", "ওঠৰ", "ঊনৈশ", // 10..19
+    "বিশ", "একৈশ", "বাইশ", "তেইশ", "চৌবিশ", "পঁচিশ", "ছাবিশ", "সাতাইশ", "আঠাইশ", "ঊনত্ৰিশ", // 20..29
+    "ত্ৰিশ", "একত্ৰিশ", "বত্ৰিশ", "তেত্ৰিশ", "চৌত্ৰিশ", "পঁয়ত্ৰিশ", "ছয়ত্ৰিশ", "সাতত্ৰিশ", "আঠত্ৰিশ", "ঊনচল্লিশ", // 30..39
+    "চল্লিশ", "একচল্লিশ", "বিয়াল্লিশ", "তিয়াল্লিশ", "চৌৰাল্লিশ", "পঞ্চল্লিশ", "ছয়চল্লিশ", "সাতচল্লিশ", "আঠচল্লিশ", "ঊনপঞ্চাশ", // 40..49
+    "পঞ্চাশ", "একাৱন", "বাৱন", "তেৱন", "চৌৱন", "পঁচপন", "ছাপন", "সাতাৱন", "আঠাৱন", "ঊনষাঠি", // 50..59
+    "ষাঠি", "এষষ্ঠি", "বাষষ্ঠি", "তেষষ্ঠি", "চৌষষ্ঠি", "পঁষষ্ঠি", "ছয়ষষ্ঠি", "সাতষষ্ঠি", "আঠষষ্ঠি", "ঊনসত্তৰ", // 60..69
+    "সত্তৰ", "এসত্তৰ", "বাসত্তৰ", "তেসত্তৰ", "চৌসত্তৰ", "পঁসত্তৰ", "ছয়সত্তৰ", "সাতসত্তৰ", "আঠসত্তৰ", "ঊনআশী", // 70..79
+    "আশী", "একাশী", "বিয়াশী", "তিৰাশী", "চৌৰাশী", "পঁচাশী", "ছয়াশী", "সাতাশী", "আঠাশী", "ঊননব্বৈ", // 80..89
+    "নব্বৈ", "একান্নব্বৈ", "বিয়ান্নব্বৈ", "তিৰান্নব্বৈ", "চৌৰান্নব্বৈ", "পঁচানব্বৈ", "ছয়ান্নব্বৈ", "সাতান্নব্বৈ", "আঠান্নব্বৈ", "নিৰান্নব্বৈ", // 90..99 (99 kept on best evidence, #263)
 ];
 
 /// `" শ"` (hundred) — the leading space is part of the Python literal.
@@ -281,7 +272,7 @@ fn split_currency(n: &BigDecimal) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -613,13 +604,13 @@ fn cardinal_from_str(number: &str) -> Result<String> {
     };
 
     let Some(dot) = n.find('.') else {
-        ret.push_str(&int_to_word(&py_int(n)?));
+        ret.push_str(&checked_int_to_word(&py_int(n)?)?);
         return Ok(ret);
     };
 
     // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
     let (left, right) = (&n[..dot], &n[dot + 1..]);
-    ret.push_str(&int_to_word(&py_int(left)?));
+    ret.push_str(&checked_int_to_word(&py_int(left)?)?);
     ret.push(' ');
     ret.push_str(POINTWORD);
     ret.push(' ');
@@ -633,7 +624,7 @@ fn cardinal_from_str(number: &str) -> Result<String> {
         }
         first = false;
         let mut buf = [0u8; 4];
-        ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+        ret.push_str(&checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
     }
     Ok(ret)
 }
@@ -654,35 +645,20 @@ fn int_to_word(number: &BigInt) -> String {
         return ZERO_WORD.to_string();
     }
 
-    // number < 10  →  ones[number]
-    if *number < BigInt::from(10) {
-        return ONES[small(number)].to_string();
-    }
-
-    // number < 20  →  teens[number - 10]
-    if *number < BigInt::from(20) {
-        return TEENS[small(number) - 10].to_string();
-    }
-
-    // number < 100  →  tens[number // 10] + (" " + ones[number % 10] if number % 10 else "")
+    // number < 100  →  one word (#247; Python composed tens and ones)
     if *number < BigInt::from(100) {
-        let n = small(number);
-        let mut out = TENS[n / 10].to_string();
-        if n % 10 != 0 {
-            out.push(' ');
-            out.push_str(ONES[n % 10]);
-        }
-        return out;
+        return BELOW_HUNDRED[small(number)].to_string();
     }
 
     // number < 1000  →  ones[number // 100] + " শ" + (_int_to_word(number % 100) if number % 100 else "")
     //
-    // BUG 1: no " " before the recursive call, unlike every branch below.
+    // Python wrote no " " before the recursive call (bug 1, fixed in #247).
     if *number < BigInt::from(1000) {
         let n = small(number);
-        let mut out = ONES[n / 100].to_string();
+        let mut out = BELOW_HUNDRED[n / 100].to_string();
         out.push_str(HUNDRED);
         if n % 100 != 0 {
+            out.push(' ');
             out.push_str(&int_to_word(&BigInt::from(n % 100)));
         }
         return out;
@@ -757,7 +733,29 @@ impl LangAs {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// কোটি (10^7), so from 10^14 the crore multiplier would itself need কোটি and
+/// the word would stack ("এক কোটি কোটি").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl Lang for LangAs {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -903,7 +901,7 @@ impl Lang for LangAs {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", prefix, int_to_word(&magnitude)))
+        Ok(format!("{}{}", prefix, checked_int_to_word(&magnitude)?))
     }
 
     /// The `"." in n` branch of `Num2Word_AS.to_cardinal`, which is the same
@@ -1076,10 +1074,10 @@ impl Lang for LangAs {
         let (cr1, cr2) = (&forms.unit, &forms.subunit);
 
         let one = BigInt::from(1);
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         // `if cents and right` — a zero `right` is falsy, so 1.0 shows no cents.
         let cents_str = if cents && !right.is_zero() {
-            int_to_word(&right)
+            checked_int_to_word(&right)?
         } else {
             String::new()
         };
@@ -1108,6 +1106,7 @@ impl Lang for LangAs {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1148,9 +1147,9 @@ mod tests {
         assert_eq!(flt(0.99), "শূন্য দশমিক নয় নয়");
         assert_eq!(flt(1.01), "এক দশমিক শূন্য এক");
         assert_eq!(flt(12.34), "বাৰ দশমিক তিনি চাৰি");
-        assert_eq!(flt(99.99), "নব্বই নয় দশমিক নয় নয়");
+        assert_eq!(flt(99.99), "নিৰান্নব্বৈ দশমিক নয় নয়");
         assert_eq!(flt(100.5), "এক শ দশমিক পাঁচ");
-        assert_eq!(flt(1234.56), "এক হাজাৰ দুই শত্ৰিশ চাৰি দশমিক পাঁচ ছয়");
+        assert_eq!(flt(1234.56), "এক হাজাৰ দুই শ চৌত্ৰিশ দশমিক পাঁচ ছয়");
         assert_eq!(flt(-0.5), "ঋণাত্মক শূন্য দশমিক পাঁচ");
         assert_eq!(flt(-1.5), "ঋণাত্মক এক দশমিক পাঁচ");
         assert_eq!(flt(-12.34), "ঋণাত্মক বাৰ দশমিক তিনি চাৰি");
@@ -1170,8 +1169,8 @@ mod tests {
         // Issue #603's value: exact at trillion scale, no float() cast.
         assert_eq!(
             dec("98746251323029.99"),
-            "নব্বই আঠ লাখ সত্তৰ চাৰি হাজাৰ ছয় শবিশ পাঁচ কোটি তেৰ লাখ \
-             বিশ তিনি হাজাৰ বিশ নয় দশমিক নয় নয়"
+            "আঠান্নব্বৈ লাখ চৌসত্তৰ হাজাৰ ছয় শ পঁচিশ কোটি তেৰ লাখ \
+             তেইশ হাজাৰ ঊনত্ৰিশ দশমিক নয় নয়"
         );
         assert_eq!(dec("0.001"), "শূন্য দশমিক শূন্য শূন্য এক");
     }
@@ -1244,7 +1243,12 @@ mod tests {
     /// largest float this path can speak. 1e15 -> "1000000000000000.0".
     #[test]
     fn large_and_small_boundaries() {
-        assert_eq!(flt(1e15), "দহ কোটি কোটি দশমিক শূন্য");
+        assert_eq!(flt(1e13), "দহ লাখ কোটি দশমিক শূন্য");
+        // From 10^14 কোটি would stack: the #203 ceiling.
+        assert!(matches!(
+            LangAs::new().to_cardinal_float(&FloatValue::Float { value: 1e15, precision: 1 }, None),
+            Err(N2WError::Overflow(_))
+        ));
         assert_eq!(flt(0.0001), "শূন্য দশমিক শূন্য শূন্য শূন্য এক");
         // Decimal keeps fixed notation down to 1e-6 (leftdigits > -6).
         assert_eq!(

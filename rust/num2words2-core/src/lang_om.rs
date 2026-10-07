@@ -6,9 +6,10 @@
 //! Shape: **self-contained**. `Num2Word_OM` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
-//! outright and drives `_int_to_word`. Consequently `cards`/`maxval`/`merge`
-//! stay at their trait defaults here, and there is **no overflow check** — see
-//! the digit-passthrough note below for what happens instead.
+//! outright and drives `_int_to_word`. Consequently `cards`/`merge` stay at
+//! their trait defaults here. Python has **no overflow check** — see the
+//! digit-passthrough note below; this port raises `OverflowError` from 10^12
+//! (`maxval`).
 //!
 //! Inherited from `Num2Word_Base`, unchanged by OM:
 //!   * `is_title` stays `False` (OM's `setup` never sets it), so `title()` is
@@ -20,17 +21,19 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly what
 //! Python emits, and every one is pinned by a corpus row:
 //!
-//! 1. **Digit passthrough above 999,999,999.** `_int_to_word` has no branch for
-//!    10^9 and up; it falls off the end and `return str(number)`. So
-//!    `to_cardinal(10**9)` == `"1000000000"` — bare digits, not words, and no
-//!    `OverflowError`. This holds for arbitrarily large input (the corpus goes
-//!    to 10^21), which is why `value` must stay a `BigInt`: the fallback is
-//!    `str(number)` at full precision. See [`LangOm::int_to_word`].
+//! 1. **Digit passthrough above 999,999,999 (fixed, gladiaio/num2words2#147).**
+//!    Python's `_int_to_word` has no branch for 10^9 and up; it falls off the
+//!    end and `return str(number)`, so `to_cardinal(10**9)` was
+//!    `"1000000000"`. This port adds biliyoona (10^9; Afaan Oromoo press
+//!    usage, https://www.ena.et/web/orm/w/om_3014, press.et/oromifa),
+//!    composed exactly like the million branch: `to_cardinal(10**9)` ==
+//!    `"biliyoona"`, `to_cardinal(2 * 10**9)` == `"lama biliyoona"`. No 10^12
+//!    word is attested, so 10^12 raises `OverflowError` (`maxval`). See
+//!    [`LangOm::int_to_word`].
 //! 2. **`to_ordinal` just glues "ffaa" onto the cardinal**, with no regard for
 //!    where the cardinal ends. Hence `to_ordinal(101)` == "dhibba fi tokkoffaa"
 //!    (suffix lands on the final word only) and `to_ordinal(10**9)` ==
-//!    `"1000000000ffaa"` — a suffixed digit string, identical to what
-//!    `to_ordinal_num` returns for the same input.
+//!    `"biliyoonaffaa"` (Python: `"1000000000ffaa"`).
 //! 3. **Negatives flow into the ordinal suffix.** `to_ordinal` special-cases
 //!    only `number == 1`, so `to_ordinal(-1)` == "minus tokkoffaa" rather than
 //!    raising. `Num2Word_Base.verify_ordinal` is never called by this module,
@@ -77,7 +80,7 @@
 //! is overridden here. `adjective=True` is inert regardless: OM's
 //! `to_currency` declares the parameter and never reads it.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -86,6 +89,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword = "minus "` — note the trailing space, which the
 /// `.strip()` at the end of `to_cardinal`'s negative branch makes invisible.
@@ -121,6 +125,15 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "dhibba";
 const THOUSAND: &str = "kuma";
 const MILLION: &str = "miliyoona";
+/// 10^9, absent from Python (gladiaio/num2words2#147): "biliyoona", as in
+/// Afaan Oromoo press usage (ena.et, press.et).
+const BILLION: &str = "biliyoona";
+
+/// The exclusive ceiling (#147): no attested Oromo word for 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 
 /// The zero word, returned by `_int_to_word(0)` (and, in the out-of-scope float
 /// path, substituted for the empty `ones[0]`).
@@ -224,7 +237,7 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -459,9 +472,10 @@ impl LangOm {
     /// bug 1 in the module docs. All arithmetic stays in `BigInt`: the
     /// fallthrough must stringify the full value, and the corpus exercises it
     /// at 10^21, well past `u64`.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ZEROWORD.to_string();
+            return Ok(ZEROWORD.to_string());
         }
 
         let ten = BigInt::from(10);
@@ -472,7 +486,7 @@ impl LangOm {
 
         // if number < 10: return self.ones[number]
         if number < &ten {
-            return ONES[Self::digit(number)].to_string();
+            return Ok(ONES[Self::digit(number)].to_string());
         }
 
         // if number < 100:
@@ -485,7 +499,7 @@ impl LangOm {
                 out.push_str(AND);
                 out.push_str(ONES[Self::digit(&o)]);
             }
-            return out;
+            return Ok(out);
         }
 
         // if number < 1000:
@@ -502,9 +516,9 @@ impl LangOm {
             out.push_str(HUNDRED);
             if !r.is_zero() {
                 out.push_str(AND);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         // if number < 1000000:
@@ -515,15 +529,15 @@ impl LangOm {
             let (t, r) = number.div_rem(&thousand);
             let mut out = String::new();
             if t > BigInt::one() {
-                out.push_str(&self.int_to_word(&t));
+                out.push_str(&self.int_to_word(&t)?);
                 out.push(' ');
             }
             out.push_str(THOUSAND);
             if !r.is_zero() {
                 out.push_str(AND);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         // if number < 1000000000:
@@ -534,20 +548,32 @@ impl LangOm {
             let (m, r) = number.div_rem(&million);
             let mut out = String::new();
             if m > BigInt::one() {
-                out.push_str(&self.int_to_word(&m));
+                out.push_str(&self.int_to_word(&m)?);
                 out.push(' ');
             }
             out.push_str(MILLION);
             if !r.is_zero() {
                 out.push_str(AND);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
-        // return str(number)  -- bug 1: digits, not words, and never an
-        // OverflowError. Verified: to_cardinal(10**9) == "1000000000".
-        number.to_string()
+        // Python: `return str(number)` -- bug 1. The biliyoona branch
+        // instead, composed like the million one (#147); the maxval check
+        // above keeps `b` below 1000.
+        let (b, r) = number.div_rem(&billion);
+        let mut out = String::new();
+        if b > BigInt::one() {
+            out.push_str(&self.int_to_word(&b)?);
+            out.push(' ');
+        }
+        out.push_str(BILLION);
+        if !r.is_zero() {
+            out.push_str(AND);
+            out.push_str(&self.int_to_word(&r)?);
+        }
+        Ok(out)
     }
 
     /// `Num2Word_OM.to_cardinal` operating on the already-reconstructed
@@ -588,7 +614,7 @@ impl LangOm {
             Some((left, right)) => {
                 // ret = _int_to_word(int(left)) + " " + pointword
                 let left_int = py_int(left)?;
-                let mut ret = format!("{} {}", self.int_to_word(&left_int), POINTWORD);
+                let mut ret = format!("{} {}", self.int_to_word(&left_int)?, POINTWORD);
                 // for digit in right: ret += " " + (ones[int(digit)] or "zeeroo")
                 for ch in right.chars() {
                     ret.push(' ');
@@ -599,18 +625,23 @@ impl LangOm {
             // No ".": `return self._int_to_word(int(n))`. Reachable on the float
             // path only when `repr` produced exponential form (no dot), where
             // `int(n)` raises — reproduced by `py_int`.
-            None => Ok(self.int_to_word(&py_int(n)?)),
+            None => self.int_to_word(&py_int(n)?),
         }
     }
 }
 
 impl Lang for LangOm {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
         value: &crate::floatpath::FloatValue,
         precision_override: Option<u32>,
     ) -> crate::base::Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // Python's to_cardinal routes every float/Decimal through this
         // language's own decimal grammar — 5.0 keeps its ".0" tail
         // ("comma nulla"), unlike Base's whole-value integer route.
@@ -624,6 +655,7 @@ impl Lang for LangOm {
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let is_one = match value {
             FloatValue::Float { value: f, .. } => *f == 1.0,
             FloatValue::Decimal { value: d, .. } => d == &bigdecimal::BigDecimal::from(1),
@@ -705,10 +737,10 @@ impl Lang for LangOm {
     /// so the shape matches the original.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let inner = self.int_to_word(&value.abs());
+            let inner = self.int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.int_to_word(value)
     }
 
     /// Port of `Num2Word_OM.to_ordinal`.
@@ -759,6 +791,7 @@ impl Lang for LangOm {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let n = match value {
             FloatValue::Float { value, .. } => py_float_str(*value),
             FloatValue::Decimal { value, .. } => py_decimal_str(value),
@@ -838,9 +871,9 @@ impl Lang for LangOm {
     /// order:
     ///
     /// * Words come from `_int_to_word`, **not** `to_cardinal`, so the unit
-    ///   inherits the silent digit fallback above 10^9 without inheriting the
-    ///   negword handling: `to_currency(1000000000.0, "EUR")` is
-    ///   `"1000000000 yuuroo"`. `is_negative` is read from the *original* value
+    ///   shares its scales and 10^12 ceiling (#147; Python's digit fallback
+    ///   gave `"1000000000 yuuroo"`) without inheriting the negword handling.
+    ///   `is_negative` is read from the *original* value
     ///   and re-applied at the end, which is why stripping the sign up front is
     ///   safe.
     /// * The `left != 1` test runs on the **absolute** value, so
@@ -883,7 +916,7 @@ impl Lang for LangOm {
         } else {
             &forms.unit[0]
         };
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, unit);
 
         if cents && !right.is_zero() {
             let subunit = if right != one {
@@ -894,7 +927,7 @@ impl Lang for LangOm {
             result.push_str(&format!(
                 "{}{} {}",
                 separator,
-                self.int_to_word(&right),
+                self.int_to_word(&right)?,
                 subunit
             ));
         }
@@ -906,6 +939,7 @@ impl Lang for LangOm {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -1024,7 +1058,8 @@ mod float_tests {
             ("0.01", "zeeroo tuqaa zeeroo tokko"),
             ("1.10", "tokko tuqaa tokko zeeroo"),
             ("12.345", "kudhan fi lama tuqaa sadii afur shan"),
-            ("98746251323029.99", "98746251323029 tuqaa sagal sagal"),
+            // Past the 10^12 maxval since #147 (Python: the digits).
+            ("987462513.99", "sagal dhibba fi saddeettama fi torba miliyoona fi afur dhibba fi jaatama fi lama kuma fi shan dhibba fi kudhan fi sadii tuqaa sagal sagal"),
             ("0.001", "zeeroo tuqaa zeeroo zeeroo tokko"),
             // Integral Decimal: str is "5" (no dot) -> plain _int_to_word.
             ("5", "shan"),

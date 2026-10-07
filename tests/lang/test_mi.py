@@ -25,7 +25,7 @@ class Num2WordsMITest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="mi"), "zero")
+        self.assertEqual(num2words(0, lang="mi"), "kore")
         self.assertEqual(num2words(1, lang="mi"), "tahi")
         self.assertEqual(num2words(2, lang="mi"), "rua")
         self.assertEqual(num2words(3, lang="mi"), "toru")
@@ -205,59 +205,68 @@ class Num2WordsMITest(TestCase):
             num2words(999999999, lang="mi"),
             "iwa rau iwa tekau iwa miriona iwa rau iwa tekau iwa mano iwa rau iwa tekau iwa",
         )
-        self.assertEqual(num2words(1000000000, lang="mi"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="mi"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="mi"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="mi"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="mi"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="mi"), "tahi piriona")
+        self.assertEqual(
+            num2words(1234567890, lang="mi"),
+            "tahi piriona rua rau toru tekau whā miriona rima rau ono tekau whitu mano waru rau iwa tekau",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="mi"),
+            "iwa piriona iwa rau iwa tekau iwa miriona iwa rau iwa tekau iwa mano iwa rau iwa tekau iwa",
+        )
+        self.assertEqual(num2words(10000000000, lang="mi"), "tekau piriona")
+        self.assertEqual(
+            num2words(99999999999, lang="mi"),
+            "iwa tekau iwa piriona iwa rau iwa tekau iwa miriona iwa rau iwa tekau iwa mano iwa rau iwa tekau iwa",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="mi"), "minus tahi")
-        self.assertEqual(num2words(-2, lang="mi"), "minus rua")
-        self.assertEqual(num2words(-5, lang="mi"), "minus rima")
-        self.assertEqual(num2words(-10, lang="mi"), "minus tekau")
-        self.assertEqual(num2words(-11, lang="mi"), "minus tekau tahi")
-        self.assertEqual(num2words(-20, lang="mi"), "minus rua tekau")
-        self.assertEqual(num2words(-50, lang="mi"), "minus rima tekau")
-        self.assertEqual(num2words(-99, lang="mi"), "minus iwa tekau iwa")
-        self.assertEqual(num2words(-100, lang="mi"), "minus tahi rau")
-        self.assertEqual(num2words(-101, lang="mi"), "minus tahi rau tahi")
-        self.assertEqual(num2words(-200, lang="mi"), "minus rua rau")
-        self.assertEqual(num2words(-999, lang="mi"), "minus iwa rau iwa tekau iwa")
-        self.assertEqual(num2words(-1000, lang="mi"), "minus tahi mano")
-        self.assertEqual(num2words(-1001, lang="mi"), "minus tahi mano tahi")
-        self.assertEqual(num2words(-10000, lang="mi"), "minus tekau mano")
-        self.assertEqual(num2words(-100000, lang="mi"), "minus tahi rau mano")
-        self.assertEqual(num2words(-1000000, lang="mi"), "minus tahi miriona")
+        self.assertEqual(num2words(-1, lang="mi"), "tōraro tahi")
+        self.assertEqual(num2words(-2, lang="mi"), "tōraro rua")
+        self.assertEqual(num2words(-5, lang="mi"), "tōraro rima")
+        self.assertEqual(num2words(-10, lang="mi"), "tōraro tekau")
+        self.assertEqual(num2words(-11, lang="mi"), "tōraro tekau tahi")
+        self.assertEqual(num2words(-20, lang="mi"), "tōraro rua tekau")
+        self.assertEqual(num2words(-50, lang="mi"), "tōraro rima tekau")
+        self.assertEqual(num2words(-99, lang="mi"), "tōraro iwa tekau iwa")
+        self.assertEqual(num2words(-100, lang="mi"), "tōraro tahi rau")
+        self.assertEqual(num2words(-101, lang="mi"), "tōraro tahi rau tahi")
+        self.assertEqual(num2words(-200, lang="mi"), "tōraro rua rau")
+        self.assertEqual(num2words(-999, lang="mi"), "tōraro iwa rau iwa tekau iwa")
+        self.assertEqual(num2words(-1000, lang="mi"), "tōraro tahi mano")
+        self.assertEqual(num2words(-1001, lang="mi"), "tōraro tahi mano tahi")
+        self.assertEqual(num2words(-10000, lang="mi"), "tōraro tekau mano")
+        self.assertEqual(num2words(-100000, lang="mi"), "tōraro tahi rau mano")
+        self.assertEqual(num2words(-1000000, lang="mi"), "tōraro tahi miriona")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="mi"), "zero point tahi")
-        self.assertEqual(num2words(0.5, lang="mi"), "zero point rima")
-        self.assertEqual(num2words(0.9, lang="mi"), "zero point iwa")
-        self.assertEqual(num2words(1.1, lang="mi"), "tahi point tahi")
-        self.assertEqual(num2words(1.5, lang="mi"), "tahi point rima")
-        self.assertEqual(num2words(2.5, lang="mi"), "rua point rima")
-        self.assertEqual(num2words(3.14, lang="mi"), "toru point tahi whā")
-        self.assertEqual(num2words(10.5, lang="mi"), "tekau point rima")
-        self.assertEqual(num2words(11.11, lang="mi"), "tekau tahi point tahi tahi")
-        self.assertEqual(num2words(20.2, lang="mi"), "rua tekau point rua")
-        self.assertEqual(num2words(99.99, lang="mi"), "iwa tekau iwa point iwa iwa")
-        self.assertEqual(num2words(100.01, lang="mi"), "tahi rau point zero tahi")
-        self.assertEqual(num2words(100.5, lang="mi"), "tahi rau point rima")
+        self.assertEqual(num2words(0.1, lang="mi"), "kore ira tahi")
+        self.assertEqual(num2words(0.5, lang="mi"), "kore ira rima")
+        self.assertEqual(num2words(0.9, lang="mi"), "kore ira iwa")
+        self.assertEqual(num2words(1.1, lang="mi"), "tahi ira tahi")
+        self.assertEqual(num2words(1.5, lang="mi"), "tahi ira rima")
+        self.assertEqual(num2words(2.5, lang="mi"), "rua ira rima")
+        self.assertEqual(num2words(3.14, lang="mi"), "toru ira tahi whā")
+        self.assertEqual(num2words(10.5, lang="mi"), "tekau ira rima")
+        self.assertEqual(num2words(11.11, lang="mi"), "tekau tahi ira tahi tahi")
+        self.assertEqual(num2words(20.2, lang="mi"), "rua tekau ira rua")
+        self.assertEqual(num2words(99.99, lang="mi"), "iwa tekau iwa ira iwa iwa")
+        self.assertEqual(num2words(100.01, lang="mi"), "tahi rau ira kore tahi")
+        self.assertEqual(num2words(100.5, lang="mi"), "tahi rau ira rima")
         self.assertEqual(
-            num2words(123.45, lang="mi"), "tahi rau rua tekau toru point whā rima"
+            num2words(123.45, lang="mi"), "tahi rau rua tekau toru ira whā rima"
         )
-        self.assertEqual(num2words(1000.5, lang="mi"), "tahi mano point rima")
+        self.assertEqual(num2words(1000.5, lang="mi"), "tahi mano ira rima")
         self.assertEqual(
             num2words(1234.56, lang="mi"),
-            "tahi mano rua rau toru tekau whā point rima ono",
+            "tahi mano rua rau toru tekau whā ira rima ono",
         )
-        self.assertEqual(num2words(10000.01, lang="mi"), "tekau mano point zero tahi")
-        self.assertEqual(num2words(-0.5, lang="mi"), "minus zero point rima")
-        self.assertEqual(num2words(-1.5, lang="mi"), "minus tahi point rima")
-        self.assertEqual(num2words(-10.5, lang="mi"), "minus tekau point rima")
+        self.assertEqual(num2words(10000.01, lang="mi"), "tekau mano ira kore tahi")
+        self.assertEqual(num2words(-0.5, lang="mi"), "tōraro kore ira rima")
+        self.assertEqual(num2words(-1.5, lang="mi"), "tōraro tahi ira rima")
+        self.assertEqual(num2words(-10.5, lang="mi"), "tōraro tekau ira rima")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -302,15 +311,15 @@ class Num2WordsMITest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="mi", to="currency", currency="NZD"), "zero tāra"
+            num2words(0, lang="mi", to="currency", currency="NZD"), "kore tāra"
         )
         self.assertEqual(
             num2words(0.01, lang="mi", to="currency", currency="NZD"),
-            "zero tāra tahi hēneti",
+            "kore tāra tahi hēneti",
         )
         self.assertEqual(
             num2words(0.5, lang="mi", to="currency", currency="NZD"),
-            "zero tāra rima tekau hēneti",
+            "kore tāra rima tekau hēneti",
         )
         self.assertEqual(
             num2words(1, lang="mi", to="currency", currency="NZD"), "tahi tāra"
@@ -319,42 +328,12 @@ class Num2WordsMITest(TestCase):
             num2words(1.5, lang="mi", to="currency", currency="NZD"),
             "tahi tāra rima tekau hēneti",
         )
-        self.assertEqual(
-            num2words(0, lang="mi", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mi", to="currency", currency="USD"),
-            "zero dollars tahi cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mi", to="currency", currency="USD"),
-            "zero dollars rima tekau cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mi", to="currency", currency="USD"), "tahi dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mi", to="currency", currency="USD"),
-            "tahi dollar rima tekau cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="mi", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mi", to="currency", currency="EUR"),
-            "zero euros tahi cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mi", to="currency", currency="EUR"),
-            "zero euros rima tekau cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mi", to="currency", currency="EUR"), "tahi euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mi", to="currency", currency="EUR"),
-            "tahi euro rima tekau cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mi", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mi", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -387,7 +366,7 @@ class Num2WordsMITest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="mi"), "zero")
+        self.assertEqual(num2words("0", lang="mi"), "kore")
         self.assertEqual(num2words("1", lang="mi"), "tahi")
         self.assertEqual(num2words("10", lang="mi"), "tekau")
         self.assertEqual(num2words("100", lang="mi"), "tahi rau")
@@ -399,9 +378,8 @@ class Num2WordsMITest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="mi"), "zero")
+        self.assertEqual(num2words(0, lang="mi"), "kore")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mi"), num2words("100", lang="mi"))
         self.assertEqual(num2words(1000, lang="mi"), num2words("1000", lang="mi"))
-

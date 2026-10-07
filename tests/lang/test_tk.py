@@ -25,7 +25,7 @@ class Num2WordsTKTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="tk"), "zero")
+        self.assertEqual(num2words(0, lang="tk"), "nol")
         self.assertEqual(num2words(1, lang="tk"), "bir")
         self.assertEqual(num2words(2, lang="tk"), "iki")
         self.assertEqual(num2words(3, lang="tk"), "üç")
@@ -191,11 +191,20 @@ class Num2WordsTKTest(TestCase):
             num2words(999999999, lang="tk"),
             "dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
         )
-        self.assertEqual(num2words(1000000000, lang="tk"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="tk"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="tk"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="tk"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="tk"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="tk"), "bir milliard")
+        self.assertEqual(
+            num2words(1234567890, lang="tk"),
+            "bir milliard iki ýüz otuz dört million bäş ýüz altmyş ýedi müň sekiz ýüz togsan",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="tk"),
+            "dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
+        )
+        self.assertEqual(num2words(10000000000, lang="tk"), "on milliard")
+        self.assertEqual(
+            num2words(99999999999, lang="tk"),
+            "togsan dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -219,83 +228,83 @@ class Num2WordsTKTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="tk"), "zero point bir")
-        self.assertEqual(num2words(0.5, lang="tk"), "zero point bäş")
-        self.assertEqual(num2words(0.9, lang="tk"), "zero point dokuz")
-        self.assertEqual(num2words(1.1, lang="tk"), "bir point bir")
-        self.assertEqual(num2words(1.5, lang="tk"), "bir point bäş")
-        self.assertEqual(num2words(2.5, lang="tk"), "iki point bäş")
-        self.assertEqual(num2words(3.14, lang="tk"), "üç point bir dört")
-        self.assertEqual(num2words(10.5, lang="tk"), "on point bäş")
-        self.assertEqual(num2words(11.11, lang="tk"), "on bir point bir bir")
-        self.assertEqual(num2words(20.2, lang="tk"), "ýigrimi point iki")
-        self.assertEqual(num2words(99.99, lang="tk"), "togsan dokuz point dokuz dokuz")
-        self.assertEqual(num2words(100.01, lang="tk"), "bir ýüz point zero bir")
-        self.assertEqual(num2words(100.5, lang="tk"), "bir ýüz point bäş")
+        self.assertEqual(num2words(0.1, lang="tk"), "nol otur bir")
+        self.assertEqual(num2words(0.5, lang="tk"), "nol otur bäş")
+        self.assertEqual(num2words(0.9, lang="tk"), "nol otur dokuz")
+        self.assertEqual(num2words(1.1, lang="tk"), "bir otur bir")
+        self.assertEqual(num2words(1.5, lang="tk"), "bir otur bäş")
+        self.assertEqual(num2words(2.5, lang="tk"), "iki otur bäş")
+        self.assertEqual(num2words(3.14, lang="tk"), "üç otur bir dört")
+        self.assertEqual(num2words(10.5, lang="tk"), "on otur bäş")
+        self.assertEqual(num2words(11.11, lang="tk"), "on bir otur bir bir")
+        self.assertEqual(num2words(20.2, lang="tk"), "ýigrimi otur iki")
+        self.assertEqual(num2words(99.99, lang="tk"), "togsan dokuz otur dokuz dokuz")
+        self.assertEqual(num2words(100.01, lang="tk"), "bir ýüz otur nol bir")
+        self.assertEqual(num2words(100.5, lang="tk"), "bir ýüz otur bäş")
         self.assertEqual(
-            num2words(123.45, lang="tk"), "bir ýüz ýigrimi üç point dört bäş"
+            num2words(123.45, lang="tk"), "bir ýüz ýigrimi üç otur dört bäş"
         )
-        self.assertEqual(num2words(1000.5, lang="tk"), "bir müň point bäş")
+        self.assertEqual(num2words(1000.5, lang="tk"), "bir müň otur bäş")
         self.assertEqual(
-            num2words(1234.56, lang="tk"), "bir müň iki ýüz otuz dört point bäş alty"
+            num2words(1234.56, lang="tk"), "bir müň iki ýüz otuz dört otur bäş alty"
         )
-        self.assertEqual(num2words(10000.01, lang="tk"), "on müň point zero bir")
-        self.assertEqual(num2words(-0.5, lang="tk"), "minus zero point bäş")
-        self.assertEqual(num2words(-1.5, lang="tk"), "minus bir point bäş")
-        self.assertEqual(num2words(-10.5, lang="tk"), "minus on point bäş")
+        self.assertEqual(num2words(10000.01, lang="tk"), "on müň otur nol bir")
+        self.assertEqual(num2words(-0.5, lang="tk"), "minus nol otur bäş")
+        self.assertEqual(num2words(-1.5, lang="tk"), "minus bir otur bäş")
+        self.assertEqual(num2words(-10.5, lang="tk"), "minus on otur bäş")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
-        self.assertEqual(num2words(1, lang="tk", ordinal=True), "bir-nji")
-        self.assertEqual(num2words(2, lang="tk", ordinal=True), "iki-nji")
-        self.assertEqual(num2words(3, lang="tk", ordinal=True), "üç-nji")
-        self.assertEqual(num2words(4, lang="tk", ordinal=True), "dört-nji")
-        self.assertEqual(num2words(5, lang="tk", ordinal=True), "bäş-nji")
-        self.assertEqual(num2words(6, lang="tk", ordinal=True), "alty-nji")
-        self.assertEqual(num2words(7, lang="tk", ordinal=True), "ýedi-nji")
-        self.assertEqual(num2words(8, lang="tk", ordinal=True), "sekiz-nji")
-        self.assertEqual(num2words(9, lang="tk", ordinal=True), "dokuz-nji")
-        self.assertEqual(num2words(10, lang="tk", ordinal=True), "on-nji")
-        self.assertEqual(num2words(11, lang="tk", ordinal=True), "on bir-nji")
-        self.assertEqual(num2words(12, lang="tk", ordinal=True), "on iki-nji")
-        self.assertEqual(num2words(13, lang="tk", ordinal=True), "on üç-nji")
-        self.assertEqual(num2words(14, lang="tk", ordinal=True), "on dört-nji")
-        self.assertEqual(num2words(15, lang="tk", ordinal=True), "on bäş-nji")
-        self.assertEqual(num2words(16, lang="tk", ordinal=True), "on alty-nji")
-        self.assertEqual(num2words(17, lang="tk", ordinal=True), "on ýedi-nji")
-        self.assertEqual(num2words(18, lang="tk", ordinal=True), "on sekiz-nji")
-        self.assertEqual(num2words(19, lang="tk", ordinal=True), "on dokuz-nji")
-        self.assertEqual(num2words(20, lang="tk", ordinal=True), "ýigrimi-nji")
-        self.assertEqual(num2words(21, lang="tk", ordinal=True), "ýigrimi bir-nji")
-        self.assertEqual(num2words(22, lang="tk", ordinal=True), "ýigrimi iki-nji")
-        self.assertEqual(num2words(25, lang="tk", ordinal=True), "ýigrimi bäş-nji")
-        self.assertEqual(num2words(30, lang="tk", ordinal=True), "otuz-nji")
-        self.assertEqual(num2words(40, lang="tk", ordinal=True), "kyrk-nji")
-        self.assertEqual(num2words(50, lang="tk", ordinal=True), "elli-nji")
-        self.assertEqual(num2words(60, lang="tk", ordinal=True), "altmyş-nji")
-        self.assertEqual(num2words(70, lang="tk", ordinal=True), "ýetmiş-nji")
-        self.assertEqual(num2words(80, lang="tk", ordinal=True), "segsen-nji")
-        self.assertEqual(num2words(90, lang="tk", ordinal=True), "togsan-nji")
-        self.assertEqual(num2words(100, lang="tk", ordinal=True), "bir ýüz-nji")
-        self.assertEqual(num2words(101, lang="tk", ordinal=True), "bir ýüz bir-nji")
-        self.assertEqual(num2words(200, lang="tk", ordinal=True), "iki ýüz-nji")
-        self.assertEqual(num2words(500, lang="tk", ordinal=True), "bäş ýüz-nji")
-        self.assertEqual(num2words(1000, lang="tk", ordinal=True), "bir müň-nji")
-        self.assertEqual(num2words(1001, lang="tk", ordinal=True), "bir müň bir-nji")
-        self.assertEqual(num2words(10000, lang="tk", ordinal=True), "on müň-nji")
+        self.assertEqual(num2words(1, lang="tk", ordinal=True), "birinji")
+        self.assertEqual(num2words(2, lang="tk", ordinal=True), "ikinji")
+        self.assertEqual(num2words(3, lang="tk", ordinal=True), "üçünji")
+        self.assertEqual(num2words(4, lang="tk", ordinal=True), "dördünji")
+        self.assertEqual(num2words(5, lang="tk", ordinal=True), "bäşinji")
+        self.assertEqual(num2words(6, lang="tk", ordinal=True), "altynjy")
+        self.assertEqual(num2words(7, lang="tk", ordinal=True), "ýedinji")
+        self.assertEqual(num2words(8, lang="tk", ordinal=True), "sekizinji")
+        self.assertEqual(num2words(9, lang="tk", ordinal=True), "dokuzynjy")
+        self.assertEqual(num2words(10, lang="tk", ordinal=True), "onunjy")
+        self.assertEqual(num2words(11, lang="tk", ordinal=True), "on birinji")
+        self.assertEqual(num2words(12, lang="tk", ordinal=True), "on ikinji")
+        self.assertEqual(num2words(13, lang="tk", ordinal=True), "on üçünji")
+        self.assertEqual(num2words(14, lang="tk", ordinal=True), "on dördünji")
+        self.assertEqual(num2words(15, lang="tk", ordinal=True), "on bäşinji")
+        self.assertEqual(num2words(16, lang="tk", ordinal=True), "on altynjy")
+        self.assertEqual(num2words(17, lang="tk", ordinal=True), "on ýedinji")
+        self.assertEqual(num2words(18, lang="tk", ordinal=True), "on sekizinji")
+        self.assertEqual(num2words(19, lang="tk", ordinal=True), "on dokuzynjy")
+        self.assertEqual(num2words(20, lang="tk", ordinal=True), "ýigriminji")
+        self.assertEqual(num2words(21, lang="tk", ordinal=True), "ýigrimi birinji")
+        self.assertEqual(num2words(22, lang="tk", ordinal=True), "ýigrimi ikinji")
+        self.assertEqual(num2words(25, lang="tk", ordinal=True), "ýigrimi bäşinji")
+        self.assertEqual(num2words(30, lang="tk", ordinal=True), "otuzynjy")
+        self.assertEqual(num2words(40, lang="tk", ordinal=True), "kyrkynjy")
+        self.assertEqual(num2words(50, lang="tk", ordinal=True), "ellinji")
+        self.assertEqual(num2words(60, lang="tk", ordinal=True), "altmyşynjy")
+        self.assertEqual(num2words(70, lang="tk", ordinal=True), "ýetmişinji")
+        self.assertEqual(num2words(80, lang="tk", ordinal=True), "segseninji")
+        self.assertEqual(num2words(90, lang="tk", ordinal=True), "togsanynjy")
+        self.assertEqual(num2words(100, lang="tk", ordinal=True), "bir ýüzünji")
+        self.assertEqual(num2words(101, lang="tk", ordinal=True), "bir ýüz birinji")
+        self.assertEqual(num2words(200, lang="tk", ordinal=True), "iki ýüzünji")
+        self.assertEqual(num2words(500, lang="tk", ordinal=True), "bäş ýüzünji")
+        self.assertEqual(num2words(1000, lang="tk", ordinal=True), "bir müňünji")
+        self.assertEqual(num2words(1001, lang="tk", ordinal=True), "bir müň birinji")
+        self.assertEqual(num2words(10000, lang="tk", ordinal=True), "on müňünji")
 
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="tk", to="currency", currency="TMT"), "zero manat"
+            num2words(0, lang="tk", to="currency", currency="TMT"), "nol manat"
         )
         self.assertEqual(
             num2words(0.01, lang="tk", to="currency", currency="TMT"),
-            "zero manat bir teňňe",
+            "nol manat bir teňňe",
         )
         self.assertEqual(
             num2words(0.5, lang="tk", to="currency", currency="TMT"),
-            "zero manat elli teňňe",
+            "nol manat elli teňňe",
         )
         self.assertEqual(
             num2words(1, lang="tk", to="currency", currency="TMT"), "bir manat"
@@ -304,42 +313,12 @@ class Num2WordsTKTest(TestCase):
             num2words(1.5, lang="tk", to="currency", currency="TMT"),
             "bir manat elli teňňe",
         )
-        self.assertEqual(
-            num2words(0, lang="tk", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="tk", to="currency", currency="USD"),
-            "zero dollars bir cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="tk", to="currency", currency="USD"),
-            "zero dollars elli cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="tk", to="currency", currency="USD"), "bir dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="tk", to="currency", currency="USD"),
-            "bir dollar elli cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="tk", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="tk", to="currency", currency="EUR"),
-            "zero euros bir cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="tk", to="currency", currency="EUR"),
-            "zero euros elli cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="tk", to="currency", currency="EUR"), "bir euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="tk", to="currency", currency="EUR"),
-            "bir euro elli cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="tk", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="tk", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -368,7 +347,7 @@ class Num2WordsTKTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="tk"), "zero")
+        self.assertEqual(num2words("0", lang="tk"), "nol")
         self.assertEqual(num2words("1", lang="tk"), "bir")
         self.assertEqual(num2words("10", lang="tk"), "on")
         self.assertEqual(num2words("100", lang="tk"), "bir ýüz")
@@ -380,9 +359,8 @@ class Num2WordsTKTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="tk"), "zero")
+        self.assertEqual(num2words(0, lang="tk"), "nol")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tk"), num2words("100", lang="tk"))
         self.assertEqual(num2words(1000, lang="tk"), num2words("1000", lang="tk"))
-

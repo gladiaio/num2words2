@@ -43,31 +43,39 @@
 //!    the empty string (a falsy placeholder so that `ones[n]` indexes by
 //!    digit), so Python always answered with the English "zero". This port
 //!    says the Sindhi ٻڙي instead: `to_cardinal(0)` == "ٻڙي". See [`ZERO`].
-//! 2. **No teens.** Sindhi has distinct words for 11-19, but the `< 100` branch
-//!    unconditionally composes `tens[n // 10] + " " + ones[n % 10]`. So 11 is
-//!    "ڏهه هڪ" — literally "ten one" — 13 is "ڏهه ٽي", and 19 is "ڏهه نو". This
-//!    propagates upward: 12345 == "ڏهه ٻه هزار ٽي سو چاليهه پنج" ("ten two
-//!    thousand ..."). Preserved verbatim.
-//! 3. **Everything >= 10^9 renders as bare ASCII digits.** The `_int_to_word`
-//!    branch chain ends in `else: return str(number)  # Fallback for very large
-//!    numbers`, so `to_cardinal(10**9)` == `"1000000000"` and
-//!    `to_cardinal(10**21)` == `"1000000000000000000000"`. No exception, no
-//!    words. Ordinal inherits it: `to_ordinal(10**9)` == `"1000000000-و"`.
-//! 4. **`million` is "لک" (lakh) but is applied at 10^6.** A lakh is 10^5 in the
-//!    South Asian system, so the scale name is off by a factor of ten, and the
-//!    genuine Sindhi grouping (lakh/crore) is not used at all — the code groups
-//!    in Western thousands/millions. Hence 10^6 == "هڪ لک" ("one lakh") and
-//!    123456789 == "هڪ سو ويهه ٽي لک ..." ("one hundred twenty three lakh ...").
-//! 5. **`negword`** is the English "minus " in Python; this port uses منفي
-//!    (#154): `to_cardinal(-1)` == "منفي هڪ". The decimal word is still the
-//!    English "point" (see [`POINTWORD`]) — the Sindhi term is not confirmed.
-//! 6. Orthographic inconsistency in the tables, kept byte-exact: `ones[1]`
-//!    ("هڪ") spells its kaf with U+06AA ARABIC LETTER SWASH KAF, while `million`
-//!    ("لک") uses U+06A9 ARABIC LETTER KEHEH. These are distinct codepoints that
-//!    render near-identically, so the tables below use explicit `\u{...}`
-//!    escapes rather than pasted glyphs — a copy-paste round trip through an
-//!    editor that normalises Arabic presentation forms would silently corrupt
-//!    them, and the corpus compares bytes.
+//! 2. **No teens (fixed, gladiaio/num2words2#247).** Python's `< 100` branch
+//!    composed `tens[n // 10] + " " + ones[n % 10]`, so 11 was "ڏهه هڪ"
+//!    (ten one) and 23 "ويهه ٽي". The port reads [`BELOW_HUNDRED`]: 11 is
+//!    "يارهن", 23 "ٽريويهه".
+//! 3. **Everything >= 10^9 rendered as bare ASCII digits (fixed,
+//!    gladiaio/num2words2#147).** The `_int_to_word` chain ended in `else:
+//!    return str(number)`, so 10^9 was `"1000000000"`. The port adds ارب
+//!    (10^9) and کرب (10^11), recursing on the کرب quotient, and raises
+//!    `OverflowError` from 10^22 ([`maxval_ceiling`]).
+//! 4. **`million` was "لک" (lakh) applied at 10^6 (fixed,
+//!    gladiaio/num2words2#147).** A lakh is 10^5, so 10^6 came out as
+//!    "هڪ لک" and 123456789 as "هڪ سو ويهه ٽي لک ...". The port groups by
+//!    هزار, لک (10^5) and ڪروڙ (10^7): 10^6 is "ڏهه لک", 123456789
+//!    "ٻارهن ڪروڙ چوٽيهه لک ڇاونجاهه هزار ست سو اوڻانوي".
+//! 5. **`negword` and `pointword`** are the English "minus " and "point" in
+//!    Python; this port uses منفي and اعشاريه (#154): `to_cardinal(-1)` ==
+//!    "منفي هڪ", `to_cardinal(1.5)` == "هڪ اعشاريه پنج".
+//!
+//!    UNVERIFIED (#154): اعشاريه — best candidate, not confirmed by a Sindhi
+//!    source for reading a decimal point aloud. Basis: the Sindhi Language
+//!    Authority dictionary (dic.sindhila.edu.pk) attests the adjective
+//!    اعشاري "decimal" (اعشاري نظام, decimal system) from the same root;
+//!    Urdu, the other language of Pakistani schooling, reads 1.5 as
+//!    "ایک اعشاریہ پانچ"; indifferentlanguages.com gives "اعشاريه پوائنٽ" for
+//!    "decimal point". Written in Sindhi letters (ي U+064A, ه U+0647). The
+//!    alternative ڏهائي is attested only as "tenth part / decimal system".
+//!    Needs a native speaker.
+//! 6. **Two kafs, on purpose.** `ones[1]` ("هڪ") spells its kaf with U+06AA
+//!    ARABIC LETTER SWASH KAF, while لک uses U+06A9 KEHEH. That is Sindhi
+//!    orthography (ڪ is /k/, ک is /kʰ/), not an inconsistency. The two
+//!    render near-identically, so the tables use explicit `\u{...}` escapes:
+//!    an editor that normalises Arabic presentation forms would silently
+//!    corrupt them.
 //!
 //! # Currency
 //!
@@ -145,14 +153,21 @@
 //! trait default that raises, matching `Num2Word_Base.pluralize` — SD reaches it
 //! from neither `to_currency` (which inlines its own two-form selection) nor
 //! `to_cheque` (which takes `cr1[-1]` directly).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ڊالر / يورو with سينٽ. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `_int_to_word`'s zero case. Python evaluates
 /// `self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is `""` (falsy),
@@ -178,39 +193,142 @@ const ONES: [&str; 10] = [
     "\u{0646}\u{0648}",                     // نو    (nav)
 ];
 
-/// `self.tens`. Index 0 is an unused empty placeholder: the `< 100` branch is
-/// only entered when `number >= 10`, so `tens[number // 10]` has index >= 1.
-const TENS: [&str; 10] = [
-    "",                                                     // (unreachable placeholder)
-    "\u{068F}\u{0647}\u{0647}",                             // ڏهه     (ḍahe)
-    "\u{0648}\u{064A}\u{0647}\u{0647}",                     // ويهه    (vīhe)
-    "\u{067D}\u{064A}\u{0647}\u{0647}",                     // ٽيهه    (ṭīhe)
-    "\u{0686}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}",     // چاليهه  (chālīhe)
-    "\u{067E}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}",     // پنجاهه  (panjāhe)
-    "\u{0633}\u{067A}",                                     // سٺ      (saṭh)
-    "\u{0633}\u{062A}\u{0631}",                             // ستر     (satar)
-    "\u{0627}\u{0633}\u{064A}",                             // اسي     (asī)
-    "\u{0646}\u{0648}\u{064A}",                             // نوي     (navī)
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247; Sindhi
+/// was not in that issue's list but had the same bug). Python had `ones` and
+/// `tens` and no teens, so 11 was "ڏهه هڪ" (ten one) and 23 "ويهه ٽي".
+/// Sindhi has its own word for every number below a hundred. Each entry is
+/// the headword the Sindhi Language Authority dictionary
+/// (dic.sindhila.edu.pk) gives for that value; paheliyan.pk's 1-100 list
+/// agrees except for 23/53/63/73/83, where it writes ٽي- for the
+/// dictionary's ٽري-. Escaped like the other tables (bug 6).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", // 0 (never read)
+    "\u{0647}\u{06AA}", // 1 هڪ
+    "\u{067B}\u{0647}", // 2 ٻه
+    "\u{067D}\u{064A}", // 3 ٽي
+    "\u{0686}\u{0627}\u{0631}", // 4 چار
+    "\u{067E}\u{0646}\u{062C}", // 5 پنج
+    "\u{0687}\u{0647}\u{0647}", // 6 ڇهه
+    "\u{0633}\u{062A}", // 7 ست
+    "\u{0627}\u{067A}", // 8 اٺ
+    "\u{0646}\u{0648}", // 9 نو
+    "\u{068F}\u{0647}\u{0647}", // 10 ڏهه
+    "\u{064A}\u{0627}\u{0631}\u{0647}\u{0646}", // 11 يارهن
+    "\u{067B}\u{0627}\u{0631}\u{0647}\u{0646}", // 12 ٻارهن
+    "\u{062A}\u{064A}\u{0631}\u{0647}\u{0646}", // 13 تيرهن
+    "\u{0686}\u{0648}\u{068F}\u{0647}\u{0646}", // 14 چوڏهن
+    "\u{067E}\u{0646}\u{062F}\u{0631}\u{0647}\u{0646}", // 15 پندرهن
+    "\u{0633}\u{0648}\u{0631}\u{0647}\u{0646}", // 16 سورهن
+    "\u{0633}\u{062A}\u{0631}\u{0647}\u{0646}", // 17 سترهن
+    "\u{0627}\u{0631}\u{0699}\u{0647}\u{0646}", // 18 ارڙهن
+    "\u{0627}\u{0648}\u{06BB}\u{064A}\u{0647}\u{0647}", // 19 اوڻيهه
+    "\u{0648}\u{064A}\u{0647}\u{0647}", // 20 ويهه
+    "\u{0627}\u{064A}\u{06AA}\u{064A}\u{0647}\u{0647}", // 21 ايڪيهه
+    "\u{067B}\u{0627}\u{0648}\u{064A}\u{0647}\u{0647}", // 22 ٻاويهه
+    "\u{067D}\u{0631}\u{064A}\u{0648}\u{064A}\u{0647}\u{0647}", // 23 ٽريويهه
+    "\u{0686}\u{0648}\u{0648}\u{064A}\u{0647}\u{0647}", // 24 چوويهه
+    "\u{067E}\u{0646}\u{062C}\u{0648}\u{064A}\u{0647}\u{0647}", // 25 پنجويهه
+    "\u{0687}\u{0648}\u{064A}\u{0647}\u{0647}", // 26 ڇويهه
+    "\u{0633}\u{062A}\u{0627}\u{0648}\u{064A}\u{0647}\u{0647}", // 27 ستاويهه
+    "\u{0627}\u{067A}\u{0627}\u{0648}\u{064A}\u{0647}\u{0647}", // 28 اٺاويهه
+    "\u{0627}\u{0648}\u{06BB}\u{067D}\u{064A}\u{0647}\u{0647}", // 29 اوڻٽيهه
+    "\u{067D}\u{064A}\u{0647}\u{0647}", // 30 ٽيهه
+    "\u{0627}\u{064A}\u{06AA}\u{067D}\u{064A}\u{0647}\u{0647}", // 31 ايڪٽيهه
+    "\u{067B}\u{067D}\u{064A}\u{0647}\u{0647}", // 32 ٻٽيهه
+    "\u{067D}\u{064A}\u{067D}\u{064A}\u{0647}\u{0647}", // 33 ٽيٽيهه
+    "\u{0686}\u{0648}\u{067D}\u{064A}\u{0647}\u{0647}", // 34 چوٽيهه
+    "\u{067E}\u{0646}\u{062C}\u{067D}\u{064A}\u{0647}\u{0647}", // 35 پنجٽيهه
+    "\u{0687}\u{067D}\u{064A}\u{0647}\u{0647}", // 36 ڇٽيهه
+    "\u{0633}\u{062A}\u{067D}\u{064A}\u{0647}\u{0647}", // 37 ستٽيهه
+    "\u{0627}\u{067A}\u{067D}\u{064A}\u{0647}\u{0647}", // 38 اٺٽيهه
+    "\u{0627}\u{0648}\u{06BB}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 39 اوڻيتاليهه
+    "\u{0686}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 40 چاليهه
+    "\u{0627}\u{064A}\u{06AA}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 41 ايڪيتاليهه
+    "\u{067B}\u{0627}\u{0626}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 42 ٻائيتاليهه
+    "\u{067D}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 43 ٽيتاليهه
+    "\u{0686}\u{0648}\u{0626}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 44 چوئيتاليهه
+    "\u{067E}\u{0646}\u{062C}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 45 پنجيتاليهه
+    "\u{0687}\u{0627}\u{0626}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 46 ڇائيتاليهه
+    "\u{0633}\u{062A}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 47 ستيتاليهه
+    "\u{0627}\u{067A}\u{064A}\u{062A}\u{0627}\u{0644}\u{064A}\u{0647}\u{0647}", // 48 اٺيتاليهه
+    "\u{0627}\u{0648}\u{06BB}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 49 اوڻونجاهه
+    "\u{067E}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 50 پنجاهه
+    "\u{0627}\u{064A}\u{06AA}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 51 ايڪونجاهه
+    "\u{067B}\u{0627}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 52 ٻاونجاهه
+    "\u{067D}\u{0631}\u{064A}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 53 ٽريونجاهه
+    "\u{0686}\u{0648}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 54 چوونجاهه
+    "\u{067E}\u{0646}\u{062C}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 55 پنجونجاهه
+    "\u{0687}\u{0627}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 56 ڇاونجاهه
+    "\u{0633}\u{062A}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 57 ستونجاهه
+    "\u{0627}\u{067A}\u{0648}\u{0646}\u{062C}\u{0627}\u{0647}\u{0647}", // 58 اٺونجاهه
+    "\u{0627}\u{0648}\u{06BB}\u{0647}\u{067A}", // 59 اوڻهٺ
+    "\u{0633}\u{067A}", // 60 سٺ
+    "\u{0627}\u{064A}\u{06AA}\u{0647}\u{067A}", // 61 ايڪهٺ
+    "\u{067B}\u{0627}\u{0647}\u{067A}", // 62 ٻاهٺ
+    "\u{067D}\u{0631}\u{064A}\u{0647}\u{067A}", // 63 ٽريهٺ
+    "\u{0686}\u{0648}\u{0647}\u{067A}", // 64 چوهٺ
+    "\u{067E}\u{0646}\u{062C}\u{0647}\u{067A}", // 65 پنجهٺ
+    "\u{0687}\u{0627}\u{0647}\u{067A}", // 66 ڇاهٺ
+    "\u{0633}\u{062A}\u{0647}\u{067A}", // 67 ستهٺ
+    "\u{0627}\u{067A}\u{0647}\u{067A}", // 68 اٺهٺ
+    "\u{0627}\u{0648}\u{06BB}\u{0647}\u{062A}\u{0631}", // 69 اوڻهتر
+    "\u{0633}\u{062A}\u{0631}", // 70 ستر
+    "\u{0627}\u{064A}\u{06AA}\u{0647}\u{062A}\u{0631}", // 71 ايڪهتر
+    "\u{067B}\u{0627}\u{0647}\u{062A}\u{0631}", // 72 ٻاهتر
+    "\u{067D}\u{0631}\u{064A}\u{0647}\u{062A}\u{0631}", // 73 ٽريهتر
+    "\u{0686}\u{0648}\u{0647}\u{062A}\u{0631}", // 74 چوهتر
+    "\u{067E}\u{0646}\u{062C}\u{0647}\u{062A}\u{0631}", // 75 پنجهتر
+    "\u{0687}\u{0627}\u{0647}\u{062A}\u{0631}", // 76 ڇاهتر
+    "\u{0633}\u{062A}\u{0647}\u{062A}\u{0631}", // 77 ستهتر
+    "\u{0627}\u{067A}\u{0647}\u{062A}\u{0631}", // 78 اٺهتر
+    "\u{0627}\u{0648}\u{06BB}\u{0627}\u{0633}\u{064A}", // 79 اوڻاسي
+    "\u{0627}\u{0633}\u{064A}", // 80 اسي
+    "\u{0627}\u{064A}\u{06AA}\u{0627}\u{0633}\u{064A}", // 81 ايڪاسي
+    "\u{067B}\u{064A}\u{0627}\u{0633}\u{064A}", // 82 ٻياسي
+    "\u{067D}\u{0631}\u{064A}\u{0627}\u{0633}\u{064A}", // 83 ٽرياسي
+    "\u{0686}\u{0648}\u{0631}\u{0627}\u{0633}\u{064A}", // 84 چوراسي
+    "\u{067E}\u{0646}\u{062C}\u{0627}\u{0633}\u{064A}", // 85 پنجاسي
+    "\u{0687}\u{0647}\u{0627}\u{0633}\u{064A}", // 86 ڇهاسي
+    "\u{0633}\u{062A}\u{0627}\u{0633}\u{064A}", // 87 ستاسي
+    "\u{0627}\u{067A}\u{0627}\u{0633}\u{064A}", // 88 اٺاسي
+    "\u{0627}\u{0648}\u{06BB}\u{0627}\u{0646}\u{0648}\u{064A}", // 89 اوڻانوي
+    "\u{0646}\u{0648}\u{064A}", // 90 نوي
+    "\u{0627}\u{064A}\u{06AA}\u{0627}\u{0646}\u{0648}\u{064A}", // 91 ايڪانوي
+    "\u{067B}\u{064A}\u{0627}\u{0646}\u{0648}\u{064A}", // 92 ٻيانوي
+    "\u{067D}\u{064A}\u{0627}\u{0646}\u{0648}\u{064A}", // 93 ٽيانوي
+    "\u{0686}\u{0648}\u{0631}\u{0627}\u{0646}\u{0648}\u{064A}", // 94 چورانوي
+    "\u{067E}\u{0646}\u{062C}\u{0627}\u{0646}\u{0648}\u{064A}", // 95 پنجانوي
+    "\u{0687}\u{0647}\u{0627}\u{0646}\u{0648}\u{064A}", // 96 ڇهانوي
+    "\u{0633}\u{062A}\u{0627}\u{0646}\u{0648}\u{064A}", // 97 ستانوي
+    "\u{0627}\u{067A}\u{0627}\u{0646}\u{0648}\u{064A}", // 98 اٺانوي
+    "\u{0646}\u{0648}\u{0627}\u{0646}\u{0648}\u{064A}", // 99 نوانوي
 ];
 
 /// `self.hundred` — سو (so).
 const HUNDRED: &str = "\u{0633}\u{0648}";
 /// `self.thousand` — هزار (hazār).
 const THOUSAND: &str = "\u{0647}\u{0632}\u{0627}\u{0631}";
-/// `self.million` — لک (lakh). Applied at 10^6 despite meaning 10^5; see bug 4.
-/// Note U+06A9 KEHEH here vs U+06AA SWASH KAF in `ONES[1]` (bug 6).
-const MILLION: &str = "\u{0644}\u{06A9}";
+/// The Indian scale (bug 4, fixed in #147): لک 10^5, ڪروڙ 10^7, ارب 10^9 and
+/// کرب 10^11, each defined by value in the Sindhi Language Authority
+/// dictionary (لک "هڪ سؤ هزار", ڪروڙ "هڪ سؤ لک", ارب "سؤ ڪروڙ", کرب
+/// "سؤ ارب"). Python applied لک at 10^6 and stopped at 10^9. Nothing above
+/// کرب is attested, so its quotient recurses up to the 10^22 ceiling.
+/// Note U+06A9 KEHEH in لک and کرب vs U+06AA SWASH KAF in ڪروڙ and هڪ: Sindhi
+/// spells /kʰ/ and /k/ with different letters.
+const LAKH: &str = "\u{0644}\u{06A9}"; // لک
+const CRORE: &str = "\u{06AA}\u{0631}\u{0648}\u{0699}"; // ڪروڙ
+const ARAB: &str = "\u{0627}\u{0631}\u{0628}"; // ارب
+const KHARAB: &str = "\u{06A9}\u{0631}\u{0628}"; // کرب
 
 /// The suffix `to_ordinal` appends: `"-و"` (hyphen + U+0648 ARABIC LETTER WAW).
 const ORDINAL_SUFFIX: &str = "-\u{0648}";
 
 /// `self.pointword` — the word between the integer and fractional parts on the
-/// float path. Still the English "point": the Sindhi decimal word needs a
-/// native-speaker check (gladiaio/num2words2#154), so it is left as is.
+/// float path. Python said the English "point". UNVERIFIED (#154): see the
+/// module header for the basis of اعشاريه.
+const POINTWORD: &str = "\u{0627}\u{0639}\u{0634}\u{0627}\u{0631}\u{064A}\u{0647}"; // اعشاريه
 
-const POINTWORD: &str = "point";
-
-/// The 10^9 ceiling past which `_int_to_word` gives up and returns digits.
+/// Where the `u64` ladder hands over to [`ARAB`]/[`KHARAB`].
 const FALLBACK_THRESHOLD: u64 = 1_000_000_000;
 
 // ---- currency ----------------------------------------------------------
@@ -284,11 +402,11 @@ impl LangSd {
         forms.insert("PKR", pkr.clone());
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["ڊالر", "ڊالر"], &["سينٽ", "سينٽ"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["يورو", "يورو"], &["سينٽ", "سينٽ"]),
         );
         LangSd {
             forms,
@@ -301,6 +419,22 @@ impl Default for LangSd {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#147, #203): the largest scale
+/// word is کرب (10^11), so from 10^22 its multiplier would itself need کرب.
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(22))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`]. Every entry point that hands
+/// over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
 }
 
 /// Python's `_int_to_word`.
@@ -319,10 +453,23 @@ fn int_to_word(number: &BigInt) -> String {
     // Every branch below 10^9 is bounded, so a u64 is provably wide enough
     // once we know the value is under the threshold. Anything else — including
     // BigInts too large for u64 at all — takes the digit fallback (bug 3).
-    match number.to_u64() {
-        Some(n) if n < FALLBACK_THRESHOLD => bounded_to_word(n),
-        _ => number.to_string(),
+    if let Some(n) = number.to_u64().filter(|&n| n < FALLBACK_THRESHOLD) {
+        return bounded_to_word(n);
     }
+    // Python returned `str(number)` here (bug 3, fixed in #147).
+    let kharab = BigInt::from(100_000_000_000u64);
+    let (divisor, word) = if *number < kharab {
+        (BigInt::from(FALLBACK_THRESHOLD), ARAB)
+    } else {
+        (kharab, KHARAB)
+    };
+    let (q, r) = (number / &divisor, number % &divisor);
+    let mut result = format!("{} {}", int_to_word(&q), word);
+    if !r.is_zero() {
+        result.push(' ');
+        result.push_str(&int_to_word(&r));
+    }
+    result
 }
 
 /// The `1 <= number < 10^9` portion of `_int_to_word`.
@@ -338,13 +485,8 @@ fn bounded_to_word(number: u64) -> String {
     }
 
     if number < 100 {
-        let tens_val = (number / 10) as usize;
-        let ones_val = (number % 10) as usize;
-        // No teens special case: 11 becomes "ten one". See bug 2.
-        if ones_val == 0 {
-            return TENS[tens_val].to_string();
-        }
-        return format!("{} {}", TENS[tens_val], ONES[ones_val]);
+        // No teens and no compounds in Python (bug 2, fixed in #247).
+        return BELOW_HUNDRED[number as usize].to_string();
     }
 
     if number < 1_000 {
@@ -359,29 +501,28 @@ fn bounded_to_word(number: u64) -> String {
         return result;
     }
 
-    if number < 1_000_000 {
-        let thousands_val = number / 1_000;
-        let remainder = number % 1_000;
-        let mut result = format!("{} {}", bounded_to_word(thousands_val), THOUSAND);
-        if remainder != 0 {
-            result.push(' ');
-            result.push_str(&bounded_to_word(remainder));
-        }
-        return result;
-    }
-
-    // number < 10^9, guaranteed by the caller.
-    let millions_val = number / 1_000_000;
-    let remainder = number % 1_000_000;
-    let mut result = format!("{} {}", bounded_to_word(millions_val), MILLION);
-    if remainder != 0 {
+    // Python: thousands below 10^6, then لک "millions" (bug 4). Now
+    // thousand, lakh and crore.
+    let (divisor, word) = if number < 100_000 {
+        (1_000, THOUSAND)
+    } else if number < 10_000_000 {
+        (100_000, LAKH)
+    } else {
+        (10_000_000, CRORE)
+    };
+    let mut result = format!("{} {}", bounded_to_word(number / divisor), word);
+    if number % divisor != 0 {
         result.push(' ');
-        result.push_str(&bounded_to_word(remainder));
+        result.push_str(&bounded_to_word(number % divisor));
     }
     result
 }
 
 impl Lang for LangSd {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -397,7 +538,7 @@ impl Lang for LangSd {
     /// `to_ordinal(float/Decimal)` — Python's `to_ordinal` is
     /// `to_cardinal(number) + "-و"` for *any* input (no
     /// `verify_ordinal`), so the float path is the float cardinal put through
-    /// the same literal transformation: `5.0` -> "پنج point ٻڙي-و".
+    /// the same literal transformation: `5.0` -> "پنج اعشاريه ٻڙي-و".
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -447,7 +588,7 @@ impl Lang for LangSd {
 
     /// `self.pointword`. Consulted on the `"." in n` branch of Python's
     /// `to_cardinal` — the float/Decimal path now served by
-    /// [`LangSd::to_cardinal_float`] below. Plain ASCII "point".
+    /// [`LangSd::to_cardinal_float`] below.
     fn pointword(&self) -> &str {
         POINTWORD
     }
@@ -470,7 +611,7 @@ impl Lang for LangSd {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", prefix, int_to_word(&magnitude))
+        Ok(format!("{}{}", prefix, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -557,7 +698,7 @@ impl Lang for LangSd {
     /// # The negative-zero hole (Decimal only)
     ///
     /// `str(Decimal("-0.0")) == "-0.0"` keeps the sign, so Python answers
-    /// "منفي ٻڙي point ٻڙي"; a `BigDecimal` has no signed zero (its `BigInt`
+    /// "منفي ٻڙي اعشاريه ٻڙي"; a `BigDecimal` has no signed zero (its `BigInt`
     /// mantissa normalises `-0` to `0`), and the discriminating string is not
     /// carried across the `FloatValue::Decimal` boundary, so this arm drops the
     /// negword. Out of this file's remit — same boundary hole `lang_pa` flags.
@@ -607,7 +748,7 @@ impl Lang for LangSd {
         if negative {
             ret.push_str(NEGWORD);
         }
-        ret.push_str(&int_to_word(&pre.abs()));
+        ret.push_str(&checked_int_to_word(&pre.abs())?);
 
         if precision > 0 {
             // `+ " " + self.pointword + " "`
@@ -771,7 +912,7 @@ impl Lang for LangSd {
         } else {
             &forms.unit[0]
         };
-        let mut result = format!("{} {}", int_to_word(&left), unit);
+        let mut result = format!("{} {}", checked_int_to_word(&left)?, unit);
 
         // `if cents and right:` — `right == 0` is falsy, so a float with zero
         // cents drops the segment entirely. Also note that `cents=False` does
@@ -803,6 +944,7 @@ impl Lang for LangSd {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -833,38 +975,38 @@ mod float_tests {
     #[test]
     fn corpus_float_rows() {
         // Every `"lang":"sd","to":"cardinal"` row with a dot in `arg`.
-        assert_eq!(flt(0.0, 1), "ٻڙي point ٻڙي");
-        assert_eq!(flt(0.5, 1), "ٻڙي point پنج");
-        assert_eq!(flt(1.0, 1), "هڪ point ٻڙي");
-        assert_eq!(flt(1.5, 1), "هڪ point پنج");
-        assert_eq!(flt(2.25, 2), "ٻه point ٻه پنج");
-        assert_eq!(flt(3.14, 2), "ٽي point هڪ چار");
-        assert_eq!(flt(0.01, 2), "ٻڙي point ٻڙي هڪ");
-        assert_eq!(flt(0.1, 1), "ٻڙي point هڪ");
-        assert_eq!(flt(0.99, 2), "ٻڙي point نو نو");
-        assert_eq!(flt(1.01, 2), "هڪ point ٻڙي هڪ");
-        assert_eq!(flt(12.34, 2), "ڏهه ٻه point ٽي چار");
-        assert_eq!(flt(99.99, 2), "نوي نو point نو نو");
-        assert_eq!(flt(100.5, 1), "هڪ سو point پنج");
-        assert_eq!(flt(1234.56, 2), "هڪ هزار ٻه سو ٽيهه چار point پنج ڇهه");
-        assert_eq!(flt(-0.5, 1), "منفي ٻڙي point پنج");
-        assert_eq!(flt(-1.5, 1), "منفي هڪ point پنج");
-        assert_eq!(flt(-12.34, 2), "منفي ڏهه ٻه point ٽي چار");
-        assert_eq!(flt(1.005, 3), "هڪ point ٻڙي ٻڙي پنج");
-        assert_eq!(flt(2.675, 3), "ٻه point ڇهه ست پنج"); // f64 artefact -> 675
+        assert_eq!(flt(0.0, 1), "ٻڙي اعشاريه ٻڙي");
+        assert_eq!(flt(0.5, 1), "ٻڙي اعشاريه پنج");
+        assert_eq!(flt(1.0, 1), "هڪ اعشاريه ٻڙي");
+        assert_eq!(flt(1.5, 1), "هڪ اعشاريه پنج");
+        assert_eq!(flt(2.25, 2), "ٻه اعشاريه ٻه پنج");
+        assert_eq!(flt(3.14, 2), "ٽي اعشاريه هڪ چار");
+        assert_eq!(flt(0.01, 2), "ٻڙي اعشاريه ٻڙي هڪ");
+        assert_eq!(flt(0.1, 1), "ٻڙي اعشاريه هڪ");
+        assert_eq!(flt(0.99, 2), "ٻڙي اعشاريه نو نو");
+        assert_eq!(flt(1.01, 2), "هڪ اعشاريه ٻڙي هڪ");
+        assert_eq!(flt(12.34, 2), "ٻارهن اعشاريه ٽي چار");
+        assert_eq!(flt(99.99, 2), "نوانوي اعشاريه نو نو");
+        assert_eq!(flt(100.5, 1), "هڪ سو اعشاريه پنج");
+        assert_eq!(flt(1234.56, 2), "هڪ هزار ٻه سو چوٽيهه اعشاريه پنج ڇهه");
+        assert_eq!(flt(-0.5, 1), "منفي ٻڙي اعشاريه پنج");
+        assert_eq!(flt(-1.5, 1), "منفي هڪ اعشاريه پنج");
+        assert_eq!(flt(-12.34, 2), "منفي ٻارهن اعشاريه ٽي چار");
+        assert_eq!(flt(1.005, 3), "هڪ اعشاريه ٻڙي ٻڙي پنج");
+        assert_eq!(flt(2.675, 3), "ٻه اعشاريه ڇهه ست پنج"); // f64 artefact -> 675
         // extra live-interpreter checks
-        assert_eq!(flt(2.0, 1), "ٻه point ٻڙي");
-        assert_eq!(flt(1000000.5, 1), "هڪ لک point پنج");
+        assert_eq!(flt(2.0, 1), "ٻه اعشاريه ٻڙي");
+        assert_eq!(flt(1000000.5, 1), "ڏهه لک اعشاريه پنج");
     }
 
     #[test]
     fn corpus_decimal_rows() {
         // Every `"lang":"sd","to":"cardinal_dec"` row.
-        assert_eq!(dec("0.01", 2), "ٻڙي point ٻڙي هڪ");
-        assert_eq!(dec("1.10", 2), "هڪ point هڪ ٻڙي"); // trailing zero kept
-        assert_eq!(dec("12.345", 3), "ڏهه ٻه point ٽي چار پنج");
-        assert_eq!(dec("98746251323029.99", 2), "98746251323029 point نو نو"); // bug 3 fallback
-        assert_eq!(dec("0.001", 3), "ٻڙي point ٻڙي ٻڙي هڪ");
+        assert_eq!(dec("0.01", 2), "ٻڙي اعشاريه ٻڙي هڪ");
+        assert_eq!(dec("1.10", 2), "هڪ اعشاريه هڪ ٻڙي"); // trailing zero kept
+        assert_eq!(dec("12.345", 3), "ٻارهن اعشاريه ٽي چار پنج");
+        assert_eq!(dec("98746251323029.99", 2), "نو سو ستاسي کرب ڇائيتاليهه ارب پنجويهه ڪروڙ تيرهن لک ٽريويهه هزار اوڻٽيهه اعشاريه نو نو"); // bug 3, fixed (#147)
+        assert_eq!(dec("0.001", 3), "ٻڙي اعشاريه ٻڙي ٻڙي هڪ");
     }
 
     #[test]
@@ -875,7 +1017,7 @@ mod float_tests {
         let v = FloatValue::Float { value: 2.675, precision: 3 };
         assert_eq!(
             sd.to_cardinal_float(&v, Some(1)).unwrap(),
-            "ٻه point ڇهه ست پنج"
+            "ٻه اعشاريه ڇهه ست پنج"
         );
     }
 
@@ -883,7 +1025,7 @@ mod float_tests {
     fn float_negative_zero_keeps_negword() {
         // str(-0.0) == "-0.0" -> Python prepends the negword; is_sign_negative
         // recovers it where `< 0.0` would not.
-        assert_eq!(flt(-0.0, 1), "منفي ٻڙي point ٻڙي");
+        assert_eq!(flt(-0.0, 1), "منفي ٻڙي اعشاريه ٻڙي");
     }
 
     #[test]

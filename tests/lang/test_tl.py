@@ -25,7 +25,7 @@ class Num2WordsTLTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="tl"), "zero")
+        self.assertEqual(num2words(0, lang="tl"), "sero")
         self.assertEqual(num2words(1, lang="tl"), "isa")
         self.assertEqual(num2words(2, lang="tl"), "dalawa")
         self.assertEqual(num2words(3, lang="tl"), "tatlo")
@@ -212,11 +212,20 @@ class Num2WordsTLTest(TestCase):
             num2words(999999999, lang="tl"),
             "siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam",
         )
-        self.assertEqual(num2words(1000000000, lang="tl"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="tl"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="tl"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="tl"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="tl"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="tl"), "isa bilyon")
+        self.assertEqual(
+            num2words(1234567890, lang="tl"),
+            "isa bilyon dalawa daan tatlumpu apat milyon lima daan animnapu pito libo walo daan siyamnapu",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="tl"),
+            "siyam bilyon siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam",
+        )
+        self.assertEqual(num2words(10000000000, lang="tl"), "sampu bilyon")
+        self.assertEqual(
+            num2words(99999999999, lang="tl"),
+            "siyamnapu siyam bilyon siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -240,33 +249,33 @@ class Num2WordsTLTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="tl"), "zero point isa")
-        self.assertEqual(num2words(0.5, lang="tl"), "zero point lima")
-        self.assertEqual(num2words(0.9, lang="tl"), "zero point siyam")
-        self.assertEqual(num2words(1.1, lang="tl"), "isa point isa")
-        self.assertEqual(num2words(1.5, lang="tl"), "isa point lima")
-        self.assertEqual(num2words(2.5, lang="tl"), "dalawa point lima")
-        self.assertEqual(num2words(3.14, lang="tl"), "tatlo point isa apat")
-        self.assertEqual(num2words(10.5, lang="tl"), "sampu point lima")
-        self.assertEqual(num2words(11.11, lang="tl"), "sampu isa point isa isa")
-        self.assertEqual(num2words(20.2, lang="tl"), "dalawampu point dalawa")
+        self.assertEqual(num2words(0.1, lang="tl"), "sero punto isa")
+        self.assertEqual(num2words(0.5, lang="tl"), "sero punto lima")
+        self.assertEqual(num2words(0.9, lang="tl"), "sero punto siyam")
+        self.assertEqual(num2words(1.1, lang="tl"), "isa punto isa")
+        self.assertEqual(num2words(1.5, lang="tl"), "isa punto lima")
+        self.assertEqual(num2words(2.5, lang="tl"), "dalawa punto lima")
+        self.assertEqual(num2words(3.14, lang="tl"), "tatlo punto isa apat")
+        self.assertEqual(num2words(10.5, lang="tl"), "sampu punto lima")
+        self.assertEqual(num2words(11.11, lang="tl"), "sampu isa punto isa isa")
+        self.assertEqual(num2words(20.2, lang="tl"), "dalawampu punto dalawa")
         self.assertEqual(
-            num2words(99.99, lang="tl"), "siyamnapu siyam point siyam siyam"
+            num2words(99.99, lang="tl"), "siyamnapu siyam punto siyam siyam"
         )
-        self.assertEqual(num2words(100.01, lang="tl"), "isa daan point zero isa")
-        self.assertEqual(num2words(100.5, lang="tl"), "isa daan point lima")
+        self.assertEqual(num2words(100.01, lang="tl"), "isa daan punto sero isa")
+        self.assertEqual(num2words(100.5, lang="tl"), "isa daan punto lima")
         self.assertEqual(
-            num2words(123.45, lang="tl"), "isa daan dalawampu tatlo point apat lima"
+            num2words(123.45, lang="tl"), "isa daan dalawampu tatlo punto apat lima"
         )
-        self.assertEqual(num2words(1000.5, lang="tl"), "isa libo point lima")
+        self.assertEqual(num2words(1000.5, lang="tl"), "isa libo punto lima")
         self.assertEqual(
             num2words(1234.56, lang="tl"),
-            "isa libo dalawa daan tatlumpu apat point lima anim",
+            "isa libo dalawa daan tatlumpu apat punto lima anim",
         )
-        self.assertEqual(num2words(10000.01, lang="tl"), "sampu libo point zero isa")
-        self.assertEqual(num2words(-0.5, lang="tl"), "minus zero point lima")
-        self.assertEqual(num2words(-1.5, lang="tl"), "minus isa point lima")
-        self.assertEqual(num2words(-10.5, lang="tl"), "minus sampu point lima")
+        self.assertEqual(num2words(10000.01, lang="tl"), "sampu libo punto sero isa")
+        self.assertEqual(num2words(-0.5, lang="tl"), "minus sero punto lima")
+        self.assertEqual(num2words(-1.5, lang="tl"), "minus isa punto lima")
+        self.assertEqual(num2words(-10.5, lang="tl"), "minus sampu punto lima")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -311,15 +320,15 @@ class Num2WordsTLTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="tl", to="currency", currency="PHP"), "zero piso"
+            num2words(0, lang="tl", to="currency", currency="PHP"), "sero piso"
         )
         self.assertEqual(
             num2words(0.01, lang="tl", to="currency", currency="PHP"),
-            "zero piso isa sentimo",
+            "sero piso isa sentimo",
         )
         self.assertEqual(
             num2words(0.5, lang="tl", to="currency", currency="PHP"),
-            "zero piso limampu sentimo",
+            "sero piso limampu sentimo",
         )
         self.assertEqual(
             num2words(1, lang="tl", to="currency", currency="PHP"), "isa piso"
@@ -329,40 +338,40 @@ class Num2WordsTLTest(TestCase):
             "isa piso limampu sentimo",
         )
         self.assertEqual(
-            num2words(0, lang="tl", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="tl", to="currency", currency="USD"), "sero dolyar"
         )
         self.assertEqual(
             num2words(0.01, lang="tl", to="currency", currency="USD"),
-            "zero dollars isa cent",
+            "sero dolyar isa sentimo",
         )
         self.assertEqual(
             num2words(0.5, lang="tl", to="currency", currency="USD"),
-            "zero dollars limampu cents",
+            "sero dolyar limampu sentimo",
         )
         self.assertEqual(
-            num2words(1, lang="tl", to="currency", currency="USD"), "isa dollar"
+            num2words(1, lang="tl", to="currency", currency="USD"), "isa dolyar"
         )
         self.assertEqual(
             num2words(1.5, lang="tl", to="currency", currency="USD"),
-            "isa dollar limampu cents",
+            "isa dolyar limampu sentimo",
         )
         self.assertEqual(
-            num2words(0, lang="tl", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="tl", to="currency", currency="EUR"), "sero euro"
         )
         self.assertEqual(
             num2words(0.01, lang="tl", to="currency", currency="EUR"),
-            "zero euros isa cent",
+            "sero euro isa sentimo",
         )
         self.assertEqual(
             num2words(0.5, lang="tl", to="currency", currency="EUR"),
-            "zero euros limampu cents",
+            "sero euro limampu sentimo",
         )
         self.assertEqual(
             num2words(1, lang="tl", to="currency", currency="EUR"), "isa euro"
         )
         self.assertEqual(
             num2words(1.5, lang="tl", to="currency", currency="EUR"),
-            "isa euro limampu cents",
+            "isa euro limampu sentimo",
         )
 
     def test_year(self):
@@ -396,7 +405,7 @@ class Num2WordsTLTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="tl"), "zero")
+        self.assertEqual(num2words("0", lang="tl"), "sero")
         self.assertEqual(num2words("1", lang="tl"), "isa")
         self.assertEqual(num2words("10", lang="tl"), "sampu")
         self.assertEqual(num2words("100", lang="tl"), "isa daan")
@@ -408,9 +417,8 @@ class Num2WordsTLTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="tl"), "zero")
+        self.assertEqual(num2words(0, lang="tl"), "sero")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tl"), num2words("100", lang="tl"))
         self.assertEqual(num2words(1000, lang="tl"), num2words("1000", lang="tl"))
-

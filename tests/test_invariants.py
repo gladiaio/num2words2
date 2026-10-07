@@ -27,8 +27,27 @@ ENGLISH = {lang for lang in LANGS if lang.startswith("en")}
 EXPECTED_ERRORS = (TypeError, ValueError, OverflowError, NotImplementedError)
 
 CONVERTERS = ["cardinal", "ordinal", "ordinal_num", "year", "currency"]
-INPUTS = [0, 1, -1, 2, 11, 21, 100, 1100, 0.5, -0.5, 1.5, "12", "1.5",
-          Decimal("0.1"), Decimal("1.5"), -42, 1.0, 5.0, -5.0]
+INPUTS = [
+    0,
+    1,
+    -1,
+    2,
+    11,
+    21,
+    100,
+    1100,
+    0.5,
+    -0.5,
+    1.5,
+    "12",
+    "1.5",
+    Decimal("0.1"),
+    Decimal("1.5"),
+    -42,
+    1.0,
+    5.0,
+    -5.0,
+]
 
 
 def _call(x, lang, to):
@@ -70,8 +89,7 @@ def _english_word_failures(lang):
     """English base-class words leaking into another language: Latin letters
     mixed into non-Latin-script output, or the English decimal word."""
     out = []
-    for x, to in [(0, "cardinal"), (1.5, "cardinal"), (-1, "cardinal"),
-                  (0, "ordinal")]:
+    for x, to in [(0, "cardinal"), (1.5, "cardinal"), (-1, "cardinal"), (0, "ordinal")]:
         r, err = _call(x, lang, to)
         if err is not None or not isinstance(r, str):
             continue
@@ -87,6 +105,11 @@ def _parity_failures(lang):
         a, ea = _call(f, lang, "cardinal")
         b, eb = _call(s, lang, "cardinal")
         c, ec = _call(Decimal(s), lang, "cardinal")
+        errs = {type(e) for e in (ea, eb, ec)}
+        if len(errs) == 1 and None not in {ea, eb, ec}:
+            # All three input types raise the same typed error: they agree
+            # (ksw has no word for the decimal point or minus, #143).
+            continue
         if ea or eb or ec or not (a == b == c):
             out.append((s, a, b, c, type(ea or eb or ec).__name__))
     return out
@@ -114,12 +137,171 @@ def _maxval_failures(lang):
     return out
 
 
+def _ordinal_fraction_failures(lang):
+    """A non-integral ordinal or year is a TypeError (#214), never a
+    truncated number or a cardinal with a suffix glued on."""
+    out = []
+    for to in ("ordinal", "year"):
+        r, err = _call(2.5, lang, to)
+        if not isinstance(err, TypeError):
+            out.append((to, 2.5, type(err).__name__ if err else r))
+    return out
+
+
+def _currency_code_failures(lang):
+    """currency=X either raises NotImplementedError or names a currency other
+    than the language default -- never the default's words, never the raw
+    ISO code (#219)."""
+    default = _rust.default_currency(lang)
+    try:
+        base = num2words(2, lang=lang, to="currency", currency=default)
+    except Exception:  # noqa: BLE001 - only the comparison matters here
+        base = None
+    out = []
+    for code in ("USD", "EUR", "GBP", "JPY"):
+        if code == default:
+            continue
+        try:
+            r = num2words(2, lang=lang, to="currency", currency=code)
+        except NotImplementedError:
+            continue
+        except Exception as e:  # noqa: BLE001 - classifying is the point
+            out.append((code, type(e).__name__))
+            continue
+        if r == base or code in r:
+            out.append((code, r))
+    return out
+
+
+def _ordinal_unique_failures(lang):
+    """Two different numbers never share an ordinal (#251: be 80th read
+    like 70th, el 121st..129th all read "εκατοστός εικοστός"). Values that
+    raise are skipped."""
+    seen = {}
+    out = []
+    for x in range(1, 2001):
+        r, err = _call(x, lang, "ordinal")
+        if err is not None:
+            continue
+        if r in seen:
+            out.append(("ordinal", seen[r], x, r))
+        else:
+            seen[r] = x
+    return out
+
+
+# Codes probed by currency_nouns_native. There is no API listing a
+# language's currency table, so this covers the codes the shared tables
+# carry; each language's own default is probed too.
+CURRENCY_PROBE = (
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "INR",
+    "CNY",
+    "RUB",
+    "CHF",
+    "AUD",
+    "CAD",
+    "SEK",
+    "NOK",
+    "DKK",
+    "PLN",
+    "BRL",
+    "MXN",
+    "ZAR",
+    "KRW",
+    "AED",
+    "SAR",
+    "KWD",
+    "TRY",
+    "HUF",
+    "CZK",
+    "NZD",
+    "SGD",
+    "HKD",
+    "IDR",
+    "NGN",
+)
+ENGLISH_CURRENCY_PLURALS = {"dollars", "cents", "euros", "pounds"}
+# Languages whose own word coincides with an English plural above.
+NATIVE_CURRENCY_PLURALS = {
+    # French "dollars", "cents" (dollar cents), "euros"
+    "fr": {"dollars", "cents", "euros"},
+    "fr_BE": {"dollars", "cents", "euros"},
+    "fr_CH": {"dollars", "cents", "euros"},
+    "fr_DZ": {"dollars", "cents", "euros"},
+    # "euros" is the Spanish, Catalan, Portuguese and Galician plural
+    "es": {"euros"},
+    "es_CO": {"euros"},
+    "es_CR": {"euros"},
+    "es_GT": {"euros"},
+    "es_NI": {"euros"},
+    "es_VE": {"euros"},
+    "ca": {"euros"},
+    "gl": {"euros"},
+    "pt": {"euros"},
+    "pt_BR": {"euros"},
+    # Danish plural "dollar" or "dollars" (Den Danske Ordbog)
+    "da": {"dollars"},
+    "dk": {"dollars"},
+}
+
+
+def _currency_noun_failures(lang):
+    """Currency nouns are the language's own (#222): no English plural
+    dollars/cents/euros/pounds in Latin-script output (unless that is the
+    native spelling), and no Latin letters at all in a language whose
+    numerals use another script."""
+    if lang in ENGLISH:
+        return []
+    two, _ = _call(2, lang, "cardinal")
+    non_latin = isinstance(two, str) and not re.search(r"[A-Za-z]", two)
+    allowed = NATIVE_CURRENCY_PLURALS.get(lang, set())
+    out = []
+    for code in CURRENCY_PROBE + (_rust.default_currency(lang),):
+        try:
+            r = num2words(2.5, lang=lang, to="currency", currency=code)
+        except Exception:  # noqa: BLE001 - unsupported codes raise
+            continue
+        words = {w.lower() for w in re.findall(r"[A-Za-z]+", r)}
+        if (non_latin and words) or (words & ENGLISH_CURRENCY_PLURALS) - allowed:
+            out.append((code, r))
+    return out
+
+
+def _digit_output_failures(lang):
+    """10^9..10^21 are spelled out or raise OverflowError -- never the raw
+    ASCII digits of a `return str(number)` fallback (#147). ordinal_num is
+    digits by design; currency is not checked here."""
+    out = []
+    for e in (9, 12, 15, 18, 21):
+        n = 10**e
+        for x, to in [
+            (n, "cardinal"),
+            (-n - 7, "cardinal"),
+            (n + 1, "ordinal"),
+            (n + 3, "year"),
+            (Decimal(n) + Decimal("0.5"), "cardinal"),
+        ]:
+            r, err = _call(x, lang, to)
+            if err is None and isinstance(r, str) and re.search(r"[0-9]", r):
+                out.append((to, "10**%d" % e, r[:40]))
+    return out
+
+
 CHECKS = {
     "exceptions": _exception_failures,
     "hygiene": _hygiene_failures,
     "english_words": _english_word_failures,
     "parity": _parity_failures,
     "maxval": _maxval_failures,
+    "ordinal_rejects_fraction": _ordinal_fraction_failures,
+    "currency_code_respected": _currency_code_failures,
+    "ordinal_unique_1_2000": _ordinal_unique_failures,
+    "currency_nouns_native": _currency_noun_failures,
+    "no_digit_output": _digit_output_failures,
 }
 
 # Languages whose own decimal word is spelled "point".
@@ -131,13 +313,17 @@ ALLOW = {
     "exceptions": set(),
     "hygiene": set(),
     # gladiaio/num2words2#154
-    "english_words": {
-        "br", "haw", "ht", "jv", "jw", "ln", "mg", "mi", "mt", "sd",
-        "so", "su", "tk", "tl", "uz", "wo", "yo",
-    },
+    "english_words": set(),
     # pt_BR keeps the string's own notation on purpose, see #92
     "parity": {"pt_BR"},
     "maxval": set(),
+    "ordinal_rejects_fraction": set(),
+    "currency_code_respected": set(),
+    # Only be and el failed this when it was added; both fixed in #251.
+    "ordinal_unique_1_2000": set(),
+    "currency_nouns_native": set(),
+    # gladiaio/num2words2#147
+    "no_digit_output": set(),
 }
 
 
@@ -157,9 +343,10 @@ def test_invariant(check):
     new = {lg: f[:3] for lg, f in failing.items() if lg not in allowed}
     stale = sorted(lg for lg in ALLOW[check] if lg in langs and lg not in failing)
     assert not new, "%s: languages newly failing: %r" % (check, new)
-    assert not stale, (
-        "%s: these languages pass now; remove them from ALLOW[%r]: %s"
-        % (check, check, stale)
+    assert not stale, "%s: these languages pass now; remove them from ALLOW[%r]: %s" % (
+        check,
+        check,
+        stale,
     )
 
 

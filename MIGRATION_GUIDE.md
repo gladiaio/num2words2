@@ -14,7 +14,7 @@ Complete guide for migrating from the original `num2words` library to `num2words
 
 ```bash
 # 1. Run migration script
-curl -O https://raw.githubusercontent.com/jqueguiner/num2words/master/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 python migrate_to_num2words2.py --dry-run .  # Preview changes
 python migrate_to_num2words2.py .            # Apply changes
 
@@ -46,7 +46,7 @@ Use our migration script for Python code:
 
 ```bash
 # Download the script
-curl -O https://raw.githubusercontent.com/jqueguiner/num2words/master/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 
 # Preview changes (recommended)
 python migrate_to_num2words2.py --dry-run /path/to/your/project
@@ -61,7 +61,7 @@ The script handles these import patterns:
 |--------|-------|
 | `from num2words import num2words` | `from num2words2 import num2words` |
 | `import num2words` | `import num2words2 as num2words` |
-| `from num2words.lang_en import Num2Word_EN` | `from num2words2.lang_en import Num2Word_EN` |
+| `from num2words.lang_en import Num2Word_EN` | *(left unchanged, with a warning — see Scenario 3)* |
 
 ### Step 3: Manual Updates
 
@@ -72,14 +72,14 @@ Update your dependency declarations:
 **requirements.txt:**
 ```diff
 - num2words>=0.5.12
-+ num2words2>=0.5.15
++ num2words2>=1.0
 ```
 
 **pyproject.toml:**
 ```diff
 dependencies = [
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ]
 ```
 
@@ -87,7 +87,7 @@ dependencies = [
 ```diff
 install_requires=[
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ]
 ```
 
@@ -199,21 +199,30 @@ def convert_number(n, lang='en'):
     return num2words.num2words(n, lang=lang)
 ```
 
-### Scenario 3: Submodule Imports
+### Scenario 3: Converter Classes (`num2words.lang_*`)
+
+`num2words2` runs every conversion in its Rust core and does **not** ship the
+`lang_*` modules or the `Num2Word_*` converter classes, and it has no
+`CONVERTER_CLASSES` table. The migration script leaves these imports alone
+and prints a warning for each one. Rewrite them to the public API:
 
 **Before:**
 ```python
 from num2words.lang_en import Num2Word_EN
 
 converter = Num2Word_EN()
+converter.to_ordinal(42)
 ```
 
 **After:**
 ```python
-from num2words2.lang_en import Num2Word_EN
+from num2words2 import num2words
 
-converter = Num2Word_EN()
+num2words(42, lang='en', to='ordinal')
 ```
+
+Every `to_<mode>()` method maps to `num2words(..., to='<mode>')`. To list the
+supported language codes, run `num2words2 --list-languages`.
 
 ### Scenario 4: Gradual Migration
 
@@ -339,9 +348,9 @@ print(f"Converted 10,000 numbers in {end - start:.2f} seconds")
 
 ### Getting Help
 
-- **Documentation:** https://github.com/jqueguiner/num2words
-- **Issues:** https://github.com/jqueguiner/num2words/issues
-- **Discussions:** https://github.com/jqueguiner/num2words/discussions
+- **Documentation:** https://github.com/gladiaio/num2words2/wiki
+- **API reference:** https://github.com/gladiaio/num2words2/blob/main/REFERENCE.md
+- **Issues:** https://github.com/gladiaio/num2words2/issues
 
 ## Migration Checklist
 
@@ -379,10 +388,10 @@ Use this checklist to ensure complete migration:
 ## FAQ
 
 **Q: Is num2words2 compatible with the original num2words?**
-A: Yes, num2words2 is designed as a drop-in replacement with full backward compatibility.
+A: Yes for the public API: `num2words2` is a drop-in replacement for the `num2words()` function. The internal converter classes are not available (see Scenario 3).
 
 **Q: Will my existing code break?**
-A: No, the API is identical. Only the import statements need to change.
+A: Not if you use the public functions (`num2words`, `num2words_sentence`, ...): only the import statements need to change. Code that imports the converter classes (`num2words.lang_*`, `CONVERTER_CLASSES`) has to switch to `num2words(..., lang=..., to=...)`; see Scenario 3.
 
 **Q: Can I use both libraries simultaneously?**
 A: Not recommended as they may conflict. Choose one for your project.
@@ -395,4 +404,4 @@ A: Yes, all original languages plus additional languages (Armenian, Mongolian, S
 
 ---
 
-**Need more help?** Check our [migration examples](https://github.com/jqueguiner/num2words/tree/master/examples) or [open an issue](https://github.com/jqueguiner/num2words/issues).
+**Need more help?** Check the [wiki](https://github.com/gladiaio/num2words2/wiki) or [open an issue](https://github.com/gladiaio/num2words2/issues).

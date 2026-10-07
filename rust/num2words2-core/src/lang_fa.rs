@@ -4,8 +4,9 @@
 //! `__init__` only does `self.number = 0` — it never calls `super().__init__()`,
 //! so `self.cards`, `self.MAXVAL`, `self.low_numwords` etc. are *never built*.
 //! `to_cardinal` is overridden outright and drives `cardinalPos` over 3-digit
-//! chunks. Consequently `cards`/`maxval`/`merge` stay at their trait defaults
-//! here and there is **no overflow check** at all (see bug 1 below).
+//! chunks. Consequently `cards`/`merge` stay at their trait defaults here.
+//! Python has **no overflow check** at all (see bug 1 below); the port's
+//! `maxval` is 10^18, where the scale words end.
 //!
 //! The class attributes `errmsg_toobig = "Too large"` and `MAXNUM = 10**36`
 //! are dead code — the Python source itself labels them `# Those are unused`,
@@ -59,37 +60,37 @@
 //!
 //! # The "نیم" (half) quirk and `farsiFracBig` overflow
 //!
-//! `fractional(number, level)` returns bare "نیم" (half) whenever `number == 5`
-//! — *regardless of level*. So `0.5`, `0.05`, `0.005`, `1.005` and `2.005` all
-//! render a "half": `0.05` → "نیم", `2.005` → "دو و نیم". Faithful Python bug.
+//! Python's `fractional(number, level)` returns bare "نیم" (half) whenever
+//! `number == 5` — *regardless of level* — so `0.05`, `0.005` and `2.005` all
+//! read as a "half", the same words as `0.5`. Fixed
+//! (gladiaio/num2words2#205): only `level == 1` (x.5) is "نیم"; `0.05` is
+//! "پنج صدم" (five hundredths) and `2.005` "دو و پنج هزارم".
 //!
-//! `farsiFracBig` has only four entries (10^0/10^3/10^6/10^9 scale). The index
-//! is `level // 3`, so `level >= 12` (a Decimal with >= 12 fractional digits)
-//! raises `IndexError: list index out of range` in Python. Reproduced.
+//! Python's `farsiFracBig` has only four entries (10^0/10^3/10^6/10^9 scale).
+//! The index is `level // 3`, so `level >= 12` (`0.1 + 0.2`, a Decimal with
+//! >= 12 fractional digits) raised `IndexError`. Fixed
+//! (gladiaio/num2words2#212): the table continues with تریلیونیم and
+//! تریلیاردیم, so up to 17 digits read; past that a `NotImplementedError`
+//! names the limit.
 //!
 //! # Faithfully reproduced Python bugs
 //!
 //! This is a port, not a rewrite. Both of the following are wrong-looking but
 //! are exactly what Python emits, verified against the interpreter:
 //!
-//! 1. **`cardinalPos` silently truncates above 10^18.** It iterates the
+//! 1. ~~**`cardinalPos` silently truncates above 10^18.**~~ It iterates the
 //!    six-element `farsiBig` table (`""`, thousand, million, milliard,
 //!    trillion, trilliard = 1000^0..1000^5), peeling one 1000-chunk per
-//!    iteration, and then simply *stops* — the remaining high-order digits in
-//!    `x` are discarded without any error. Since there is no `MAXVAL` check,
-//!    nothing catches it. So `to_cardinal(10**18) == ""` (every one of the six
-//!    chunks is zero, `res` is never assigned), and likewise `10**21` and even
-//!    `10**606` return `""`. Only the low 18 digits survive:
-//!    `to_cardinal(10**18 + 1) == "یک"` ("one"). The corpus records the empty
-//!    string for both 10^18 and 10^21. The last faithful value is 10^18 - 1.
+//!    iteration, and then simply *stops* — in Python the remaining high-order
+//!    digits are discarded without any error, so `to_cardinal(10**18) == ""`,
+//!    `to_currency(10**21) == " تومان"` and `to_cardinal(10**18 + 1) == "یک"`.
+//!    Fixed (gladiaio/num2words2#200): `maxval` is 10^18 and every mode raises
+//!    `OverflowError` from there.
 //!
-//! 2. **`to_ordinal` raises `IndexError` on anything bug 1 empties.**
-//!    `to_ordinal` does `r = self.to_cardinal(number)` then `r[-1]`, which is
-//!    `IndexError: string index out of range` when `r == ""`. So
-//!    `to_ordinal(10**18)` and `to_ordinal(10**21)` both crash — recorded as
-//!    `IndexError` in the corpus. This is a crash, not a deliberate raise, but
-//!    the exception *type* is observable, so parity means reproducing it
-//!    rather than tidying it into an `OverflowError`. See [`index_error`].
+//! 2. ~~**`to_ordinal` raises `IndexError` on anything bug 1 empties.**~~
+//!    Python's `r[-1]` on the empty cardinal. Unreachable since #200: the
+//!    ceiling raises `OverflowError` first. The `r[-1]` probe is kept for
+//!    fidelity; see [`index_error`].
 //!
 //! 3. ~~**`to_currency` of a negative value raises `AttributeError`.**~~
 //!    Fixed (gladiaio/num2words2#157). Because `__init__` skips
@@ -115,7 +116,7 @@
 //! Indexing is by **character**, not byte: every one of these strings is
 //! Arabic-script and multi-byte in UTF-8.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -124,6 +125,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `farsiOnes`. Index 0 is `""` (Python relies on this: `cardinal3` returns it
 /// for 0, and `cardinalPos` only ever calls with a non-zero chunk).
@@ -148,7 +150,7 @@ const FARSI_HUNDREDS: [&str; 10] = [
 /// and its scale word, so `format!("{}{}", chunk, big)` needs no extra space.
 ///
 /// Six entries is the whole ceiling of this language: see bug 1 in the module
-/// docs. There is no 1000^6 entry and no error when one is needed.
+/// docs. There is no 1000^6 entry, so `maxval` is 10^18 (#200).
 const FARSI_BIG: [&str; 6] = [
     "", " هزار", " میلیون", " میلیارد", " تریلیون", " تریلیارد",
 ];
@@ -158,9 +160,13 @@ const FARSI_BIG: [&str; 6] = [
 const FARSI_FRAC: [&str; 3] = ["", "دهم", "صدم"];
 
 /// `farsiFracBig`: the 1000^k fractional scale word, indexed by `level // 3`.
-/// Only four entries — a Decimal with >= 12 fractional digits indexes past the
-/// end and raises `IndexError` in Python (see [`fractional`]).
-const FARSI_FRAC_BIG: [&str; 4] = ["", "هزارم", "میلیونیم", "میلیاردیم"];
+/// Python's table has four entries, so 12+ fractional digits (`0.1 + 0.2`)
+/// raised `IndexError`. The port adds the ordinals of the two remaining
+/// `farsiBig` words, تریلیون and تریلیارد, so up to 17 digits read
+/// (gladiaio/num2words2#212).
+const FARSI_FRAC_BIG: [&str; 6] = [
+    "", "هزارم", "میلیونیم", "میلیاردیم", "تریلیونیم", "تریلیاردیم",
+];
 
 /// `fractional`'s `number == 5` special case: bare "half".
 const HALF_WORD: &str = "نیم";
@@ -188,10 +194,8 @@ const HEH: char = 'ه';
 const SEEN: char = 'س';
 
 /// Mirrors a *crash* in lang_FA.py, not a deliberate raise: `to_ordinal`
-/// indexes `r[-1]` on the empty string that `cardinalPos` returns for values
-/// >= 10^18. The exception type is observable behaviour a caller may catch, so
-/// parity requires reproducing it rather than tidying it into an
-/// `OverflowError`.
+/// indexes `r[-1]` on the empty string that `cardinalPos` returned for values
+/// >= 10^18 (bug 1, now an `OverflowError` first).
 fn index_error(msg: &str) -> N2WError {
     N2WError::Index(msg.to_string())
 }
@@ -252,9 +256,11 @@ fn cardinal3(number: u32) -> String {
 /// Port of `Num2Word_FA.cardinalPos`.
 ///
 /// Walks `farsiBig` low chunk first, prepending each rendered chunk, so the
-/// output reads high-to-low. Returns `""` for 0 and — per bug 1 — for any
-/// value whose low 18 digits are all zero.
-fn cardinal_pos(number: &BigInt) -> String {
+/// output reads high-to-low. Returns `""` for 0. Python also returned `""`
+/// for any value whose low 18 digits are all zero (bug 1); the port raises
+/// `OverflowError` from 10^18 instead.
+fn cardinal_pos(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     let thousand = BigInt::from(1000u32);
     let mut x = number.clone();
     let mut res = String::new();
@@ -293,9 +299,16 @@ fn cardinal_pos(number: &BigInt) -> String {
         };
     }
 
-    // Whatever is left in `x` (i.e. everything at or above 10^18) is silently
-    // dropped — no error, no MAXVAL check. This is bug 1.
-    res
+    // `x` is zero here: the ceiling check above keeps everything below 10^18.
+    Ok(res)
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#200): `farsiBig` ends at
+/// تریلیارد (10^15), so from 10^18 there is no scale word left. Python
+/// silently dropped those digits (bug 1).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(18))
 }
 
 /// Port of `Num2Word_FA.fractional`.
@@ -312,21 +325,27 @@ fn cardinal_pos(number: &BigInt) -> String {
 ///
 /// `number` is the fractional integer (`post`), always non-negative here.
 /// `level` is the precision. `farsiFrac[lm3]` is always in bounds (`lm3` is
-/// `level % 3` ∈ {0,1,2}); `farsiFracBig[ld3]` is not — `ld3 = level // 3 >= 4`
-/// (i.e. `level >= 12`) is Python's `IndexError`, reproduced.
+/// `level % 3` ∈ {0,1,2}); `farsiFracBig[ld3]` runs out at `level >= 18`,
+/// a `NotImplementedError` naming the limit (Python's `IndexError` hit at 12,
+/// #212).
 fn fractional(number: &BigInt, level: u32) -> Result<String> {
-    // if number == 5: return "نیم" — regardless of level. Faithful bug.
-    if number == &BigInt::from(5) {
+    // Python: `if number == 5: return "نیم"` — regardless of level, so 0.05
+    // and 0.005 read "half" too. Only one tenth-place 5 is a half (#205).
+    if number == &BigInt::from(5) && level == 1 {
         return Ok(HALF_WORD.to_string());
     }
-    let x = cardinal_pos(number);
+    let x = cardinal_pos(number)?;
     // ld3, lm3 = divmod(level, 3)
     let ld3 = (level / 3) as usize;
     let lm3 = (level % 3) as usize;
     let frac = FARSI_FRAC[lm3];
-    let frac_big = *FARSI_FRAC_BIG
-        .get(ld3)
-        .ok_or_else(|| index_error("list index out of range"))?;
+    let frac_big = *FARSI_FRAC_BIG.get(ld3).ok_or_else(|| {
+        N2WError::NotImplemented(format!(
+            "Persian decimals are read up to {} places, got {}",
+            FARSI_FRAC_BIG.len() * 3 - 1,
+            level
+        ))
+    })?;
     // (farsiFrac[lm3] + " " + farsiFracBig[ld3]).strip()
     let ltext = format!("{} {}", frac, frac_big);
     let ltext = ltext.trim();
@@ -384,7 +403,7 @@ fn fa_cardinal_float(v: &FloatValue) -> Result<String> {
 
     // if y == 0: return self.cardinalPos(x)
     if post.is_zero() {
-        return Ok(cardinal_pos(&pre));
+        return cardinal_pos(&pre);
     }
     // if x == 0: return self.fractional(y, level)
     if pre.is_zero() {
@@ -393,7 +412,7 @@ fn fa_cardinal_float(v: &FloatValue) -> Result<String> {
     // return self.cardinalPos(x) + " و " + self.fractional(y, level)
     Ok(format!(
         "{}{}{}",
-        cardinal_pos(&pre),
+        cardinal_pos(&pre)?,
         SEPARATOR,
         fractional(&post, level)?
     ))
@@ -452,8 +471,12 @@ impl Lang for LangFa {
         " و"
     }
 
-    // cards / maxval / merge stay at their trait defaults: Python never builds
-    // them for this class (see module docs).
+    // cards / merge stay at their trait defaults: Python never builds them
+    // for this class (see module docs).
+
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
 
     fn negword(&self) -> &str {
         NEGWORD
@@ -473,7 +496,7 @@ impl Lang for LangFa {
         if value.is_zero() {
             return Ok(ZERO_WORD.to_string());
         }
-        Ok(cardinal_pos(value))
+        cardinal_pos(value)
     }
 
     /// Port of `Num2Word_FA.to_ordinal`.
@@ -488,8 +511,8 @@ impl Lang for LangFa {
         let r = self.to_cardinal(value)?;
         let chars: Vec<char> = r.chars().collect();
 
-        // Python evaluates `r[-1]` first: IndexError on the empty string that
-        // cardinalPos returns for >= 10^18 (bug 2).
+        // Python evaluates `r[-1]` first: IndexError on an empty string (bug
+        // 2, unreachable since the #200 ceiling).
         let last = match chars.last() {
             Some(c) => *c,
             None => return Err(index_error("string index out of range")),
@@ -530,8 +553,8 @@ impl Lang for LangFa {
     /// `to_cardinal` handles floats/Decimals itself — so the ordinal float
     /// path is just the cardinal float path re-suffixed: `0.5` → "نیمم",
     /// `3.25` → "سه و بیست و پنج صدمم", `-1000000.0` → "منفی یک میلیونم".
-    /// The `r[-1]` probe on the empty cardinal that values >= 10^18 produce
-    /// raises IndexError (`1e+20`), exactly as the int path does.
+    /// Values >= 10^18 (`1e+20`) raise `OverflowError` from the cardinal, as
+    /// the int path does (#200).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let r = self.cardinal_float_entry(value, None)?;
         let chars: Vec<char> = r.chars().collect();

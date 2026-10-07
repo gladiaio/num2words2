@@ -12,7 +12,7 @@
 //! parses that. The stringification stays in the one place that already
 //! defines it, and the two sides cannot disagree about it.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{Kwargs, Lang, N2WError, Result};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
@@ -165,6 +165,120 @@ pub fn parse_currency_parts(
     }
 }
 
+/// `NotImplementedError` for a currency code the language has no words for.
+pub fn unknown_currency<L: Lang + ?Sized>(lang: &L, code: &str) -> N2WError {
+    N2WError::NotImplemented(format!(
+        "Currency code \"{}\" not implemented for \"{}\"",
+        code,
+        lang.lang_name()
+    ))
+}
+
+/// `to_currency[_kw]` with the options every language must honour the same
+/// way.
+///
+/// * **`currency=` (#219).** Many languages override `to_currency` wholesale
+///   and read only their own currency, so `currency="GBP"` silently printed
+///   the default ("dous euros", "اثنان ريالان"). A different code must give
+///   different words: when the output for `currency` is identical to the
+///   output for the language's default, the code was ignored and this raises
+///   like an unknown code does in `base.to_currency`. Codes whose forms are
+///   genuinely the same as the default's (two "dollar" currencies) are exempt.
+/// * **`cents=False` (#220)** prints the cents as digits ("two euros, 50
+///   cents"). Languages whose own `to_currency` drops the cents or ignores the
+///   flag get the digits spliced into their verbose reading in place of the
+///   cents numeral; where that numeral cannot be found (an inflected or
+///   counter form), this raises rather than change the amount.
+#[allow(clippy::too_many_arguments)]
+pub fn to_currency_checked<L: Lang + ?Sized>(
+    lang: &L,
+    val: &CurrencyValue,
+    currency: &str,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: bool,
+    kw: &Kwargs,
+) -> Result<String> {
+    let render = |code: &str, cents: bool| {
+        if kw.is_empty() {
+            lang.to_currency(val, code, cents, separator, adjective)
+        } else {
+            lang.to_currency_kw(val, code, cents, separator, adjective, kw)
+        }
+    };
+    let out = render(currency, cents)?;
+    let default = lang.default_currency();
+    if currency != default && !lang.same_currency(currency, default) {
+        let same_forms = match (lang.currency_forms(currency), lang.currency_forms(default)) {
+            (Some(a), Some(b)) => a.unit == b.unit && a.subunit == b.subunit,
+            _ => false,
+        };
+        if !same_forms && matches!(render(default, cents), Ok(d) if d == out) {
+            return Err(unknown_currency(lang, currency));
+        }
+    }
+    if cents {
+        return Ok(out);
+    }
+    terse_cents(lang, val, currency, out, || render(currency, true))
+}
+
+/// The cents-as-digits guarantee behind `cents=False` (see
+/// [`to_currency_checked`]). `out` is the language's own `cents=False` text.
+fn terse_cents<L: Lang + ?Sized>(
+    lang: &L,
+    val: &CurrencyValue,
+    currency: &str,
+    out: String,
+    verbose: impl FnOnce() -> Result<String>,
+) -> Result<String> {
+    let divisor = lang.currency_precision(currency);
+    if divisor <= 1 || !matches!(val, CurrencyValue::Decimal { .. }) {
+        return Ok(out);
+    }
+    // Fractional cents (1.011) keep base's numeric reading of the fraction.
+    if let CurrencyValue::Decimal { value, .. } = val {
+        let scaled = value * BigDecimal::from(divisor);
+        if &scaled - scaled.with_scale(0) != BigDecimal::zero() {
+            return Ok(out);
+        }
+    }
+    let (left, right, _) = parse_currency_parts(val, false, false, divisor);
+    let right = right.as_bigint_and_exponent().0;
+    if right.is_zero() {
+        return Ok(out);
+    }
+    let digits = [default_cents_terse(&right, divisor), right.to_string()];
+    let has_token = |text: &str, tok: &str| {
+        text.match_indices(tok).any(|(i, _)| {
+            let before = text[..i].chars().next_back();
+            let after = text[i + tok.len()..].chars().next();
+            !before.is_some_and(|c| c.is_ascii_digit()) && !after.is_some_and(|c| c.is_ascii_digit())
+        })
+    };
+    if digits.iter().any(|d| has_token(&out, d)) {
+        return Ok(out);
+    }
+    let unsupported = || N2WError::NotImplemented("does not support cents=False".into());
+    let verbose = verbose()?;
+    let word = lang.cents_verbose(&right, currency)?;
+    let pos = verbose.rfind(word.as_str()).ok_or_else(unsupported)?;
+    // The numeral must stand alone (not "five" inside "twenty-five" in a
+    // space-separated script) and follow the whole-unit amount.
+    let joins = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() && (c as u32) < 0x0590 || c == '-');
+    if joins(verbose[..pos].chars().next_back()) || joins(verbose[pos + word.len()..].chars().next()) {
+        return Err(unsupported());
+    }
+    if let Ok(money) = lang.money_verbose(&left, currency) {
+        if let Some(m) = verbose.find(money.as_str()) {
+            if pos < m + money.len() {
+                return Err(unsupported());
+            }
+        }
+    }
+    Ok(format!("{}{}{}", &verbose[..pos], digits[0], &verbose[pos + word.len()..]))
+}
+
 /// Python's `Num2Word_Base.to_currency`.
 ///
 /// Kept as a free function taking `&dyn Lang` so a language can override
@@ -194,11 +308,7 @@ pub fn default_to_currency<L: Lang + ?Sized>(
 
     let forms = lang
         .currency_forms(currency)
-        .ok_or_else(|| N2WError::NotImplemented(format!(
-            "Currency code \"{}\" not implemented for \"{}\"",
-            currency,
-            lang.lang_name()
-        )))?;
+        .ok_or_else(|| unknown_currency(lang, currency))?;
 
     let mut cr1 = forms.unit.clone();
     let cr2 = forms.subunit.clone();
@@ -297,7 +407,7 @@ pub fn default_cents_terse(n: &BigInt, divisor: i64) -> String {
         return n.to_string();
     }
     let width = divisor.to_string().len() - 1;
-    format!("{:0>width$}", n.to_string(), width = width)
+    crate::strnum::zero_pad_left(&n.to_string(), width)
 }
 
 /// Python's `Num2Word_Base.to_cheque`.
@@ -306,13 +416,24 @@ pub fn default_to_cheque<L: Lang + ?Sized>(
     val: &BigDecimal,
     currency: &str,
 ) -> Result<String> {
+    // Cheque convention always takes the plural form.
+    cheque_with_unit(lang, val, currency, |_, forms| {
+        Ok(forms.unit.last().cloned().unwrap_or_default())
+    })
+}
+
+/// [`default_to_cheque`] with the unit word chosen by `unit` from the whole
+/// amount and the currency's forms — for a language whose cheque noun agrees
+/// with the count (is: "EIN … KRÓNA", "TVÆR … KRÓNUR"; #197).
+pub fn cheque_with_unit<L: Lang + ?Sized>(
+    lang: &L,
+    val: &BigDecimal,
+    currency: &str,
+    unit: impl Fn(&BigInt, &CurrencyForms) -> Result<String>,
+) -> Result<String> {
     let forms = lang
         .currency_forms(currency)
-        .ok_or_else(|| N2WError::NotImplemented(format!(
-            "Currency code \"{}\" not implemented for \"{}\"",
-            currency,
-            lang.lang_name()
-        )))?;
+        .ok_or_else(|| unknown_currency(lang, currency))?;
 
     let divisor = lang.currency_precision(currency);
     let is_negative = val.is_negative();
@@ -323,19 +444,13 @@ pub fn default_to_cheque<L: Lang + ?Sized>(
         let sub = (&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(divisor);
         let sub = sub.with_scale(0).as_bigint_and_exponent().0;
         let digits = divisor.to_string().len() - 1;
-        format!(
-            "{:0>width$}/{}",
-            sub.to_string(),
-            divisor,
-            width = digits
-        )
+        format!("{}/{}", crate::strnum::zero_pad_left(&sub.to_string(), digits), divisor)
     } else {
         String::new()
     };
 
     let words = lang.money_verbose(&whole, currency)?;
-    // Cheque convention always takes the plural form.
-    let unit = forms.unit.last().cloned().unwrap_or_default();
+    let unit = unit(&whole, forms)?;
     let sign = if is_negative { "MINUS " } else { "" };
     let body = if fraction_str.is_empty() {
         format!("{} {}", words, unit)

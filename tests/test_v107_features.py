@@ -5,14 +5,20 @@ from num2words2 import num2words
 
 def test_cents_omit_drops_cents_portion():
     # Issue #554 / #190
-    assert num2words(55.45, lang="en", to="currency", cents="omit") == "fifty-five euros"
-    assert num2words(100.99, lang="en", to="currency", cents="omit") == "one hundred euros"
+    assert (
+        num2words(55.45, lang="en", to="currency", cents="omit") == "fifty-five euros"
+    )
+    assert (
+        num2words(100.99, lang="en", to="currency", cents="omit") == "one hundred euros"
+    )
 
 
 def test_cents_verbose_full_words():
     # 'verbose' alias = legacy True
-    assert num2words(55.45, lang="en", to="currency", cents="verbose") == \
-        "fifty-five euros, forty-five cents"
+    assert (
+        num2words(55.45, lang="en", to="currency", cents="verbose")
+        == "fifty-five euros, forty-five cents"
+    )
 
 
 def test_cents_terse_keeps_legacy_digit_form():
@@ -22,8 +28,10 @@ def test_cents_terse_keeps_legacy_digit_form():
 
 def test_legacy_cents_bool_unchanged():
     # cents=True/False legacy semantics unchanged.
-    assert num2words(55.45, lang="en", to="currency", cents=True) == \
-        "fifty-five euros, forty-five cents"
+    assert (
+        num2words(55.45, lang="en", to="currency", cents=True)
+        == "fifty-five euros, forty-five cents"
+    )
 
 
 def test_terse_ordinal_drops_leading_one():

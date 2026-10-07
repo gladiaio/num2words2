@@ -48,13 +48,15 @@
 //! These all look wrong and are all exactly what Python emits. Verified
 //! against the frozen corpus (`bench/corpus.jsonl`, lang "zu"):
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the raw decimal string.**
-//!    The final `return str(number)` has no guard: `to_cardinal(10**9)` ==
-//!    `"1000000000"`, not words, and no `OverflowError` is raised. Corpus
-//!    confirms this all the way to 10^21 (`"1000000000000000000000"`), so the
-//!    value must stay a `BigInt` — it is never bounded and never parsed.
-//!    Consequently `to_ordinal(10**9)` == `"we-1000000000"` and
-//!    `to_cardinal(-10**9)` == `"ngaphansi kwe 1000000000"`.
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` gives up at 10^9: the final `return str(number)` made
+//!    `to_cardinal(10**9)` the raw decimal string `"1000000000"` (and
+//!    `to_ordinal(10**9)` `"we-1000000000"`). This port adds `isigidigidi`
+//!    (10^9; Wiktionary "isigidigidi", citing the Zulu–English Dictionary —
+//!    the reduplicated `isigidi`), composed exactly like `isigidi` (`m > 1`
+//!    guard, " na " joiner), and raises `OverflowError` from 10^12
+//!    (`maxval`), where no word is attested. The loan `ibhiliyoni` is the
+//!    alternative not used.
 //! 2. **`negword` is `"ngaphansi kwe "` with a trailing space and is
 //!    concatenated raw**, not `"%s " % negword.strip()` the way
 //!    `Num2Word_Base.to_cardinal` does it. The spacing works out identically,
@@ -81,12 +83,11 @@
 //!    `self.CURRENCY_FORMS[currency]`, so `to_cheque(1234.56, "JPY")` raises
 //!    NotImplementedError on the same input. Both halves are corpus-pinned;
 //!    see [`FALLBACK_CODE`].
-//! 8. **`_int_to_word`'s 10^9 digit-string fallthrough leaks into money.**
-//!    `to_currency(10**9, "ZAR")` == `"1000000000 randi"`, and
-//!    `to_currency(1000000000.5, "ZAR")` ==
-//!    `"1000000000 randi amashumi amahlanu isenti"` — bare digits next to a
-//!    spelled-out cents clause, because `to_currency` calls `_int_to_word`
-//!    directly rather than going through `to_cardinal`.
+//! 8. **`_int_to_word`'s 10^9 digit-string fallthrough leaked into money.**
+//!    Python's `to_currency(10**9, "ZAR")` was `"1000000000 randi"`, because
+//!    `to_currency` calls `_int_to_word` directly rather than going through
+//!    `to_cardinal`. The port's isigidigidi band and 10^12 ceiling therefore
+//!    reach money too (#147): `"isigidigidi randi"`.
 //! 9. **The float path is `str(number)` surgery, not arithmetic.** Digits
 //!    after the point are read one character at a time off the repr, so
 //!    `base.float2tuple`'s binary-rounding artefacts never arise: `2.675` →
@@ -117,7 +118,7 @@
 //! `to_cardinal` peels the sign off first, so this port takes `&BigInt`
 //! non-negative in [`LangZu::int_to_word`] and does not model the wraparound.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -126,6 +127,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is `""`; it is never reached by the integer modes
 /// because `_int_to_word` returns "iqanda" for zero before the `< 10`
@@ -163,6 +165,15 @@ const ZERO_WORD: &str = "iqanda";
 const HUNDRED: &str = "ikhulu";
 const THOUSAND: &str = "inkulungwane";
 const MILLION: &str = "isigidi";
+/// 10^9, which Python lacks (gladiaio/num2words2#147): Wiktionary
+/// "isigidigidi", citing the Zulu–English Dictionary.
+const BILLION: &str = "isigidigidi";
+
+/// The exclusive ceiling (#147): 10^12 would need a word above `isigidigidi`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 const NEGWORD: &str = "ngaphansi kwe ";
 const POINTWORD: &str = "ichashazi";
 const JOINER: &str = " na ";
@@ -238,16 +249,17 @@ impl LangZu {
     /// The ladder is a direct transcription — note that each scale delegates
     /// its remainder back through the *full* ladder, so the hundreds inside a
     /// thousands group re-enter at the `< 1000` branch.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
 
         let ten = BigInt::from(10);
         if number < &ten {
             // Safe: 0 < number < 10.
             let d = digit(number);
-            return ONES[d].to_string();
+            return Ok(ONES[d].to_string());
         }
 
         let hundred = BigInt::from(100);
@@ -259,7 +271,7 @@ impl LangZu {
                 out.push_str(JOINER);
                 out.push_str(ONES[o]);
             }
-            return out;
+            return Ok(out);
         }
 
         let thousand = BigInt::from(1000);
@@ -274,9 +286,9 @@ impl LangZu {
             out.push_str(HUNDRED);
             if !r.is_zero() {
                 out.push_str(JOINER);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         let million = BigInt::from(1_000_000);
@@ -284,15 +296,15 @@ impl LangZu {
             let (t, r) = number.div_rem(&thousand);
             let mut out = String::new();
             if t > BigInt::one() {
-                out.push_str(&self.int_to_word(&t));
+                out.push_str(&self.int_to_word(&t)?);
                 out.push(' ');
             }
             out.push_str(THOUSAND);
             if !r.is_zero() {
                 out.push_str(JOINER);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         let billion = BigInt::from(1_000_000_000);
@@ -300,19 +312,32 @@ impl LangZu {
             let (m, r) = number.div_rem(&million);
             let mut out = String::new();
             if m > BigInt::one() {
-                out.push_str(&self.int_to_word(&m));
+                out.push_str(&self.int_to_word(&m)?);
                 out.push(' ');
             }
             out.push_str(MILLION);
             if !r.is_zero() {
                 out.push_str(JOINER);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
-        // Bug 1 above: `return str(number)` — digits, not words, no raise.
-        number.to_string()
+        // Bug 1 above: Python's `return str(number)`. The isigidigidi band
+        // instead, composed like the million one; the maxval check above
+        // keeps `b` below 1000 (#147).
+        let (b, r) = number.div_rem(&billion);
+        let mut out = String::new();
+        if b > BigInt::one() {
+            out.push_str(&self.int_to_word(&b)?);
+            out.push(' ');
+        }
+        out.push_str(BILLION);
+        if !r.is_zero() {
+            out.push_str(JOINER);
+            out.push_str(&self.int_to_word(&r)?);
+        }
+        Ok(out)
     }
 
     /// Python's `to_cardinal` on an already-stringified number — the shape
@@ -344,10 +369,10 @@ impl LangZu {
             return Ok(format!("{}{}", NEGWORD, body).trim().to_string());
         }
         if let Some((left, right)) = n.split_once('.') {
-            // `int(left)` — the huge-value digit fallthrough of int_to_word
-            // (bug 1) applies to the integer part exactly as in Python:
-            // 1234567890.5 → "1234567890 ichashazi kuhlanu".
-            let mut ret = format!("{} {}", self.int_to_word(&py_int(left)?), POINTWORD);
+            // `int(left)` — Python's huge-value digit fallthrough of
+            // int_to_word (bug 1) hit the integer part ("1234567890 ichashazi
+            // kuhlanu"); the isigidigidi band and 10^12 ceiling do now (#147).
+            let mut ret = format!("{} {}", self.int_to_word(&py_int(left)?)?, POINTWORD);
             for ch in right.chars() {
                 if !ch.is_ascii_digit() {
                     // `int(digit)` on the offending character — Python
@@ -365,7 +390,7 @@ impl LangZu {
             }
             return Ok(ret.trim().to_string());
         }
-        Ok(self.int_to_word(&py_int(n)?))
+        Ok(self.int_to_word(&py_int(n)?)?)
     }
 }
 
@@ -615,7 +640,7 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -629,12 +654,17 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
 }
 
 impl Lang for LangZu {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
         value: &crate::floatpath::FloatValue,
         precision_override: Option<u32>,
     ) -> crate::base::Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         // Python's to_cardinal routes every float/Decimal through this
         // language's own decimal grammar — 5.0 keeps its ".0" tail
         // ("comma nulla"), unlike Base's whole-value integer route.
@@ -647,6 +677,7 @@ impl Lang for LangZu {
     /// else is `"we-" + self.to_cardinal(number)`, i.e. the float string
     /// grammar with the prefix: "we-kuhlanu ichashazi iqanda".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let is_one = match value {
             FloatValue::Float { value, .. } => *value == 1.0,
             FloatValue::Decimal { value, .. } => *value == BigDecimal::from(1),
@@ -721,10 +752,10 @@ impl Lang for LangZu {
     /// — `int_to_word` yields no leading or trailing space.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let body = self.int_to_word(&value.abs());
+            let body = self.int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, body).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        Ok(self.int_to_word(value)?)
     }
 
     /// Python's `to_ordinal`. No `verify_ordinal`, so 0 and negatives pass
@@ -774,6 +805,7 @@ impl Lang for LangZu {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let n = match value {
             FloatValue::Float { value, precision } => py_float_repr(*value, *precision),
             FloatValue::Decimal { value, .. } => py_decimal_str(value),
@@ -882,7 +914,7 @@ impl Lang for LangZu {
         };
         // `self._int_to_word(left)`, not `to_cardinal`: past 10^9 this is a
         // bare digit string (bug 8).
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, unit);
 
         // `if cents and right:` — a zero cents count is falsy, so the clause
         // vanishes rather than rendering "iqanda isenti".
@@ -897,7 +929,7 @@ impl Lang for LangZu {
             result.push_str(&format!(
                 "{}{} {}",
                 separator,
-                self.int_to_word(&right),
+                self.int_to_word(&right)?,
                 subunit
             ));
         }

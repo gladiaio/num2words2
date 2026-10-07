@@ -269,7 +269,7 @@ class Num2WordsETTest(TestCase):
         self.assertEqual(
             num2words(99.99, lang="et"), "üheksakümmend üheksa koma üheksa üheksa"
         )
-        self.assertEqual(num2words(100.01, lang="et"), "ükssada koma  üks")
+        self.assertEqual(num2words(100.01, lang="et"), "ükssada koma null üks")
         self.assertEqual(num2words(100.5, lang="et"), "ükssada koma viis")
         self.assertEqual(
             num2words(123.45, lang="et"), "ükssada kakskümmend kolm koma neli viis"
@@ -279,7 +279,7 @@ class Num2WordsETTest(TestCase):
             num2words(1234.56, lang="et"),
             "tuhat kakssada kolmkümmend neli koma viis kuus",
         )
-        self.assertEqual(num2words(10000.01, lang="et"), "kümme tuhat koma  üks")
+        self.assertEqual(num2words(10000.01, lang="et"), "kümme tuhat koma null üks")
         self.assertEqual(num2words(-0.5, lang="et"), "miinus null koma viis")
         self.assertEqual(num2words(-1.5, lang="et"), "miinus üks koma viis")
         self.assertEqual(num2words(-10.5, lang="et"), "miinus kümme koma viis")
@@ -306,22 +306,22 @@ class Num2WordsETTest(TestCase):
         self.assertEqual(num2words(18, lang="et", ordinal=True), "kaheksateistkümnes")
         self.assertEqual(num2words(19, lang="et", ordinal=True), "üheksateistkümnes")
         self.assertEqual(num2words(20, lang="et", ordinal=True), "kahekümnes")
-        self.assertEqual(num2words(21, lang="et", ordinal=True), "kakskümmend esimene")
-        self.assertEqual(num2words(22, lang="et", ordinal=True), "kakskümmend teine")
-        self.assertEqual(num2words(25, lang="et", ordinal=True), "kakskümmend viies")
+        self.assertEqual(num2words(21, lang="et", ordinal=True), "kahekümne esimene")
+        self.assertEqual(num2words(22, lang="et", ordinal=True), "kahekümne teine")
+        self.assertEqual(num2words(25, lang="et", ordinal=True), "kahekümne viies")
         self.assertEqual(num2words(30, lang="et", ordinal=True), "kolmekümnes")
-        self.assertEqual(num2words(40, lang="et", ordinal=True), "nelikümnes")
+        self.assertEqual(num2words(40, lang="et", ordinal=True), "neljakümnes")
         self.assertEqual(num2words(50, lang="et", ordinal=True), "viiekümnes")
         self.assertEqual(num2words(60, lang="et", ordinal=True), "kuuekümnes")
         self.assertEqual(num2words(70, lang="et", ordinal=True), "seitsmekümnes")
         self.assertEqual(num2words(80, lang="et", ordinal=True), "kaheksakümnes")
         self.assertEqual(num2words(90, lang="et", ordinal=True), "üheksakümnes")
         self.assertEqual(num2words(100, lang="et", ordinal=True), "sajas")
-        self.assertEqual(num2words(101, lang="et", ordinal=True), "ükssada ükss")
-        self.assertEqual(num2words(200, lang="et", ordinal=True), "kakssadas")
-        self.assertEqual(num2words(500, lang="et", ordinal=True), "viissadas")
+        self.assertEqual(num2words(101, lang="et", ordinal=True), "saja esimene")
+        self.assertEqual(num2words(200, lang="et", ordinal=True), "kahesajas")
+        self.assertEqual(num2words(500, lang="et", ordinal=True), "viiesajas")
         self.assertEqual(num2words(1000, lang="et", ordinal=True), "tuhandes")
-        self.assertEqual(num2words(1001, lang="et", ordinal=True), "tuhat ükss")
+        self.assertEqual(num2words(1001, lang="et", ordinal=True), "tuhande esimene")
         self.assertEqual(num2words(10000, lang="et", ordinal=True), "kümme tuhats")
 
     def test_currency(self):
@@ -506,11 +506,14 @@ class Num2WordsETTest(TestCase):
         self.assertEqual(num2words(100, lang="et"), num2words("100", lang="et"))
         self.assertEqual(num2words(1000, lang="et"), num2words("1000", lang="et"))
 
-
     def test_negative_ordinal_raises(self):
         # gladiaio/num2words2#155: Python list indexing wrapped -1 to
         # "üheksas" (ninth), -10 to "" and crashed with IndexError below that.
-        for n in (-1, -2, -10, -11, -42, -1000, -0.5, -1.5):
+        for n in (-1, -2, -10, -11, -42, -1000):
             with self.assertRaisesRegex(TypeError, "Cannot treat negative"):
+                num2words(n, lang="et", to="ordinal")
+        # A fractional value is a TypeError whatever its sign (#214).
+        for n in (-0.5, -1.5):
+            with self.assertRaisesRegex(TypeError, "Cannot treat float"):
                 num2words(n, lang="et", to="ordinal")
         self.assertEqual(num2words(9, lang="et", to="ordinal"), "üheksas")

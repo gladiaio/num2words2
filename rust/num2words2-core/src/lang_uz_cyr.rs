@@ -1019,8 +1019,10 @@ impl Lang for LangUzCyr {
     /// Both halves are rendered as **whole numbers**, not digit by digit:
     /// `int(left)` is the repr's integer part (trunc-toward-zero), and
     /// `int(right)` is the fractional digits read as a single integer
-    /// (leading zeros dropped, so `0.01` → "бир", `Decimal("1.10")` → "ўн",
-    /// `1.005` → "беш" — indistinguishable from `1.5`).
+    /// (`Decimal("1.10")` → "ўн"). Python's `int()` also dropped the leading
+    /// zeros, so `1.005` read "беш", indistinguishable from `1.5`; the port
+    /// reads each leading zero as "нол" first (gladiaio/num2words2#205), so
+    /// `0.01` → "нол вергул нол бир" and `1.005` → "бир вергул нол нол беш".
     ///
     /// The digits come from a byte-exact reconstruction of `str(number)`
     /// ([`py_float_repr`] / [`py_decimal_str`]) — NOT from
@@ -1032,10 +1034,11 @@ impl Lang for LangUzCyr {
     /// f64 arithmetic here, so neither do we.
     ///
     /// Note this diverges from `Num2Word_Base.to_cardinal_float` in three
-    /// ways, all faithful to UZ_CYR's own `to_cardinal`:
+    /// ways, from UZ_CYR's own `to_cardinal`:
     ///   * the fractional part is one number, not per-digit;
-    ///   * no negword is prepended for `-1 < value < 0` (Python's `int("-0")`
-    ///     is 0 and the sign is silently lost), so `-0.5` → "нол вергул беш";
+    ///   * Python prepended no negword for `-1 < value < 0` (`int("-0")` is 0
+    ///     and the sign was silently lost), so `-0.5` read "нол вергул беш";
+    ///     fixed (gladiaio/num2words2#209): "минус нол вергул беш";
     ///   * scientific reprs raise ValueError from `int()` (`1e-05`,
     ///     `1.5e-05` → `int('5e-05')`, `Decimal('1E-7')`, `1e+16`), where
     ///     base would happily render digits.
@@ -1067,9 +1070,25 @@ impl Lang for LangUzCyr {
             // carry at most one '.', so split_once is exact.
             Some((left, right)) => {
                 let l = parse_int(left)?;
-                let left_words = self.int2word(&l, false)?;
+                let mut left_words = self.int2word(&l, false)?;
+                // int("-0") is 0, so Python lost the sign of every value
+                // between -1 and 0 (#209). A strict `< 0`, so -0.0 stays
+                // "нол вергул нол", as en reads it "zero".
+                if l.is_zero() && crate::base::strictly_negative(value) {
+                    left_words = format!("{} {}", NEGWORD, left_words);
+                }
                 let r = parse_int(right)?;
-                let right_words = self.int2word(&r, false)?;
+                let mut right_words = self.int2word(&r, false)?;
+                // int(right) drops leading zeros, so 0.05 read like 0.5 in
+                // Python; each one is read as "нол" first (#205). A zero
+                // fraction ("5.0", Decimal "5.00") stays a single "нол".
+                if !r.is_zero() {
+                    let zeros = right.len() - right.trim_start_matches('0').len();
+                    let zero_word = self.int2word(&BigInt::zero(), false)?;
+                    for _ in 0..zeros {
+                        right_words = format!("{} {}", zero_word, right_words);
+                    }
+                }
                 // u'%s %s %s' % (left_words, pointword, right_words)
                 Ok(format!("{} {} {}", left_words, POINTWORD, right_words))
             }

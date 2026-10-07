@@ -249,44 +249,40 @@ class Num2WordsHATest(TestCase):
         self.assertEqual(num2words(0.1, lang="ha"), "sifiri wajen ɗaya")
         self.assertEqual(num2words(0.5, lang="ha"), "sifiri wajen biyar")
         self.assertEqual(num2words(0.9, lang="ha"), "sifiri wajen tara")
-        self.assertEqual(
-            num2words(1.1, lang="ha"), "ɗaya wajen tiriliyan dubu goma da tara"
-        )
+        self.assertEqual(num2words(1.1, lang="ha"), "ɗaya wajen ɗaya")
         self.assertEqual(num2words(1.5, lang="ha"), "ɗaya wajen biyar")
         self.assertEqual(num2words(2.5, lang="ha"), "biyu wajen biyar")
-        self.assertEqual(
-            num2words(3.14, lang="ha"), "uku wajen tiriliyan dubu sha huɗu sha biyu"
-        )
+        self.assertEqual(num2words(3.14, lang="ha"), "uku wajen sha huɗu")
         self.assertEqual(num2words(10.5, lang="ha"), "goma wajen biyar")
         self.assertEqual(
             num2words(11.11, lang="ha"),
-            "sha ɗaya wajen tiriliyan dubu goma ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara arba'in da uku",
+            "sha ɗaya wajen sha ɗaya",
         )
         self.assertEqual(
             num2words(20.2, lang="ha"),
-            "ashirin wajen tiriliyan dubu ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara casa'in da uku",
+            "ashirin wajen biyu",
         )
         self.assertEqual(
             num2words(99.99, lang="ha"),
-            "casa'in da tara wajen tiriliyan dubu tara ɗari takwas casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara arba'in da tara",
+            "casa'in da tara wajen casa'in da tara",
         )
         self.assertEqual(
             num2words(100.01, lang="ha"),
-            "ɗari wajen tiriliyan dubu goma dubu biyar ɗari sha shida",
+            "ɗari wajen sifiri ɗaya",
         )
         self.assertEqual(num2words(100.5, lang="ha"), "ɗari wajen biyar")
         self.assertEqual(
             num2words(123.45, lang="ha"),
-            "ɗari ashirin da uku wajen tiriliyan dubu arba'in da biyar ɗari biyu tamanin da huɗu",
+            "ɗari ashirin da uku wajen arba'in da biyar",
         )
         self.assertEqual(num2words(1000.5, lang="ha"), "dubu wajen biyar")
         self.assertEqual(
             num2words(1234.56, lang="ha"),
-            "dubu ɗari biyu talatin da huɗu wajen tiriliyan dubu biyar ɗari biyar casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari huɗu hamsin da huɗu",
+            "dubu ɗari biyu talatin da huɗu wajen hamsin da shida",
         )
         self.assertEqual(
             num2words(10000.01, lang="ha"),
-            "dubu goma wajen tiriliyan dubu goma dubu ɗari biyu sha takwas ɗari biyu saba'in da tara",
+            "dubu goma wajen sifiri ɗaya",
         )
         self.assertEqual(num2words(-0.5, lang="ha"), "ban sifiri wajen biyar")
         self.assertEqual(num2words(-1.5, lang="ha"), "ban ɗaya wajen biyar")
@@ -478,14 +474,9 @@ class Num2WordsHATest(TestCase):
         self.assertEqual(num2words(100, lang="ha"), num2words("100", lang="ha"))
         self.assertEqual(num2words(1000, lang="ha"), num2words("1000", lang="ha"))
 
-        # Test invalid ordinal input (float) - Note: Hausa doesn't raise TypeError
-        # The implementation allows floats in ordinal
-        result = num2words(3.14, lang="ha", ordinal=True)
-        self.assertIsNotNone(result)
-
-
-
-
+        # A fractional ordinal raises TypeError, as in every language (#214).
+        with self.assertRaises(TypeError):
+            num2words(3.14, lang="ha", ordinal=True)
 
     def test_more_currency_cases(self):
         """Test additional currency cases."""
@@ -522,13 +513,13 @@ class Num2WordsHATest(TestCase):
         )
         self.assertEqual(
             num2words(100.5, lang="ha", to="currency", currency="NGN", cents=False),
-            "naira ɗari",
+            # cents=False keeps the cents, as digits (#220).
+            "naira ɗari da kobo 50",
         )
 
-        # Test unknown currency (should default to NGN)
-        self.assertEqual(
-            num2words(100, lang="ha", to="currency", currency="XYZ"), "naira ɗari"
-        )
+        # An unknown currency raises instead of printing naira (#219).
+        with self.assertRaises(NotImplementedError):
+            num2words(100, lang="ha", to="currency", currency="XYZ")
 
     def test_currency_with_fractional_cents(self):
         """Test currency with fractional cents."""
@@ -552,3 +543,15 @@ class Num2WordsHATest(TestCase):
             "tiriliyan biliyan ɗari biyu talatin da huɗu miliyan ɗari biyar sittin da bakwai dubu ɗari takwas casa'in ɗari ashirin da uku",
         )
 
+    def test_float_digits_come_from_the_repr(self):
+        # gladiaio/num2words2#207: str(value - int(value)) carried binary
+        # noise (1.05 - 1 == 0.050000000000000044) into the words.
+        from decimal import Decimal
+
+        for v in (1.05, 1.1, 3.14, 2.675, 99.99, 0.1 + 0.2, 123.456):
+            self.assertEqual(
+                num2words(v, lang="ha"), num2words(Decimal(repr(v)), lang="ha")
+            )
+        self.assertEqual(num2words(1.05, lang="ha"), "ɗaya wajen sifiri biyar")
+        self.assertEqual(num2words(1.1, lang="ha"), "ɗaya wajen ɗaya")
+        self.assertNotIn("tiriliyan", num2words(0.1 + 0.2, lang="ha"))

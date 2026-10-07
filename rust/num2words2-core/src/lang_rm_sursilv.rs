@@ -948,6 +948,6 @@ impl Lang for LangRmSursilv {
     /// Base's generic reading ("<n> <ordinal>s") is not Romansh, so this is a
     /// clear NotImplementedError instead (#157).
     fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(crate::lang_rm::unsupported("rm_sursilv", "fractions"))
+        Err(crate::lang_rm::unsupported("rm_sursilv", "to='fraction'"))
     }
 }

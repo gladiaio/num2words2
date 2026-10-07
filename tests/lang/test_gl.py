@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -199,11 +201,27 @@ class Num2WordsGLTest(TestCase):
             num2words(999999999, lang="gl"),
             "nove cento noventa nove millón nove cento noventa nove mil nove cento noventa nove",
         )
-        self.assertEqual(num2words(1000000000, lang="gl"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="gl"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="gl"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="gl"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="gl"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="gl"),
+            "un mil millón",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="gl"),
+            "un mil dous cento trinta catro millón cinco cento sesenta sete mil oito cento noventa",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="gl"),
+            "nove mil nove cento noventa nove millón nove cento noventa nove mil nove cento noventa nove",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="gl"),
+            "dez mil millón",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="gl"),
+            "noventa nove mil nove cento noventa nove millón nove cento noventa nove mil nove cento noventa nove",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -314,22 +332,22 @@ class Num2WordsGLTest(TestCase):
             "un euro cincuenta céntimos",
         )
         self.assertEqual(
-            num2words(0, lang="gl", to="currency", currency="USD"), "cero dollars"
+            num2words(0, lang="gl", to="currency", currency="USD"), "cero dólares"
         )
         self.assertEqual(
             num2words(0.01, lang="gl", to="currency", currency="USD"),
-            "cero dollars un cent",
+            "cero dólares un centavo",
         )
         self.assertEqual(
             num2words(0.5, lang="gl", to="currency", currency="USD"),
-            "cero dollars cincuenta cents",
+            "cero dólares cincuenta centavos",
         )
         self.assertEqual(
-            num2words(1, lang="gl", to="currency", currency="USD"), "un dollar"
+            num2words(1, lang="gl", to="currency", currency="USD"), "un dólar"
         )
         self.assertEqual(
             num2words(1.5, lang="gl", to="currency", currency="USD"),
-            "un dollar cincuenta cents",
+            "un dólar cincuenta centavos",
         )
 
     def test_year(self):
@@ -377,3 +395,11 @@ class Num2WordsGLTest(TestCase):
         self.assertEqual(num2words(100, lang="gl"), num2words("100", lang="gl"))
         self.assertEqual(num2words(1000, lang="gl"), num2words("1000", lang="gl"))
 
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="gl") == "un billón"
+    assert num2words(10**15, lang="gl") == "un mil billón"
+    assert num2words(10**18, lang="gl") == "un trillón"
+    with pytest.raises(OverflowError):
+        num2words(10**24, lang="gl")

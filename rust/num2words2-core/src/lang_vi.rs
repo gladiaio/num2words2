@@ -11,8 +11,9 @@
 //!
 //! Call graph (all four in-scope entry points):
 //!   * `to_cardinal(n)`    → `number_to_text(n)`
-//!   * `to_ordinal(n)`     → `to_cardinal(n)` — Vietnamese ordinals are just
-//!     cardinals here; there is no ordinal morphology whatsoever.
+//!   * `to_ordinal(n)`     → `"thứ " + to_cardinal(n)`, with "thứ nhất" (1)
+//!     and "thứ tư" (4). Python returned the bare cardinal (fixed,
+//!     gladiaio/num2words2#250); negatives raise Base's ordinal TypeError.
 //!   * `to_ordinal_num(n)` → `"thứ " + str(n)` — pure string concat, no words.
 //!   * `to_year(n)`        → `"năm " + to_cardinal(|n|)` (+ `" trước Công nguyên"`
 //!     when `n < 0`).
@@ -22,40 +23,29 @@
 //! This is a port, not a rewrite. Everything below is wrong-looking but is
 //! exactly what CPython emits, verified against the interpreter.
 //!
-//! 1. **The float64 round-trip (the big one).** `number_to_text` does
-//!    `number = "%.2f" % number` on an *integer*. Python's `%f` coerces the int
-//!    to a C `double` first, so every input above 2^53 is silently rounded to
-//!    the nearest representable double before a single word is generated:
-//!      * `to_cardinal(10**23)` describes **99999999999999991611392**, not 10^23.
-//!      * `to_cardinal(2**53 + 1) == to_cardinal(2**53)` — the +1 vanishes.
-//!      * `to_cardinal(10**19 + 1)` == "mười Quintillion" (i.e. exactly 10^19).
-//!    Modelled by [`py_float_int`], which reproduces int→double rounding
-//!    (round-half-to-even) exactly, including the `OverflowError` CPython
-//!    raises once the rounded value reaches 2^1024. This is *not* an academic
-//!    edge: it changes the words for ordinary-looking inputs like 10^23.
-//!    `%.2f` of an integral double always yields exact digits + `".00"`, so the
-//!    `int(the_list[1]) > 0` branch (the " phẩy " decimal tail) is dead for
-//!    integer input, and `the_list` always has exactly 2 elements.
+//! 1. ~~**The float64 round-trip (the big one).**~~ `number_to_text` does
+//!    `number = "%.2f" % number` on an *integer*, which coerces it to a C
+//!    `double` first, so in Python every input above 2^53 was silently rounded
+//!    (`to_cardinal(2**53 + 1) == to_cardinal(2**53)`). Fixed
+//!    (gladiaio/num2words2#215): the integer path reads the exact integer.
+//!    Floats still go through `"%.2f"` (they are doubles already).
 //!
-//! 2. **`denom[5]` is "trăm nghìn tỷ" at 10^15.** That literally reads "hundred
-//!    thousand billion" = 10^17, and it sits where "Quadrillion"/"triệu tỷ"
-//!    belongs. Hence the corpus row `10**15` → "một trăm nghìn tỷ". Kept verbatim.
+//! 2. ~~**`denom[5]` is "trăm nghìn tỷ" at 10^15.**~~ That literally reads
+//!    "hundred thousand billion" = 10^17. Fixed (#215): 10^15 is "một triệu
+//!    tỷ" (a million billion).
 //!
-//! 3. **`denom` skips "Quindecillion".** The table runs
-//!    …Quattuordecillion (idx 15), **Sexdecillion** (idx 16), Septendecillion…
-//!    so every scale from 10^48 up is labelled one rank too high. Kept verbatim.
+//! 3. ~~**English scale words from 10^18.**~~ Python's `denom` continues with
+//!    "Quintillion", "Sextillion", … (skipping "Quindecillion"), so
+//!    `to_cardinal(10**18 + 1)` was "một Quintillion". Fixed (#215): the
+//!    module has no Vietnamese word past "triệu tỷ", so `denom` stops there
+//!    and `maxval` is 10^18.
 //!
-//! 4. **`denom[20]` ("Vigintillion") is unreachable.** `vietnam_number` scans
-//!    `for v in range(len(denom))` → `v` tops out at 20, giving `didx = v-1 = 19`.
-//!    Reaching `didx == 20` would need `v == 21`. Dead entry, kept for indexing.
+//! 4. (Python's unreachable `denom[20]` is gone with bug 3.)
 //!
-//! 5. **Fixed (gladiaio/num2words2#159): `vietnam_number` runs out of `denom`
-//!    at 1000^20 == 10^60.** Python fell off its loop there and returned
-//!    `None` (so `num2words(10**63, lang="vi")` was `None`, and negatives a
-//!    TypeError). The port checks the exact integer up front and raises
-//!    `OverflowError` ("abs(v) must be less than 10^60."), so `maxval("vi")`
-//!    is 10^60; the float path raises the same error where `vietnam_number`
-//!    would have returned `None`.
+//! 5. **Fixed (gladiaio/num2words2#159, #215): Python's `vietnam_number`
+//!    runs out of `denom` at 10^60** and returned `None`. The port checks the
+//!    exact integer up front and raises `OverflowError` ("abs(v) must be less
+//!    than 10^18."), on the float path too.
 //!
 //! 6. **Dead store in `_convert_nn`.** `a = "lăm"` is assigned then immediately
 //!    overwritten by the if/else below it (which is exhaustive). The net rule is
@@ -67,7 +57,7 @@
 //!
 //! # Error variants
 //!
-//! * `OverflowError` (from the `"%.2f"` int→float coercion) → [`N2WError::Overflow`].
+//! * `OverflowError` from the 10^18 ceiling → [`N2WError::Overflow`].
 //! * `TypeError` (`"âm " + None` / `"năm " + None`) → [`N2WError::Type`].
 //! See the `concerns` in the report for the one case Rust's `Result<String>`
 //! genuinely cannot express: a bare `None` return.
@@ -95,12 +85,11 @@
 //!
 //! Consequences, all reproduced here and all corroborated by the corpus:
 //!
-//! 8. **`currency` is read and thrown away.** Every branch appends the literal
-//!    `" đồng"`. The corpus proves it: the same 12 values under EUR, USD, GBP,
-//!    JPY, KWD, BHD, INR, CNY and CHF give nine byte-identical blocks of
-//!    output. No code can raise `NotImplementedError`, so `currency_forms`,
-//!    `currency_precision`, `pluralize` and `lang_name` stay at their trait
-//!    defaults — nothing reaches them.
+//! 8. **`currency` was read and thrown away (fixed, #219).** Every branch
+//!    appends the literal `" đồng"`, so Python gave đồng under EUR, USD, GBP
+//!    and every other code. The port raises `NotImplementedError` for any code
+//!    but VND (`lang_name` exists only for that message); `currency_forms`,
+//!    `currency_precision` and `pluralize` stay at their trait defaults.
 //!
 //! 9. **`cents`, `separator` and `adjective` are dead parameters.** Never read.
 //!    The generated `default_separator()` / `default_currency()` above are
@@ -112,21 +101,15 @@
 //!     decimal places (`12.345`, `1.011`, `2.675`, `0.001`) raises instead of
 //!     converting. See [`LangVi::to_currency`].
 //!
-//! 11. **`to_cheque` does not exist**, so the dispatcher's
-//!     `getattr(converter, "to_cheque")` raises `AttributeError` before any
-//!     conversion runs. All nine `cheque:*` corpus rows record exactly that.
+//! 11. **`to_cheque` does not exist**, so Python raised `AttributeError`. The
+//!     port raises NotImplementedError ("does not support to='cheque'",
+//!     #223).
 //!
-//! 12. **`(decimal_val * 100) % 1` runs *before* the `isinstance(val, int)`
-//!     test, and `Decimal.__mod__` is bounded by the arithmetic context.**
-//!     `decimal`'s default context is `prec=28`, and `%` raises
-//!     `InvalidOperation[DivisionImpossible]` once the quotient `int(m)` needs
-//!     more than 28 digits. With `m = val * 100` that is `|val| >= 10**26` —
-//!     for **ints as well as floats**, because the guard precedes the branch.
-//!     Bisected against the live interpreter: `10**26 - 1` converts,
-//!     `10**26` raises; likewise `1e25` vs `1e26`. So `to_currency` can never
-//!     reach the `2**1024` OverflowError in [`py_float_int`] nor the `10**60`
-//!     `None` fall-off in [`LangVi::vietnam_number`] — `10**26` is far below
-//!     both, and this guard fires first. See [`div_impossible`].
+//! 12. ~~**`(decimal_val * 100) % 1` raises from 10**26.**~~ Python's
+//!     `has_fractional_cents` probe runs under `decimal`'s 28-digit default
+//!     context and raised `InvalidOperation[DivisionImpossible]` for
+//!     `|val| >= 10**26`, ints included. Unreachable since #215: the 10^18
+//!     ceiling is checked first.
 //!
 //! 13. **The float branch re-enters `number_to_text` with a `float`, not an
 //!     `int`,** so `"%.2f" % number` formats the *double itself* rather than
@@ -140,8 +123,10 @@
 //! 14. **The `" phẩy "` tail counts *hundredths*, not a fraction.** `12.5`
 //!     prints "mười hai phẩy năm mươi" — "twelve point fifty" — because
 //!     `"%.2f"` pads to `"12.50"` and the tail is `vietnam_number(50)`.
-//!     Likewise `0.01` → "không phẩy một" ("zero point one"). Corpus rows
-//!     `0.5` and `0.01` pin both.
+//!     Python likewise read `0.01` as "không phẩy một" ("zero point one"),
+//!     and `0.05` the same as `0.5` without its "mươi"; the leading zero now
+//!     reads "không" (gladiaio/num2words2#205): `0.01` is "không phẩy không
+//!     một". Values are still rounded to two places.
 //!
 //! 15. ~~**`str_to_number` does not exist**~~ — fixed
 //!     (gladiaio/num2words2#157). Same `object` ancestry, same plain
@@ -151,21 +136,19 @@
 //!     uses the shared `Decimal(value)` parse every other language has, so
 //!     "12" reads like 12 and "1.5" like `Decimal("1.5")`.
 //!
-//! 16. **`to_fraction` does not exist.** The dispatcher's "n/d"
-//!     string route (`converter.to_fraction(num_int, den_int)`) and the
-//!     `to="fraction"` mode both fail on the attribute lookup — *before*
-//!     the values are examined, so "1/0" is an AttributeError, never a
-//!     ZeroDivisionError, and every `fraction2` corpus row is
-//!     AttributeError regardless of the operands.
+//! 16. **`to_fraction` does not exist** in Python (AttributeError). VI has
+//!     no fraction rules, so it now raises NotImplementedError like every
+//!     language without them, and "1/0" ZeroDivisionError (#217).
 
-use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, pow10_big, verify_ordinal, verify_ordinal_float, Lang, N2WError, Result,
+};
 use std::sync::OnceLock;
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_integer::Integer;
-use num_traits::{One, Signed, Zero};
+use num_traits::{Signed, Zero};
 use std::str::FromStr;
 
 /// `to_19`; indexed 0..=19 directly by value.
@@ -206,34 +189,13 @@ const TENS: [&str; 8] = [
 
 /// `denom`; index `d` labels the scale `1000^d`.
 ///
-/// Preserved verbatim including the three defects documented in the module
-/// header: `[5]` is "trăm nghìn tỷ" at 10^15, "Quindecillion" is missing
-/// between `[15]` and `[16]`, and `[20]` is unreachable. `[0]` is "" and is
-/// never used (the caller only reaches this table for values >= 1000, which
-/// forces `didx >= 1`).
-const DENOM: [&str; 21] = [
-    "",
-    "nghìn",
-    "triệu",
-    "tỷ",
-    "nghìn tỷ",
-    "trăm nghìn tỷ",
-    "Quintillion",
-    "Sextillion",
-    "Septillion",
-    "Octillion",
-    "Nonillion",
-    "Decillion",
-    "Undecillion",
-    "Duodecillion",
-    "Tredecillion",
-    "Quattuordecillion",
-    "Sexdecillion",
-    "Septendecillion",
-    "Octodecillion",
-    "Novemdecillion",
-    "Vigintillion",
-];
+/// Python's table runs on to 1000^20 with *English* words from 1000^6
+/// ("Quintillion", "Sextillion", …, missing "Quindecillion"), and labels
+/// 1000^5 "trăm nghìn tỷ" (= 10^17). The port keeps only the Vietnamese
+/// scale words, reads 1000^5 as "triệu tỷ", and stops at the 10^18 ceiling
+/// (gladiaio/num2words2#215). `[0]` is "" and is never used (the caller only
+/// reaches this table for values >= 1000, which forces `didx >= 1`).
+const DENOM: [&str; 6] = ["", "nghìn", "triệu", "tỷ", "nghìn tỷ", "triệu tỷ"];
 
 fn type_error(msg: impl Into<String>) -> N2WError {
     N2WError::Type(msg.into())
@@ -242,10 +204,9 @@ fn type_error(msg: impl Into<String>) -> N2WError {
 /// `AttributeError: 'Num2Word_VI' object has no attribute '<name>'`.
 ///
 /// `Num2Word_VI` inherits from `object`, so a missing method is a plain
-/// attribute-lookup failure — not a deliberate `NotImplementedError`. Three
-/// call sites reach it: `to_cardinal_float` (bug #10), `to_cheque`
-/// (bug #11) and `to_fraction` (bug #16). (`str_to_number`, bug #15, is
-/// fixed.)
+/// attribute-lookup failure — not a deliberate `NotImplementedError`. One
+/// call site reaches it: `to_cardinal_float` (bug #10). (`str_to_number`,
+/// bug #15, and `to_cheque`, bug #11, are fixed.)
 fn missing_attr(name: &str) -> N2WError {
     N2WError::Attribute(format!(
         "'Num2Word_VI' object has no attribute '{}'",
@@ -253,79 +214,12 @@ fn missing_attr(name: &str) -> N2WError {
     ))
 }
 
-/// `decimal.InvalidOperation([DivisionImpossible])` — bug #12.
-///
-/// `decimal` is a stdlib module, not a language module, but it is still a
-/// non-builtin exception class, which is exactly what `N2WError::Custom` is
-/// for: the binding imports `decimal`, looks up `InvalidOperation` and raises
-/// the real class, so `except decimal.InvalidOperation` keeps working.
-///
-/// The message is `str(e)` of what CPython raises. Python's `args` is
-/// `([DivisionImpossible],)` — a list holding the condition *class* — whereas
-/// `Custom` can only carry a string, so `args` is the rendered form. The
-/// exception type and `str(e)` match; `e.args[0]` is a `str` rather than a
-/// `list`. Flagged in the report.
-fn div_impossible() -> N2WError {
-    N2WError::Custom {
-        module: "decimal",
-        class: "InvalidOperation",
-        msg: "[<class 'decimal.DivisionImpossible'>]".into(),
-    }
-}
-
-/// Reproduces CPython's `int` → `float` coercion, returning the *exact integer
-/// value* of the resulting double.
-///
-/// `number_to_text` does `"%.2f" % number`, and `%f` coerces its operand to a C
-/// `double`. `"%.2f"` of an integral double prints that double's exact digits
-/// (CPython uses correctly-rounded David Gay formatting — it does **not** clip
-/// to 17 significant digits), so `int(the_list[0])` recovers precisely the
-/// integer this function returns. Any int with a magnitude above 2^53 is
-/// therefore mangled before conversion, which is Python bug #1 above.
-///
-/// Rounding is IEEE-754 round-half-to-even on the 53-bit significand, matching
-/// CPython's `PyLong_AsDouble`. Returns `OverflowError` exactly when CPython
-/// does: when the rounded result reaches 2^1024 (i.e. would be `inf`).
-///
-/// `n` must be non-negative (`number_to_text` applies `abs()` first).
-/// Validated against CPython's `float()` over 30k random widths in 54..=1030
-/// bits plus the overflow-boundary values `2^1024 - 2^970{,-1}`: zero mismatches.
-fn py_float_int(n: &BigInt) -> Result<BigInt> {
-    if n.is_zero() {
-        return Ok(BigInt::zero());
-    }
-    // `bits()` is the magnitude's bit length; n >= 0 here.
-    let bits = n.bits();
-    if bits <= 53 {
-        // Exactly representable — the coercion is lossless.
-        return Ok(n.clone());
-    }
-    let shift = bits - 53;
-    let mut hi = n >> shift; // 53 significant bits, in [2^52, 2^53)
-    let rem = n - (&hi << shift); // the bits being discarded
-    let half = BigInt::one() << (shift - 1);
-
-    // Round half to even: round up on a strict majority, or on an exact tie
-    // when the retained significand is odd.
-    if rem > half || (rem == half && hi.is_odd()) {
-        hi += 1u32;
-    }
-    let res = hi << shift; // carry out of the significand is fine: gives 2^bits
-
-    if res >= (BigInt::one() << 1024u32) {
-        // CPython: OverflowError("int too large to convert to float")
-        return Err(N2WError::Overflow(
-            "int too large to convert to float".into(),
-        ));
-    }
-    Ok(res)
-}
-
-/// The exclusive ceiling (gladiaio/num2words2#159): `denom` ends at
-/// 1000^19, so 10^60 and above raise `OverflowError`.
+/// The exclusive ceiling (gladiaio/num2words2#159, #215): the Vietnamese
+/// scale words in `denom` end at "triệu tỷ" (10^15), so 10^18 and above raise
+/// `OverflowError`. (Python's table went on in English to 10^60.)
 fn maxval_ceiling() -> &'static BigInt {
     static M: OnceLock<BigInt> = OnceLock::new();
-    M.get_or_init(|| pow10_big(60))
+    M.get_or_init(|| pow10_big(18))
 }
 
 fn too_large(value: &BigInt) -> N2WError {
@@ -376,6 +270,18 @@ impl LangVi {
         dcap.to_string()
     }
 
+    /// The two `"%.2f"` hundredths digits after "phẩy", read as a number
+    /// (bug #14). Python read `int("05")`, so 0.05 said "không phẩy năm",
+    /// like 0.5 minus its "mươi"; a leading zero digit now reads "không"
+    /// first (gladiaio/num2words2#205): 0.05 is "không phẩy không năm".
+    fn hundredths(&self, val: u32) -> String {
+        if val < 10 {
+            format!("{} {}", TO_19[0], self.convert_nn(val))
+        } else {
+            self.convert_nn(val)
+        }
+    }
+
     /// Port of `_convert_nnn`. Callers only ever pass `0 <= val < 1000`, so
     /// `to_19[rem]` (rem = val // 100 <= 9) is always in range.
     ///
@@ -416,9 +322,9 @@ impl LangVi {
 
     /// Port of `vietnam_number`.
     ///
-    /// Returns `Ok(None)` where Python falls off the `for` loop and implicitly
-    /// returns `None` — i.e. `val >= 1000^20 == 10^60` (bug #5). `val` is
-    /// already float-rounded and non-negative by the time it gets here.
+    /// Returns `None` where the `for` loop falls off `denom` — i.e.
+    /// `val >= 10^18`, which every caller has rejected first. `val` is
+    /// non-negative.
     fn vietnam_number(&self, val: &BigInt) -> Option<String> {
         let hundred = BigInt::from(100);
         let thousand = BigInt::from(1000);
@@ -432,7 +338,10 @@ impl LangVi {
         // Python: `for didx, dval in ((v - 1, 1000**v) for v in range(len(denom)))`.
         // v == 0 (dval == 1) and v == 1 (dval == 1000) can never fire here
         // because val >= 1000, so didx >= 1 and denom[0] == "" is never read.
-        for v in 0..DENOM.len() as u32 {
+        // `..=` (one past Python's range) so the last word, "triệu tỷ", serves
+        // the whole range up to the 10^18 ceiling: Python only reached it via
+        // a 21-entry table.
+        for v in 0..=DENOM.len() as u32 {
             let dval = thousand.pow(v);
             if dval > *val {
                 let didx = (v - 1) as usize;
@@ -450,32 +359,27 @@ impl LangVi {
                 }
                 if r > BigInt::zero() {
                     ret.push(' ');
-                    // Recursion depth is bounded by the 21-entry denom table.
+                    // Recursion depth is bounded by the 6-entry denom table.
                     ret.push_str(&self.vietnam_number(&r)?);
                 }
                 return Some(ret);
             }
         }
-        // val >= 10^60: Python returns None.
+        // val >= 10^18: past the ceiling.
         None
     }
 
-    /// Port of `number_to_text`.
+    /// Port of `number_to_text` for an integer.
     ///
-    /// The `" phẩy "` decimal branch is unreachable for integer input: the
-    /// `"%.2f"` of an integral double always ends in `".00"`, so
-    /// `int(the_list[1]) > 0` is always false. Omitted deliberately.
+    /// Python's `"%.2f" % number` coerced the int to a double first (bug #1);
+    /// the port reads the exact integer. The `" phẩy "` decimal branch is
+    /// unreachable for integer input.
     fn number_to_text(&self, number: &BigInt) -> Result<String> {
         let is_negative = number.is_negative();
         let number = number.abs();
-
-        // `number = "%.2f" % number` — the lossy int→float coercion (bug #1).
-        // This is also the only site that can raise, and it raises *before*
-        // the sign is re-applied, so negatives overflow identically.
         check_maxval(&number, maxval_ceiling())?;
-        let rounded = py_float_int(&number)?;
 
-        match self.vietnam_number(&rounded) {
+        match self.vietnam_number(&number) {
             Some(start_word) => {
                 if is_negative {
                     Ok(format!("âm {}", start_word))
@@ -483,34 +387,26 @@ impl LangVi {
                     Ok(start_word)
                 }
             }
-            // Unreachable: `number < 10^60` never float-rounds up to 10^60
-            // (the nearest double is below it), so `vietnam_number` succeeds.
-            None => Err(too_large(&rounded)),
+            // Unreachable: `number < 10^18` was checked above.
+            None => Err(too_large(&number)),
         }
     }
 
     /// `(Decimal(str(val)) * 100) % 1 != 0`, evaluated under `decimal`'s
     /// default context (bug #12).
     ///
-    /// Two context effects are load-bearing and both are reproduced:
-    ///
-    /// * The multiply is rounded to `prec = 28` significant digits
-    ///   (ROUND_HALF_EVEN). `Inexact`/`Rounded` are not trapped, so this is
-    ///   silent — a 31-digit `Decimal` can lose its fractional cents here.
-    ///   `BigDecimal::with_prec` is half-even too, matching.
-    /// * `%` then raises `DivisionImpossible` when the quotient `int(m)` would
-    ///   exceed those 28 digits, i.e. `|m| >= 10**28`. `_pydecimal._divide`
-    ///   reaches that either through `expdiff > prec` or through the
-    ///   `q < 10**prec` test; both collapse to the same bound.
+    /// The multiply is rounded to `prec = 28` significant digits
+    /// (ROUND_HALF_EVEN). `Inexact`/`Rounded` are not trapped, so this is
+    /// silent — a 31-digit `Decimal` can lose its fractional cents here.
+    /// `BigDecimal::with_prec` is half-even too, matching. (Python's `%` also
+    /// raised `DivisionImpossible` from `|m| >= 10**28`; the caller's 10^18
+    /// ceiling now comes first.)
     ///
     /// `Decimal`'s `%` truncates toward zero (the remainder takes the
     /// dividend's sign), unlike `int`'s floor `%` — but only `!= 0` is asked,
     /// so the sign never escapes.
     fn has_fractional_cents(value: &BigDecimal) -> Result<bool> {
         let m = (value * BigDecimal::from(100)).with_prec(28);
-        if m.abs() >= BigDecimal::from(BigInt::from(10).pow(28)) {
-            return Err(div_impossible());
-        }
         // with_scale(0) truncates toward zero — Python's int(m).
         Ok(&m - m.with_scale(0) != BigDecimal::zero())
     }
@@ -519,10 +415,8 @@ impl LangVi {
     /// non-int `to_currency` branches do (bug #13).
     ///
     /// Distinct from [`LangVi::number_to_text`] on purpose: that one takes an
-    /// `int` and models `%f`'s int→double coercion via [`py_float_int`], and
-    /// its `" phẩy "` tail is dead because `"%.2f"` of an integral double
-    /// always ends `".00"`. Here the tail is live, and the coercion is a
-    /// no-op because the value already *is* a double.
+    /// `int` and reads it exactly, and its `" phẩy "` tail is dead. Here the
+    /// tail is live, and `"%.2f"` formats the double itself.
     ///
     /// `"%.2f" % number` prints the double's exact value rounded to two
     /// places, ties to even (CPython routes `%f` through David Gay's
@@ -536,7 +430,7 @@ impl LangVi {
         let is_negative = number.is_negative();
         let number = number.abs();
 
-        // `number = "%.2f" % number`. Guarded above to |value| < 10**26, so
+        // `number = "%.2f" % number`. Guarded above to |value| < 10**18, so
         // the f64 parse cannot reach infinity and the string stays short.
         let as_f64: f64 = number
             .to_string()
@@ -549,7 +443,7 @@ impl LangVi {
         // Python's `int(the_list[0])` raises ValueError — so the shape below is
         // the port, and no branch can panic. (`panic = "abort"` in the release
         // profile would take the host interpreter down with it.) Unreachable in
-        // practice: bug #12's guard caps |value| below 10**26.
+        // practice: `to_currency` caps |value| below 10**18.
         let (int_part, frac_part) = match formatted.split_once('.') {
             Some((i, f)) => (i, Some(f)),
             None => (formatted.as_str(), None),
@@ -561,13 +455,11 @@ impl LangVi {
             ))
         })?;
 
-        // Unreachable for the same reason: 10**26 is far below
-        // vietnam_number's 10**60 fall-off. Mapped rather than panicked so the
-        // exception type survives if that guard ever moves — every caller
-        // concatenates onto the result, so None becomes TypeError.
-        let start_word = self.vietnam_number(&int_val).ok_or_else(|| {
-            type_error("unsupported operand type(s) for +: 'NoneType' and 'str'")
-        })?;
+        // `to_currency` checked the 10^18 ceiling, but "%.2f" can still round
+        // a value just under it up to 10^18.
+        let start_word = self
+            .vietnam_number(&int_val)
+            .ok_or_else(|| too_large(&int_val))?;
 
         // `if len(the_list) > 1 and int(the_list[1]) > 0`. frac_part is the two
         // hundredths digits, so this is vietnam_number(0..=99) — bug #14.
@@ -580,7 +472,7 @@ impl LangVi {
                 ))
             })?;
             if frac_val > 0 {
-                final_result = format!("{} phẩy {}", final_result, self.convert_nn(frac_val));
+                final_result = format!("{} phẩy {}", final_result, self.hundredths(frac_val));
             }
         }
         if is_negative {
@@ -607,10 +499,10 @@ impl LangVi {
     /// ```
     ///
     /// Distinct from [`LangVi::number_to_text_decimal`] (the *currency*
-    /// re-entry) in one load-bearing way: there the `vietnam_number` `None`
-    /// fall-off is capped unreachable by bug #12's 10**26 guard. Here there is
-    /// no such cap — `to_cardinal(1e61)` really does hand `vietnam_number` a
-    /// value >= 10^60 — and that is an `OverflowError` (bug #5, #159).
+    /// re-entry) in one load-bearing way: there `to_currency` has checked the
+    /// ceiling first. Here nothing has — `to_cardinal(1e19)` really does hand
+    /// `vietnam_number` a value >= 10^18 — and its `None` becomes an
+    /// `OverflowError` (bug #5, #159, #215).
     ///
     /// `precision` / the `precision=` kwarg are irrelevant: `"%.2f"` is always
     /// two places, and the dispatcher pops `precision=` before `to_cardinal`
@@ -653,7 +545,7 @@ impl LangVi {
                     })?;
                     if frac_val > 0 {
                         final_result =
-                            format!("{} phẩy {}", final_result, self.convert_nn(frac_val));
+                            format!("{} phẩy {}", final_result, self.hundredths(frac_val));
                     }
                 }
                 if is_negative {
@@ -661,8 +553,8 @@ impl LangVi {
                 }
                 Ok(final_result)
             }
-            // vietnam_number ran out of `denom` (int part >= 10^60). Python
-            // returned `None` here (#159).
+            // vietnam_number ran out of `denom` (int part >= 10^18). Python
+            // went on in English, then returned `None` past 10^60 (#159, #215).
             None => Err(too_large(&int_val)),
         }
     }
@@ -670,10 +562,10 @@ impl LangVi {
     /// `self.to_cardinal(val) + " đồng"`.
     ///
     /// Python concatenates onto `to_cardinal`'s result, so the `None` that
-    /// [`LangVi::number_to_text`] can return past 10**60 becomes a TypeError
-    /// here rather than propagating — `to_currency` never yields `None`.
-    /// Unreachable under bug #12's 10**26 cap, but the sentinel must not leak
-    /// to the binding, which would turn it into a bare Python `None`.
+    /// Python's `number_to_text` returned past 10**60 became a TypeError here
+    /// rather than propagating. Unreachable under the 10^18 ceiling, but the
+    /// sentinel must not leak to the binding, which would turn it into a bare
+    /// Python `None`.
     fn dong(&self, cardinal: Result<String>) -> Result<String> {
         match cardinal {
             Ok(s) => Ok(format!("{} đồng", s)),
@@ -717,9 +609,25 @@ impl Lang for LangVi {
         self.number_to_text(value)
     }
 
-    /// `to_ordinal` is `return self.to_cardinal(number)` — identical output.
+    /// "thứ" + the cardinal, with the suppletive forms "thứ nhất" (1st)
+    /// and "thứ tư" (4th). Python's `to_ordinal` returned the bare cardinal
+    /// (gladiaio/num2words2#250).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        self.to_cardinal(value)
+        verify_ordinal(value)?;
+        if *value == BigInt::from(1) {
+            return Ok("thứ nhất".to_string());
+        }
+        if *value == BigInt::from(4) {
+            return Ok("thứ tư".to_string());
+        }
+        Ok(format!("thứ {}", self.to_cardinal(value)?))
+    }
+
+    /// A whole, non-negative float/Decimal reads like the integer; anything
+    /// else raises Base's ordinal `TypeError`.
+    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        let i = verify_ordinal_float(value)?;
+        self.to_ordinal(&i)
     }
 
     /// `to_ordinal_num` is `"thứ " + str(number)` — the raw digits, never words.
@@ -780,9 +688,8 @@ impl Lang for LangVi {
     /// Either branch hands `to_cardinal` a *non-negative* value, so "âm"
     /// can never appear; `to_cardinal(float)` is `number_to_text` with its
     /// `"%.2f"` coercion (a Decimal is coerced to a double the same way, via
-    /// the same `str -> f64` round the cardinal path uses). A bare-None
-    /// fall-off (>= 10^60) dies in the `"năm " + None` concatenation as
-    /// TypeError, exactly like the integer path.
+    /// the same `str -> f64` round the cardinal path uses). From 10^18 it
+    /// raises `OverflowError`, like the integer path.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         let concat = |r: Result<String>| -> Result<String> {
             match r {
@@ -855,15 +762,8 @@ impl Lang for LangVi {
         }
     }
 
-    /// `Num2Word_VI` has no `to_fraction` either (bug #16).
-    ///
-    /// Both the "n/d" fraction-string route and `to="fraction"` fail on
-    /// `converter.to_fraction` before the operands are looked at — hence
-    /// `_numerator`/`_denominator` untouched, and "1/0" is an
-    /// AttributeError, never a ZeroDivisionError.
-    fn to_fraction(&self, _numerator: &BigInt, _denominator: &BigInt) -> Result<String> {
-        Err(missing_attr("to_fraction"))
-    }
+    // `Num2Word_VI` had no `to_fraction` (AttributeError, bug #16). VI has no
+    // fraction rules, so the trait default raises NotImplementedError (#217).
 
     // ---- currency -------------------------------------------------------
     //
@@ -871,7 +771,7 @@ impl Lang for LangVi {
     // CURRENCY_FORMS, calls no pluralize/_money_verbose/_cents_*, and has no
     // to_cheque — so `currency_forms`, `currency_adjective`,
     // `currency_precision`, `pluralize`, `money_verbose`, `cents_verbose`,
-    // `cents_terse` and `lang_name` are all left at their trait defaults and
+    // `cents_terse` are all left at their trait defaults and
     // are all unreachable. Overriding them would invent behaviour the class
     // does not have.
     //
@@ -879,32 +779,38 @@ impl Lang for LangVi {
     // path is an AttributeError, not a float conversion, so there is no
     // fractional-cents rendering to port.
 
+    fn lang_name(&self) -> &str {
+        "Num2Word_VI"
+    }
+
     /// Port of `Num2Word_VI.to_currency`.
     ///
-    /// `currency`, `cents`, `separator` and `adjective` are accepted and
-    /// discarded — bugs #8 and #9. Every branch ends in the literal `" đồng"`,
-    /// which is why all nine currency codes in the corpus produce identical
-    /// output and why no code path can raise NotImplementedError.
+    /// `cents`, `separator` and `adjective` are accepted and discarded — bugs
+    /// #8 and #9. Every branch ends in the literal `" đồng"`, so Python printed
+    /// đồng whatever `currency=` said; the port raises NotImplementedError for
+    /// any code but VND instead of naming the wrong currency (#219).
     ///
-    /// Statement order matters and is preserved: the `Decimal` guard runs
-    /// *before* the int/float branch, so `to_currency(10**26)` raises
-    /// InvalidOperation even though the int branch would never have looked at
-    /// `has_fractional_cents` (bug #12).
+    /// The 10^18 ceiling is checked first, for both branches (Python raised
+    /// InvalidOperation from 10**26 there instead, bug #12).
     fn to_currency(
         &self,
         val: &CurrencyValue,
-        _currency: &str,
+        currency: &str,
         _cents: bool,
         _separator: Option<&str>,
         _adjective: bool,
     ) -> Result<String> {
+        if currency != self.default_currency() {
+            return Err(crate::currency::unknown_currency(self, currency));
+        }
         // decimal_val = Decimal(str(val))
         let decimal_val = match val {
             CurrencyValue::Int(v) => BigDecimal::from(v.clone()),
             CurrencyValue::Decimal { value, .. } => value.clone(),
         };
-        // Evaluated for its exception as much as its value: it can raise for
-        // either branch, and the int branch then ignores the result.
+        // The ceiling first: Python's `% 1` below raised InvalidOperation from
+        // 10**26 instead (bug #12, #215).
+        check_maxval(&decimal_val.with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
         let has_fractional_cents = Self::has_fractional_cents(&decimal_val)?;
 
         // `isinstance(val, int)` — a true int, never a float or a Decimal.
@@ -912,8 +818,6 @@ impl Lang for LangVi {
         // base.to_currency, so Decimal("5") and Decimal("5.00") both take the
         // float branch and both print "năm đồng".
         if let CurrencyValue::Int(v) = val {
-            // to_cardinal(int): keeps the "%.2f" int→double mangling, so
-            // to_currency(10**23) describes 99999999999999991611392 đồng.
             return self.dong(self.to_cardinal(v));
         }
 
@@ -931,17 +835,15 @@ impl Lang for LangVi {
         self.dong(self.number_to_text_decimal(value))
     }
 
-    /// `Num2Word_VI` has no `to_cheque` at all (bug #11).
-    ///
-    /// The dispatcher's `getattr(converter, "to_cheque")` raises on the
-    /// lookup, before the value is even looked at — hence `_val` and
-    /// `_currency` are untouched, and every `cheque:*` corpus row is an
-    /// AttributeError regardless of the code or the amount.
+    // `Num2Word_VI` had no `to_cheque` (AttributeError, bug #11).
+    // No cheque rules, so NotImplementedError ("lang='vi' does not support
+    // to='cheque'", #223).
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
-        Err(missing_attr("to_cheque"))
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -988,10 +890,10 @@ mod tests {
             (1.5, "một phẩy năm mươi"),
             (2.25, "hai phẩy hai mươi lăm"),
             (3.14, "ba phẩy mười bốn"),
-            (0.01, "không phẩy một"),
+            (0.01, "không phẩy không một"),
             (0.1, "không phẩy mười"),
             (0.99, "không phẩy chín mươi chín"),
-            (1.01, "một phẩy một"),
+            (1.01, "một phẩy không một"),
             (12.34, "mười hai phẩy ba mươi bốn"),
             (99.99, "chín mươi chín phẩy chín mươi chín"),
             (100.5, "một trăm phẩy năm mươi"),
@@ -1017,7 +919,7 @@ mod tests {
     #[test]
     fn decimal_cardinals_match_python() {
         for (s, want) in [
-            ("0.01", "không phẩy một"),
+            ("0.01", "không phẩy không một"),
             ("1.10", "một phẩy mười"),
             // float(Decimal("12.345")) is 12.34500000…06 → "%.2f" → "12.35".
             ("12.345", "mười hai phẩy ba mươi lăm"),
@@ -1051,8 +953,9 @@ mod tests {
         assert_eq!(got, "mười hai phẩy ba mươi lăm");
     }
 
-    /// Past 10^60 `vietnam_number` runs out of scale words: OverflowError
-    /// for either sign (#159; Python returned None / raised TypeError).
+    /// Past the ceiling `vietnam_number` runs out of scale words:
+    /// OverflowError for either sign (#159, #215; Python returned None /
+    /// raised TypeError past 10^60).
     #[test]
     fn overflow_past_1e60() {
         let lang = LangVi::new();

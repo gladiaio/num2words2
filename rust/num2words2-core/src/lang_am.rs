@@ -137,15 +137,11 @@
 //!    table in the library is `(unit_forms, subunit_forms)`; AM's carries a
 //!    third element, a per-currency default separator (`" ከ"`). See
 //!    `AmCurrency`. This single shape difference drives quirks 8 and 9.
-//! 8. **`to_cheque` is dead for Amharic — every call raises.** AM does not
-//!    override it, and the inherited `Num2Word_Base.to_cheque` opens with
-//!    `cr1, _cr2 = self.CURRENCY_FORMS[currency]` inside a `try` that catches
-//!    only `KeyError`. Against a 3-tuple that unpack raises `ValueError:
-//!    too many values to unpack (expected 2)`, which sails straight through
-//!    the handler. So the currency code only selects *which* exception:
-//!    ETB/USD/JPY → ValueError, everything else → NotImplementedError. The
-//!    corpus pins both halves (`cheque:USD` → ValueError, `cheque:EUR` →
-//!    NotImplementedError). See [`LangAm::to_cheque`].
+//! 8. **`to_cheque` is unsupported.** The inherited `Num2Word_Base.to_cheque`
+//!    unpacked `cr1, _cr2 = self.CURRENCY_FORMS[currency]`, which raised
+//!    `ValueError: too many values to unpack` against AM's 3-tuples. The
+//!    port raises NotImplementedError ("does not support to='cheque'") for
+//!    every code instead (#223). See [`LangAm::to_cheque`].
 //! 9. **`to_currency` ignores `CURRENCY_PRECISION` and hardcodes 100.** The
 //!    divisor is the literal `100` in `has_fractional_cents`, and
 //!    `parse_currency_parts` is called without a `divisor=` kwarg, taking its
@@ -180,8 +176,7 @@
 //!   [`N2WError::NotImplemented`]. Raised *before* `to_cardinal` runs, so
 //!   `to_currency(10**40, "EUR")` is NotImplementedError while
 //!   `to_currency(10**40, "USD")` is OverflowError. The ordering is preserved.
-//! * `to_cheque(v, "ETB"|"USD"|"JPY")` → `ValueError` → [`N2WError::Value`]
-//!   (quirk 8). Any other code → `NotImplementedError`.
+//! * `to_cheque` → `NotImplementedError` for every code (quirk 8).
 
 use crate::base::{
     clean, set_low_numwords, set_mid_numwords, splitnum, Cards, Lang, N2WError, Node, Result,
@@ -982,33 +977,16 @@ impl Lang for LangAm {
         ))
     }
 
-    /// `Num2Word_Base.to_cheque`, which AM inherits but can never satisfy.
-    ///
-    /// The Python body opens with:
-    ///
-    /// ```python
-    /// try:
-    ///     cr1, _cr2 = self.CURRENCY_FORMS[currency]
-    /// except KeyError:
-    ///     raise NotImplementedError(...)
-    /// ```
-    ///
-    /// Only `KeyError` is handled. AM's entries are 3-tuples (module docs 7),
-    /// so for a code that *is* present the unpack raises `ValueError` from
-    /// inside the `try` and passes straight through the handler. Nothing
-    /// downstream is ever reached — not `CURRENCY_PRECISION`, not
-    /// `_money_verbose` — so `val` is genuinely unused. The corpus pins both
-    /// outcomes: `cheque:USD` → ValueError, `cheque:EUR` → NotImplementedError.
-    fn to_cheque(&self, _val: &BigDecimal, currency: &str) -> Result<String> {
-        if self.currency.contains_key(currency) {
-            return Err(N2WError::Value(
-                "too many values to unpack (expected 2)".into(),
-            ));
-        }
-        Err(self.currency_not_implemented(currency))
+    // AM's CURRENCY_FORMS entries are 3-tuples, so Base's `cr1, _cr2 = ...` unpack
+    // raised ValueError for every known code.
+    // No cheque rules, so NotImplementedError ("lang='am' does not support
+    // to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;

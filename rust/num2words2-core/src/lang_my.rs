@@ -4,9 +4,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
 //! `set_high_numwords`, so Python never builds `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives a hand-written
-//! `_int_to_word` cascade. `cards`/`maxval`/`merge` therefore stay at their
-//! trait defaults here, and there is **no overflow check** — see bug 2 below
-//! for what happens instead at the top of the range.
+//! `_int_to_word` cascade. `cards`/`merge` therefore stay at their trait
+//! defaults here. Python has **no overflow check** — see bug 2 below for what
+//! it did at the top of the range; this port raises `OverflowError` from
+//! 10^14 (`maxval`).
 //!
 //! All four in-scope modes are overridden by the Python class, so nothing is
 //! inherited from `Num2Word_Base` except `setup()` being called from
@@ -25,8 +26,8 @@
 //!
 //! # Faithfully reproduced Python bugs
 //!
-//! This is a port, not a rewrite. Both of the following are wrong-looking but
-//! are exactly what Python emits, verified against `bench/corpus.jsonl`:
+//! This is a port, not a rewrite. Bug 1 is wrong-looking but exactly what
+//! Python emits, verified against `bench/corpus.jsonl`; bug 2 is fixed:
 //!
 //! 1. **Inconsistent combining-mark order for "ဆယ့်" (ten, with dot).** The
 //!    teens (11..=19) use a *hardcoded literal* [`TEEN_PREFIX`] whose tail is
@@ -41,15 +42,17 @@
 //!    (The other computed joins — `"ရာ" + "့"`, `"ထောင်" + "့"` — have no
 //!    competing literal, so they are internally consistent.)
 //!
-//! 2. **Numbers >= 10^9 are not converted at all.** `_int_to_word`'s final
-//!    `else` is `return str(number)`, a bare decimal fallback. So
-//!    `to_cardinal(10**9) == "1000000000"` and
-//!    `to_ordinal(10**9) == "1000000000မြောက်"` — the ordinal suffix is glued
-//!    onto digits. No `OverflowError` is ever raised (there is no `MAXVAL`),
-//!    so this silently degrades rather than failing. Reproduced in
-//!    [`int_to_word`]'s final branch; this is why the cascade must stay on
-//!    `BigInt` — the fallback is reached by arbitrarily large input
-//!    (the corpus goes to 10^21).
+//! 2. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` ends with `else: return str(number)`, so
+//!    `to_cardinal(10**9)` was `"1000000000"` and `to_ordinal(10**9)`
+//!    `"1000000000မြောက်"`, silently. Burmese place names grow by 10^1 up to
+//!    ကုဋေ (10^7) and the next one is ကောဋိ (10^14) (Wikipedia "Burmese
+//!    numerals"; Wiktionary ကုဋေ), so values in between are a multiplier of
+//!    ကုဋေ: the ကုဋေ branch, which already recursed on its 1..=99 multiplier,
+//!    now takes any multiplier below 10^7 — 10^9 == "တစ်ရာ ကုဋေ" — and
+//!    `OverflowError` is raised from 10^14. The English loan ဘီလီယံ
+//!    (Wiktionary, "billion") is the alternative not used, so as not to mix
+//!    the two systems.
 //!
 //! # Notes on faithful-but-unreachable code
 //!
@@ -109,7 +112,7 @@
 //! defines its own table), so the runtime dict equals the source literal.
 //! Verified against the live interpreter.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -117,6 +120,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 // ---------------------------------------------------------------------------
 // Tables — see the module docs before touching any escape sequence.
@@ -212,9 +216,10 @@ fn ones_at(n: &BigInt) -> &'static str {
 
 /// Python's `_int_to_word`.
 ///
-/// Kept on `BigInt` end to end: the final `else` (bug 2) is reached by
-/// arbitrarily large input, so nothing here may narrow to `u64`/`i128`.
-fn int_to_word(number: &BigInt) -> String {
+/// Python's final `else` (bug 2) returned the digits from 10^9; the ကုဋေ
+/// branch now covers everything below the 10^14 maxval (#147).
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     let ten = BigInt::from(10);
     let hundred = BigInt::from(100);
     let thousand = BigInt::from(1_000);
@@ -222,30 +227,29 @@ fn int_to_word(number: &BigInt) -> String {
     let lakh = BigInt::from(100_000);
     let million = BigInt::from(1_000_000);
     let ten_million = BigInt::from(10_000_000);
-    let billion = BigInt::from(1_000_000_000);
 
     if number.is_zero() {
-        return ONES[0].to_string();
+        return Ok(ONES[0].to_string());
     }
 
     if number.is_negative() {
         // Dead for all in-scope modes (see module docs); ported for fidelity.
-        return format!("{}{}", NEGWORD, int_to_word(&number.abs()));
+        return Ok(format!("{}{}", NEGWORD, int_to_word(&number.abs())?));
     } else if *number < ten {
-        return ones_at(number).to_string();
+        return Ok(ones_at(number).to_string());
     } else if *number == ten {
-        return TEN.to_string();
+        return Ok(TEN.to_string());
     } else if *number < BigInt::from(20) {
         // Bug 1 lives here: TEEN_PREFIX's mark order differs from SAY + DOT.
-        return format!("{}{}", TEEN_PREFIX, ones_at(&(number - &ten)));
+        return Ok(format!("{}{}", TEEN_PREFIX, ones_at(&(number - &ten))));
     } else if *number < hundred {
         let tens_val = number / &ten;
         let ones_val = number % &ten;
         let tens_word = format!("{}{}", ones_at(&tens_val), SAY);
         if ones_val.is_zero() {
-            return tens_word;
+            return Ok(tens_word);
         } else {
-            return format!("{}{}{}", tens_word, DOT, ones_at(&ones_val));
+            return Ok(format!("{}{}{}", tens_word, DOT, ones_at(&ones_val)));
         }
     } else if *number < thousand {
         let hundreds_val = number / &hundred;
@@ -253,18 +257,18 @@ fn int_to_word(number: &BigInt) -> String {
         let mut result = format!("{}{}", ones_at(&hundreds_val), HUNDRED);
         if !remainder.is_zero() {
             result.push_str(DOT);
-            result.push_str(&int_to_word(&remainder));
+            result.push_str(&int_to_word(&remainder)?);
         }
-        return result;
+        return Ok(result);
     } else if *number < ten_thousand {
         let thousands_val = number / &thousand;
         let remainder = number % &thousand;
         let mut result = format!("{}{}", ones_at(&thousands_val), THOUSAND);
         if !remainder.is_zero() {
             result.push_str(DOT);
-            result.push_str(&int_to_word(&remainder));
+            result.push_str(&int_to_word(&remainder)?);
         }
-        return result;
+        return Ok(result);
     } else if *number < lakh {
         // From here up the joiner is a space, not the dot.
         let ten_thousands_val = number / &ten_thousand;
@@ -272,42 +276,48 @@ fn int_to_word(number: &BigInt) -> String {
         let mut result = format!("{}{}", ones_at(&ten_thousands_val), TEN_THOUSAND);
         if !remainder.is_zero() {
             result.push(' ');
-            result.push_str(&int_to_word(&remainder));
+            result.push_str(&int_to_word(&remainder)?);
         }
-        return result;
+        return Ok(result);
     } else if *number < million {
         let hundred_thousands_val = number / &lakh;
         let remainder = number % &lakh;
         let mut result = format!("{}{}", ones_at(&hundred_thousands_val), LAKH);
         if !remainder.is_zero() {
             result.push(' ');
-            result.push_str(&int_to_word(&remainder));
+            result.push_str(&int_to_word(&remainder)?);
         }
-        return result;
+        return Ok(result);
     } else if *number < ten_million {
         let millions_val = number / &million;
         let remainder = number % &million;
         let mut result = format!("{}{}", ones_at(&millions_val), MILLION);
         if !remainder.is_zero() {
             result.push(' ');
-            result.push_str(&int_to_word(&remainder));
+            result.push_str(&int_to_word(&remainder)?);
         }
-        return result;
-    } else if *number < billion {
+        return Ok(result);
+    } else {
         // The only branch that *recurses* on the head instead of indexing
-        // `ones` — the head runs 1..=99, so it may itself be a teen or a ten.
+        // `ones`. Python capped the head at 99 and returned `str(number)`
+        // from 10^9 (bug 2); it now runs to 9_999_999, the maxval check's
+        // bound — the next place name, ကောဋိ, is 10^14 (#147).
         let ten_millions_val = number / &ten_million;
         let remainder = number % &ten_million;
-        let mut result = format!("{}{}", int_to_word(&ten_millions_val), KUTAY);
+        let mut result = format!("{}{}", int_to_word(&ten_millions_val)?, KUTAY);
         if !remainder.is_zero() {
             result.push(' ');
-            result.push_str(&int_to_word(&remainder));
+            result.push_str(&int_to_word(&remainder)?);
         }
-        return result;
-    } else {
-        // Bug 2: bare decimal fallback for >= 10^9. No OverflowError.
-        return number.to_string();
+        return Ok(result);
     }
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#147): 10^14 is ကောဋိ, the next
+/// Burmese place after ကုဋေ, which this cascade does not compose.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
 }
 
 /// Reconstruct Python's `str(f)` (== `repr(f)`) for a finite f64.
@@ -432,7 +442,7 @@ impl LangMy {
             let mut ret = format!(
                 "{}{} {} ",
                 neg,
-                int_to_word(&parse_pyint(left)?),
+                int_to_word(&parse_pyint(left)?)?,
                 self.pointword()
             );
             for ch in right.chars() {
@@ -442,7 +452,7 @@ impl LangMy {
                         ch
                     ))
                 })?;
-                ret.push_str(&int_to_word(&BigInt::from(d)));
+                ret.push_str(&int_to_word(&BigInt::from(d))?);
                 ret.push(' ');
             }
             // Python's trailing `.strip()` removes the loop's last space.
@@ -450,7 +460,7 @@ impl LangMy {
         }
         // The `else` arm: whole Decimals ("5") convert; scientific no-dot
         // tokens ("1e+16", "1E+3") raise ValueError from int().
-        Ok(format!("{}{}", neg, int_to_word(&parse_pyint(n)?))
+        Ok(format!("{}{}", neg, int_to_word(&parse_pyint(n)?)?)
             .trim()
             .to_string())
     }
@@ -463,6 +473,10 @@ impl Default for LangMy {
 }
 
 impl Lang for LangMy {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -499,7 +513,7 @@ impl Lang for LangMy {
         };
 
         // The `"." in n` branch is unreachable for integral input.
-        let joined = format!("{}{}", ret, int_to_word(&magnitude));
+        let joined = format!("{}{}", ret, int_to_word(&magnitude)?);
 
         // Python's trailing `.strip()`. A no-op in practice — NEGWORD's space
         // is interior once a word follows it, and `_int_to_word` never returns
@@ -549,9 +563,10 @@ impl Lang for LangMy {
     ///   never reads `self.precision` (it works off the string), so
     ///   `precision_override` is dropped, matching the live interpreter.
     ///
-    /// * **Bug 2 applies to the integer part**: `_int_to_word(int(left))`
-    ///   falls back to bare digits at >= 10^9, so
-    ///   `Decimal("98746251323029.99")` renders "98746251323029 ဒသမ ကိုး ကိုး".
+    /// * **Bug 2 applied to the integer part**: Python's
+    ///   `_int_to_word(int(left))` fell back to bare digits at >= 10^9
+    ///   (`Decimal("98746251323029.99")` -> "98746251323029 ဒသမ ကိုး ကိုး");
+    ///   the port spells it with ကုဋေ, below the 10^14 ceiling (#147).
     ///
     /// * **A negative-zero Decimal keeps its negword**: `BigDecimal` cannot
     ///   carry `Decimal("-0.0")`'s sign, so the binding rewrites it to
@@ -771,7 +786,7 @@ impl Lang for LangMy {
 
         // `_int_to_word`, not `to_cardinal`: `left` is already non-negative, so
         // the sign is applied once at the end rather than here.
-        let mut result = format!("{} {}", int_to_word(&left), forms.unit[0]);
+        let mut result = format!("{} {}", int_to_word(&left)?, forms.unit[0]);
 
         // `if cents and right:` — `right == 0` is falsy in Python, so a float
         // with zero cents (1.0, 100.0) prints no cents segment. This is the
@@ -779,7 +794,7 @@ impl Lang for LangMy {
         // cents for a float.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&int_to_word(&right)?);
             result.push(' ');
             result.push_str(&forms.subunit[0]);
         }

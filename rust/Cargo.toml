@@ -3,9 +3,11 @@ members = ["num2words2-core", "num2words2-py"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+# Same licence as the Python package (pyproject.toml) and upstream num2words:
+# the core is a port of that LGPL engine (gladiaio/num2words2#242).
+license = "LGPL-2.1-only"
 repository = "https://github.com/gladiaio/num2words2"
 homepage = "https://github.com/gladiaio/num2words2"
 authors = ["jqueguiner"]
@@ -14,5 +16,10 @@ authors = ["jqueguiner"]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# Unwind, not abort (issue #204): num2words2-py wraps every entry point in
+# `catch_unwind` so a Rust panic surfaces as a Python RuntimeError. Under
+# "abort" that backstop is dead code and any panic kills the host Python
+# process. Cost: the slim macOS arm64 .so grows 6.2 -> 7.3 MB (wheel
+# 2.8 -> 3.3 MB) for the unwind tables and landing pads.
+panic = "unwind"
 strip = true

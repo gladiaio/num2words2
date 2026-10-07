@@ -6,14 +6,6 @@ The current converter registry includes 172 language and locale codes. The exact
 num2words2 --list-languages
 ```
 
-or:
-
-```python
-from num2words2 import CONVERTER_CLASSES
-
-codes = sorted(CONVERTER_CLASSES)
-```
-
 ## Locale Normalization
 
 `num2words2` normalizes hyphens to underscores and tries regional fallbacks:

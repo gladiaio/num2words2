@@ -2,10 +2,14 @@
 name = "num2words2-core"
 version.workspace = true
 edition.workspace = true
+# The licence text ships in the crate as COPYING, a copy of the repo-root
+# file: cargo only packages files inside the crate directory.
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/num2words2-core"
 description = "Number-to-words conversion for 120+ languages (Rust port of num2words). 42 -> forty-two."
 keywords = ["num2words", "number", "cardinal", "spellout", "i18n"]
 categories = ["internationalization", "text-processing"]

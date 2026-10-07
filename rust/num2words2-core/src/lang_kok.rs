@@ -20,9 +20,9 @@
 //! would be reasonable. But the *default* `kok` should be the official
 //! script, which it now is.
 //!
-//! This is a lexicon change only — the composition rules, the mixed
-//! `" आनी "` / `" "` joints (bug 3), the 10^9 cliff and the currency
-//! fallback are all still ported verbatim.
+//! This is a lexicon change only. The composition below a hundred and the
+//! grouping were fixed separately (#247, bug 2); the mixed `" आनी "` / `" "`
+//! joints (bug 3) are still ported verbatim.
 //!
 //! ## 2. Ordinals 1..=10
 //!
@@ -32,8 +32,7 @@
 //! तिसरो, चवथो, nothing to do with एक/दोन/तीन/चार) and 6 and 9 contract
 //! (सव्वो, नव्वो, not *सववो / *नववो). See [`ORDINAL_IRREGULARS`].
 //!
-//! **From 11 up nothing changed but the script**: `to_ordinal(11)` is
-//! "धा आनी एकवो", as before. `verify_ordinal` is still not called, so
+//! **From 11 up it is still the suffix**: `to_ordinal(11)` is "इकरावो". `verify_ordinal` is still not called, so
 //! `to_ordinal(0)` is still *शून्यवो and `to_ordinal(-1)` still takes the
 //! suffix arm.
 //!
@@ -43,7 +42,8 @@
 //! `MAXVAL` (that block is guarded by `if any(hasattr(self, field) ...)`).
 //! `to_cardinal` is overridden outright and drives a hand-rolled recursive
 //! `_int_to_word`. Consequently `cards`/`maxval`/`merge` stay at their trait
-//! defaults here and there is **no overflow check at all** — see bug 1.
+//! defaults here. Python has no overflow check; the port's `maxval` is
+//! 10^14 (bug 1).
 //!
 //! All four in-scope modes are overridden by KOK, so nothing is inherited
 //! from `Num2Word_Base` in the integer path:
@@ -53,7 +53,7 @@
 //!   * `to_ordinal_num(number)` — `str(number) + "वो"`
 //!   * `to_year(val, longval=True)` — ignores `longval`, delegates to
 //!     `to_cardinal`. There is no era/two-chunk year logic: `to_year(1999)`
-//!     is just the plain cardinal "एक हजार नव शंभर आनी नव्वद आनी नव",
+//!     is just the plain cardinal "एक हजार नव शंभर आनी नव्याण्णव",
 //!     and `to_year(-500)` is "रीण पांच शंभर" (no "BC"-style suffix).
 //!
 //! # Float/Decimal routing — everything is string surgery on `str(number)`
@@ -87,21 +87,22 @@
 //! This is a port, not a rewrite. All of the following look wrong but are
 //! exactly what Python emits, verified against the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the bare digits.** The
-//!    final `return str(number)` is a fallthrough, not a raise: `to_cardinal(
-//!    10**9)` == "1000000000" and `to_ordinal(10**9)` == "1000000000वो".
-//!    This is why the language never raises `OverflowError` and why the
-//!    value must stay a `BigInt` — the digit string is the output for every
-//!    input from 10^9 up to 10^606 and beyond. See [`LangKok::int_to_word`].
-//! 2. **`million` is spelled "धा लाख"** — literally "ten लाख". So 10^6
-//!    is "एक धा लाख" and 10^7 renders as "धा धा लाख" ("ten ten
-//!    lakh"), which is arithmetically odd but verbatim Python. Kept as-is.
+//! 1. **`_int_to_word` gave up at 10^9 (fixed, gladiaio/num2words2#147).**
+//!    Python's final `return str(number)` turned 10^9 into "1000000000".
+//!    No Konkani word above कोटी is attested, so the port spells the crore
+//!    count (10^9 is "एक शंभर कोटी", hundred crore) and raises
+//!    `OverflowError` from 10^14, where that count would itself need कोटी.
+//! 2. **`million` was spelled "धा लाख" (fixed, gladiaio/num2words2#247)** —
+//!    literally "ten लाख", applied at 10^6 in a Western grouping, so 10^6
+//!    was "एक धा लाख" and 10^7 "धा धा लाख". The port groups by हजार, लाख
+//!    (10^5) and कोटी (10^7): 10^5 is "एक लाख", 10^6 "धा लाख", 10^7
+//!    "एक कोटी". Below a hundred Python also joined tens and units with
+//!    " आनी " (11 was "धा आनी एक"); the port reads [`BELOW_HUNDRED`].
 //! 3. **Separator asymmetry.** The hundreds branch joins its remainder with
-//!    `" आनी "`, but the thousands and millions branches join theirs with a
+//!    `" आनी "`, but the thousand/lakh/crore branches join theirs with a
 //!    bare `" "`. Hence 101 == "एक शंभर आनी एक" but 1001 == "एक हजार एक"
-//!    (no "आनी"), and 1234 == "एक हजार दोन शंभर आनी तीस आनी चार".
-//! 4. **`ones[6]` is "सव"**, which collides visually with nothing else but
-//!    reads oddly next to `hundred` = "शंभर"; 16 == "धा आनी सव".
+//!    (no "आनी"), and 1234 == "एक हजार दोन शंभर आनी चवतीस".
+//! 4. **`ones[6]` is "सव"**, kept (several sources write स).
 //! 5. **`negword` is "रीण "** (with a trailing space) and the negative path
 //!    concatenates then `.strip()`s. `_int_to_word` never returns an empty
 //!    string (0 short-circuits to "शून्य"), so the strip is a no-op in
@@ -159,7 +160,7 @@
 //!   `Value` (Python's `int("1e+16")` ValueError). See
 //!   [`LangKok::exponential_parts`].
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -167,6 +168,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `self.ones`. Index 0 is "" and is only ever reachable through the float
@@ -176,22 +178,46 @@ const ONES: [&str; 10] = [
     "", "एक", "दोन", "तीन", "चार", "पांच", "सव", "सात", "आठ", "नव",
 ];
 
-/// `self.tens`. Index 0 is "" and unreachable: the branch that indexes this
-/// runs only for `10 <= number < 100`, so the tens digit is always 1..=9.
-const TENS: [&str; 10] = [
-    "", "धा", "वीस", "तीस", "चाळीस", "पन्नास", "साठ", "सत्तर", "ऐंशी", "नव्वद",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had only `ones` and `tens` and joined them with " आनी " ("and"),
+/// so 11 was "धा आनी एक" and 21 "वीस आनी एक". Konkani has its own word for
+/// every number below a hundred (11 इकरा, 21 एकवीस). Sources: the
+/// dhyaskonkani.com 1-100 list (the only native Devanagari one found), the
+/// Central Bank of India Konkani handbook (romanised), Wikibooks
+/// Konkani/Numbers and Wiktionary (इकरा). 1..=10 and the round tens are the
+/// module's own words (6 सव, 9 नव; several sources write स, णव). **Low
+/// confidence, needs a native speaker:** 26, 37, 38, 42, 46, 51..=58 and
+/// 61..=99, where the Devanagari lists disagree; 71..=99 follow the forms the
+/// romanised sources share (ekahattar, bahattar, ...). Index 0 is never read.
+///
+/// 53, 54, 56 and 66 were re-checked on best evidence (#263) and kept:
+/// dhyaskonkani.com writes त्रेप्पन, चवपन, छाप्पन verbatim, and सेसष्ट is
+/// the CBI handbook's Devanagari and Omniglot's "sesasht". The competing
+/// Wikibooks forms (त्रेपन्न, चोपन्न, छप्पन्न, सहासष्ठ) are Marathi spellings
+/// that contradict its own romanisation (sesasht), and the five-model review
+/// agreed on no replacement.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "एक", "दोन", "तीन", "चार", "पांच", "सव", "सात", "आठ", "नव", // 0..9
+    "धा", "इकरा", "बारा", "तेरा", "चवदा", "पंदरा", "सोळा", "सतरा", "अठरा", "एकोणीस", // 10..19
+    "वीस", "एकवीस", "बावीस", "तेवीस", "चोवीस", "पंचवीस", "सव्वीस", "सत्तावीस", "अठ्ठावीस", "एकोणतीस", // 20..29
+    "तीस", "एकतीस", "बत्तीस", "तेत्तीस", "चवतीस", "पस्तीस", "छत्तीस", "सात्तीस", "आट्टीस", "एकोणचाळीस", // 30..39
+    "चाळीस", "एकेचाळीस", "बेचाळीस", "त्रेचाळीस", "चवेचाळीस", "पंचेचाळीस", "शेचाळीस", "सत्तेचाळीस", "अठ्ठेचाळीस", "एकोणपन्नास", // 40..49
+    "पन्नास", "एकावन", "बावन", "त्रेप्पन", "चवपन", "पंचावन", "छाप्पन", "सत्तावन", "अठ्ठावन", "एकोणसाठ", // 50..59
+    "साठ", "एकसष्ट", "बासष्ट", "त्रेसष्ट", "चौसष्ट", "पासष्ट", "सेसष्ट", "सडसष्ट", "अडसष्ट", "एकोणसत्तर", // 60..69
+    "सत्तर", "एक्काहत्तर", "बाहत्तर", "त्र्याहत्तर", "चौऱ्याहत्तर", "पंच्याहत्तर", "शहात्तर", "सत्याहत्तर", "अठ्ठ्याहत्तर", "एकोणऐंशी", // 70..79
+    "ऐंशी", "एक्क्याऐंशी", "ब्याऐंशी", "त्र्याऐंशी", "चौऱ्याऐंशी", "पंच्याऐंशी", "शहाऐंशी", "सत्त्याऐंशी", "अठ्ठ्याऐंशी", "एकोणनव्वद", // 80..89
+    "नव्वद", "एक्क्याण्णव", "ब्याण्णव", "त्र्याण्णव", "चौऱ्याण्णव", "पंच्याण्णव", "शहाण्णव", "सत्त्याण्णव", "अठ्ठ्याण्णव", "नव्याण्णव", // 90..99
 ];
 
 const HUNDRED: &str = "शंभर";
 const THOUSAND: &str = "हजार";
-/// Python spells 10^6 "dosh lakh" — "ten lakh". See bug 2 for why that is
-/// the wrong *scale* word; the spelling here is the Devanagari for it.
-///
-/// "dosh" has no Konkani reading: Konkani for ten is धा (the `TENS[1]` entry
-/// just above), and Marathi's दहा is the nearest neighbour. It is written धा
-/// here so the phrase reads as the "ten lakh" the module header says it is,
-/// rather than transliterating a token that spells nothing.
-const MILLION: &str = "धा लाख";
+/// 10^5 and 10^7 (bug 2, fixed in #247). Python grouped in thousands and
+/// "dosh lakh" (ten lakh) millions; Konkani groups by लाख and कोटी, as the
+/// Goa government's Konkani pages write amounts ("६४५.७९ कोटी रुपया",
+/// sdma.goa.gov.in/konkani).
+const LAKH: &str = "लाख";
+const CRORE: &str = "कोटी";
 /// sic — trailing space is part of the word in Python. See bug 5.
 const NEGWORD: &str = "रीण ";
 const POINTWORD: &str = "पुंतो";
@@ -258,7 +284,7 @@ const DEFAULT_SEPARATOR: &str = " ";
 /// [`LangKok::to_currency`].
 const BASE_DEFAULT_SEPARATOR: &str = ",";
 
-/// Small-index helper for the `ONES`/`TENS` lookups.
+/// Small-index helper for the `ONES` lookups.
 ///
 /// Every call site is guarded by a `< 100` or `< 1000` branch, so the value
 /// is provably 0..=9 and the conversion cannot fail. Python would raise
@@ -266,7 +292,7 @@ const BASE_DEFAULT_SEPARATOR: &str = ",";
 fn digit_index(n: &BigInt) -> usize {
     n.to_usize()
         .filter(|i| *i < 10)
-        .expect("KOK: ones/tens index is 0..=9 by the enclosing range guard")
+        .expect("KOK: ones index is 0..=9 by the enclosing range guard")
 }
 
 pub struct LangKok {
@@ -304,6 +330,14 @@ impl LangKok {
         }
     }
 
+    /// `int_to_word` behind [`maxval_ceiling`], checked before the first
+    /// recursive step. Every entry point that hands over a caller-supplied
+    /// integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     /// Port of `Num2Word_KOK._int_to_word`.
     ///
     /// Only ever called with a non-negative value: `to_cardinal` strips the
@@ -325,14 +359,8 @@ impl LangKok {
 
         let hundred = BigInt::from(100);
         if number < &hundred {
-            // t, o = divmod(number, 10)
-            let (t, o) = number.div_mod_floor(&ten);
-            let mut s = TENS[digit_index(&t)].to_string();
-            if !o.is_zero() {
-                s.push_str(" आनी ");
-                s.push_str(ONES[digit_index(&o)]);
-            }
-            return s;
+            // Python: `tens[t] + " आनी " + ones[o]` (fixed in #247).
+            return BELOW_HUNDRED[number.to_usize().expect("bounded by 100")].to_string();
         }
 
         let thousand = BigInt::from(1000);
@@ -341,41 +369,37 @@ impl LangKok {
             let (h, r) = number.div_mod_floor(&hundred);
             let mut s = format!("{} {}", ONES[digit_index(&h)], HUNDRED);
             if !r.is_zero() {
-                // Hundreds join with " आनी " — unlike thousands/millions.
+                // Hundreds join with " आनी " — unlike thousands/lakhs/crores.
                 s.push_str(" आनी ");
                 s.push_str(&self.int_to_word(&r));
             }
             return s;
         }
 
-        let million = BigInt::from(1_000_000);
-        if number < &million {
-            // t, r = divmod(number, 1000)
-            let (t, r) = number.div_mod_floor(&thousand);
-            let mut s = format!("{} {}", self.int_to_word(&t), THOUSAND);
-            if !r.is_zero() {
-                // Bare space, no "आनी" — see bug 3.
-                s.push(' ');
-                s.push_str(&self.int_to_word(&r));
+        // Python grouped by thousand (to 10^6) and "ten lakh" (to 10^9); the
+        // port groups by thousand, lakh and crore (bug 2, fixed in #247). The
+        // remainder still joins with a bare " " — see bug 3.
+        let lakh = BigInt::from(100_000);
+        let crore = BigInt::from(10_000_000);
+        for (limit, divisor, word) in [
+            (&lakh, &thousand, THOUSAND),
+            (&crore, &lakh, LAKH),
+            (maxval_ceiling(), &crore, CRORE),
+        ] {
+            if number < limit {
+                let (q, r) = number.div_mod_floor(divisor);
+                let mut s = format!("{} {}", self.int_to_word(&q), word);
+                if !r.is_zero() {
+                    s.push(' ');
+                    s.push_str(&self.int_to_word(&r));
+                }
+                return s;
             }
-            return s;
         }
 
-        let billion = BigInt::from(1_000_000_000);
-        if number < &billion {
-            // m, r = divmod(number, 1000000)
-            let (m, r) = number.div_mod_floor(&million);
-            let mut s = format!("{} {}", self.int_to_word(&m), MILLION);
-            if !r.is_zero() {
-                // Bare space, no "आनी" — see bug 3.
-                s.push(' ');
-                s.push_str(&self.int_to_word(&r));
-            }
-            return s;
-        }
-
-        // return str(number) — the silent give-up at 10^9. See bug 1.
-        number.to_string()
+        // Python's `return str(number)` (bug 1): unreachable now, the crore
+        // arm runs to the ceiling that `checked_int_to_word` enforces.
+        unreachable!("int_to_word is only reached below maxval")
     }
 
     /// Port of the `str(val).split(".")` parse at the head of
@@ -514,7 +538,7 @@ impl LangKok {
         match n.split_once('.') {
             Some((left, right)) => {
                 // ret = self._int_to_word(int(left)) + " " + self.pointword
-                let mut ret = format!("{} {}", self.int_to_word(&py_int(left)?), POINTWORD);
+                let mut ret = format!("{} {}", self.checked_int_to_word(&py_int(left)?)?, POINTWORD);
                 // for digit in right:
                 //     ret += " " + (self.ones[int(digit)] or "शून्य")
                 for ch in right.chars() {
@@ -531,7 +555,7 @@ impl LangKok {
             }
             // No "." -> return self._int_to_word(int(n)); int() raises
             // ValueError on anything that is not a plain digit string.
-            None => Ok(self.int_to_word(&py_int(n)?)),
+            None => self.checked_int_to_word(&py_int(n)?),
         }
     }
 }
@@ -606,7 +630,21 @@ fn first_two_cents(frac: &str) -> BigInt {
     parse_digits(&two)
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147). The scale stops at
+/// कोटी (10^7); above it the crore count is spelled out (the everyday
+/// "hundred crore", "lakh crore") until that count
+/// would itself need कोटी at 10^14. Python returned the digits from
+/// 10^9 up; this raises `OverflowError` from 10^14 instead.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangKok {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -653,10 +691,10 @@ impl Lang for LangKok {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
             // (self.negword + self.to_cardinal(n[1:])).strip()
-            let inner = self.int_to_word(&value.abs());
+            let inner = self.checked_int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.checked_int_to_word(value)
     }
 
     /// Port of `Num2Word_KOK.to_ordinal`: `to_cardinal(number) + "वो"`.
@@ -705,6 +743,7 @@ impl Lang for LangKok {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_of_pystr(&value_python_str(value))
     }
 
@@ -718,6 +757,7 @@ impl Lang for LangKok {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.to_cardinal_float(value, precision_override)
     }
 
@@ -725,6 +765,7 @@ impl Lang for LangKok {
     /// integer mode — the suffix binds to the decimal spelling ("पांच पुंतो
     /// शून्यवो") and any `int()` ValueError propagates before it is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         let cardinal = self.cardinal_float_entry(value, None)?;
         Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
     }
@@ -739,6 +780,7 @@ impl Lang for LangKok {
     /// `to_year(float/Decimal)`: `to_cardinal(val)`, `longval` ignored — the
     /// same explicit delegation the integer `to_year` makes.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.cardinal_float_entry(value, None)
     }
 
@@ -908,7 +950,7 @@ impl Lang for LangKok {
         } else {
             &forms.unit[1]
         };
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.checked_int_to_word(&left)?, unit);
 
         // `if cents and right:` — a zero `right` drops the whole segment, so
         // 1.0 is "एक युरो" and not "एक युरो शून्य सेंट". See quirk 8.
@@ -925,7 +967,7 @@ impl Lang for LangKok {
         }
 
         if is_negative {
-            // negword carries a trailing space: "रीण " + "धा आनी दोन युरो".
+            // negword carries a trailing space: "रीण " + "बारा युरो".
             result = format!("{}{}", NEGWORD, result);
         }
         // result.strip() — inert in practice (int_to_word never returns "",

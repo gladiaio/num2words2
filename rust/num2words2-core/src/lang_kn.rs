@@ -82,20 +82,22 @@
 //!    of "koti", yielding "...kota-ne" instead of "...koti-ne". Same for every
 //!    crore value. Wrong-looking, but it is the spec.
 //!
-//! 3. **`to_ordinal_num` prepends the digits to the full ordinal *words***:
-//!    `"%s%s" % (value, self.to_ordinal(value))`, so `to_ordinal_num(100)` is
-//!    the numeral "100" glued directly onto the entire spelled-out ordinal with
-//!    no separator. Most languages return a short suffix here (EN gives
-//!    "100th"); KN does not.
+//! 3. **`to_ordinal_num` prepended the digits to the full ordinal *words*
+//!    (fixed, #224)**: Python's `"%s%s" % (value, self.to_ordinal(value))`
+//!    gave "1ಒಂದನೇ". The port writes the numeral plus the ordinal suffix
+//!    `to_ordinal` uses: "1ನೇ", "100ನೇ".
 //!
-//! 4. **Typos and inconsistent spacing in `low_numwords`, kept verbatim.** The
-//!    30s are especially ragged: 36/37/38 are missing the second "ta" that every
-//!    other thirty-something carries. Spacing is arbitrary across the table --
-//!    93/94 use a bare consonant plus a space (no virama), 83/84 use virama plus
-//!    space, 53/54 run the words together with no space at all, while 22..=25 use
-//!    virama plus space. Consequently `to_cardinal(31)` is joined but
-//!    `to_cardinal(21)` is spaced. Do not normalise any of it.
-//!
+//! 4. **Typos and inconsistent spacing in `low_numwords` (fixed,
+//!    gladiaio/num2words2#247).** Python's table wrote 21..=44 and the 3s/4s
+//!    of each later decade as two words or with a stray virama ("ಇಪ್ಪತ್ತ್
+//!    ಮೂರು" for 23, "ಮೂವತ್ಎಂಟು" for 38, missing a ತ). Kannada writes each of
+//!    them as one word: the ten drops its final -ು and a vowel-initial unit
+//!    fuses as a vowel sign (ಇಪ್ಪತ್ತೊಂದು, ಇಪ್ಪತ್ತೈದು, ಮೂವತ್ತೆಂಟು); a
+//!    consonant-initial one follows -ತ್ತ (ಇಪ್ಪತ್ತಮೂರು, ನಲವತ್ತನಾಲ್ಕು), the
+//!    pattern the table already used for 53 (ಐವತ್ತಮೂರು). The 30
+//!    corrected entries are marked `(#247)` and written NFC; the other
+//!    entries, decomposed ones included, are untouched. (ಇಪ್ಪತ್ಮೂರು-style
+//!    contractions are also attested; Omniglot/preply/multibhashi differ.)
 //! 5. **The `"%s-%s"` hyphen branch of `merge` is unreachable.** Every value
 //!    below 100 has its own card, so `splitnum` always resolves it with `div == 1`
 //!    and `merge` takes the first branch instead. The branch is ported anyway to
@@ -144,11 +146,16 @@
 //! code -- including the 3-decimal (KWD/BHD) and 0-decimal (JPY) currencies.
 //! Both halves of this asymmetry are confirmed against the frozen corpus.
 //!
-//! [`CURRENCY_FORMS`] and [`CURRENCY_ADJECTIVES`] below were therefore dumped
-//! from a live interpreter after a full `import num2words2`, not transcribed
-//! from `lang_EUR.py`. Re-deriving them from the source file would silently
-//! produce a different (and wrong) table. `CURRENCY_ADJECTIVES` happens to be
-//! unmutated, but is dumped the same way so the two cannot drift apart.
+//! **Replaced by native nouns (gladiaio/num2words2#222).** That table is
+//! English — even INR read "rupees"/"paise" — so [`CURRENCY_FORMS`] now holds
+//! Kannada nouns for the codes with a sourced unit and subunit (EUR, GBP, INR,
+//! JPY, USD; singular after a numeral, as Kannada usually writes "೧೦೦
+//! ರೂಪಾಯಿ") and every other code raises NotImplementedError. The rest of this
+//! section describes Python's table.
+//!
+//! [`CURRENCY_ADJECTIVES`] below was dumped from a live interpreter after a
+//! full `import num2words2` (it happens to be unmutated). Its demonyms are
+//! still English ("Indian"); that is open.
 //!
 //! # Errors
 //!
@@ -175,8 +182,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 97 = ತೊಂಬತ್ತೇಳು
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 96 = ತೊಂಬತ್ತಾರು
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 95 = ತೊಂಬತ್ತೈದು
-    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 94 = ತೊಂಬತ್ತ ನಾಲ್ಕು
-    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 93 = ತೊಂಬತ್ತ ಮೂರು
+    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 94 = ತೊಂಬತ್ತನಾಲ್ಕು (#247)
+    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 93 = ತೊಂಬತ್ತಮೂರು (#247)
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 92 = ತೊಂಬತ್ತೆರಡು
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 91 = ತೊಂಬತ್ತೊಂದು
     "\u{0ca4}\u{0cc6}\u{0cc2}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 90 = ತೊಂಬತ್ತು (decomposed)
@@ -185,8 +192,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 87 = ಎಂಬತ್ತೇಳು
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 86 = ಎಂಬತ್ತಾರು
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 85 = ಎಂಬತ್ತೈದು
-    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 84 = ಎಂಬತ್ತ್ ನಾಲ್ಕು
-    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 83 = ಎಂಬತ್ತ್ ಮೂರು
+    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 84 = ಎಂಬತ್ತನಾಲ್ಕು (#247)
+    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 83 = ಎಂಬತ್ತಮೂರು (#247)
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 82 = ಎಂಬತ್ತೆರಡು
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cc2}\u{0c82}\u{0ca6}\u{0cc1}", // 81 = ಎಂಬತ್ತೊಂದು (decomposed)
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 80 = ಎಂಬತ್ತು
@@ -195,8 +202,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 77 = ಎಪ್ಪತ್ತೇಳು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 76 = ಎಪ್ಪತ್ತಾರು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 75 = ಎಪ್ಪತ್ತೈದು
-    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 74 = ಎಪ್ಪತ್ತ್ ನಾಲ್ಕು
-    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 73 = ಎಪ್ಪತ್ತ್ ಮೂರು
+    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 74 = ಎಪ್ಪತ್ತನಾಲ್ಕು (#247)
+    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 73 = ಎಪ್ಪತ್ತಮೂರು (#247)
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 72 = ಎಪ್ಪತ್ತೆರಡು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 71 = ಎಪ್ಪತ್ತೊಂದು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 70 = ಎಪ್ಪತ್ತು
@@ -205,8 +212,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 67 = ಅರವತ್ತೇಳು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 66 = ಅರವತ್ತಾರು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 65 = ಅರವತ್ತೈದು
-    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 64 = ಅರವತ್ತ್ ನಾಲ್ಕು
-    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 63 = ಅರವತ್ತ್ ಮೂರು
+    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 64 = ಅರವತ್ತನಾಲ್ಕು (#247)
+    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 63 = ಅರವತ್ತಮೂರು (#247)
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 62 = ಅರವತ್ತೆರಡು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 61 = ಅರವತ್ತೊಂದು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 60 = ಅರವತ್ತು
@@ -215,7 +222,7 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 57 = ಐವತ್ತೇಳು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 56 = ಐವತ್ತಾರು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 55 = ಐವತ್ತೈದು
-    "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 54 = ಐವತ್ತ್ನಾಲ್ಕು
+    "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 54 = ಐವತ್ತನಾಲ್ಕು (#247)
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 53 = ಐವತ್ತಮೂರು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 52 = ಐವತ್ತೆರಡು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 51 = ಐವತ್ತೊಂದು
@@ -225,30 +232,30 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 47 = ನಲವತ್ತೇಳು
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 46 = ನಲವತ್ತಾರು
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cd6}\u{0ca6}\u{0cc1}", // 45 = ನಲವತ್ತೈದು (decomposed)
-    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 44 = ನಲವತ್ತ್ ನಾಲ್ಕು
-    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 43 = ನಲವತ್ತ್ ಮೂರು
-    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c8e}\u{0cb0}\u{0ca1}\u{0cc1}", // 42 = ನಲವತ್ತ್ ಎರಡು
+    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 44 = ನಲವತ್ತನಾಲ್ಕು (#247)
+    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 43 = ನಲವತ್ತಮೂರು (#247)
+    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 42 = ನಲವತ್ತೆರಡು (#247)
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cc2}\u{0c82}\u{0ca6}\u{0cc1}", // 41 = ನಲವತ್ತೊಂದು (decomposed)
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 40 = ನಲವತ್ತು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c92}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 39 = ಮೂವತ್ತ್ ಒಂಬತ್ತು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0c8e}\u{0c82}\u{0c9f}\u{0cc1}", // 38 = ಮೂವತ್ಎಂಟು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0c8f}\u{0cb3}\u{0cc1}", // 37 = ಮೂವತ್ಏಳು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0c86}\u{0cb0}\u{0cc1}", // 36 = ಮೂವತ್ಆರು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c90}\u{0ca6}\u{0cc1}", // 35 = ಮೂವತ್ತ್ ಐದು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 34 = ಮೂವತ್ತ್ ನಾಲ್ಕು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 33 = ಮೂವತ್ತ್ ಮೂರು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c8e}\u{0cb0}\u{0ca1}\u{0cc1}", // 32 = ಮೂವತ್ತ್ಎರಡು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c92}\u{0c82}\u{0ca6}\u{0cc1}", // 31 = ಮೂವತ್ತ್ಒಂದು
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 39 = ಮೂವತ್ತೊಂಬತ್ತು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0c82}\u{0c9f}\u{0cc1}", // 38 = ಮೂವತ್ತೆಂಟು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 37 = ಮೂವತ್ತೇಳು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 36 = ಮೂವತ್ತಾರು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 35 = ಮೂವತ್ತೈದು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 34 = ಮೂವತ್ತನಾಲ್ಕು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 33 = ಮೂವತ್ತಮೂರು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 32 = ಮೂವತ್ತೆರಡು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 31 = ಮೂವತ್ತೊಂದು (#247)
     "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 30 = ಮೂವತ್ತು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c92}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 29 = ಇಪ್ಪತ್ತ್ಒಂಬತ್ತು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c8e}\u{0c82}\u{0c9f}\u{0cc1}", // 28 = ಇಪ್ಪತ್ತ್ಎಂಟು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c8f}\u{0cb3}\u{0cc1}", // 27 = ಇಪ್ಪತ್ತ್ಏಳು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c86}\u{0cb0}\u{0cc1}", // 26 = ಇಪ್ಪತ್ತ್ಆರು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c90}\u{0ca6}\u{0cc1}", // 25 = ಇಪ್ಪತ್ತ್ ಐದು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 24 = ಇಪ್ಪತ್ತ್ ನಾಲ್ಕು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 23 = ಇಪ್ಪತ್ತ್ ಮೂರು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c8e}\u{0cb0}\u{0ca1}\u{0cc1}", // 22 = ಇಪ್ಪತ್ತ್ ಎರಡು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c92}\u{0c82}\u{0ca6}\u{0cc1}", // 21 = ಇಪ್ಪತ್ತ್ ಒಂದು
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 29 = ಇಪ್ಪತ್ತೊಂಬತ್ತು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0c82}\u{0c9f}\u{0cc1}", // 28 = ಇಪ್ಪತ್ತೆಂಟು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 27 = ಇಪ್ಪತ್ತೇಳು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 26 = ಇಪ್ಪತ್ತಾರು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 25 = ಇಪ್ಪತ್ತೈದು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 24 = ಇಪ್ಪತ್ತನಾಲ್ಕು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 23 = ಇಪ್ಪತ್ತಮೂರು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 22 = ಇಪ್ಪತ್ತೆರಡು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 21 = ಇಪ್ಪತ್ತೊಂದು (#247)
     "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 20 = ಇಪ್ಪತ್ತು
     "\u{0cb9}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 19 = ಹತ್ತೊಂಬತ್ತು
     "\u{0cb9}\u{0ca6}\u{0cbf}\u{0ca8}\u{0cc6}\u{0c82}\u{0c9f}\u{0cc1}", // 18 = ಹದಿನೆಂಟು
@@ -292,6 +299,7 @@ const MODIFIERS: [&str; 15] = [
 
 const ORDINAL_SUFFIX: &str = "\u{0ca8}\u{0cc7}"; // ನೇ
 const GENITIVE: &str = "\u{0ca6}"; // ದ
+#[allow(dead_code)] // kept from the port; currently unreferenced (#246)
 const POINTWORD: &str = "\u{0cac}\u{0cbf}\u{0c82}\u{0ca6}\u{0cc1}"; // ಬಿಂದು
 const HUNDRED: &str = "\u{0ca8}\u{0cc2}\u{0cb0}\u{0cc1}"; // ನೂರು
 const THOUSAND: &str = "\u{0cb8}\u{0cbe}\u{0cb5}\u{0cbf}\u{0cb0}"; // ಸಾವಿರ
@@ -300,60 +308,21 @@ const CRORE: &str = "\u{0c95}\u{0cca}\u{0cd5}\u{0c9f}\u{0cbf}"; // ಕೋಟ�
 
 // --- Currency ------------------------------------------------------------
 //
-// See the "Currency" section of the module docs: this is `Num2Word_EUR`'s
-// CURRENCY_FORMS *as mutated in place by `Num2Word_EN.__init__`*, which is the
-// dict KN actually reads at call time. Dumped from the live interpreter
-// (`CONVERTER_CLASSES["kn"].CURRENCY_FORMS`) rather than transcribed from
-// lang_EUR.py, because lang_EUR.py is not what KN ends up seeing.
+// See the "Currency" section of the module docs: Python read `Num2Word_EUR`'s
+// CURRENCY_FORMS as mutated in place by `Num2Word_EN.__init__` (English); the
+// forms below are Kannada (#222).
 //
 // Non-ASCII is escaped for the same reason the card tables are (see "Unicode"
 // above): the escapes survive tools that would NFC-normalize literals.
 
-/// `(code, unit_forms, subunit_forms)` -- 39 entries.
-///
-/// Arity is load-bearing: `pluralize` indexes into these, and PLN/RON carry a
-/// third form that must not be dropped even though EUR's `pluralize` never
-/// reaches index 2.
-const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 39] = [
-    ("AED", &["dirham", "dirhams"], &["fils", "fils"]),
-    ("AUD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("BHD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("BRL", &["real", "reais"], &["cent", "cents"]),
-    ("BYN", &["rouble", "roubles"], &["kopek", "kopeks"]),
-    ("CAD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("CHF", &["franc", "francs"], &["rappen", "rappen"]),
-    ("CNY", &["yuan", "yuan"], &["fen", "fen"]),
-    ("EEK", &["kroon", "kroons"], &["sent", "senti"]),
-    ("EUR", &["euro", "euros"], &["cent", "cents"]),
-    ("GBP", &["pound", "pounds"], &["penny", "pence"]),
-    ("HKD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("HUF", &["forint", "forint"], &["fill\u{00e9}r", "fill\u{00e9}r"]), // filler
-    ("INR", &["rupee", "rupees"], &["paisa", "paise"]),
-    ("IQD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("ISK", &["kr\u{00f3}na", "kr\u{00f3}nur"], &["aur", "aurar"]), // krona/kronur
-    ("JOD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("JPY", &["yen", "yen"], &["sen", "sen"]),
-    ("KRW", &["won", "won"], &["jeon", "jeon"]),
-    ("KWD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("LTL", &["litas", "litas"], &["cent", "cents"]),
-    ("LVL", &["lat", "lats"], &["santim", "santims"]),
-    ("LYD", &["dinar", "dinars"], &["dirham", "dirhams"]),
-    ("MXN", &["peso", "pesos"], &["cent", "cents"]),
-    ("NGN", &["naira", "naira"], &["kobo", "kobo"]),
-    ("NOK", &["krone", "kroner"], &["\u{00f8}re", "\u{00f8}re"]), // ore
-    ("NZD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("OMR", &["rial", "rials"], &["baisa", "baisa"]),
-    ("PLN", &["zloty", "zlotys", "zlotu"], &["grosz", "groszy"]),
-    ("QAR", &["riyal", "riyals"], &["dirham", "dirhams"]),
-    ("RON", &["leu", "lei", "de lei"], &["ban", "bani", "de bani"]),
-    ("RUB", &["rouble", "roubles"], &["kopek", "kopeks"]),
-    ("SAR", &["riyal", "riyals"], &["halalah", "halalas"]),
-    ("SEK", &["krona", "kronor"], &["\u{00f6}re", "\u{00f6}re"]), // ore
-    ("SGD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("TND", &["dinar", "dinars"], &["millime", "millimes"]),
-    ("USD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("UZS", &["sum", "sums"], &["tiyin", "tiyins"]),
-    ("ZAR", &["rand", "rand"], &["cent", "cents"]),
+/// `(code, unit_forms, subunit_forms)` in Kannada (#222). The noun stays
+/// singular after a numeral, so both slots usually hold the same word.
+const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 5] = [
+    ("EUR", &["\u{0caf}\u{0cc1}\u{0cb0}\u{0ccb}", "\u{0caf}\u{0cc1}\u{0cb0}\u{0ccb}"], &["\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}", "\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}"]),
+    ("GBP", &["\u{0caa}\u{0ccc}\u{0c82}\u{0ca1}\u{0ccd}", "\u{0caa}\u{0ccc}\u{0c82}\u{0ca1}\u{0ccd}"], &["\u{0caa}\u{0cc6}\u{0ca8}\u{0ccd}\u{0ca8}\u{0cbf}", "\u{0caa}\u{0cc6}\u{0ca8}\u{0ccd}\u{0cb8}\u{0ccd}"]),
+    ("INR", &["\u{0cb0}\u{0cc2}\u{0caa}\u{0cbe}\u{0caf}\u{0cbf}", "\u{0cb0}\u{0cc2}\u{0caa}\u{0cbe}\u{0caf}\u{0cbf}"], &["\u{0caa}\u{0cc8}\u{0cb8}\u{0cc6}", "\u{0caa}\u{0cc8}\u{0cb8}\u{0cc6}"]),
+    ("JPY", &["\u{0caf}\u{0cc6}\u{0ca8}\u{0ccd}", "\u{0caf}\u{0cc6}\u{0ca8}\u{0ccd}"], &["\u{0cb8}\u{0cc6}\u{0ca8}\u{0ccd}", "\u{0cb8}\u{0cc6}\u{0ca8}\u{0ccd}"]),
+    ("USD", &["\u{0ca1}\u{0cbe}\u{0cb2}\u{0cb0}\u{0ccd}", "\u{0ca1}\u{0cbe}\u{0cb2}\u{0cb0}\u{0ccd}"], &["\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}", "\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}"]),
 ];
 
 /// `Num2Word_EUR.CURRENCY_ADJECTIVES` -- 16 entries, **not** mutated by anyone
@@ -571,17 +540,12 @@ impl Lang for LangKn {
         Ok(format!("{}{}", stem, ORDINAL_SUFFIX))
     }
 
-    /// Port of `Num2Word_KN.to_ordinal_num`.
-    ///
-    /// `"%s%s" % (value, self.to_ordinal(value))` -- the numeral glued to the
-    /// *entire* ordinal phrase with no separator (quirk 3).
-    ///
-    /// `verify_ordinal` runs here *and* again inside `to_ordinal`, exactly as in
-    /// Python; the duplicate check is harmless and observationally identical
-    /// (same TypeError, same message).
+    /// `to_ordinal_num`: the numeral plus the ordinal suffix `to_ordinal`
+    /// uses, "1ನೇ", "100ನೇ" (quirk 3, fixed). Negatives raise like
+    /// `to_ordinal`.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
-        Ok(format!("{}{}", value, self.to_ordinal(value)?))
+        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
 
     // to_year: KN does not override Num2Word_Base.to_year, which delegates to
@@ -599,14 +563,11 @@ impl Lang for LangKn {
         self.to_ordinal(&i)
     }
 
-    /// `to_ordinal_num(float/Decimal)` — the same gate, then
-    /// `"%s%s" % (value, self.to_ordinal(value))`: the repr glued to the
-    /// *entire* ordinal phrase ("5.0ಐದನೇ"). `to_ordinal` runs for real, so a
-    /// whole value past MAXVAL ("1E+20") raises OverflowError here, unlike
-    /// suffix-only languages.
+    /// `to_ordinal_num(float/Decimal)` — the same gate, then the repr plus
+    /// the ordinal suffix ("5.0ನೇ"), like the integer path.
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        let i = verify_ordinal_float(value, repr_str)?;
-        Ok(format!("{}{}", repr_str, self.to_ordinal(&i)?))
+        verify_ordinal_float(value, repr_str)?;
+        Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
     }
 
     // ---- currency --------------------------------------------------------

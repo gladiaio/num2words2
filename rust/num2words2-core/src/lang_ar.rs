@@ -12,94 +12,17 @@
 //! behaviour survives in our four modes: `to_cardinal`, `to_ordinal`,
 //! `to_ordinal_num` and `to_year` are all defined in `lang_AR.py` itself.
 //!
-//! # The Decimal precision bug (the big one)
+//! # The Decimal precision bug (fixed)
 //!
-//! `convert_to_arabic` walks the number with **`decimal.Decimal`**, not ints:
-//!
-//! ```python
-//! number_to_process = int(temp_number_dec % Decimal(str(1000)))   # may raise
-//! temp_number       = int(temp_number_dec / Decimal(1000))        # rounds!
-//! ```
-//!
-//! `Decimal.__truediv__` rounds to the context precision (default **28**
-//! significant digits, ROUND_HALF_EVEN), so for numbers with more than 28
-//! significant digits the "divide by 1000" step is *wrong*. `Decimal.__mod__`
-//! separately raises `InvalidOperation` once the integer quotient exceeds the
-//! precision; the module catches that and bumps the **global** context
-//! precision to the current operand's digit count, after which everything is
-//! exact again.
-//!
-//! The upshot is a three-digit-wide "danger zone". With a fresh context
-//! (prec = 28):
-//!
-//! * ≤ 28 digits — division exact, `%` never raises. Normal output.
-//! * 29–31 digits — `%` does *not* raise (so precision is never bumped) but
-//!   the division **does** round. Output is silently wrong. For example
-//!   `to_cardinal(10**29 - 1)` returns `"مائة أوكتيليوناً وتسعمائة وتسعة وتسعون"`
-//!   ("one hundred octillion nine hundred ninety-nine") instead of the 29-nines
-//!   reading — the first division rounds 99999…9 up to exactly `10**26`.
-//! * ≥ 32 digits — `%` raises, precision is bumped to the full digit count,
-//!   and the result is exact again.
-//!
-//! Dividing by 1000 only shifts the exponent, so rounding `n / 1000` to `p`
-//! significant digits is identical to rounding `n` to `p` significant digits
-//! and then dividing exactly. That identity is what lets [`convert`] reproduce
-//! the whole thing in exact `BigInt` arithmetic via
-//! [`round_half_even_sig`] — validated against the real interpreter on 42k+
-//! values spanning the entire danger zone (0 mismatches).
-//!
-//! **Cross-call global state**: `decimal.getcontext().prec` is process-global
-//! and the module never restores it. Converting one ≥ 32-digit number
-//! permanently raises the precision, so a *later* `to_cardinal(10**29 - 1)`
-//! in the same process returns the exact (different!) string. This port
-//! implements the **fresh-process** semantics (prec = 28 at the start of every
-//! conversion), which is what the frozen corpus records. See the module report
-//! for the dispatcher implications.
-//!
-//! ## ⚠ The above describes a `lang_AR.py` that no longer exists
-//!
-//! `lang_AR.py`'s `convert_to_arabic` has now been rewritten **twice** since the
-//! frozen corpus was generated, and the three loops in this file are three
-//! different snapshots of it. Only the third is current:
-//!
-//! | loop | precision rule | status |
-//! |---|---|---|
-//! | [`convert`] (integer modes) | leaks globally; bumped only when `%` raises | **stale** |
-//! | [`convert_groups_currency`] (currency) | `localcontext` around the `except` handler, so it reverts each iteration | **stale** |
-//! | [`convert_groups_exact`] (float/Decimal) | current source: widened once, up front | correct |
-//!
-//! The current source has no `except InvalidOperation` handler at all:
-//!
-//! ```python
-//! def convert_to_arabic(self):
-//!     with decimal.localcontext() as ctx:
-//!         digits = len(Decimal(self.number).as_tuple().digits)
-//!         if digits > ctx.prec:
-//!             ctx.prec = digits
-//!         return self._convert_to_arabic_inner()
-//! ```
-//!
-//! The precision is widened **once, to the whole operand's digit count**, for
-//! the whole call — so the division never rounds, **there is no danger zone at
-//! all**, and the two "wrong output" narratives above are simply no longer true
-//! of Python. `getcontext().prec` is also restored on the way out, so the
-//! process-global leak is gone too.
-//!
-//! **This is a live bug in the two stale loops, not a documentation nit.**
-//! Measured against the pure-Python converter (`CONVERTER_CLASSES["ar"]`,
-//! bypassing the dispatcher's Rust fast path), [`convert`] diverges on
-//! 1/121 of 29-digit, 5/120 of 30-digit and **62/120 of 31-digit** operands;
-//! 28-and-below and 32-and-above agree. Concretely,
-//! `to_cardinal(1000000000000000019884624838656)` reads the thousands group as
-//! 839 here and 838 in Python, and `to_currency(1e30)` does the same via
-//! [`convert_groups_currency`]. Both are corpus-invisible: no `ar` corpus row
-//! lands in the band with a non-zero tail (the `10**30` edge row is all zeros,
-//! which rounds exactly), which is why the integer and currency suites still
-//! pass 505/505.
-//!
-//! They are left untouched here because the integer and currency modes are out
-//! of scope for this change — see the port report. Only the float/Decimal path
-//! added in this change implements the current rule.
+//! An older `lang_AR.py` walked the number in `decimal.Decimal` at the default
+//! 28-digit precision, so the "divide by 1000" step rounded for 29–31-digit
+//! values (`to_cardinal(10**30 - 1)` read "نونيليون وتسعمائة وتسعة وتسعون"),
+//! and the currency loop, whose widened precision reverted every iteration,
+//! rounded `10**51 - 1` up past the last scale word and tripped an `assert`
+//! (AssertionError at `maxval - 1`). The current Python widens the precision
+//! once, up front, so its group loop is exact. All three loops here
+//! ([`convert`], [`convert_groups_currency`], [`convert_groups_exact`]) now
+//! divide exactly (gladiaio/num2words2#215).
 //!
 //! # Faithfully reproduced Python bugs
 //!
@@ -111,12 +34,18 @@
 //!    *does* let negatives reach that table: `to_cardinal(-200)` yields
 //!    `"سالب مئتان"` (rewritten), while `to_ordinal(-200)` yields the bare
 //!    construct form `"مئتا"`. Modelled by [`py_lstrip_charset`].
-//! 2. **`validate_number` only checks the upper bound**, never `abs`. So
-//!    `to_cardinal(-(10**51))` sails past the overflow guard and then trips an
-//!    `assert` deep inside (see 4).
-//! 3. **`to_ordinal` never calls `validate_number`.** `to_ordinal(10**51)`
-//!    therefore raises `AssertionError` where `to_cardinal(10**51)` raises the
-//!    intended `OverflowError`.
+//! 2. ~~**`validate_number` only checks the upper bound**, never `abs`.~~ So
+//!    in Python `to_cardinal(-(10**51))` sails past the overflow guard and
+//!    then trips an `assert` deep inside (see 4). Fixed
+//!    (gladiaio/num2words2#215): the port compares the magnitude, so
+//!    `-(10**51)` raises `OverflowError` like `10**51`.
+//! 3. **`to_ordinal` never calls `validate_number`.** In Python
+//!    `to_ordinal(10**51)` therefore raises `AssertionError` where
+//!    `to_cardinal(10**51)` raises the intended `OverflowError`, after work
+//!    quadratic in the digit count (seconds for 10**10000, a hang for larger
+//!    integers). The port checks the ceiling up front (gladiaio/num2words2#203,
+//!    #237): [`to_ordinal_impl`] raises `OverflowError` at `maxval('ar')` in
+//!    every ordinal mode.
 //! 4. **Bare `assert`s guard the group tables**, so out-of-range groups raise
 //!    `AssertionError` rather than the commented-out `OverflowError` the
 //!    author intended (the dead `raise OverflowError` blocks are still in the
@@ -128,19 +57,23 @@
 //!    comments say "Note: this never happens". Both branches are omitted here
 //!    because they are unreachable; the surviving `elif`/`else` ordering is
 //!    preserved exactly.
-//! 6. **`isCurrencyNameFeminine` leaks into ordinals of 0 and negatives.**
-//!    `to_ordinal`'s fallback sets the flag from `number < 100`, which is true
-//!    for every negative. So `to_ordinal(-1)` returns the *feminine* `"إحدى"`
-//!    and `to_ordinal(-999)` returns `"تسعمائة وتسع وتسعون"` (feminine `تسع`),
-//!    while the cardinals use the masculine forms. Reproduced via the
-//!    `fem_name` argument threaded through [`convert`].
-//! 7. **Ordinals ≥ 1000 and ≤ 0 silently fall back to the cardinal form** and
-//!    drop the sign (`to_ordinal(-1000)` == `"ألف"`), because the fallback
-//!    converts `self.abs(number)` with no `minus` prefix.
-//! 8. **`to_ordinal(2000)` == `"ألفا"` but `to_cardinal(2000)` == `"ألفان"`.**
-//!    The construct-form → independent-form rewrite (`_AR_STANDALONE_DUAL`)
-//!    lives only in `to_cardinal`; the ordinal fallback calls `convert`
-//!    directly and never sees it.
+//! 6. ~~**`isCurrencyNameFeminine` leaks into ordinals of 0 and negatives.**~~
+//!    `to_ordinal`'s fallback set the flag from `number < 100`, so
+//!    `to_ordinal(-1)` returned the *feminine* `"إحدى"`. Negatives are now
+//!    rejected by [`verify_ordinal`] and the fallback is gone (7), so no
+//!    ordinal reaches the flag.
+//! 7. ~~**Ordinals ≥ 1000 silently fell back to the cardinal form**~~
+//!    (`to_ordinal(1000)` == `"ألف"`, `to_ordinal(10**6)` == `"مليون"`).
+//!    Fixed (gladiaio/num2words2#249, #261): a round scale word takes the
+//!    article and is its own ordinal (`"الألف"`, `"المليون"`, …), and every
+//!    other value up to MAXVAL reads left to right as the definite cardinal
+//!    of each part, ending in the ordinal of the last units/tens:
+//!    `"الألفان والرابع والعشرون"` (2024), `"الألف والمائة والحادي"`
+//!    (1101). The units digit 1 of a compound is `"الحادي"`/`"الحادية"`
+//!    (`"الحادي والعشرون"`), as in 11. 101..=999 keep Python's
+//!    `"… بعد المائة"` reading.
+//! 8. ~~**`to_ordinal(2000)` == `"ألفا"`**~~, the construct form — gone with
+//!    the fallback in 7; 2000 now reads `"الألفان"`.
 //! 9. **Trailing spaces in two table entries** are shipped verbatim:
 //!    `arabicAppendedTwos[9]` is `"أوكتيليونا "` and `arabicTwos[9]`/`[10]`
 //!    are `"أوكتيليونان "` / `"نونيليونان "` — all with a trailing space.
@@ -210,7 +143,7 @@
 //! AssertionError from `assert int(group_level) < len(self.arabicTwos)` in
 //! both implementations.
 
-use crate::base::{Kwargs, KwVal, Lang, N2WError, Result};
+use crate::base::{check_maxval, Kwargs, KwVal, Lang, N2WError, Result};
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -433,6 +366,10 @@ const AR_ORDINALS_DEF: [(&str, &str); 20] = [
     ("التاسع عشر", "التاسعة عشرة"),
 ];
 
+/// The units digit 1 inside a compound ordinal (21st, 31st, …): Arabic uses
+/// الحادي/الحادية there, as in 11 (الحادي عشر), not الأول/الأولى (#249).
+const AR_COMPOUND_ONE: (&str, &str) = ("الحادي", "الحادية");
+
 /// `_AR_TENS_DEF`, keyed 20..=90 step 10 → indexed here by `tens/10 - 2`.
 const AR_TENS_DEF: [&str; 8] = [
     "العشرون",
@@ -542,33 +479,6 @@ fn is_two_times_power_of_ten(x: &BigInt) -> bool {
     let s = x.to_string();
     let mut it = s.chars();
     it.next() == Some('2') && it.all(|c| c == '0')
-}
-
-/// Round a non-negative `BigInt` to `prec` significant decimal digits using
-/// ROUND_HALF_EVEN — the default `decimal` rounding mode.
-///
-/// This is the crux of the Decimal-precision reproduction. Because
-/// `n / 1000` merely shifts the exponent, `round(n/1000, prec)` equals
-/// `round(n, prec) / 1000`, and `round(n, prec)` is exactly divisible by
-/// 1000's worth of trailing zeros whenever rounding actually bites — so
-/// [`convert`] can round here and then divide exactly.
-fn round_half_even_sig(x: &BigInt, prec: usize) -> BigInt {
-    let d = ndigits(x);
-    if d <= prec {
-        return x.clone();
-    }
-    let k = d - prec;
-    let p = BigInt::from(10u8).pow(k as u32);
-    let q = x / &p;
-    let r = x - &q * &p;
-    let half = &p / 2u8;
-    // ROUND_HALF_EVEN: round up on >half, or on ==half with an odd quotient.
-    let bump = r > half || (r == half && (&q % 2u8) != BigInt::from(0u8));
-    if bump {
-        (q + 1u8) * p
-    } else {
-        q * p
-    }
 }
 
 /// Python's `str.lstrip(chars)` — strips a leading run of any character in
@@ -720,9 +630,6 @@ fn process_arabic_group(
 /// empty string and `formatted_number` reduces to `ret_val`.
 ///
 /// `fem_name` is Python's `self.isCurrencyNameFeminine` (bug 6).
-///
-/// `prec` starts at [`DEFAULT_PREC`] on every call — the fresh-process
-/// semantics; see the module docs on the global-precision leak.
 fn convert(n: &BigInt, fem_name: bool) -> Result<String> {
     debug_assert!(!n.is_negative());
     let integer_value = n.clone();
@@ -735,23 +642,12 @@ fn convert(n: &BigInt, fem_name: bool) -> Result<String> {
     let thousand = BigInt::from(1000u16);
     let mut ret_val = String::new();
     let mut group: i32 = 0;
-    let mut prec = DEFAULT_PREC;
     let mut temp = n.clone();
 
     while temp > BigInt::zero() {
-        // `int(temp_number_dec % Decimal(str(1000)))` raises InvalidOperation
-        // when the integer quotient has more digits than the context
-        // precision; the handler bumps the *global* precision to this
-        // operand's digit count and retries (which then always succeeds).
-        let q_int = &temp / &thousand;
-        if ndigits(&q_int) > prec {
-            prec = ndigits(&temp);
-        }
+        // Exact, as the current `convert_to_arabic` is (see the module docs).
         let number_to_process = (&temp % &thousand).to_u32().expect("0..=999");
-
-        // `temp_number = int(temp_number_dec / Decimal(1000))` — rounds to
-        // `prec` significant digits, then truncates toward zero.
-        temp = round_half_even_sig(&temp, prec) / &thousand;
+        temp /= &thousand;
 
         // Python passes `Decimal(floor(temp_number))` as `remaining_number`,
         // which is only read by a dead branch (bug 5), so it is not threaded
@@ -794,17 +690,10 @@ fn convert(n: &BigInt, fem_name: bool) -> Result<String> {
 
 /// `Num2Word_AR.validate_number`.
 ///
-/// Note it compares `number >= MAXVAL` on the *signed* value — it never takes
-/// an absolute value, so no negative input is ever rejected (bug 2).
+/// Python compares `number >= MAXVAL` on the *signed* value, so no negative
+/// was ever rejected (bug 2); the port compares the magnitude.
 fn validate_number(number: &BigInt) -> Result<()> {
-    let mx = maxval();
-    if *number >= mx {
-        return Err(N2WError::Overflow(format!(
-            "abs({}) must be less than {}.",
-            number, mx
-        )));
-    }
-    Ok(())
+    check_maxval(number, &maxval())
 }
 
 /// `Num2Word_AR.to_cardinal(number, case=...)` for an integer operand.
@@ -833,13 +722,10 @@ fn cardinal_int_case(value: &BigInt, is_oblique: bool) -> Result<String> {
 /// [`LangAr::to_ordinal_kw`] preserves that.
 ///
 /// `prefix` is Python's `prefix=` kwarg **already `str.format`-ted** (see
-/// [`kwval_display`]). It only matters in the fallback branch, which sets
-/// `self.arabicPrefixText = prefix` before `convert`; `convert_to_arabic`
-/// prepends `"{} ".format(prefix)` when `prefix != ""` — but its `== 0` early
-/// return fires *before* that, so `to_ordinal(0, prefix="xx")` is a bare
-/// `"صفر"`. The 1..=999 table branches never see the prefix at all, and the
-/// 100..=999 recursion passes `gender` but leaves `prefix` at its `""`
-/// default, exactly as `self.to_ordinal(remainder, gender=gender)` does.
+/// [`kwval_display`]). Python only applied it in the cardinal fallback for
+/// >= 1000 (replaced by real ordinals, #249); it is still prepended to those
+/// forms, while `to_ordinal(0, prefix="xx")` is a bare `"صفر"` and the
+/// 1..=999 table branches never see it.
 /// `Num2Word_Base.verify_ordinal`, which `Num2Word_AR.to_ordinal` did not
 /// call — ported from savoirfairelinux/num2words#672.
 ///
@@ -903,6 +789,8 @@ fn ar_py_num_str(value: &FloatValue) -> String {
 }
 
 fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<String> {
+    // The cardinal's ceiling, checked before any work (#237).
+    validate_number(number)?;
     let pick = |pair: &(&'static str, &'static str)| if feminine { pair.1 } else { pair.0 };
     let one = BigInt::from(1u8);
     let nineteen = BigInt::from(19u8);
@@ -922,7 +810,13 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
         if ones == 0 {
             return Ok(AR_TENS_DEF[(tens / 10 - 2) as usize].to_string());
         }
-        let ones_form = pick(&AR_ORDINALS_DEF[ones as usize]);
+        // In a compound the units digit 1 is الحادي/الحادية, as in 11
+        // (الحادي عشر): "الحادي والعشرون", never "الأول والعشرون" (#249).
+        let ones_form = if ones == 1 {
+            pick(&AR_COMPOUND_ONE)
+        } else {
+            pick(&AR_ORDINALS_DEF[ones as usize])
+        };
         return Ok(format!("{} و{}", ones_form, AR_TENS_DEF[(tens / 10 - 2) as usize]));
     }
     if *number >= hundred && *number <= nine_ninety_nine {
@@ -942,25 +836,97 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
         ));
     }
 
-    // Fallback: >= 1000, or 0/negative. Note `to_ordinal` never calls
-    // `validate_number` (bug 3) and drops the sign (bug 7). `gender` is
-    // ignored here — the feminine leak comes from `isCurrencyNameFeminine`
-    // (bug 6), not from the kwarg.
-    let fem_name = *number < hundred; // true for 0 and every negative (bug 6)
-    let abs = if number.is_negative() {
-        -number
-    } else {
-        number.clone()
-    };
-    let conv = convert(&abs, fem_name)?;
-    // `convert_to_arabic` prepends `"{} ".format(arabicPrefixText)` when it is
-    // non-empty — but returns "صفر" for zero *before* reaching that append,
-    // and `convert` already reproduces the early return, so only guard the
-    // non-zero shape here.
-    if !prefix.is_empty() && !abs.is_zero() {
-        return Ok(format!("{} {}", prefix, conv).trim().to_string());
+    // 0 is the only value left below 1000 (negatives were rejected by
+    // `verify_ordinal`); it keeps the cardinal "صفر", as before, and the
+    // prefix never reached it.
+    if number.is_zero() {
+        return Ok(ZERO_WORD.to_string());
     }
-    Ok(conv.trim().to_string())
+
+    // >= 1000 (#249, #261). The scale nouns are themselves used as
+    // ordinals with the article — "الليلة الألف", "الكتاب المليون" — and a
+    // larger ordinal reads left to right as the definite cardinal of every
+    // part ("the article on each coordinated part") followed by the ordinal
+    // of the last units/tens only: "الكتاب المئة والسابع والثلاثون",
+    // "الخطأ المليون والسابع عشر". So 2024 reads "الألفان والرابع
+    // والعشرون" and 1101 "الألف والمائة والحادي" (واحد becomes الحادي in a
+    // coordinated ordinal). See `definite_group` for the multipliers.
+    let thousand = BigInt::from(1000u16);
+    let mut groups: Vec<u32> = Vec::new();
+    let mut temp = number.clone();
+    while temp > BigInt::zero() {
+        groups.push((&temp % &thousand).to_u32().expect("0..=999"));
+        temp /= &thousand;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for level in (1..groups.len()).rev() {
+        if groups[level] != 0 {
+            parts.push(definite_group(groups[level], level));
+        }
+    }
+    let (h0, r0) = ((groups[0] / 100) as usize, groups[0] % 100);
+    if h0 > 0 {
+        parts.push(AR_HUNDREDS_DEF[h0 - 1].to_string());
+    }
+    if r0 == 1 {
+        parts.push(pick(&AR_COMPOUND_ONE).to_string());
+    } else if r0 > 0 {
+        parts.push(to_ordinal_impl(&BigInt::from(r0), feminine, "")?);
+    }
+    let body = parts.join(" و");
+    // `prefix=` was prepended to the old cardinal fallback; it still applies
+    // to the >= 1000 forms and nowhere else.
+    if !prefix.is_empty() {
+        return Ok(format!("{} {}", prefix, body).trim().to_string());
+    }
+    Ok(body)
+}
+
+/// The definite cardinal of `g` (1..=999) times the scale word at `level`
+/// (>= 1), as one coordinated part of an ordinal (#261): the article goes on
+/// the number — on the first word of a compound and on every coordinated
+/// part ("الثلاثة عشر", "الثلاثة والعشرون") — and the scale noun takes the
+/// form the last numeral governs, as in the cardinal: "الألفان", "الثلاثة
+/// آلاف", "الأحد عشر ألفاً", "المائة ألف", "المئتا ألف". A multiplier
+/// ending in 1 or 2 past 100 repeats the noun ("مئة رجلٍ ورجل"):
+/// 101000 → "المائة ألف والألف".
+fn definite_group(g: u32, level: usize) -> String {
+    let (h, r) = ((g / 100) as usize, g % 100);
+    if h > 0 && (r == 1 || r == 2) {
+        return format!(
+            "{} و{}",
+            definite_group(g - r, level),
+            definite_group(r, level)
+        );
+    }
+    match r {
+        1 => return format!("ال{}", ARABIC_GROUP[level]),
+        2 => return format!("ال{}", ARABIC_TWOS[level].trim()),
+        _ => {}
+    }
+    let mut words: Vec<String> = Vec::new();
+    if h > 0 {
+        words.push(if h == 2 && r == 0 {
+            format!("ال{}", ARABIC_APPENDED_TWOS[0])
+        } else {
+            format!("ال{}", ARABIC_HUNDREDS[h])
+        });
+    }
+    if r > 0 && r < 20 {
+        words.push(format!("ال{}", ARABIC_ONES[r as usize]));
+    } else if r >= 20 {
+        let (ones, tens) = ((r % 10) as usize, AR_TENS_DEF[(r / 10 - 2) as usize]);
+        if ones > 0 {
+            words.push(format!("ال{}", ARABIC_ONES[ones]));
+        }
+        words.push(tens.to_string());
+    }
+    let noun = match r {
+        0 => ARABIC_GROUP[level],
+        3..=10 => ARABIC_PLURAL_GROUPS[level],
+        _ => ARABIC_APPENDED_GROUP[level],
+    };
+    format!("{} {}", words.join(" و"), noun)
 }
 
 /// Python's `int(number)` on a float/Decimal operand — the first line of
@@ -1260,31 +1226,17 @@ fn number_str_is_zero(number: &str) -> bool {
 ///
 /// # Why this is not `convert`'s loop
 ///
-/// `lang_AR.py` was changed after the frozen corpus was generated: the
-/// `decimal.InvalidOperation` handler now widens the precision inside a
-/// `with decimal.localcontext() as ctx:` block, which **restores** the previous
-/// precision on exit. The old code assigned `decimal.getcontext().prec`
-/// directly, so one widening leaked into every later iteration (and every later
-/// call in the process). [`convert`] still implements the old, leaking
-/// behaviour; this loop implements what the current source does. See the
-/// module-level "Decimal precision" note and the port report — the two are
-/// deliberately, and visibly, out of step.
-///
-/// The observable difference: precision reverts to 28 each iteration, so once
-/// the running value drops to 29..=31 digits the divide-by-1000 silently rounds
-/// again instead of staying exact. `to_currency(10**51 - 1)` degrades until
-/// group 17 is reached and trips `assert int(group_level) < len(arabicTwos)`
-/// (AssertionError); under the leaking rule it would return a string.
+/// The currency twin of [`convert`]'s group loop. It used to model an older
+/// `lang_AR.py` whose widened Decimal precision reverted every iteration, so
+/// `to_currency(10**51 - 1)` rounded up into a missing scale word and raised
+/// AssertionError; it now divides exactly (#215).
 ///
 /// # Why `integer_value` and not the fractional Decimal
 ///
 /// Python loops over `Decimal(self.number)`, fraction included. For `x >= 0`,
 /// `int(x % 1000) == floor(x) % 1000` and `int(x / 1000) == floor(x) // 1000`,
 /// so the fraction is truncated away on the first iteration and the loop is
-/// equivalent to one over `integer_value`. The precision rules cannot perturb
-/// that: a `to_str` string only carries a fraction when the float was below
-/// 2**53 (anything larger is integral), capping it at 16 + 9 = 25 significant
-/// digits — inside prec 28, so the first iteration is always exact.
+/// equivalent to one over `integer_value`.
 ///
 /// One shape difference is inert: for `0 < x < 1` Python runs one iteration
 /// (`temp_number > 0`) with `number_to_process == 0`, while this loop runs
@@ -1297,23 +1249,9 @@ fn convert_groups_currency(integer_value: &BigInt, fem_name: bool) -> Result<Str
     let mut temp = integer_value.clone();
 
     while temp > BigInt::zero() {
-        // `int(temp_number_dec % Decimal(str(1000)))` raises InvalidOperation
-        // when the integer quotient has more digits than the context
-        // precision. `%` itself is exact whenever it does not raise.
-        let q_int = &temp / &thousand;
-        let prec = if ndigits(&q_int) > DEFAULT_PREC {
-            // `ctx.prec = len(temp_number_dec.as_tuple().digits)` — scoped to
-            // this iteration by `localcontext`, hence recomputed rather than
-            // carried.
-            ndigits(&temp)
-        } else {
-            DEFAULT_PREC
-        };
+        // Exact, as the current `convert_to_arabic` is (see the module docs).
         let number_to_process = (&temp % &thousand).to_u32().expect("0..=999");
-
-        // `temp_number = int(temp_number_dec / Decimal(1000))` — rounds to
-        // `prec` significant digits, then truncates toward zero.
-        temp = round_half_even_sig(&temp, prec) / &thousand;
+        temp /= &thousand;
 
         let group_description =
             process_arabic_group(number_to_process, group, integer_value, fem_name)?;
@@ -1465,12 +1403,14 @@ fn convert_currency(number: &str, prefs: &CurrencyPrefs) -> Result<String> {
 /// value instead: anything that could reach `10**51` is far above 2**53 and
 /// therefore integral, making truncation lossless.
 ///
-/// Like the integer branch this only tests the upper bound, never `abs`, so
-/// negatives always pass (bug 2).
+/// Python only tested the upper bound, never `abs`, so negatives passed and
+/// then tripped an `assert` (bug 2); like the integer branch, the port
+/// compares the magnitude of a finite value (#215).
 fn validate_number_float(x: f64) -> bool {
     if !x.is_finite() {
         return x > 0.0;
     }
+    let x = x.abs();
     if x < 4.5e15 {
         // Below 2**52 — nowhere near MAXVAL, and the only range where a float
         // can carry a fraction at all.
@@ -1907,13 +1847,12 @@ fn cardinal_float_case(value: &FloatValue, is_oblique: bool) -> Result<String> {
     // same shape; only the arithmetic differs.
     let (number, minus) = match value {
         FloatValue::Float { value: x, .. } => {
-            // Upper bound only, on the *signed* value (bug 2), so -inf and
-            // every other negative sails past and fails later — or not at
-            // all.
+            // The magnitude (bug 2, fixed in #215); -inf still sails past
+            // and fails later in `to_str`.
             if validate_number_float(*x) {
                 return Err(N2WError::Overflow(format!(
                     "abs({}) must be less than {}.",
-                    py_repr_f64_big(*x),
+                    py_repr_f64_big(x.abs()),
                     maxval()
                 )));
             }
@@ -1928,10 +1867,10 @@ fn cardinal_float_case(value: &FloatValue, is_oblique: bool) -> Result<String> {
             // Python compares Decimal >= int exactly. Never collapse this
             // to the f64 arm: issue #603's `98746251323029.99` is exact
             // here and only approximate as a double.
-            if *d >= BigDecimal::from(maxval()) {
+            if d.abs() >= BigDecimal::from(maxval()) {
                 return Err(N2WError::Overflow(format!(
                     "abs({}) must be less than {}.",
-                    py_str_decimal(d),
+                    py_str_decimal(&d.abs()),
                     maxval()
                 )));
             }
@@ -2004,6 +1943,12 @@ impl Lang for LangAr {
         "SR"
     }
 
+    /// "SR" (the Python default) and the ISO code "SAR" are both the riyal.
+    fn same_currency(&self, a: &str, b: &str) -> bool {
+        let riyal = |c: &str| c == "SR" || c == "SAR";
+        riyal(a) && riyal(b)
+    }
+
     /// This language's own `to_currency(separator=...)` default,
     /// read from the live Python signature. Base's is ",", but only
     /// 36 of 149 languages actually use it — most default to " " or a
@@ -2048,8 +1993,8 @@ impl Lang for LangAr {
     /// `gender_idx = 0 if gender == "m" else 1` — only the exact string
     /// `"m"` is masculine; `"M"`, `"f"`, `None`, ints, anything else compares
     /// unequal and selects the feminine column. `prefix` is interpolated with
-    /// `"{} ".format(prefix)` in the >= 1000 / <= 0 fallback only (and even
-    /// there, zero's early return beats it); no value of either kwarg raises.
+    /// `"{} ".format(prefix)` in front of the >= 1000 forms only (zero and the
+    /// 1..=999 table forms never see it); no value of either kwarg raises.
     fn to_ordinal_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
         if !kw.only(&["gender", "prefix"]) {
             return Err(N2WError::Fallback("kwargs".into()));
@@ -2275,7 +2220,7 @@ impl Lang for LangAr {
                 if validate_number_float(x) {
                     return Err(N2WError::Overflow(format!(
                         "abs({}) must be less than {}.",
-                        value,
+                        value.abs(),
                         maxval()
                     )));
                 }
@@ -2479,14 +2424,15 @@ mod tests {
             ),
             o => panic!("expected Overflow, got {:?}", o),
         }
-        // Negative: past validate_number, then AssertionError — not Overflow.
+        // Negative: Python passed validate_number and then hit an assert
+        // (bug 2); the port compares the magnitude (#215).
         assert!(matches!(
             l.to_cardinal_float(&f(-1e52), None),
-            Err(N2WError::Assertion(_))
+            Err(N2WError::Overflow(_))
         ));
         assert!(matches!(
             l.to_cardinal_float(&d("-1000000000000000000000000000000000000000000000000000"), None),
-            Err(N2WError::Assertion(_))
+            Err(N2WError::Overflow(_))
         ));
         // +inf overflows via validate_number; -inf slips past it and dies in
         // `int(number)` inside to_str, with a different message entirely.
@@ -2556,13 +2502,14 @@ mod tests {
             (1.0, "الأول"),
             (12.0, "الثاني عشر"),
             (20.0, "العشرون"),
-            (21.0, "الأول والعشرون"),
+            (21.0, "الحادي والعشرون"),
             (42.0, "الثاني والأربعون"),
             (100.0, "المائة"),
             (101.0, "الأول بعد المائة"),
-            (1234.0, "ألف ومئتان وأربعة وثلاثون"),
-            (1e16, "عشرة كوادريليونات"),
-            (1e20, "مائة كوينتليون"),
+            (1234.0, "الألف والمئتان والرابع والثلاثون"),
+            (1e18, "الكوينتليون"),
+            (1e16, "العشرة كوادريليونات"),
+            (1e20, "المائة كوينتليون"),
         ] {
             assert_eq!(ord_f(f(arg)), out, "ordinal {}", arg);
             assert_eq!(ordnum_f(f(arg), "x"), out, "ordinal_num {}", arg);
@@ -2572,8 +2519,9 @@ mod tests {
             ("5", "الخامس"),
             ("5.00", "الخامس"),
             ("1E+2", "المائة"),
-            ("12345.000", "اثنا عشر ألفاً وثلاثمائة وخمسة وأربعون"),
-            ("1E+20", "مائة كوينتليون"),
+            ("1999.000", "الألف والتسعمائة والتاسع والتسعون"),
+            ("12345.000", "الاثنا عشر ألفاً والثلاثمائة والخامس والأربعون"),
+            ("1E+21", "السكستيليون"),
             ("-0.0", "صفر"),
         ] {
             assert_eq!(ord_f(d(arg)), out, "ordinal Decimal {}", arg);
@@ -2654,7 +2602,7 @@ mod tests {
         let fem = kws(&[("gender", KwVal::Str("f".into()))]);
         assert_eq!(l.to_ordinal_kw(&n(1), &fem).unwrap(), "الأولى");
         assert_eq!(l.to_ordinal_kw(&n(11), &fem).unwrap(), "الحادية عشرة");
-        assert_eq!(l.to_ordinal_kw(&n(21), &fem).unwrap(), "الأولى والعشرون");
+        assert_eq!(l.to_ordinal_kw(&n(21), &fem).unwrap(), "الحادية والعشرون");
         assert_eq!(l.to_ordinal_kw(&n(100), &fem).unwrap(), "المائة");
         // A negative is rejected before the kwargs are read (#672); it used
         // to fall through to the gender-ignoring fallback and return "خمس".
@@ -2662,16 +2610,19 @@ mod tests {
             l.to_ordinal_kw(&n(-5), &fem),
             Err(N2WError::Type(_))
         ));
-        assert_eq!(l.to_ordinal_kw(&n(1234), &fem).unwrap(), "ألف ومئتان وأربعة وثلاثون");
+        assert_eq!(
+            l.to_ordinal_kw(&n(1234), &fem).unwrap(),
+            "الألف والمئتان والرابعة والثلاثون"
+        );
         // Any non-"m" gender is feminine — "M", None, ints included.
         for v in [KwVal::Str("M".into()), KwVal::None, KwVal::Int(0)] {
             let kw = kws(&[("gender", v)]);
             assert_eq!(l.to_ordinal_kw(&n(1), &kw).unwrap(), "الأولى");
         }
-        // prefix: fallback only ("xx ألفا"), zero early-returns bare "صفر",
-        // table branches never see it.
+        // prefix: the >= 1000 forms only ("xx الألف"), zero early-returns
+        // bare "صفر", table branches never see it.
         let px = kws(&[("prefix", KwVal::Str("xx".into()))]);
-        assert_eq!(l.to_ordinal_kw(&n(2000), &px).unwrap(), "xx ألفا");
+        assert_eq!(l.to_ordinal_kw(&n(1000), &px).unwrap(), "xx الألف");
         assert_eq!(l.to_ordinal_kw(&n(0), &px).unwrap(), "صفر");
         assert_eq!(l.to_ordinal_kw(&n(5), &px).unwrap(), "الخامس");
         // Unknown kwarg falls back to Python (Fallback decline signal).

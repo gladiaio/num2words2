@@ -174,6 +174,7 @@ class TestEN(LangTest, TestCase):
 def test_en_currency_audit_includes_common_codes():
     # Regression for num2words2#74 (ports savoirfairelinux/num2words#590).
     from num2words2 import num2words
+
     assert "dollar" in num2words(12, lang="en", to="currency", currency="SGD")
     assert "franc" in num2words(12, lang="en", to="currency", currency="CHF")
     assert "dirham" in num2words(12, lang="en", to="currency", currency="AED")
@@ -187,6 +188,7 @@ def test_en_currency_audit_includes_common_codes():
 def test_en_mixed_text_and_numerals():
     # Regression for num2words2#61 (ports savoirfairelinux/num2words#281).
     from num2words2 import num2words
+
     assert num2words("text 1", lang="en") == "text one"
     assert num2words("I have 5 apples", lang="en") == "I have five apples"
     # Pure numeric strings still work.
@@ -199,6 +201,7 @@ def test_en_year_rejects_non_integer_float():
     import pytest
 
     from num2words2 import num2words
+
     with pytest.raises(TypeError):
         num2words(1980.6, lang="en", to="year")
     # Integer floats are accepted (1980.0 == 1980).

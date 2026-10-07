@@ -67,10 +67,11 @@
 //! 4. **`.replace("oo", "o")` is applied at every recursion level**, not just
 //!    at the top. It exists for "decimooctavo" → "decimoctavo" but is a blunt
 //!    global replace over the whole assembled string.
-//! 5. **`to_ordinal(20)` == "vigesimo"**, unaccented: the `value <= 29` branch
-//!    does `ords[dec].replace("é", "e")` ("vigésim" → "vigesim") and forces
-//!    `gender_stem` back to "o". Compare `to_ordinal(30)` == "trigésimo",
-//!    which keeps its accent.
+//! 5. ~~**`to_ordinal(20)` == "vigesimo"**~~, unaccented: the `value <= 29`
+//!    branch strips the accent and forces `gender_stem` back to "o", and 20
+//!    landed in it too. Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 6. **`errmsg_toobig` reads "abs(%s) deber ser inferior a %s."** — "deber"
 //!    is a typo for "debe" in the Python source. Kept verbatim, which is why
 //!    [`LangEsGt::to_cardinal`] does its own overflow check instead of letting
@@ -127,7 +128,8 @@
 //! 10. **`result.replace("uno", "un")` is an unanchored global replace**, and it
 //!     runs *after* `Num2Word_ES`'s own accented fix-ups. The interaction is
 //!     visible and asymmetric:
-//!     * `to_currency(21, "EUR")` == `"veintiun euros"` — the int branch never
+//!     * (Python; the port restores the accent, #253)
+//!       `to_currency(21, "EUR")` == `"veintiun euros"` — the int branch never
 //!       reaches ES's `"veintiuno euro"` → `"veintiún euro"` rule, so GT's
 //!       blunt replace strips the "o" and leaves the word **unaccented**.
 //!     * `to_currency(21.21, "EUR")` == `"veintiún euros y veintiún céntimos"`
@@ -547,7 +549,7 @@ impl LangEsGt {
             String::new()
         } else if value <= &ten {
             format!("{}{}", self.ords_get(value)?, gender_stem)
-        } else if value <= &twenty_nine {
+        } else if value <= &twenty_nine && *value != BigInt::from(20) {
             // "According to RAE recommendations, simple forms are preferred up
             // to 30 / Ortography for sobreesdrújulas": the accent is dropped
             // and the feminine stem is discarded.
@@ -994,6 +996,8 @@ impl Lang for LangEsGt {
         // "Handle exception, in spanish is 'un euro' and not 'uno euro'".
         // Unanchored and global (bug 10): this also rewrites "veintiuno" ->
         // "veintiun" and the interior of "un millón uno".
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }

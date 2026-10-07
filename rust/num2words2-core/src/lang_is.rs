@@ -67,7 +67,8 @@
 //! table and raise before precision is ever consulted.
 //!
 //! `_money_verbose`, `_cents_verbose`, `_cents_terse` and `to_cheque` are all
-//! inherited from `Num2Word_Base` unchanged, so their trait defaults stand.
+//! inherited from `Num2Word_Base`; the port overrides the first two for
+//! numeral gender (#185) and `to_cheque` for the noun's number (#197).
 //!
 //! ## The tuple leak (fixed, #169)
 //!
@@ -94,9 +95,19 @@
 //! `"ein króna"`, `"tuttugu og tvær evrur"`, `"einn eyrir"`, `"eitt sent"`.
 //! Int, float and string amounts all go through [`LangIs::money_verbose`] /
 //! [`LangIs::cents_verbose`], so they agree.
+//!
+//! ## Noun and adjective number (fixed, #197)
+//!
+//! Base's `to_cheque` always takes the plural noun ("EIN AND 00/100
+//! KRÓNUR"), and Base's `prefix_currency` puts the one plural adjective on
+//! both forms ("ein íslenskar króna"). The cheque noun now follows the same
+//! count rule as `to_currency` ("EIN … KRÓNA", "ELLEFU … KRÓNUR"), and ISK's
+//! adjective agrees with the noun picked ("ein íslensk króna", "tvær
+//! íslenskar krónur").
 
 use crate::base::{set_low_numwords, set_mid_numwords, Cards, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
+use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, Zero};
@@ -370,13 +381,10 @@ impl LangIs {
     /// Python's `adj.split()[-1]` would raise `IndexError` on an all-whitespace
     /// `adj`. That is unreachable: every card word is non-empty and `merge`
     /// only ever builds `"a b"` / `"a og b"` from non-empty parts. The
-    /// `unwrap_or("")` below therefore never fires; `""` is not in `GENDERS`,
+    /// `unwrap_or_default()` below therefore never fires; `""` is not in `GENDERS`,
     /// so it would fall through to the identity return regardless.
     fn genderize(&self, adj: &str, noun: &str) -> String {
-        let last = match adj.split_whitespace().last() {
-            Some(w) => w,
-            None => "",
-        };
+        let last = adj.split_whitespace().last().unwrap_or_default();
         let forms = match gender_forms(last) {
             Some(f) => f,
             None => return adj.to_string(),
@@ -468,6 +476,16 @@ impl Lang for LangIs {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// Base's `to_cheque`, with the unit noun agreeing with the count like
+    /// `to_currency`'s (#197): "EIN AND 00/100 KRÓNA", "TVÆR … KRÓNUR",
+    /// "TUTTUGU OG EIN … KRÓNA", "ELLEFU … KRÓNUR". Python always took the
+    /// plural.
+    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
+        crate::currency::cheque_with_unit(self, val, currency, |n, forms| {
+            Lang::pluralize(self, n, &forms.unit)
+        })
+    }
+
     /// Port of `Num2Word_IS.to_currency`.
     ///
     /// IS intercepts only the true-`int` case and hands everything else to
@@ -522,14 +540,35 @@ impl Lang for LangIs {
 
         // `return super(Num2Word_IS, self).to_currency(val, ...)` — for floats
         // unconditionally, and for ints whose code missed the table.
-        crate::currency::default_to_currency(
+        let out = crate::currency::default_to_currency(
             self,
             val,
             currency,
             cents,
             separator.unwrap_or(self.default_separator()),
             adjective,
-        )
+        )?;
+        // Base prefixes the one adjective to every form, so the singular noun
+        // got the plural adjective: "ein íslenskar króna". Agree it with the
+        // noun the count picked (#197): "ein íslensk króna", "tvær íslenskar
+        // krónur". Only ISK's adjective is Icelandic; USD's "US" is invariant.
+        match (adjective, self.currency_adjective(currency), self.currency_forms(currency)) {
+            (true, Some("íslenskar"), Some(forms)) => {
+                let singular = format!("íslenskar {}", forms.unit[0]);
+                Ok(match out.find(&singular) {
+                    Some(i)
+                        if !out[i + singular.len()..]
+                            .chars()
+                            .next()
+                            .is_some_and(char::is_alphabetic) =>
+                    {
+                        format!("{}íslensk {}", &out[..i], &out[i + "íslenskar ".len()..])
+                    }
+                    _ => out,
+                })
+            }
+            _ => Ok(out),
+        }
     }
 
     fn cards(&self) -> &Cards {
@@ -1005,7 +1044,7 @@ mod tests {
         );
         assert_eq!(
             l.to_cheque(&BigDecimal::from_str("1.0").unwrap(), "ISK").unwrap(),
-            "EIN AND 00/100 KRÓNUR"
+            "EIN AND 00/100 KRÓNA" // singular after 1 (#197)
         );
     }
 

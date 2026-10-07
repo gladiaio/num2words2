@@ -14,13 +14,14 @@ EXPECTED_BASICS = {
     "bm": ("fu", "kelen", "tan"),
     "ceb": ("siro", "usa", "napulo"),
     "ckb": ("سفر", "یەک", "دە"),
-    "cnh": ("zero", "pakhat", "pahra"),
+    "cnh": ("pakpalawng", "pakhat", "pahra"),
     "ff": ("sufri", "go'o", "sappo"),
     "fil": ("sero", "isa", "sampu"),
     "hmn": ("xoom", "ib", "kaum"),
     "ki": ("wĩra", "ĩmwe", "ikũmi"),
     "kok": ("शून्य", "एक", "धा"),
-    "ksw": ("lah", "ta", "tasi"),
+    # ksw has no USD currency noun (#262), which this table's tests need;
+    # see tests/lang/test_ksw.py.
     "ku": ("sifir", "yek", "deh"),
     "ky": ("нөл", "бир", "он"),
     "lg": ("nuli", "emu", "kkumi"),
@@ -37,8 +38,8 @@ EXPECTED_BASICS = {
 
 # Aliases — share converter with another language.
 ALIASES = {
-    "nb": "no",   # Norwegian Bokmål → Norwegian
-    "jv": "jw",   # Modern Javanese code → existing converter
+    "nb": "no",  # Norwegian Bokmål → Norwegian
+    "jv": "jw",  # Modern Javanese code → existing converter
     "miz": "lus",  # Mizo alternate code → Mizo
 }
 
@@ -78,8 +79,10 @@ class TestNewLanguageRanges(TestCase):
                     self.assertIsInstance(result, str)
                     self.assertTrue(len(result) > 0)
                     # Should not contain raw digits (would mean fallback)
-                    self.assertFalse(any(d in result for d in "0123456789"),
-                                     f"{code}({n})={result!r} contains digits")
+                    self.assertFalse(
+                        any(d in result for d in "0123456789"),
+                        f"{code}({n})={result!r} contains digits",
+                    )
 
 
 class TestNewLanguageOrdinal(TestCase):

@@ -24,14 +24,15 @@
 //! These all look wrong but are exactly what Python emits (each is pinned by a
 //! row in the frozen corpus):
 //!
-//! 1. **`merge` drops the leading "एक" for सौ / लाख / करोड़ but not for
-//!    हज़ार / अरब / ख़रब.** The `rnum in [100, 100000, 10000000]` list simply
-//!    omits 10^3, 10^9 and 10^11. The result is a table that reads
-//!    inconsistently: `to_cardinal(100)` == "सौ" and `to_cardinal(100000)` ==
-//!    "लाख" (no "एक"), yet `to_cardinal(1000)` == "एक हज़ार" and
-//!    `to_cardinal(10**9)` == "एक अरब" (with "एक"). It propagates into
-//!    compounds too: `to_cardinal(123456)` == "लाख तेईस हज़ार चार सौ छप्पन",
-//!    which is missing the "एक" a reader would expect. See [`LangHi::merge`].
+//! 1. **`merge` dropped the leading "एक" for लाख / करोड़ (fixed,
+//!    gladiaio/num2words2#247).** Python's `rnum in [100, 100000, 10000000]`
+//!    list made `to_cardinal(100000)` "लाख" and `to_cardinal(123456)`
+//!    "लाख तेईस हज़ार ..." while 10^3 and 10^9 kept it ("एक हज़ार", "एक
+//!    अरब"). A lakh or crore is counted like any other scale word — "एक
+//!    लाख", "एक करोड़" (Wiktionary लाख, करोड़; Wikipedia "Indian numbering
+//!    system") — so only सौ still drops it: `to_cardinal(100)` == "सौ",
+//!    `to_cardinal(123456)` == "एक लाख तेईस हज़ार चार सौ छप्पन". See
+//!    [`LangHi::merge`].
 //! 2. **`to_ordinal` never calls `verify_ordinal`.** `Num2Word_Base` defines
 //!    `verify_ordinal` to reject negatives with a `TypeError`, but HI's
 //!    override does not call it, so negative ordinals sail straight through:
@@ -346,10 +347,9 @@ impl Lang for LangHi {
         let (rtext, rnum) = r;
         let hundred = BigInt::from(100);
 
-        // The `rnum in [...]` list, verbatim: सौ, लाख, करोड़ — no हज़ार.
-        let drops_ek = rnum == &hundred
-            || rnum == &BigInt::from(100_000u32)
-            || rnum == &BigInt::from(10_000_000u32);
+        // Python's `rnum in [...]` list was सौ, लाख, करोड़; only सौ is kept
+        // (quirk 1, #247): "एक लाख", "एक करोड़".
+        let drops_ek = rnum == &hundred;
 
         if lnum.is_one() && drops_ek {
             (rtext.to_string(), rnum.clone())

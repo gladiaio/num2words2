@@ -15,18 +15,19 @@
 //!
 //! Per the porting contract these are preserved verbatim, not fixed:
 //!
-//! 1. **`ords["tjugo"]` is unreachable.** `to_ordinal` looks the last word up
-//!    by its last *4* chars, then its last *3*. "tjugo" is 5 chars, so neither
-//!    probe can ever hit it and the entry is dead code. Every multiple of 20
-//!    falls through to the generic "de" suffix: `to_ordinal(20)` → "tjugode",
-//!    not "tjugonde"; `to_ordinal(120)` → "etthundratjugode". Confirmed
-//!    against the frozen corpus.
+//! 1. ~~**`ords["tjugo"]` was unreachable.**~~ `to_ordinal` looked the last
+//!    word up by its last 4 chars, then its last 3, so the 5-char "tjugo"
+//!    never matched and 20 read "tjugode". Fixed (gladiaio/num2words2#252):
+//!    the probe tries 5 chars first, so 20 is "tjugonde" and 120
+//!    "etthundratjugonde".
 //!
-//! 2. **Plural mega/giga words get ordinalised as-is.** The cards store the
-//!    *plural* "miljoner"/"miljarder", and `merge` only singularises them on
-//!    the `lnum == 1` path ("en miljon"). So `to_ordinal(10**7)` →
-//!    "tio miljonerde" and `to_ordinal(10**10)` → "tio miljarderde", while
-//!    `to_ordinal(10**6)` → "en miljonde". Corpus agrees.
+//! 2. ~~**Plural mega/giga words got ordinalised as-is.**~~ The cards store
+//!    the *plural* "miljoner"/"miljarder", and `merge` only singularises them
+//!    on the `lnum == 1` path ("en miljon"). So `to_ordinal(2*10**6)` was
+//!    "två miljonerde" and `to_ordinal(10**9)` "en miljardde". Fixed (#252,
+//!    #259): a trailing scale word takes "te" on its singular stem, and a
+//!    bare scale ordinal is one word — "miljonte", "tvåmiljonte",
+//!    "miljardte", "tiobiljonte".
 //!
 //! 3. **`merge` returns `lnum + rnum` where a product is meant.** The
 //!    `rnum >= 1000000` branches precede the `rnum > lnum` multiply branch, so
@@ -36,23 +37,23 @@
 //!    the same branches), so cardinals are unaffected — but the numeric field
 //!    of the tree is genuinely wrong and is reproduced as such.
 //!
-//! 4. **`to_ordinal_num` skips `verify_ordinal`.** Negatives are accepted and
-//!    formatted off the decimal string: `to_ordinal_num(-1)` → "-1:a",
-//!    `to_ordinal_num(-42)` → "-42:a". Its last two branches are also
-//!    identical (both append ":e"), so the final `else` is dead — kept here
-//!    for structural fidelity.
+//! 4. **`to_ordinal_num` skips `verify_ordinal`.** Negatives are accepted:
+//!    `to_ordinal_num(-1)` → "-1:a", `to_ordinal_num(-42)` → "-42:a". Python
+//!    exempted only 11 and 12 from ":a", so 111 was "111:a" though the
+//!    ordinal is "etthundraelfte"; the suffix now follows the last two digits
+//!    (#224, see [`sv_ordinal_num_suffix`]).
 //!
 //! 5. **SV's `to_currency` double-spaced the minus on the int path (fixed,
 //!    #160).** Python builds `"%s %s %s" % (minus_str, money, unit)` with the
 //!    *un-stripped* `self.negword`, so `to_currency(-10, "EUR")` was
 //!    "minus  tio euros". The port strips it, as the float path does:
-//!    "minus tio euros".
+//!    "minus tio euro" (Swedish nouns since #222).
 //!
 //! 6. **SV's int path silently ignores `adjective=`.** `Num2Word_Base`'s int
 //!    path applies `prefix_currency`, but SV's override never consults
 //!    `CURRENCY_ADJECTIVES`. So `to_currency(2, "USD", adjective=True)` is
-//!    "två dollars" while `to_currency(2.0, "USD", adjective=True)` is
-//!    "två US dollars, noll cents". `cents=` and `separator=` are likewise
+//!    "två dollar" while `to_currency(2.0, "USD", adjective=True)` is
+//!    "två US dollar, noll cent" (the adjectives are still English). `cents=` and `separator=` are likewise
 //!    dead on the int path. `CURRENCY_ADJECTIVES` is still wired up below
 //!    because the float path (via the base) does honour it.
 //!
@@ -67,7 +68,13 @@
 //! rewrites `Num2Word_EUR.CURRENCY_FORMS` for all of its subclasses, SV
 //! included.
 //!
-//! That is why the table below is not what `lang_EUR.py` reads:
+//! **Replaced by native nouns (gladiaio/num2words2#222).** That mutated
+//! table is English ("två dollars", "två euros"), so the port no longer
+//! mirrors it: it keeps only codes with a sourced Swedish unit and subunit
+//! noun ("två dollar", "två euro", "två kronor", "femtio öre") and raises NotImplementedError for the rest. The notes
+//! below describe Python's table.
+//!
+//! That is why Python's table is not what `lang_EUR.py` reads:
 //!
 //! * EUR is `("euro", "euros")`, not lang_EUR's `("euro", "euro")`.
 //! * GBP is `("pound", "pounds")`, not `("pound sterling", "pounds sterling")`.
@@ -85,8 +92,9 @@
 //! `Num2Word_Base.CURRENCY_PRECISION` an empty dict. SV therefore resolves
 //! every code to the default divisor of 100 — including the ones that are
 //! 3-decimal (KWD/BHD/OMR/…) or 0-decimal (JPY/KRW) elsewhere. Hence
-//! `to_currency(12.34, "KWD")` → "tolv dinars, trettiofyra fils" (cents, not
-//! mils) and `to_currency(12.34, "JPY")` → "tolv yen, trettiofyra sen"
+//! Python's `to_currency(12.34, "KWD")` → "tolv dinars, trettiofyra fils"
+//! (cents, not mils; KWD now raises) and `to_currency(12.34, "JPY")` → "tolv
+//! yen, trettiofyra sen"
 //! rather than rounding to a whole yen. The corpus confirms both. So
 //! `currency_precision` is deliberately left at the trait default.
 
@@ -96,8 +104,30 @@ use crate::floatpath::{default_to_cardinal_float, FloatValue};
 use crate::strnum::python_decimal_str;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, One, Signed, Zero};
+use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+
+/// The neuter (t-word) currency nouns; every other noun in the table is
+/// common gender (en dollar, en euro, en krona, en cent).
+const NEUTER_NOUNS: [&str; 2] = ["pund", "öre"];
+
+/// The cardinal as the numeral before `noun` (#260). A bare 1 agrees with
+/// the noun's gender: "en dollar", "en krona", "ett pund", "ett öre". After
+/// tens Swedish uses "en" whatever the gender ("tjugoen dollar", "trettioen
+/// pund"); "öre" is the exception that keeps "tjugoett öre" (Språkrådet).
+fn attributive(words: String, noun: &str) -> String {
+    if words == "ett" {
+        return if NEUTER_NOUNS.contains(&noun) { words } else { "en".to_string() };
+    }
+    if noun != "öre" {
+        if let Some(stem) = words.strip_suffix("ett") {
+            if stem.ends_with("tjugo") || stem.ends_with("tio") {
+                return format!("{}en", stem);
+            }
+        }
+    }
+    words
+}
 
 /// Port of `Num2Word_EUR.gen_high_numwords`.
 ///
@@ -246,9 +276,6 @@ impl LangSv {
         // MAXVAL = 1000 * highest card = 1000 * 10^603 = 10^606.
         let maxval = cards.highest().cloned().unwrap_or_else(BigInt::zero) * BigInt::from(1000);
 
-        // Note "tjugo": dead entry, see the module docs. Kept because the
-        // Python dict ships it and its absence would be a behaviour change if
-        // the lookup were ever widened.
         let ords: HashMap<&str, &str> = [
             ("noll", "nollte"),
             ("ett", "första"),
@@ -268,49 +295,26 @@ impl LangSv {
         .into_iter()
         .collect();
 
-        // Arity is load-bearing: `pluralize` indexes these, and PLN/RON carry
-        // a third form that must not be dropped even though EUR's `pluralize`
-        // never reaches index 2.
+        // Swedish nouns (#222). Python inherited Num2Word_EUR's table as
+        // rewritten by Num2Word_EN, i.e. English ("två dollars", "två
+        // euros"). Codes without a sourced Swedish unit *and* subunit are
+        // left out and raise NotImplementedError.
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
-            ("AED", CurrencyForms::new(&["dirham", "dirhams"], &["fils", "fils"])),
-            ("AUD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("BHD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
-            ("BRL", CurrencyForms::new(&["real", "reais"], &["cent", "cents"])),
-            ("BYN", CurrencyForms::new(&["rouble", "roubles"], &["kopek", "kopeks"])),
-            ("CAD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("CHF", CurrencyForms::new(&["franc", "francs"], &["rappen", "rappen"])),
-            ("CNY", CurrencyForms::new(&["yuan", "yuan"], &["fen", "fen"])),
-            ("EEK", CurrencyForms::new(&["kroon", "kroons"], &["sent", "senti"])),
-            ("EUR", CurrencyForms::new(&["euro", "euros"], &["cent", "cents"])),
-            ("GBP", CurrencyForms::new(&["pound", "pounds"], &["penny", "pence"])),
-            ("HKD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("HUF", CurrencyForms::new(&["forint", "forint"], &["fillér", "fillér"])),
-            ("INR", CurrencyForms::new(&["rupee", "rupees"], &["paisa", "paise"])),
-            ("IQD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
-            ("ISK", CurrencyForms::new(&["króna", "krónur"], &["aur", "aurar"])),
-            ("JOD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
+            ("AUD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("CAD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("CHF", CurrencyForms::new(&["franc", "francer"], &["rappen", "rappen"])),
+            ("EUR", CurrencyForms::new(&["euro", "euro"], &["cent", "cent"])),
+            ("GBP", CurrencyForms::new(&["pund", "pund"], &["penny", "pence"])),
+            ("HKD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("INR", CurrencyForms::new(&["rupie", "rupier"], &["paisa", "paise"])),
             ("JPY", CurrencyForms::new(&["yen", "yen"], &["sen", "sen"])),
-            ("KRW", CurrencyForms::new(&["won", "won"], &["jeon", "jeon"])),
-            ("KWD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
-            ("LTL", CurrencyForms::new(&["litas", "litas"], &["cent", "cents"])),
-            ("LVL", CurrencyForms::new(&["lat", "lats"], &["santim", "santims"])),
-            ("LYD", CurrencyForms::new(&["dinar", "dinars"], &["dirham", "dirhams"])),
-            ("MXN", CurrencyForms::new(&["peso", "pesos"], &["cent", "cents"])),
-            ("NGN", CurrencyForms::new(&["naira", "naira"], &["kobo", "kobo"])),
-            ("NOK", CurrencyForms::new(&["krone", "kroner"], &["øre", "øre"])),
-            ("NZD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("OMR", CurrencyForms::new(&["rial", "rials"], &["baisa", "baisa"])),
-            ("PLN", CurrencyForms::new(&["zloty", "zlotys", "zlotu"], &["grosz", "groszy"])),
-            ("QAR", CurrencyForms::new(&["riyal", "riyals"], &["dirham", "dirhams"])),
-            ("RON", CurrencyForms::new(&["leu", "lei", "de lei"], &["ban", "bani", "de bani"])),
-            ("RUB", CurrencyForms::new(&["rouble", "roubles"], &["kopek", "kopeks"])),
-            ("SAR", CurrencyForms::new(&["riyal", "riyals"], &["halalah", "halalas"])),
+            ("MXN", CurrencyForms::new(&["peso", "peso"], &["centavo", "centavos"])),
+            ("NOK", CurrencyForms::new(&["krona", "kronor"], &["öre", "öre"])),
+            ("NZD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("RUB", CurrencyForms::new(&["rubel", "rubel"], &["kopek", "kopek"])),
             ("SEK", CurrencyForms::new(&["krona", "kronor"], &["öre", "öre"])),
-            ("SGD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("TND", CurrencyForms::new(&["dinar", "dinars"], &["millime", "millimes"])),
-            ("USD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("UZS", CurrencyForms::new(&["sum", "sums"], &["tiyin", "tiyins"])),
-            ("ZAR", CurrencyForms::new(&["rand", "rand"], &["cent", "cents"])),
+            ("SGD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("USD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
         ]
         .into_iter()
         .collect();
@@ -434,6 +438,18 @@ fn sv_py_num_str(value: &FloatValue) -> String {
     }
 }
 
+/// The `:a`/`:e` of a Swedish numeric ordinal: ":a" after first/second
+/// (första/andra: last two digits ending in 1 or 2, but not 11/12, which
+/// read "elfte"/"tolfte"), ":e" otherwise (#224). 111 is "111:e".
+fn sv_ordinal_num_suffix(value: &BigInt) -> &'static str {
+    let last_two = (value.abs() % BigInt::from(100)).to_u32().unwrap_or(0);
+    if matches!(last_two % 10, 1 | 2) && !matches!(last_two, 11 | 12) {
+        ":a"
+    } else {
+        ":e"
+    }
+}
+
 impl Lang for LangSv {
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
@@ -513,20 +529,38 @@ impl Lang for LangSv {
         // Probe ords by the last 4 chars, then the last 3. Python swallows the
         // KeyErrors; the final fallback is the generic "de" suffix with
         // ending_length left at its initial 0.
-        let mut ending_length: usize = 0;
-        let lastword_ending: String = match self.ords.get(last_n_chars(&lastword, 4).as_str()) {
-            Some(e) => {
-                ending_length = 4;
-                (*e).to_string()
-            }
-            None => match self.ords.get(last_n_chars(&lastword, 3).as_str()) {
-                Some(e) => {
-                    ending_length = 3;
-                    (*e).to_string()
+        // A trailing scale word is ordinalised on its singular stem, without
+        // the "en" of "en miljon": "miljonte" (#252), "tvåmiljonte",
+        // "miljardte" — Python glued "de" onto it: "två miljonerde", "en
+        // miljardde" (#259).
+        let stem = lastword
+            .strip_suffix("er")
+            .filter(|s| s.ends_with("jon") || s.ends_with("jard"))
+            .unwrap_or(&lastword);
+        if stem.ends_with("jon") || stem.ends_with("jard") {
+            let n = outwords.len();
+            outwords[n - 1] = format!("{}te", stem);
+            // A bare scale ordinal is one word, like "tvåtusende":
+            // "tvåmiljonte", and "miljonte" without the "en".
+            if n == 2 {
+                if outwords[0] == "en" {
+                    outwords.remove(0);
                 }
-                None => "de".to_string(),
-            },
-        };
+                return Ok(outwords.concat());
+            }
+            return Ok(outwords.join(" "));
+        }
+        // Python probed only 4 and 3 chars, so "tjugo" never matched and
+        // 20 read "tjugode"; probe 5 first (#252).
+        let mut ending_length: usize = 0;
+        let mut lastword_ending = "de".to_string();
+        for k in [5, 4, 3] {
+            if let Some(e) = self.ords.get(last_n_chars(&lastword, k).as_str()) {
+                ending_length = k;
+                lastword_ending = (*e).to_string();
+                break;
+            }
+        }
 
         // Python compares the *value* to "de", so an ords entry that happened
         // to equal "de" would also take the no-truncation path. None does.
@@ -543,22 +577,7 @@ impl Lang for LangSv {
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         // No verify_ordinal call here — negatives pass straight through.
-        let s = value.to_string();
-        let one = BigInt::one();
-        let two = BigInt::from(2);
-        let eleven = BigInt::from(11);
-        let twelve = BigInt::from(12);
-
-        if value == &one || value == &two {
-            Ok(format!("{}:a", s))
-        } else if (s.ends_with('1') || s.ends_with('2')) && value != &eleven && value != &twelve {
-            Ok(format!("{}:a", s))
-        } else if s.ends_with(|c: char| matches!(c, '3'..='9' | '0')) {
-            Ok(format!("{}:e", s))
-        } else {
-            // Unreachable in Python too: identical to the branch above.
-            Ok(format!("{}:e", s))
-        }
+        Ok(format!("{}{}", value, sv_ordinal_num_suffix(value)))
     }
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
@@ -612,22 +631,9 @@ impl Lang for LangSv {
     /// "1.0"/"2.0" take ":a" (== 1/2), "42.0" takes ":e" (ends "0"), and
     /// "1E+2" takes ":a" (ends "2").
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        let one = BigInt::one();
-        let two = BigInt::from(2);
-        let eleven = BigInt::from(11);
-        let twelve = BigInt::from(12);
-        let whole = value.as_whole_int();
-        let eq = |n: &BigInt| whole.as_ref() == Some(n);
-
-        if eq(&one) || eq(&two) {
-            Ok(format!("{}:a", repr_str))
-        } else if (repr_str.ends_with('1') || repr_str.ends_with('2'))
-            && !eq(&eleven)
-            && !eq(&twelve)
-        {
-            Ok(format!("{}:a", repr_str))
-        } else {
-            Ok(format!("{}:e", repr_str))
+        match value.as_whole_int() {
+            Some(i) => Ok(format!("{}{}", repr_str, sv_ordinal_num_suffix(&i))),
+            None => Ok(format!("{}:e", repr_str)),
         }
     }
 
@@ -724,6 +730,25 @@ impl Lang for LangSv {
         self.currency_adjectives.get(code).copied()
     }
 
+    /// The numeral before the unit noun agrees with it (#260): "en dollar",
+    /// "en krona", "ett pund"; see [`attributive`].
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        Ok(match self.currency_forms.get(currency) {
+            Some(f) => attributive(words, &f.unit[0]),
+            None => words,
+        })
+    }
+
+    /// As [`LangSv::money_verbose`], for the subunit: "en cent", "ett öre".
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        Ok(match self.currency_forms.get(currency) {
+            Some(f) => attributive(words, &f.subunit[0]),
+            None => words,
+        })
+    }
+
     /// Port of `Num2Word_EUR.pluralize`: `form = 0 if n == 1 else 1`.
     ///
     /// Reached only from the base float path — SV's own int branch open-codes
@@ -744,8 +769,8 @@ impl Lang for LangSv {
     /// Only true ints take SV's own branch; everything else is handed to
     /// `Num2Word_Base.to_currency` verbatim, which is what Python's
     /// `super().to_currency(...)` does. The int/non-int split is the whole
-    /// point of the override — `1` renders "ett euro" while `1.0` renders
-    /// "ett euro, noll cents".
+    /// point of the override — `1` renders "en euro" while `1.0` renders
+    /// "en euro, noll cent".
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -786,9 +811,9 @@ impl Lang for LangSv {
         // output; see the module docs, bug 5.
         let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
         let abs_val = v.abs();
-        // Python calls to_cardinal directly here, not _money_verbose. Same
-        // result for SV, but kept literal.
-        let money_str = self.to_cardinal(&abs_val)?;
+        // Python called to_cardinal directly here; the numeral now agrees
+        // with the noun through money_verbose (#260).
+        let money_str = self.money_verbose(&abs_val, currency)?;
 
         // Open-coded rather than routed through `pluralize`, mirroring the
         // Python. The isinstance(cr1, tuple) guards are vacuous — every entry

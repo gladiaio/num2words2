@@ -21,7 +21,7 @@ from __future__ import unicode_literals
 from . import _rust as _RUST
 
 
-def group_digits(value, locale="western", separator=","):
+def group_digits(value: int, locale: str = "western", separator: str = ",") -> str:
     """Format ``value`` as a digit-grouped string.
 
     Examples

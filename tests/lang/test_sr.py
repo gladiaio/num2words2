@@ -104,7 +104,7 @@ class Num2WordsSRTest(TestCase):
         )
         self.assertEqual(
             num2words(-2, lang="sr", to="cheque", currency="RUB"),
-            "MINUS ДВЕ AND 00/100 РУБЉИ",
+            "MINUS ДВЕ AND 00/100 РУБАЉА",
         )
 
     def test_to_currency(self):
@@ -233,7 +233,7 @@ class Num2WordsSRTest(TestCase):
             )
         self.assertEqual(
             num2words(21.5, lang="sr", to="cheque", currency="RUB"),
-            "ДВАДЕСЕТ ЈЕДНА AND 50/100 РУБЉИ",
+            "ДВАДЕСЕТ ЈЕДНА AND 50/100 РУБАЉА",
         )
 
     def test_negative_decimals(self):

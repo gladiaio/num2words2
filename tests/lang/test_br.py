@@ -25,7 +25,7 @@ class Num2WordsBRTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="br"), "zero")
+        self.assertEqual(num2words(0, lang="br"), "mann")
         self.assertEqual(num2words(1, lang="br"), "unan")
         self.assertEqual(num2words(2, lang="br"), "daou")
         self.assertEqual(num2words(3, lang="br"), "tri")
@@ -210,63 +210,72 @@ class Num2WordsBRTest(TestCase):
             num2words(999999999, lang="br"),
             "nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
         )
-        self.assertEqual(num2words(1000000000, lang="br"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="br"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="br"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="br"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="br"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="br"), "unan miliard")
+        self.assertEqual(
+            num2words(1234567890, lang="br"),
+            "unan miliard daou kant tregont pevar milion pemp kant tri-ugent seizh mil eizh kant dek ha pevar-ugent",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="br"),
+            "nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
+        )
+        self.assertEqual(num2words(10000000000, lang="br"), "dek miliard")
+        self.assertEqual(
+            num2words(99999999999, lang="br"),
+            "dek ha pevar-ugent nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="br"), "minus unan")
-        self.assertEqual(num2words(-2, lang="br"), "minus daou")
-        self.assertEqual(num2words(-5, lang="br"), "minus pemp")
-        self.assertEqual(num2words(-10, lang="br"), "minus dek")
-        self.assertEqual(num2words(-11, lang="br"), "minus dek unan")
-        self.assertEqual(num2words(-20, lang="br"), "minus ugent")
-        self.assertEqual(num2words(-50, lang="br"), "minus hanter-kant")
-        self.assertEqual(num2words(-99, lang="br"), "minus dek ha pevar-ugent nav")
-        self.assertEqual(num2words(-100, lang="br"), "minus unan kant")
-        self.assertEqual(num2words(-101, lang="br"), "minus unan kant unan")
-        self.assertEqual(num2words(-200, lang="br"), "minus daou kant")
+        self.assertEqual(num2words(-1, lang="br"), "lei unan")
+        self.assertEqual(num2words(-2, lang="br"), "lei daou")
+        self.assertEqual(num2words(-5, lang="br"), "lei pemp")
+        self.assertEqual(num2words(-10, lang="br"), "lei dek")
+        self.assertEqual(num2words(-11, lang="br"), "lei dek unan")
+        self.assertEqual(num2words(-20, lang="br"), "lei ugent")
+        self.assertEqual(num2words(-50, lang="br"), "lei hanter-kant")
+        self.assertEqual(num2words(-99, lang="br"), "lei dek ha pevar-ugent nav")
+        self.assertEqual(num2words(-100, lang="br"), "lei unan kant")
+        self.assertEqual(num2words(-101, lang="br"), "lei unan kant unan")
+        self.assertEqual(num2words(-200, lang="br"), "lei daou kant")
         self.assertEqual(
-            num2words(-999, lang="br"), "minus nav kant dek ha pevar-ugent nav"
+            num2words(-999, lang="br"), "lei nav kant dek ha pevar-ugent nav"
         )
-        self.assertEqual(num2words(-1000, lang="br"), "minus unan mil")
-        self.assertEqual(num2words(-1001, lang="br"), "minus unan mil unan")
-        self.assertEqual(num2words(-10000, lang="br"), "minus dek mil")
-        self.assertEqual(num2words(-100000, lang="br"), "minus unan kant mil")
-        self.assertEqual(num2words(-1000000, lang="br"), "minus unan milion")
+        self.assertEqual(num2words(-1000, lang="br"), "lei unan mil")
+        self.assertEqual(num2words(-1001, lang="br"), "lei unan mil unan")
+        self.assertEqual(num2words(-10000, lang="br"), "lei dek mil")
+        self.assertEqual(num2words(-100000, lang="br"), "lei unan kant mil")
+        self.assertEqual(num2words(-1000000, lang="br"), "lei unan milion")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="br"), "zero point unan")
-        self.assertEqual(num2words(0.5, lang="br"), "zero point pemp")
-        self.assertEqual(num2words(0.9, lang="br"), "zero point nav")
-        self.assertEqual(num2words(1.1, lang="br"), "unan point unan")
-        self.assertEqual(num2words(1.5, lang="br"), "unan point pemp")
-        self.assertEqual(num2words(2.5, lang="br"), "daou point pemp")
-        self.assertEqual(num2words(3.14, lang="br"), "tri point unan pevar")
-        self.assertEqual(num2words(10.5, lang="br"), "dek point pemp")
-        self.assertEqual(num2words(11.11, lang="br"), "dek unan point unan unan")
-        self.assertEqual(num2words(20.2, lang="br"), "ugent point daou")
+        self.assertEqual(num2words(0.1, lang="br"), "mann skej unan")
+        self.assertEqual(num2words(0.5, lang="br"), "mann skej pemp")
+        self.assertEqual(num2words(0.9, lang="br"), "mann skej nav")
+        self.assertEqual(num2words(1.1, lang="br"), "unan skej unan")
+        self.assertEqual(num2words(1.5, lang="br"), "unan skej pemp")
+        self.assertEqual(num2words(2.5, lang="br"), "daou skej pemp")
+        self.assertEqual(num2words(3.14, lang="br"), "tri skej unan pevar")
+        self.assertEqual(num2words(10.5, lang="br"), "dek skej pemp")
+        self.assertEqual(num2words(11.11, lang="br"), "dek unan skej unan unan")
+        self.assertEqual(num2words(20.2, lang="br"), "ugent skej daou")
         self.assertEqual(
-            num2words(99.99, lang="br"), "dek ha pevar-ugent nav point nav nav"
+            num2words(99.99, lang="br"), "dek ha pevar-ugent nav skej nav nav"
         )
-        self.assertEqual(num2words(100.01, lang="br"), "unan kant point zero unan")
-        self.assertEqual(num2words(100.5, lang="br"), "unan kant point pemp")
+        self.assertEqual(num2words(100.01, lang="br"), "unan kant skej mann unan")
+        self.assertEqual(num2words(100.5, lang="br"), "unan kant skej pemp")
         self.assertEqual(
-            num2words(123.45, lang="br"), "unan kant ugent tri point pevar pemp"
+            num2words(123.45, lang="br"), "unan kant ugent tri skej pevar pemp"
         )
-        self.assertEqual(num2words(1000.5, lang="br"), "unan mil point pemp")
+        self.assertEqual(num2words(1000.5, lang="br"), "unan mil skej pemp")
         self.assertEqual(
             num2words(1234.56, lang="br"),
-            "unan mil daou kant tregont pevar point pemp c'hwec'h",
+            "unan mil daou kant tregont pevar skej pemp c'hwec'h",
         )
-        self.assertEqual(num2words(10000.01, lang="br"), "dek mil point zero unan")
-        self.assertEqual(num2words(-0.5, lang="br"), "minus zero point pemp")
-        self.assertEqual(num2words(-1.5, lang="br"), "minus unan point pemp")
-        self.assertEqual(num2words(-10.5, lang="br"), "minus dek point pemp")
+        self.assertEqual(num2words(10000.01, lang="br"), "dek mil skej mann unan")
+        self.assertEqual(num2words(-0.5, lang="br"), "lei mann skej pemp")
+        self.assertEqual(num2words(-1.5, lang="br"), "lei unan skej pemp")
+        self.assertEqual(num2words(-10.5, lang="br"), "lei dek skej pemp")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -313,15 +322,15 @@ class Num2WordsBRTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="br", to="currency", currency="EUR"), "zero euroioù"
+            num2words(0, lang="br", to="currency", currency="EUR"), "mann euroioù"
         )
         self.assertEqual(
             num2words(0.01, lang="br", to="currency", currency="EUR"),
-            "zero euroioù unan sentim",
+            "mann euroioù unan sentim",
         )
         self.assertEqual(
             num2words(0.5, lang="br", to="currency", currency="EUR"),
-            "zero euroioù hanter-kant sentimoù",
+            "mann euroioù hanter-kant sentimoù",
         )
         self.assertEqual(
             num2words(1, lang="br", to="currency", currency="EUR"), "unan euro"
@@ -330,24 +339,9 @@ class Num2WordsBRTest(TestCase):
             num2words(1.5, lang="br", to="currency", currency="EUR"),
             "unan euro hanter-kant sentimoù",
         )
-        self.assertEqual(
-            num2words(0, lang="br", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="br", to="currency", currency="USD"),
-            "zero dollars unan cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="br", to="currency", currency="USD"),
-            "zero dollars hanter-kant cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="br", to="currency", currency="USD"), "unan dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="br", to="currency", currency="USD"),
-            "unan dollar hanter-kant cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="br", to="currency", currency="USD")
 
     def test_year(self):
         """Test year conversion."""
@@ -381,7 +375,7 @@ class Num2WordsBRTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="br"), "zero")
+        self.assertEqual(num2words("0", lang="br"), "mann")
         self.assertEqual(num2words("1", lang="br"), "unan")
         self.assertEqual(num2words("10", lang="br"), "dek")
         self.assertEqual(num2words("100", lang="br"), "unan kant")
@@ -393,9 +387,8 @@ class Num2WordsBRTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="br"), "zero")
+        self.assertEqual(num2words(0, lang="br"), "mann")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="br"), num2words("100", lang="br"))
         self.assertEqual(num2words(1000, lang="br"), num2words("1000", lang="br"))
-

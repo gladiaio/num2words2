@@ -7,9 +7,12 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`. That matters:
 //! `Num2Word_Base.__init__` only builds `self.cards` / sets `self.MAXVAL`
 //! when one of those three attributes exists, so a live `Num2Word_SN` has
-//! **neither `cards` nor `MAXVAL`** (verified against the interpreter). There
-//! is therefore no overflow ceiling at all — `cards`/`maxval`/`merge` stay at
-//! their trait defaults here and are never consulted.
+//! **neither `cards` nor `MAXVAL`** (verified against the interpreter), and
+//! Python has no overflow ceiling at all — `cards`/`merge` stay at their trait
+//! defaults here and are never consulted. On a large enough integer the
+//! port's recursion overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^15, where "tiriyoni" would stack,
+//! and every mode raises `OverflowError` from there.
 //!
 //! `to_cardinal`, `to_ordinal`, `to_ordinal_num` and `to_year` are all
 //! overridden in Python; nothing in scope falls through to `Num2Word_Base`.
@@ -22,11 +25,11 @@
 //! A hand-written recursive cascade over magnitude bands — 0, negatives,
 //! <=10, teens, tens, hundreds, 1000-9999, 10000-99999, 100000-999999,
 //! millions, billions, then an open-ended trillions tail. The trillions arm
-//! has no upper bound and recurses on `n / 10**12`, so arbitrarily large
-//! BigInt values keep working (10**24 -> "tiriyoni tiriyoni", 10**27 ->
-//! "tiriyoni tiriyoni churu"). Nothing here can raise for integer input: every
-//! dict lookup is guarded by the band check that precedes it, so the port is
-//! infallible and returns `String` rather than `Result`.
+//! has no upper bound in Python and recurses on `n / 10**12` (10**24 ->
+//! "tiriyoni tiriyoni", 10**27 -> "tiriyoni tiriyoni churu"); the port's
+//! callers stop at 10^15 through [`checked_int_to_sn_word`]. Below it nothing
+//! can raise for integer input: every dict lookup is guarded by the band
+//! check that precedes it, so the recursion itself returns `String`.
 //!
 //! # Faithfully reproduced Python quirks
 //!
@@ -123,7 +126,7 @@
 //! (no `_pending_ordinal`-style handshake), so the stateless Rust path is a
 //! faithful substitute and the Python dispatcher needs no special casing.
 
-use crate::base::{floatord_error, py_num_str, year_float_error, Lang, N2WError, Result};
+use crate::base::{check_maxval, floatord_error, pow10_big, py_num_str, year_float_error, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -131,6 +134,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `setup()` overrides this to "minus" — no trailing space, unlike the
 /// `Num2Word_Base` default of "(-) ".
@@ -506,7 +510,29 @@ impl LangSn {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// tiriyoni (10^12), so from 10^15 the module would stack it ("tiriyoni
+/// tiriyoni").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_sn_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_sn_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_sn_word(number))
+}
+
 impl Lang for LangSn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -537,7 +563,7 @@ impl Lang for LangSn {
     /// retry is unreachable. The `isinstance(number, str)` / `float` branches
     /// are out of scope.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        Ok(int_to_sn_word(value))
+        Ok(checked_int_to_sn_word(value)?)
     }
 
     /// Port of `Num2Word_SN.to_ordinal`.
@@ -559,7 +585,7 @@ impl Lang for LangSn {
             return Ok(ORDINALS[i].to_string());
         }
 
-        let cardinal = int_to_sn_word(value);
+        let cardinal = checked_int_to_sn_word(value)?;
 
         if cardinal.starts_with("gumi") {
             Ok(format!("we{}", cardinal))
@@ -591,7 +617,7 @@ impl Lang for LangSn {
     /// Port of `Num2Word_SN.to_year`: years are plain cardinals, with no
     /// century splitting and no BC/AD handling. -500 -> "minus mazana mashanu".
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        Ok(int_to_sn_word(value))
+        Ok(checked_int_to_sn_word(value)?)
     }
 
     /// Port of the SN float/Decimal cardinal path.
@@ -634,10 +660,10 @@ impl Lang for LangSn {
                 // Python truncated here (#156); read it like the float arm.
                 let (pre, post) = float2tuple(value);
                 let sign = if d.is_negative() { format!("{} ", NEGWORD) } else { String::new() };
-                let mut result = int_to_sn_word(&pre.abs());
+                let mut result = checked_int_to_sn_word(&pre.abs())?;
                 result.push(' ');
                 result.push_str(self.pointword());
-                for ch in format!("{:0>w$}", post, w = *precision as usize).chars() {
+                for ch in crate::strnum::zero_pad_left(&post.to_string(), *precision as usize).chars() {
                     let d = ch.to_digit(10).expect("float2tuple yields decimal digits");
                     result.push(' ');
                     result.push_str(ONES[d as usize]);
@@ -646,7 +672,7 @@ impl Lang for LangSn {
             }
             FloatValue::Decimal { value, .. } => {
                 let int_part = value.with_scale(0).as_bigint_and_exponent().0;
-                Ok(int_to_sn_word(&int_part))
+                Ok(checked_int_to_sn_word(&int_part)?)
             }
             // Float arm: port of `Num2Word_SN.to_cardinal_float(number)`.
             FloatValue::Float { value, precision } => {
@@ -690,7 +716,7 @@ impl Lang for LangSn {
                     String::new()
                 };
 
-                let mut result = int_to_sn_word(&integer_part);
+                let mut result = checked_int_to_sn_word(&integer_part)?;
 
                 // `if decimal_part:` — an empty digit string is falsy, so a
                 // whole-valued float with `precision == 0` skips this block.
@@ -1004,7 +1030,7 @@ impl Lang for LangSn {
             result.push(format!(
                 "ma{} {}",
                 major_singular,
-                int_to_sn_word(&integer_part)
+                checked_int_to_sn_word(&integer_part)?
             ));
         }
 
@@ -1023,7 +1049,7 @@ impl Lang for LangSn {
                     "{}{} {}",
                     separator,
                     minor_singular,
-                    int_to_sn_word(&decimal_part)
+                    checked_int_to_sn_word(&decimal_part)?
                 ));
             }
         }

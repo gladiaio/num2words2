@@ -6,8 +6,8 @@
 //! `set_high_numwords`, so Python never builds `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives a hand-written
 //! `_int_to_word` recursion. Consequently `cards`/`maxval`/`merge` stay at
-//! their trait defaults here, and **there is no overflow check at all** — see
-//! "bug 1" below for what happens instead of `OverflowError`.
+//! their trait defaults here. Python has no overflow check; the port's
+//! `maxval` is 10^14 (bug 1).
 //!
 //! Nothing is inherited from `Num2Word_Base` in a load-bearing way: OR
 //! overrides all four in-scope entry points itself.
@@ -38,10 +38,8 @@
 //! transliteration was an upstream accident rather than a choice. The tables
 //! here are the Odia spellings: "ଏକ", "ଦୁଇ", "ଚାଳିଶ", "ହଜାର".
 //!
-//! This is a lexicon change only — the composition rules, the multiplier
-//! guards, the 10^9 digit cliff and the currency fallback are all still
-//! ported verbatim, including the non-idiomatic tens-and-units composition
-//! (bug 7 below).
+//! This is a lexicon change only. The composition below a hundred and the
+//! Western grouping were fixed separately (bugs 3 and 4, #247).
 //!
 //! ## 2. tens[7] no longer collides with teens[7]
 //!
@@ -49,7 +47,7 @@
 //! and 77 came out as "satara o sāta" — "seventeen and seven". The module
 //! header already called this out as wrong ("Odia for 70 is sattari; satara
 //! is 17") and kept it only because the frozen corpus pinned it. Since the
-//! whole lexicon is being rewritten anyway, `TENS[7]` is now ସତୁରୀ (70) and
+//! whole lexicon is being rewritten anyway, `TENS[7]` is now ସତୁରି (70) and
 //! `TEENS[7]` stays ସତର (17).
 //!
 //! This is a value fix, not a spelling fix: it changes which number the
@@ -80,34 +78,29 @@
 //! This is a port, not a rewrite. Every item below looks wrong and is exactly
 //! what Python emits — each one is pinned by a row in the frozen corpus.
 //!
-//! 1. **No number word above 10^9.** `_int_to_word` ends with a bare
-//!    `return str(number)`, so any `number >= 1_000_000_000` converts to its
-//!    own *decimal digits* instead of words, with no error:
-//!    `to_cardinal(10**9) == "1000000000"` and
-//!    `to_ordinal(10**9) == "1000000000ମ"`. Corpus confirms this all the way
-//!    up to 10^21. This is why the port keeps `BigInt` end-to-end and never
-//!    casts: the fallback must stringify arbitrarily large values verbatim.
+//! 1. **No number word above 10^9 (fixed, gladiaio/num2words2#147).**
+//!    Python's `_int_to_word` ended with `return str(number)`, so 10^9 came
+//!    out as "1000000000". No Odia word above କୋଟି is in modern use (the
+//!    Sanskrit series on Wikipedia "Odia numerals" is not), so the port
+//!    spells the crore count — 10^9 is "ଏକ ଶହ କୋଟି" — and raises
+//!    `OverflowError` from 10^14, where that count would itself need କୋଟି.
 //! 2. ~~`tens[7]` collides with `teens[7]`~~ — **fixed**, see divergence 2
-//!    above. 70 is now ସତୁରୀ and 77 is "ସତୁରୀ ଓ ସାତ"; 17 stays ସତର.
-//! 3. **Tens and units are composed, not lexicalised.** Odia has a distinct
-//!    word for each of 21..=99 (42 is ବୟାଳିଶ, not "forty and two"), but
-//!    `_int_to_word` builds them as `tens[t] + " ଓ " + ones[o]`, so 42 is
-//!    "ଚାଳିଶ ଓ ଦୁଇ". Kept verbatim — replacing it means an 80-entry table and
-//!    a different algorithm, which is a separate change.
-//! 4. **`million` is the string "ଦଶ ଲକ୍ଷ"**, literally "ten lakh", used as
-//!    the multiplier for 10^6. This makes the Indian-system word collide with
-//!    the Western scale it is applied to: `to_cardinal(10**6)` ==
-//!    "ଏକ ଦଶ ଲକ୍ଷ" ("one ten-lakh"), and `to_cardinal(10**7)` ==
-//!    "ଦଶ ଦଶ ଲକ୍ଷ" ("ten ten-lakh"). The module otherwise uses a strict
-//!    Western 10^3/10^6 grouping and never uses lakh/crore grouping at all.
-//! 5. **`tens[0]` and `tens[1]` are unreachable.** `tens[1]` is "ଦଶ", but
-//!    the `number < 20` branch catches 10..=19 via `teens` first, and the
-//!    `number < 100` branch only ever computes `t` in 2..=9. Preserved in the
-//!    table for index alignment; never read.
+//!    above. 70 is ସତୁରି, 17 ସତର.
+//! 3. **Tens and units were composed, not lexicalised (fixed,
+//!    gladiaio/num2words2#247).** Odia has a distinct word for each of
+//!    21..=99, but Python built them as `tens[t] + " ଓ " + ones[o]`, so 42
+//!    was "ଚାଳିଶ ଓ ଦୁଇ" ("forty and two"). The port reads [`BELOW_HUNDRED`]:
+//!    42 is ବୟାଳିଶି, 77 ସତସ୍ତରି.
+//! 4. **`million` was the string "ଦଶ ଲକ୍ଷ" (fixed, gladiaio/num2words2#247)**,
+//!    literally "ten lakh", applied at 10^6 in a Western 10^3/10^6 grouping:
+//!    10^6 was "ଏକ ଦଶ ଲକ୍ଷ" ("one ten-lakh") and 10^7 "ଦଶ ଦଶ ଲକ୍ଷ". The
+//!    port groups by ହଜାର, ଲକ୍ଷ (10^5) and କୋଟି (10^7): 10^5 is "ଏକ ଲକ୍ଷ",
+//!    10^6 "ଦଶ ଲକ୍ଷ", 10^7 "ଏକ କୋଟି".
+//! 5. (Python's unreachable `tens[0]`/`tens[1]` went with the table, #247.)
 //! 6. **Above 10 the ordinal is still pure suffixation with no morphology**:
 //!    `to_ordinal` appends ମ to the *whole* cardinal string, so the suffix
 //!    lands on the final word of a phrase — `to_ordinal(999) ==
-//!    "ନଅ ଶହ ଓ ନବେ ଓ ନଅମ"` and `to_ordinal(10**6) == "ଏକ ଦଶ ଲକ୍ଷମ"`.
+//!    "ନଅ ଶହ ଓ ଅନେଶତମ"` and `to_ordinal(10**5) == "ଏକ ଲକ୍ଷମ"`.
 //!    Negatives keep the sign word and now take the suppletive arm where it
 //!    applies: `to_ordinal(-1) == "ପ୍ରଥମ"` is *not* what happens — the
 //!    1..=10 test is on the signed value, so a negative falls through to the
@@ -115,8 +108,8 @@
 //!
 //! # Error variants
 //!
-//! For integer input this module cannot raise: there is no overflow check
-//! (bug 1 swallows it), every list index is provably in range (each branch
+//! For integer input this module raises only `OverflowError`, at or past
+//! `maxval` (10^14, bug 1); every list index is provably in range (each branch
 //! bounds its divisor result before indexing), and the sign is stripped before
 //! any arithmetic. All 459 corpus rows for `"or"` in the four integer modes
 //! (`cardinal`/`ordinal`/`ordinal_num`/`year`) are `"ok": true`.
@@ -155,7 +148,7 @@
 //!     its own string surgery and never consults the divisor, so the 3-decimal
 //!     currencies (KWD/BHD, divisor 1000) and the 0-decimal ones (JPY,
 //!     divisor 1) are all treated as 2-decimal — and, per C1, as INR anyway.
-//!     `to_currency(12.34, "JPY") == "ବାର ଟଙ୍କା ତିରିଶ ଓ ଚାରି ପଇସା"`: yen
+//!     `to_currency(12.34, "JPY") == "ବାର ଟଙ୍କା ଚଉତିରିଶି ପଇସା"`: yen
 //!     has no subunit at all, yet 34 paise are printed.
 //! C3. **`adjective` is accepted and never read.** No `prefix_currency` call.
 //! C4. **`pluralize` is dead code.** OR defines it, but its own `to_currency`
@@ -190,7 +183,7 @@
 //! because `to_currency` truncates to two digits itself and never delegates to
 //! `currency::default_to_currency`.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -199,6 +192,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `setup()`: `self.negword = "ଋଣ "` — note the **trailing space**, which is
 /// what separates it from the number, and which `.strip()` then makes
@@ -214,15 +208,30 @@ const ONES: [&str; 10] = [
     "", "ଏକ", "ଦୁଇ", "ତିନି", "ଚାରି", "ପାଞ୍ଚ", "ଛଅ", "ସାତ", "ଆଠ", "ନଅ",
 ];
 
-/// `self.teens`, covering 10..=19 (indexed as `number - 10`).
-const TEENS: [&str; 10] = [
-    "ଦଶ", "ଏଗାର", "ବାର", "ତେର", "ଚଉଦ", "ପନ୍ଦର", "ଷୋହଳ", "ସତର", "ଅଠର", "ଉଣେଇଶ",
-];
-
-/// `self.tens`. Only indices 2..=9 are reachable (bug 5). Index 7 is "ସତର",
-/// a verbatim duplicate of `TEENS[7]` (bug 2) — do not "correct" it.
-const TENS: [&str; 10] = [
-    "", "ଦଶ", "କୋଡ଼ିଏ", "ତିରିଶ", "ଚାଳିଶ", "ପଚାଶ", "ଷାଠିଏ", "ସତୁରୀ", "ଅଶୀ", "ନବେ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `teens`/`tens` and built 21..=99 as `tens[t] + " ଓ " +
+/// ones[o]` ("forty and two"), but Odia has its own word for each of them
+/// (42 is ବୟାଳିଶି). 21..=99 from Omniglot's Odia list (also
+/// languagesandnumbers.com and dimasathairili.com), checked against the
+/// romanised forms in Wikipedia "Odia numerals"; 1..=20 and the round tens
+/// are the module's own words. 70..=78 follow the Purnachandra Odia
+/// Bhashakosha (Praharaj; DSAL) and Wiktionary's Odia number list, which
+/// agree on a short final -ି (ସତୁରି, ଏକସ୍ତରି, ... ଅଠସ୍ତରି) except for 73,
+/// which both spell ତେସ୍ତରୀ; 72 is Praharaj's alternative form ବାସ୍ତରି
+/// (headword ବାଆସ୍ତରି). Omniglot and CLDR write -ରୀ throughout (#263).
+/// Lower confidence: 99 ଅନେଶତ. Index 0 is never read.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "ଏକ", "ଦୁଇ", "ତିନି", "ଚାରି", "ପାଞ୍ଚ", "ଛଅ", "ସାତ", "ଆଠ", "ନଅ", // 0..9
+    "ଦଶ", "ଏଗାର", "ବାର", "ତେର", "ଚଉଦ", "ପନ୍ଦର", "ଷୋହଳ", "ସତର", "ଅଠର", "ଉଣେଇଶ", // 10..19
+    "କୋଡ଼ିଏ", "ଏକୋଇଶି", "ବାଇଶି", "ତେଇଶି", "ଚବିଶି", "ପଚିଶି", "ଛବିଶି", "ସତାଇଶି", "ଅଠାଇଶି", "ଅଣତିରିଶି", // 20..29
+    "ତିରିଶ", "ଏକତିରିଶି", "ବତିଶି", "ତେତିଶି", "ଚଉତିରିଶି", "ପଞ୍ଚତିରିଶି", "ଛତିଶି", "ସଂଇତିରିଶି", "ଅଠତିରିଶି", "ଅଣଚାଳିଶି", // 30..39
+    "ଚାଳିଶ", "ଏକଚାଳିଶି", "ବୟାଳିଶି", "ତେୟାଳିଶି", "ଚଉରାଳିଶି", "ପଞ୍ଚଚାଳିଶି", "ଛୟାଳିଶି", "ସତଚାଳିଶି", "ଅଠଚାଳିଶି", "ଅଣଚାଶ", // 40..49
+    "ପଚାଶ", "ଏକାବନ", "ବାଉନ", "ତେପନ", "ଚଉବନ", "ପଞ୍ଚାବନ", "ଛପନ", "ସତାବନ", "ଅଠାବନ", "ଅଣଷଠି", // 50..59
+    "ଷାଠିଏ", "ଏକଷଠି", "ବାଷଠି", "ତେଷଠି", "ଚଉଷଠି", "ପଞ୍ଚଷଠି", "ଛଅଷଠି", "ସତଷଠି", "ଅଠଷଠି", "ଅଣସ୍ତରୀ", // 60..69
+    "ସତୁରି", "ଏକସ୍ତରି", "ବାସ୍ତରି", "ତେସ୍ତରୀ", "ଚଉସ୍ତରି", "ପଞ୍ଚସ୍ତରି", "ଛଅସ୍ତରି", "ସତସ୍ତରି", "ଅଠସ୍ତରି", "ଅଣାଅଶୀ", // 70..79
+    "ଅଶୀ", "ଏକାଅଶୀ", "ବୟାଅଶୀ", "ତେୟାଅଶୀ", "ଚଉରାଅଶୀ", "ପଞ୍ଚାଅଶୀ", "ଛୟାଅଶୀ", "ସତାଅଶୀ", "ଅଠାଅଶୀ", "ଅଣାନବେ", // 80..89
+    "ନବେ", "ଏକାନବେ", "ବୟାନବେ", "ତେୟାନବେ", "ଚଉରାନବେ", "ପଞ୍ଚାନବେ", "ଛୟାନବେ", "ସତାନବେ", "ଅଠାନବେ", "ଅନେଶତ", // 90..99
 ];
 
 /// Odia ordinals 1-10 are **suppletive**: Sanskrit-derived forms with their
@@ -258,8 +267,10 @@ const ORDINAL_SUFFIX: &str = "ମ";
 
 const HUNDRED: &str = "ଶହ";
 const THOUSAND: &str = "ହଜାର";
-/// `self.million` — the 10^6 multiplier word, literally "ten lakh" (bug 4).
-const MILLION: &str = "ଦଶ ଲକ୍ଷ";
+/// 10^5 and 10^7 (bug 4, fixed in #247): Odia groups by lakh and crore, not
+/// by thousand and "ten lakh" as Python did.
+const LAKH: &str = "ଲକ୍ଷ";
+const CRORE: &str = "କୋଟି";
 
 /// The key `list(self.CURRENCY_FORMS.values())[0]` resolves to.
 ///
@@ -487,6 +498,14 @@ impl LangOr {
             .expect("the first-entry fallback key is always present in the table")
     }
 
+    /// `int_to_word` behind [`maxval_ceiling`], checked before the first
+    /// recursive step. Every entry point that hands over a caller-supplied
+    /// integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     /// Python's `_int_to_word`. Called only with `number >= 0`: `to_cardinal`
     /// strips the sign textually before ever reaching arithmetic.
     ///
@@ -501,8 +520,8 @@ impl LangOr {
         let ten = BigInt::from(10);
         let hundred = BigInt::from(100);
         let thousand = BigInt::from(1_000);
-        let million = BigInt::from(1_000_000);
-        let billion = BigInt::from(1_000_000_000);
+        let lakh = BigInt::from(100_000);
+        let crore = BigInt::from(10_000_000);
 
         // `if number < 10: return self.ones[number]`
         if *number < ten {
@@ -510,23 +529,10 @@ impl LangOr {
             return ONES[number.to_usize().unwrap()].to_string();
         }
 
-        // `if number < 20: return self.teens[number - 10]`
-        if *number < BigInt::from(20) {
-            return TEENS[(number - &ten).to_usize().unwrap()].to_string();
-        }
-
-        // `if number < 100: t, o = divmod(number, 10)`
-        // `return self.tens[t] + (" ଓ " + self.ones[o] if o else "")`
+        // Python: `teens[n - 10]` below 20, `tens[t] + " ଓ " + ones[o]` below
+        // 100 (bug 3, fixed in #247).
         if *number < hundred {
-            let (t, o) = number.div_mod_floor(&ten);
-            let t = t.to_usize().unwrap(); // 2..=9
-            let o = o.to_usize().unwrap(); // 0..=9
-            let mut out = TENS[t].to_string();
-            if o != 0 {
-                out.push_str(" ଓ ");
-                out.push_str(ONES[o]);
-            }
-            return out;
+            return BELOW_HUNDRED[number.to_usize().unwrap()].to_string();
         }
 
         // `if number < 1000: h, r = divmod(number, 100)`
@@ -534,7 +540,7 @@ impl LangOr {
         // `return base + (" ଓ " + self._int_to_word(r) if r else "")`
         //
         // Note the separator here is " ଓ " (as in the tens), unlike the
-        // thousand/million branches below which use a bare " ".
+        // thousand/lakh/crore branches below which use a bare " ".
         if *number < thousand {
             let (h, r) = number.div_mod_floor(&hundred);
             let h = h.to_usize().unwrap(); // 1..=9
@@ -546,34 +552,28 @@ impl LangOr {
             return out;
         }
 
-        // `if number < 1000000: t, r = divmod(number, 1000)`
-        // `base = self._int_to_word(t) + " " + self.thousand`
-        // `return base + (" " + self._int_to_word(r) if r else "")`
-        if *number < million {
-            let (t, r) = number.div_mod_floor(&thousand);
-            let mut out = format!("{} {}", self.int_to_word(&t), THOUSAND);
-            if !r.is_zero() {
-                out.push(' ');
-                out.push_str(&self.int_to_word(&r));
+        // Python grouped by thousand (to 10^6) and "ten lakh" (to 10^9); the
+        // port groups by thousand, lakh and crore (bug 4, fixed in #247). The
+        // remainder still joins with a bare " ".
+        for (limit, divisor, word) in [
+            (&lakh, &thousand, THOUSAND),
+            (&crore, &lakh, LAKH),
+            (maxval_ceiling(), &crore, CRORE),
+        ] {
+            if number < limit {
+                let (q, r) = number.div_mod_floor(divisor);
+                let mut out = format!("{} {}", self.int_to_word(&q), word);
+                if !r.is_zero() {
+                    out.push(' ');
+                    out.push_str(&self.int_to_word(&r));
+                }
+                return out;
             }
-            return out;
         }
 
-        // `if number < 1000000000: m, r = divmod(number, 1000000)`
-        // `base = self._int_to_word(m) + " " + self.million`
-        // `return base + (" " + self._int_to_word(r) if r else "")`
-        if *number < billion {
-            let (m, r) = number.div_mod_floor(&million);
-            let mut out = format!("{} {}", self.int_to_word(&m), MILLION);
-            if !r.is_zero() {
-                out.push(' ');
-                out.push_str(&self.int_to_word(&r));
-            }
-            return out;
-        }
-
-        // `return str(number)` — bug 1. No words, no error, any magnitude.
-        number.to_string()
+        // Python's `return str(number)` (bug 1): unreachable now, the crore
+        // arm runs to the ceiling that `checked_int_to_word` enforces.
+        unreachable!("int_to_word is only reached below maxval")
     }
 
     /// Port of the *string* body of `Num2Word_OR.to_cardinal`, driven from the
@@ -620,7 +620,7 @@ impl LangOr {
             let left_bi = left.parse::<BigInt>().map_err(|_| {
                 N2WError::Value(format!("invalid literal for int() with base 10: {:?}", left))
             })?;
-            let mut ret = format!("{} {}", self.int_to_word(&left_bi), self.pointword());
+            let mut ret = format!("{} {}", self.checked_int_to_word(&left_bi)?, self.pointword());
             for ch in right.chars() {
                 let d = ch.to_digit(10).ok_or_else(|| {
                     N2WError::Value(format!(
@@ -640,11 +640,25 @@ impl LangOr {
         let bi = n.parse::<BigInt>().map_err(|_| {
             N2WError::Value(format!("invalid literal for int() with base 10: {:?}", n))
         })?;
-        Ok(self.int_to_word(&bi))
+        self.checked_int_to_word(&bi)
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147). The scale stops at
+/// କୋଟି (10^7); above it the crore count is spelled out (the everyday
+/// "hundred crore", "lakh crore") until that count
+/// would itself need କୋଟି at 10^14. Python returned the digits from
+/// 10^9 up; this raises `OverflowError` from 10^14 instead.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangOr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -691,7 +705,7 @@ impl Lang for LangOr {
             let inner = self.to_cardinal(&-value)?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.checked_int_to_word(value)
     }
 
     /// The suppletive form for 1..=10, otherwise the cardinal plus ମ.
@@ -946,7 +960,7 @@ impl Lang for LangOr {
         } else {
             &forms.unit[1]
         };
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.checked_int_to_word(&left)?, unit);
 
         // `if cents and right:` — a zero `right` is falsy and skips the entire
         // segment, however the value was written (C6).
@@ -975,6 +989,7 @@ impl Lang for LangOr {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -1003,9 +1018,9 @@ mod float_tests {
             (f(0.99, 2), "ଶୂନ୍ୟ ଦଶମିକ ନଅ ନଅ"),
             (f(1.01, 2), "ଏକ ଦଶମିକ ଶୂନ୍ୟ ଏକ"),
             (f(12.34, 2), "ବାର ଦଶମିକ ତିନି ଚାରି"),
-            (f(99.99, 2), "ନବେ ଓ ନଅ ଦଶମିକ ନଅ ନଅ"),
+            (f(99.99, 2), "ଅନେଶତ ଦଶମିକ ନଅ ନଅ"),
             (f(100.5, 1), "ଏକ ଶହ ଦଶମିକ ପାଞ୍ଚ"),
-            (f(1234.56, 2), "ଏକ ହଜାର ଦୁଇ ଶହ ଓ ତିରିଶ ଓ ଚାରି ଦଶମିକ ପାଞ୍ଚ ଛଅ"),
+            (f(1234.56, 2), "ଏକ ହଜାର ଦୁଇ ଶହ ଓ ଚଉତିରିଶି ଦଶମିକ ପାଞ୍ଚ ଛଅ"),
             (f(-0.5, 1), "ଋଣ ଶୂନ୍ୟ ଦଶମିକ ପାଞ୍ଚ"),
             (f(-1.5, 1), "ଋଣ ଏକ ଦଶମିକ ପାଞ୍ଚ"),
             (f(-12.34, 2), "ଋଣ ବାର ଦଶମିକ ତିନି ଚାରି"),
@@ -1025,7 +1040,10 @@ mod float_tests {
             (d("0.01", 2), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଏକ"),
             (d("1.10", 2), "ଏକ ଦଶମିକ ଏକ ଶୂନ୍ୟ"),
             (d("12.345", 3), "ବାର ଦଶମିକ ତିନି ଚାରି ପାଞ୍ଚ"),
-            (d("98746251323029.99", 2), "98746251323029 ଦଶମିକ ନଅ ନଅ"),
+            (
+                d("98746251323029.99", 2),
+                "ଅଠାନବେ ଲକ୍ଷ ଚଉସ୍ତରି ହଜାର ଛଅ ଶହ ଓ ପଚିଶି କୋଟି ତେର ଲକ୍ଷ ତେଇଶି ହଜାର ଅଣତିରିଶି ଦଶମିକ ନଅ ନଅ",
+            ),
             (d("0.001", 3), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଶୂନ୍ୟ ଏକ"),
         ];
         for (v, want) in cases {

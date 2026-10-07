@@ -113,21 +113,16 @@
 //!
 //! ## Faithfully reproduced currency quirks
 //!
-//! 7. **An unknown currency code plus an `int` does not raise — it returns a
-//!    bare cardinal.** `Num2Word_PT.to_currency`'s integer branch answers a
-//!    `KeyError` from `CURRENCY_FORMS` with `return self.to_cardinal(val)`,
-//!    dropping the currency word entirely; PT_BR's own post-pass then catches
-//!    its own `KeyError` and passes. So `to_currency(100, "JPY")` is `"cem"`,
-//!    not `NotImplementedError`. Only the *float* path raises, and it raises
-//!    from `Num2Word_Base.to_currency` before PT's `cr1[1]` lookup can turn
-//!    into a `KeyError`. The corpus pins both halves: `currency:JPY` of `0`
-//!    is `"zero"` while `currency:JPY` of `12.34` is `NotImplementedError`.
+//! 7. **An unknown currency code plus an `int` raises (fixed, #219).**
+//!    `Num2Word_PT.to_currency`'s integer branch answered a `KeyError` from
+//!    `CURRENCY_FORMS` with `return self.to_cardinal(val)`, dropping the
+//!    currency word entirely (`to_currency(100, "JPY")` was `"cem"`). The
+//!    port raises `NotImplementedError`, as the float path always did.
 //! 8. **A whole float or Decimal is demoted to `int` before anything else**,
 //!    so it takes the no-cents integer path. `to_currency(1.0, "EUR")` is
 //!    `"um euro"`, not `"um euro e zero cêntimos"` — PT_BR undoes the very
 //!    `isinstance(val, int)` distinction that `has_decimal` exists to carry.
-//!    `1.0` with an *unknown* code therefore also stops raising and yields
-//!    `"um"` (quirk 7 + this one compounding).
+//!    `1.0` with an *unknown* code raises like the int (quirk 7).
 //! 9. **Both " de" passes run, over different word lists.** PT's list is the
 //!    European "bilião/biliões/trilião/triliões"; PT_BR's is the Brazilian
 //!    "bilhão/bilhões/trilhão/trilhões". PT_BR's `to_cardinal` only ever
@@ -1008,13 +1003,10 @@ impl LangPtBr {
         if let CurrencyValue::Int(v) = val {
             let cr1 = match self.currency_forms.get(currency) {
                 Some(f) => &f.unit,
-                // except KeyError: return self.to_cardinal(val)
-                //
-                // Quirk 7: an unknown code does *not* raise here, it degrades
-                // to a bare cardinal with no currency word. Note this returns
-                // before the negword mutation, so `to_cardinal` sees the full
-                // "menos " and negatives render normally.
-                None => return self.to_cardinal(v),
+                // Quirk 7 (fixed, #219): Python's `except KeyError: return
+                // self.to_cardinal(val)` printed a bare number with no
+                // currency word; raise like the float path.
+                None => return Err(crate::currency::unknown_currency(self, currency)),
             };
 
             let minus_str = if v.is_negative() {

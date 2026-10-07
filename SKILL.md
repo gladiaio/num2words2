@@ -34,7 +34,7 @@ def test_convert_42():
     assert num2words(42, lang='en') == 'forty-two'
 
 # Step 2: Run test to confirm it fails
-# $ python -m pytest tests/test_en.py::test_convert_42 -xvs
+# $ python -m pytest tests/lang/test_en.py::test_convert_42 -xvs
 
 # Step 3: Write minimal implementation
 def convert(number):
@@ -55,21 +55,21 @@ You automatically run these validations:
 # Unit tests - must show 100% pass rate
 python -m pytest
 
-# E2E CSV tests - validate real-world scenarios
-python run_e2e_tests.py
+# Rust unit tests
+(cd rust && cargo test)
 
-# Analyze any failures
-python analyze_e2e_failures.py
+# E2E CSV tests - validate real-world scenarios (-v shows each failure)
+python tests/scripts/run_e2e_tests.py --file tests/data/e2e_test_suite.csv -v
 ```
 
 ### Test Categories You Handle
 
-**Unit Tests** (`tests/test_*.py`)
+**Unit Tests** (`tests/test_*.py`, `tests/lang/test_<lang>.py`)
 - Individual function validation
 - Language-specific implementations
 - Edge cases and error handling
 
-**CSV E2E Tests** (`e2e_test_suite.csv`)
+**CSV E2E Tests** (`tests/data/e2e_test_suite.csv`)
 - Cross-language validation
 - Large number ranges
 - Real-world use cases
@@ -86,7 +86,7 @@ When adding a new language, you follow this structured approach:
 ### 1. Create Comprehensive Test Suite First
 
 ```python
-# tests/test_XX.py (where XX is the language code)
+# tests/lang/test_XX.py (where XX is the language code)
 class TestLanguageXX:
     def test_basic_numbers(self):
         """Test 0-10 conversion"""
@@ -120,9 +120,12 @@ class TestLanguageXX:
         assert num2words(1.50, lang='XX', to='currency') == 'one_dollar_fifty_in_XX'
 ```
 
-### 2. Implement Language Class
+### 2. Implement the Rust Converter
 
-Only after tests are written, you implement the language class following the established pattern.
+Only after tests are written, you implement `rust/num2words2-core/src/lang_XX.rs`
+and register it in `rust/num2words2-core/src/lib.rs`, following
+`num2words2/README.md`. Rebuild with `maturin develop --no-default-features`
+before re-running the tests.
 
 ## Bug Fix Protocol
 
@@ -172,11 +175,15 @@ def generate_currency_amounts():
 def generate_csv_tests():
     """Generate CSV file with test cases"""
     import csv
+
+    import num2words2
     with open('e2e_tests.csv', 'w', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['lang', 'number', 'type', 'expected'])
 
-        for lang in CONVERTER_CLASSES.keys():
+        # Every code the Rust core accepts (same list as
+        # `num2words2 --list-languages`).
+        for lang in num2words2._rust.supported_langs():
             for num in generate_test_numbers()['basic']:
                 try:
                     result = num2words(num, lang=lang)
@@ -231,13 +238,13 @@ Before committing any changes, you verify:
 
 ```bash
 # TDD cycle
-pytest tests/test_XX.py::test_function -xvs  # Run specific test
+pytest tests/lang/test_XX.py::test_function -xvs  # Run specific test
 pytest --lf                                    # Rerun failed tests
 pytest -x                                      # Stop on first failure
 
 # Full validation
 pytest                                         # All unit tests
-python run_e2e_tests.py                       # CSV E2E tests
+python tests/scripts/run_e2e_tests.py --file tests/data/e2e_test_suite.csv  # CSV E2E tests
 pytest --cov=num2words2                       # Coverage report
 
 # Debugging
@@ -323,7 +330,7 @@ You automatically test all language variants when modifying base classes.
 3. Verify no regressions in child implementations
 
 ### Example
-When modifying lang_EUR.py, automatically test: FR, DE, ES, IT, PT
+When modifying base.rs, automatically test every language: pytest tests/lang
 ```
 
 #### Debugging Patterns
@@ -405,7 +412,7 @@ You automatically run CSV E2E tests after unit tests pass.
 
 ### Process
 1. Run python -m pytest
-2. If all pass, run python run_e2e_tests.py
+2. If all pass, run python tests/scripts/run_e2e_tests.py --file tests/data/e2e_test_suite.csv
 3. Report combined results
 
 ### Example
@@ -473,7 +480,7 @@ LLM CONSULTATIONS:
 
 REVERSION COMMANDS:
 To revert these changes:
-- git checkout tests/e2e_test_suite.csv
+- git checkout tests/data/e2e_test_suite.csv
 - git checkout [any modified files]
 
 CONFIDENCE LEVELS:

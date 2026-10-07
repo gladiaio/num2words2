@@ -39,15 +39,16 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly what
 //! Python emits, and are confirmed by the frozen corpus:
 //!
-//! 1. **Anything `>= 1_000_000_000` is not spelled out at all.** `_int_to_word`
-//!    falls off the end of its band ladder and does `return str(number)`, so
-//!    `to_cardinal(10**9)` == "1000000000" (bare digits) and
-//!    `to_ordinal(1234567890)` == "wa 1234567890". No exception, no words. This
-//!    is the single biggest quirk of the module and is preserved verbatim; see
-//!    [`int_to_word`]. It also means there is no upper bound to guard — a
-//!    10^606 input simply renders as its own decimal digits, which is why this
-//!    port keeps `BigInt` end to end and only narrows the provably-bounded
-//!    digit indices.
+//! 1. **Anything `>= 1_000_000_000` (fixed, gladiaio/num2words2#147).**
+//!    Python's `_int_to_word` falls off the end of its band ladder and does
+//!    `return str(number)`, so `to_cardinal(10**9)` was "1000000000" (bare
+//!    digits) and `to_ordinal(1234567890)` "wa 1234567890". No reliable
+//!    Kikuyu word for 10^9 could be sourced (the only attestation, "mbirioni"
+//!    in one radio news item, is a single loan-word use; Kikuyu's own
+//!    "million" is itself spelled "mirioni" in the sources, not the module's
+//!    "milioni"), so rather than inventing one this port reports `maxval` ==
+//!    10^9 and raises `OverflowError` from there, on the integer, float and
+//!    currency paths alike — see [`int_to_word`].
 //! 2. **No zero-suppression between bands.** 1_000_001 → "milioni na ĩmwe", and
 //!    999_999_999 spells all three bands out longhand with `" na "` between
 //!    each, giving the (correct-per-Python) mouthful
@@ -107,7 +108,7 @@
 //! choking on an exponent-form repr (`1e+16`, `1.5e-05`, `Decimal("1E+2")`); see
 //! [`cardinal_from_str`].
 
-use crate::base::{Lang as LangTrait, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang as LangTrait, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -115,6 +116,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `setup`: `self.ones`. Index 0 is "" and is only reachable through the float
 /// path (see [`cardinal_from_str`]), where `or "wĩra"` substitutes for it.
@@ -247,7 +249,7 @@ fn split_currency(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     let left = int_part.parse::<BigInt>().unwrap_or_else(|_| BigInt::zero());
@@ -312,11 +314,12 @@ impl Default for LangKi {
 /// `ONES`/`TENS` is in `0..=9`, so the `to_usize` narrowing below is proven
 /// safe — the `BigInt` itself is never narrowed.
 ///
-/// Values `>= 1_000_000_000` return their own decimal digits verbatim; see the
-/// module docs, quirk 1.
-fn int_to_word(number: &BigInt) -> String {
+/// Values `>= 1_000_000_000` raise `OverflowError` (Python returned their
+/// decimal digits); see the module docs, quirk 1.
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     if number.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
 
     let ten = BigInt::from(10u32);
@@ -327,7 +330,7 @@ fn int_to_word(number: &BigInt) -> String {
 
     // if number < 10: return self.ones[number]
     if number < &ten {
-        return ONES[number.to_usize().expect("0..9 by band guard")].to_string();
+        return Ok(ONES[number.to_usize().expect("0..9 by band guard")].to_string());
     }
 
     // if number < 100: t, o = divmod(number, 10)
@@ -339,7 +342,7 @@ fn int_to_word(number: &BigInt) -> String {
             s.push_str(NA);
             s.push_str(ONES[o.to_usize().expect("1..9 by divmod")]);
         }
-        return s;
+        return Ok(s);
     }
 
     // if number < 1000: h, r = divmod(number, 100)
@@ -355,9 +358,9 @@ fn int_to_word(number: &BigInt) -> String {
         s.push_str(HUNDRED);
         if !r.is_zero() {
             s.push_str(NA);
-            s.push_str(&int_to_word(&r));
+            s.push_str(&int_to_word(&r)?);
         }
-        return s;
+        return Ok(s);
     }
 
     // if number < 1000000: t, r = divmod(number, 1000)
@@ -367,15 +370,15 @@ fn int_to_word(number: &BigInt) -> String {
         let (t, r) = number.div_rem(&thousand);
         let mut s = String::new();
         if t > BigInt::one() {
-            s.push_str(&int_to_word(&t));
+            s.push_str(&int_to_word(&t)?);
             s.push(' ');
         }
         s.push_str(THOUSAND);
         if !r.is_zero() {
             s.push_str(NA);
-            s.push_str(&int_to_word(&r));
+            s.push_str(&int_to_word(&r)?);
         }
-        return s;
+        return Ok(s);
     }
 
     // if number < 1000000000: m, r = divmod(number, 1000000)
@@ -385,19 +388,27 @@ fn int_to_word(number: &BigInt) -> String {
         let (m, r) = number.div_rem(&million);
         let mut s = String::new();
         if m > BigInt::one() {
-            s.push_str(&int_to_word(&m));
+            s.push_str(&int_to_word(&m)?);
             s.push(' ');
         }
         s.push_str(MILLION);
         if !r.is_zero() {
             s.push_str(NA);
-            s.push_str(&int_to_word(&r));
+            s.push_str(&int_to_word(&r)?);
         }
-        return s;
+        return Ok(s);
     }
 
-    // return str(number)  -- quirk 1: no words at all from 10**9 up.
-    number.to_string()
+    // Python: `return str(number)` -- quirk 1, now an OverflowError raised
+    // by the maxval check above (#147).
+    unreachable!("values >= 10^9 are rejected by check_maxval")
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#147): there is no reliably
+/// attested Kikuyu scale word above `milioni` to compose 10^9 with.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(9))
 }
 
 /// CPython's `repr(float)` / `str(float)`, which is what KI's `to_cardinal`
@@ -620,7 +631,7 @@ fn cardinal_from_str(n: &str) -> Result<String> {
 
     if let Some((left, right)) = n.split_once('.') {
         // `int(left)` runs before the loop, so a bad left raises first.
-        let mut ret = format!("{} {}", int_to_word(&python_int(left)?), POINTWORD);
+        let mut ret = format!("{} {}", int_to_word(&python_int(left)?)?, POINTWORD);
         for ch in right.chars() {
             let d = ch.to_digit(10).ok_or_else(|| {
                 N2WError::Value(format!(
@@ -637,10 +648,14 @@ fn cardinal_from_str(n: &str) -> Result<String> {
         return Ok(ret.trim().to_string());
     }
 
-    Ok(int_to_word(&python_int(n)?))
+    Ok(int_to_word(&python_int(n)?)?)
 }
 
 impl LangTrait for LangKi {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -727,10 +742,10 @@ impl LangTrait for LangKi {
     /// trailing one, so "njuru " + "ĩmwe" is already tight.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let inner = int_to_word(&value.abs());
+            let inner = int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(int_to_word(value))
+        Ok(int_to_word(value)?)
     }
 
     /// Port of `Num2Word_KI.to_ordinal`: `"wa " + self.to_cardinal(number)`.
@@ -867,7 +882,7 @@ impl LangTrait for LangKi {
         } else {
             &forms.unit[0]
         };
-        let mut result = format!("{} {}", int_to_word(&left), unit);
+        let mut result = format!("{} {}", int_to_word(&left)?, unit);
 
         // `if cents and right:` — module docs, Currency quirk 3.
         if cents && !right.is_zero() {
@@ -882,7 +897,7 @@ impl LangTrait for LangKi {
             result.push_str(&format!(
                 "{}{} {}",
                 separator,
-                int_to_word(&right),
+                int_to_word(&right)?,
                 subunit
             ));
         }

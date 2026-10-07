@@ -205,6 +205,7 @@ class Num2WordsFRTest(TestCase):
 def test_fr_ordinal_drops_trailing_s_of_cents_and_vingts():
     # Regression for num2words2#65 (ports savoirfairelinux/num2words#409).
     from num2words2 import num2words
+
     assert num2words(200, lang="fr", to="ordinal") == "deux centième"
     assert num2words(80, lang="fr", to="ordinal") == "quatre-vingtième"
     assert num2words(280, lang="fr", to="ordinal") == "deux cent quatre-vingtième"
@@ -216,6 +217,7 @@ def test_fr_ordinal_drops_trailing_s_of_cents_and_vingts():
 def test_fr_ordinal_drops_trailing_s_of_big_units():
     # Regression for num2words2#165 (rest of savoirfairelinux/num2words#686).
     from num2words2 import num2words
+
     for lang in ("fr", "fr_BE", "fr_CH", "fr_DZ"):
         assert num2words(2_000_000, lang=lang, to="ordinal") == "deux millionième"
         assert num2words(3 * 10**9, lang=lang, to="ordinal") == "trois milliardième"
@@ -227,4 +229,7 @@ def test_fr_ordinal_drops_trailing_s_of_big_units():
         assert num2words(3 * 10**9, lang=lang) == "trois milliards"
         # Fractions still pluralise the denominator noun after a count > 1.
         assert num2words("1/10000000", lang=lang, to="fraction") == "un dix millionième"
-        assert num2words("3/10000000", lang=lang, to="fraction") == "trois dix millionièmes"
+        assert (
+            num2words("3/10000000", lang=lang, to="fraction")
+            == "trois dix millionièmes"
+        )

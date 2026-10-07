@@ -25,7 +25,7 @@ class Num2WordsMTTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="mt"), "zero")
+        self.assertEqual(num2words(0, lang="mt"), "żero")
         self.assertEqual(num2words(1, lang="mt"), "wieħed")
         self.assertEqual(num2words(2, lang="mt"), "tnejn")
         self.assertEqual(num2words(3, lang="mt"), "tlieta")
@@ -219,11 +219,20 @@ class Num2WordsMTTest(TestCase):
             num2words(999999999, lang="mt"),
             "disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa",
         )
-        self.assertEqual(num2words(1000000000, lang="mt"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="mt"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="mt"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="mt"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="mt"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="mt"), "wieħed biljun")
+        self.assertEqual(
+            num2words(1234567890, lang="mt"),
+            "wieħed biljun tnejn mija tletin erbgħa miljun ħamsa mija sittin sebgħa elf tmienja mija disgħin",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="mt"),
+            "disgħa biljun disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa",
+        )
+        self.assertEqual(num2words(10000000000, lang="mt"), "għaxra biljun")
+        self.assertEqual(
+            num2words(99999999999, lang="mt"),
+            "disgħin disgħa biljun disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -247,36 +256,36 @@ class Num2WordsMTTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="mt"), "zero point wieħed")
-        self.assertEqual(num2words(0.5, lang="mt"), "zero point ħamsa")
-        self.assertEqual(num2words(0.9, lang="mt"), "zero point disgħa")
-        self.assertEqual(num2words(1.1, lang="mt"), "wieħed point wieħed")
-        self.assertEqual(num2words(1.5, lang="mt"), "wieħed point ħamsa")
-        self.assertEqual(num2words(2.5, lang="mt"), "tnejn point ħamsa")
-        self.assertEqual(num2words(3.14, lang="mt"), "tlieta point wieħed erbgħa")
-        self.assertEqual(num2words(10.5, lang="mt"), "għaxra point ħamsa")
+        self.assertEqual(num2words(0.1, lang="mt"), "żero punt wieħed")
+        self.assertEqual(num2words(0.5, lang="mt"), "żero punt ħamsa")
+        self.assertEqual(num2words(0.9, lang="mt"), "żero punt disgħa")
+        self.assertEqual(num2words(1.1, lang="mt"), "wieħed punt wieħed")
+        self.assertEqual(num2words(1.5, lang="mt"), "wieħed punt ħamsa")
+        self.assertEqual(num2words(2.5, lang="mt"), "tnejn punt ħamsa")
+        self.assertEqual(num2words(3.14, lang="mt"), "tlieta punt wieħed erbgħa")
+        self.assertEqual(num2words(10.5, lang="mt"), "għaxra punt ħamsa")
         self.assertEqual(
-            num2words(11.11, lang="mt"), "għaxra wieħed point wieħed wieħed"
+            num2words(11.11, lang="mt"), "għaxra wieħed punt wieħed wieħed"
         )
-        self.assertEqual(num2words(20.2, lang="mt"), "għoxrin point tnejn")
+        self.assertEqual(num2words(20.2, lang="mt"), "għoxrin punt tnejn")
         self.assertEqual(
-            num2words(99.99, lang="mt"), "disgħin disgħa point disgħa disgħa"
+            num2words(99.99, lang="mt"), "disgħin disgħa punt disgħa disgħa"
         )
-        self.assertEqual(num2words(100.01, lang="mt"), "wieħed mija point zero wieħed")
-        self.assertEqual(num2words(100.5, lang="mt"), "wieħed mija point ħamsa")
+        self.assertEqual(num2words(100.01, lang="mt"), "wieħed mija punt żero wieħed")
+        self.assertEqual(num2words(100.5, lang="mt"), "wieħed mija punt ħamsa")
         self.assertEqual(
             num2words(123.45, lang="mt"),
-            "wieħed mija għoxrin tlieta point erbgħa ħamsa",
+            "wieħed mija għoxrin tlieta punt erbgħa ħamsa",
         )
-        self.assertEqual(num2words(1000.5, lang="mt"), "wieħed elf point ħamsa")
+        self.assertEqual(num2words(1000.5, lang="mt"), "wieħed elf punt ħamsa")
         self.assertEqual(
             num2words(1234.56, lang="mt"),
-            "wieħed elf tnejn mija tletin erbgħa point ħamsa sitta",
+            "wieħed elf tnejn mija tletin erbgħa punt ħamsa sitta",
         )
-        self.assertEqual(num2words(10000.01, lang="mt"), "għaxra elf point zero wieħed")
-        self.assertEqual(num2words(-0.5, lang="mt"), "minus zero point ħamsa")
-        self.assertEqual(num2words(-1.5, lang="mt"), "minus wieħed point ħamsa")
-        self.assertEqual(num2words(-10.5, lang="mt"), "minus għaxra point ħamsa")
+        self.assertEqual(num2words(10000.01, lang="mt"), "għaxra elf punt żero wieħed")
+        self.assertEqual(num2words(-0.5, lang="mt"), "minus żero punt ħamsa")
+        self.assertEqual(num2words(-1.5, lang="mt"), "minus wieħed punt ħamsa")
+        self.assertEqual(num2words(-10.5, lang="mt"), "minus għaxra punt ħamsa")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -325,15 +334,15 @@ class Num2WordsMTTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="mt", to="currency", currency="EUR"), "zero ewro"
+            num2words(0, lang="mt", to="currency", currency="EUR"), "żero ewro"
         )
         self.assertEqual(
             num2words(0.01, lang="mt", to="currency", currency="EUR"),
-            "zero ewro wieħed ċenteżmu",
+            "żero ewro wieħed ċenteżmu",
         )
         self.assertEqual(
             num2words(0.5, lang="mt", to="currency", currency="EUR"),
-            "zero ewro ħamsin ċenteżmi",
+            "żero ewro ħamsin ċenteżmi",
         )
         self.assertEqual(
             num2words(1, lang="mt", to="currency", currency="EUR"), "wieħed ewro"
@@ -343,22 +352,22 @@ class Num2WordsMTTest(TestCase):
             "wieħed ewro ħamsin ċenteżmi",
         )
         self.assertEqual(
-            num2words(0, lang="mt", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="mt", to="currency", currency="USD"), "żero dollari"
         )
         self.assertEqual(
             num2words(0.01, lang="mt", to="currency", currency="USD"),
-            "zero dollars wieħed cent",
+            "żero dollari wieħed ċenteżmu",
         )
         self.assertEqual(
             num2words(0.5, lang="mt", to="currency", currency="USD"),
-            "zero dollars ħamsin cents",
+            "żero dollari ħamsin ċenteżmi",
         )
         self.assertEqual(
-            num2words(1, lang="mt", to="currency", currency="USD"), "wieħed dollar"
+            num2words(1, lang="mt", to="currency", currency="USD"), "wieħed dollaru"
         )
         self.assertEqual(
             num2words(1.5, lang="mt", to="currency", currency="USD"),
-            "wieħed dollar ħamsin cents",
+            "wieħed dollaru ħamsin ċenteżmi",
         )
 
     def test_year(self):
@@ -400,7 +409,7 @@ class Num2WordsMTTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="mt"), "zero")
+        self.assertEqual(num2words("0", lang="mt"), "żero")
         self.assertEqual(num2words("1", lang="mt"), "wieħed")
         self.assertEqual(num2words("10", lang="mt"), "għaxra")
         self.assertEqual(num2words("100", lang="mt"), "wieħed mija")
@@ -412,9 +421,8 @@ class Num2WordsMTTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="mt"), "zero")
+        self.assertEqual(num2words(0, lang="mt"), "żero")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mt"), num2words("100", lang="mt"))
         self.assertEqual(num2words(1000, lang="mt"), num2words("1000", lang="mt"))
-

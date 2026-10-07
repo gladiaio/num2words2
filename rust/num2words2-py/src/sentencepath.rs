@@ -13,8 +13,9 @@
 //!   * every inner `num2words(...)` call reproduces the dispatcher's typed
 //!     routing: ints take the integer path, floats take the float path with
 //!     `precision = abs(Decimal(str(v)).as_tuple().exponent)`;
-//!   * `convert_number`'s try/except laddering (currency -> cardinal,
-//!     year -> cardinal, anything -> English cardinal) is reproduced, with
+//!   * `convert_number`'s try/except laddering (year -> cardinal,
+//!     anything -> English cardinal; currency is the exception, #230) is
+//!     reproduced, with
 //!     one refinement: a core error that means "hook not ported yet"
 //!     (NotImplemented without Python's "Currency code ..." message) aborts
 //!     the whole conversion instead, so the shim falls back to the original
@@ -37,6 +38,9 @@
 //! number. A lone `1,000` or `1.000` counts as grouping per the language's
 //! notation (`strnum::number_notation`, #177): `1,000` in en/zh/ja/hi…,
 //! `1.000` in de/es/it/pt… (de "1.000 Leute" is no longer the ordinal "1.").
+//! Languages that group with spaces (fr, ru, pl, cs, sv, …) also accept a
+//! plain ASCII space before exactly three digits: fr "10 000 personnes" is
+//! "dix mille", not "dix zéro" (#233).
 //!
 //! Also deliberate (#152): English clock times `H:MM` get their own pass
 //! ("10:30" -> "ten thirty", "10:00" -> "ten o'clock") instead of being read
@@ -51,50 +55,84 @@
 //! (`1.5`, `3.10.2024`, `Version 2.10`) is left as written: German writes
 //! decimals with a comma, so `1.5` has no standard reading, and the ordinal
 //! pass used to turn it into "Erste5".
+//!
+//! Also deliberate (#192): outside English a clock time `H:MM` is read as
+//! the language's spoken 24-hour time instead of two numbers around a kept
+//! colon ("catorce:treinta"): es "catorce treinta", fr "quatorze heures
+//! trente", de "vierzehn Uhr dreißig" (also without "Uhr"), it "quattordici
+//! e trenta", pt "catorze e trinta", sv "fjorton och trettio", nl "veertien
+//! uur dertig". Other languages, and times with seconds, keep the time as
+//! written. A dotted `H.MM` is a time only with a time context (#193): it
+//! "alle 14.30", sv "kl. 14.30", nl "14.30 uur".
+//!
+//! Also deliberate (#234): a plain or grouped number is read from its digits
+//! as written, like `num2words("3.50")` — the integer path when whole, the
+//! `Decimal` path otherwise — instead of through a Python float, which
+//! dropped trailing zeros ("3.50" -> "three point five", "3.10" -> "three
+//! point one"). Negative numbers and temperatures are read the same way, so
+//! `-5` is "minus five" in every language, not the float path's "minus five
+//! point zero" that the original produced through `abs(float)` (#225).
+//! The sign is read by the converter itself, so the negative word is the
+//! language's own (pt_BR "menos", ca "menys") rather than a small table
+//! that fell back to English "minus" (#226). With `to="ordinal"` only
+//! non-negative whole numbers become ordinals; decimals and negatives stay
+//! cardinal (pt "3,50" was "terceiro", #231).
+//!
+//! Also deliberate (#228): Python's `\d` matched any Unicode digit; here
+//! native decimal digits (Arabic-Indic, Devanagari, fullwidth, …) are mapped
+//! to ASCII before extraction, as `num2words("١٢٣")` does, and every other
+//! numeric character (`m²`, `½`) is plain text — a digit glued to one is left
+//! as written instead of failing the whole call.
+//!
+//! Also deliberate (#229): digit groups joined by '-' or '.' are claimed
+//! before the ordinal/plain passes. A two-group range (`1990-2000`, Y > X,
+//! not a `555-1234` phone number) reads "X to Y" in English, where a bare
+//! hyphen would make a compound ("ninety-two thousand"), and "X - Y" in other
+//! languages. Every other run — `25.12.2023`, `2023-12-25`, `192.168.1.1`,
+//! `v2.0.1`, phone numbers — is left as written rather than read as one
+//! decimal with the rest glued on.
+//!
+//! Also deliberate (#230): a currency amount the language cannot name (no
+//! word for the code, ko "€5") is left as written instead of being read as
+//! a bare number, which made £ and ¥ indistinguishable. `R$`, `US$`, `C$`,
+//! `A$` … are their own dollars rather than USD with the letters glued on,
+//! a symbol after the number (`5€`, `5 €`) counts like one before it, and a
+//! glued percentage (`50%`) is left as written — no converter has a percent
+//! word.
+//!
+//! Also deliberate (#232): the ordinal registry knows the native notations
+//! — ru/uk `1-й` (ru `2-я` feminine; case endings and the ambiguous `-е`
+//! are left as written), pl/cs/sk/da/nb/fi/tr `1.` before a lowercase word
+//! (a dot before a capital is a sentence end; pl agrees with the noun
+//! after it, guessed from its ending: "2. miejsce" -> "drugie miejsce",
+//! while a month keeps "pierwszy maja"), es/pt/it `1°`/`1º`/`2ª`
+//! (feminine for `ª`; pt/it take no `gender=`, so their -o ordinals are
+//! turned -a), and the prefix forms keep their prefix word: ja `第1位` ->
+//! `第一位`, ko `제1회` -> `제일회`, vi `thứ 2` -> `thứ hai` (`thứ nhất`,
+//! `thứ tư`).
+//!
+//! Also deliberate (#235): a number after `.` is capitalised only when the
+//! dot ends a sentence — not when it is the first character (`.5`) or ends
+//! a listed abbreviation (`approx.`, `ca.`, `No.`, `e.g.`, `z.B.`, …).
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use bigdecimal::num_traits::FromPrimitive;
-use num2words2_core::base::Lang;
-use num2words2_core::strnum::{is_space_group_sep, number_notation, parse_grouped, Grouped};
+use std::str::FromStr;
+
+use bigdecimal::BigDecimal;
+use num2words2_core::base::{KwVal, Kwargs, Lang};
+use num2words2_core::strnum::{
+    groups_with_spaces, is_space_group_sep, number_notation, parse_grouped, unicode_digit,
+    Grouped,
+};
 use num2words2_core::{get_lang_by_key, CurrencyValue, FloatValue, N2WError};
 use num_bigint::BigInt;
 use regex::Regex;
 
 // ------------------------------------------------------------------ tables
 
-/// `lang_registry.NEGATIVE_WORDS` — the negative-marker word per language.
-/// Keyed by the raw lang string (Python: `self.negative_words.get(self.lang,
-/// "minus")`), default "minus".
-const NEGATIVE_WORDS: &[(&str, &str)] = &[
-    ("en", "minus"), ("fr", "moins"), ("es", "menos"), ("it", "meno"),
-    ("pt", "menos"), ("de", "minus"), ("nl", "min"), ("sv", "minus"),
-    ("da", "minus"), ("no", "minus"), ("is", "mínus"), ("fi", "miinus"),
-    ("et", "miinus"), ("lt", "minus"), ("lv", "mīnus"),
-    ("ru", "минус"), ("uk", "мінус"), ("be", "мінус"), ("bg", "минус"),
-    ("pl", "minus"), ("cs", "mínus"), ("sk", "mínus"), ("sl", "minus"),
-    ("hr", "minus"), ("sr", "минус"), ("mk", "минус"),
-    ("el", "πλην"), ("ro", "minus"), ("hu", "mínusz"), ("tr", "eksi"),
-    ("az", "mənfi"),
-    ("ar", "سالب"), ("he", "מינוס"), ("fa", "منفی"),
-    ("hi", "माइनस"), ("bn", "মাইনাস"), ("ta", "மைனஸ்"), ("te", "మైనస్"),
-    ("ja", "マイナス"), ("zh", "负"), ("zh-cn", "负"), ("ko", "마이너스"),
-    ("vi", "âm"), ("th", "ติดลบ"),
-    ("id", "minus"), ("ms", "minus"),
-    ("eo", "minus"), ("la", "minus"), ("rm", "minus"),
-];
-
-fn negative_word(lang: &str) -> &'static str {
-    NEGATIVE_WORDS
-        .iter()
-        .find(|(k, _)| *k == lang)
-        .map(|(_, v)| *v)
-        .unwrap_or("minus")
-}
-
 /// `lang_registry._norm_lang` — lowercase/strip, keep as-is when it is a known
-/// ordinal or negative key, else fall back to the base subtag. Used for the
+/// ordinal key, else fall back to the base subtag. Used for the
 /// registry lookups (ordinal/date/month) that Python routes through
 /// `get_ordinal_pattern` / `get_date_patterns` / `get_month_names`.
 fn norm_lang(lang: &str) -> String {
@@ -102,9 +140,7 @@ fn norm_lang(lang: &str) -> String {
     if l.is_empty() {
         return "en".to_string();
     }
-    if ORDINAL_PATTERNS.iter().any(|(k, _)| *k == l)
-        || NEGATIVE_WORDS.iter().any(|(k, _)| *k == l)
-    {
+    if ORDINAL_PATTERNS.iter().any(|(k, _, _)| *k == l) {
         return l;
     }
     l.split(['-', '_']).next().unwrap_or("").to_string()
@@ -145,37 +181,188 @@ fn temp_words(lang: &str) -> Option<(&'static str, &'static str)> {
         .map(|(_, _, w, u)| (*w, *u))
 }
 
-/// `lang_registry.ORDINAL_PATTERNS` — the integer is captured in group 1 (or,
-/// for the CJK bare-form alternations, whichever branch fires). Keyed by the
-/// normalised lang. Compiled WITHOUT the ignore-case flag, matching Python's
-/// `re.finditer(ordinal_pattern, sentence)` (no flags).
-const ORDINAL_PATTERNS: &[(&str, &str)] = &[
-    ("en", r"(\d+)(?:st|nd|rd|th)\b"),
-    ("de", r"(\d+)(?:\.|te|er)\b"),
-    ("nl", r"(\d+)(?:ste|de|e)\b"),
-    ("sv", r"(\d+):(?:a|e)\b"),
-    ("af", r"(\d+)(?:ste|de)\b"),
-    ("fr", r"(\d+)(?:er|ère|e|ème)\b"),
-    ("es", r"(\d+)(?:º|°|ª)\b"),
-    ("pt", r"(\d+)(?:º|°|ª)\b"),
-    ("it", r"(\d+)(?:º|°|ª)\b"),
-    ("ca", r"(\d+)(?:r|n|t|è|a)\b"),
-    ("el", r"(\d+)(?:ος|η|ο|ός)\b"),
-    ("tr", r"(\d+)(?:inci|ıncı|uncu|üncü)\b"),
-    ("az", r"(\d+)[-‐](?:ci|cu|cü|cı)\b"),
-    ("hi", r"(\d+)(?:वां|वीं|वें)\b"),
-    ("bn", r"(\d+)(?:তম|ম|য়|র্থ)\b"),
-    ("ta", r"(\d+)(?:வது|ஆம்)\b"),
-    ("fa", r"(\d+)(?:مین|ام|م)\b"),
-    ("zh", r"第(\d+)"),
-    ("ja", r"第(\d+)|(\d+)番目"),
-    ("ko", r"제(\d+)|(\d+)번째"),
-    ("vi", r"thứ\s*(\d+)"),
-    ("th", r"ที่\s*(\d+)"),
-    ("id", r"ke[-‐](\d+)"),
-    ("ms", r"ke[-‐](\d+)"),
-    ("ia", r"(\d+)me\b"),
+/// `lang_registry.ORDINAL_PATTERNS` — the integer is captured in group 1.
+/// Keyed by the normalised lang; a language may have several. Compiled
+/// WITHOUT the ignore-case flag, matching Python's
+/// `re.finditer(ordinal_pattern, sentence)` (no flags). The [`OrdForm`]
+/// says how the match is read (#232).
+const ORDINAL_PATTERNS: &[(&str, &str, OrdForm)] = &[
+    ("en", r"(\d+)(?:st|nd|rd|th)\b", OrdForm::Suffix),
+    ("de", r"(\d+)(?:\.|te|er)\b", OrdForm::Suffix),
+    ("nl", r"(\d+)(?:ste|de|e)\b", OrdForm::Suffix),
+    ("sv", r"(\d+):(?:a|e)\b", OrdForm::Suffix),
+    ("af", r"(\d+)(?:ste|de)\b", OrdForm::Suffix),
+    ("fr", r"(\d+)(?:er|ère|e|ème)\b", OrdForm::Suffix),
+    ("es", r"(\d+)\.?[º°ª]", OrdForm::Symbol),
+    ("pt", r"(\d+)\.?[º°ª]", OrdForm::Symbol),
+    ("it", r"(\d+)\.?[º°ª]", OrdForm::Symbol),
+    ("ca", r"(\d+)(?:r|n|t|è|a)\b", OrdForm::Suffix),
+    ("el", r"(\d+)(?:ος|η|ο|ός)\b", OrdForm::Suffix),
+    ("tr", r"(\d+)(?:inci|ıncı|uncu|üncü)\b", OrdForm::Suffix),
+    ("az", r"(\d+)[-‐](?:ci|cu|cü|cı)\b", OrdForm::Suffix),
+    ("hi", r"(\d+)(?:वां|वीं|वें)\b", OrdForm::Suffix),
+    ("bn", r"(\d+)(?:তম|ম|য়|র্থ)\b", OrdForm::Suffix),
+    ("ta", r"(\d+)(?:வது|ஆம்)\b", OrdForm::Suffix),
+    ("fa", r"(\d+)(?:مین|ام|م)\b", OrdForm::Suffix),
+    ("zh", r"第(\d+)", OrdForm::Suffix),
+    ("ja", r"第(\d+)", OrdForm::Prefix),
+    ("ja", r"(\d+)番目", OrdForm::Suffix),
+    ("ko", r"제(\d+)", OrdForm::Prefix),
+    ("ko", r"(\d+)번째", OrdForm::Suffix),
+    ("vi", r"thứ\s*(\d+)", OrdForm::Vi),
+    ("th", r"ที่\s*(\d+)", OrdForm::Suffix),
+    ("id", r"ke[-‐](\d+)", OrdForm::Suffix),
+    ("ms", r"ke[-‐](\d+)", OrdForm::Suffix),
+    ("ia", r"(\d+)me\b", OrdForm::Suffix),
+    // "1. miejsce", "1. místo", "1. plads", "1. sırada" (#232).
+    ("pl", r"(\d+)\.", OrdForm::Dot),
+    ("cs", r"(\d+)\.", OrdForm::Dot),
+    ("sk", r"(\d+)\.", OrdForm::Dot),
+    ("da", r"(\d+)\.", OrdForm::Dot),
+    ("nb", r"(\d+)\.", OrdForm::Dot),
+    ("no", r"(\d+)\.", OrdForm::Dot),
+    ("fi", r"(\d+)\.", OrdForm::Dot),
+    ("tr", r"(\d+)\.", OrdForm::Dot),
+    // "1-й", "2-я" (#232).
+    ("ru", r"(\d+)-(\p{Cyrillic}+)", OrdForm::Hyphen),
+    ("uk", r"(\d+)-(\p{Cyrillic}+)", OrdForm::Hyphen),
 ];
+
+/// How an [`ORDINAL_PATTERNS`] match is read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OrdForm {
+    /// The whole match is replaced by the ordinal.
+    Suffix,
+    /// `<n>º` / `<n>ª` (es, pt, it): the ordinal, feminine for `ª`; the
+    /// marker must end the word (`\b` never matched after `°`).
+    Symbol,
+    /// A prefix word that stays (ja `第1位` -> `第一位`, ko `제1회` ->
+    /// `제일회`): only the digits are read, as a cardinal.
+    Prefix,
+    /// vi `thứ 2` -> `thứ hai`: the prefix stays, the number is read
+    /// `nhất`/`tư` for 1/4 and as a cardinal otherwise.
+    Vi,
+    /// `<n>.` followed by a lowercase word (pl `1. miejsce`); a dot before
+    /// a capital or at the end is a sentence end, not an ordinal.
+    Dot,
+    /// ru/uk `<n>-<ending>`: the nominative endings say the gender; any
+    /// other ending (case forms, "-летний") is left as written.
+    Hyphen,
+}
+
+/// How a [`Typ::Ordinal`] is said.
+#[derive(Clone, Copy)]
+enum OrdKind {
+    Masc,
+    Fem,
+    Cardinal,
+    Vi,
+    /// pl ordinal agreeing with the following noun: `PlGender::Fem` /
+    /// `PlGender::Neut` (masculine is plain [`OrdKind::Masc`]).
+    Pl(PlGender),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlGender {
+    Masc,
+    Fem,
+    Neut,
+}
+
+/// The gender of a Polish noun guessed from its ending — a heuristic: -o,
+/// -e, -ę, -um neuter; -a, -ść feminine; otherwise masculine, with the
+/// common masculine -a nouns and feminine consonant nouns listed.
+fn pl_noun_gender(word: &str) -> PlGender {
+    const MASC_A: &[&str] = &[
+        "mężczyzna", "kolega", "kierowca", "poeta", "sędzia", "artysta", "turysta",
+        "specjalista",
+    ];
+    const FEM_CONS: &[&str] = &[
+        "noc", "rzecz", "mysz", "twarz", "sól", "krew", "wieś", "pieśń", "dłoń", "jesień",
+    ];
+    let w = word.to_lowercase();
+    if MASC_A.contains(&w.as_str()) {
+        PlGender::Masc
+    } else if FEM_CONS.contains(&w.as_str()) || w.ends_with('a') || w.ends_with("ść") {
+        PlGender::Fem
+    } else if w.ends_with(['o', 'e', 'ę']) || w.ends_with("um") {
+        PlGender::Neut
+    } else {
+        PlGender::Masc
+    }
+}
+
+/// Index after `i` and any whitespace.
+fn skip_ws(c: &[char], mut i: usize) -> usize {
+    while i < c.len() && c[i].is_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+/// A pl dot ordinal `<digits>.` at `i`: the index after its dot.
+fn pl_ordinal_at(c: &[char], i: usize) -> Option<usize> {
+    let mut j = i;
+    while j < c.len() && c[j].is_ascii_digit() {
+        j += 1;
+    }
+    (j > i && j < c.len() && c[j] == '.').then_some(j + 1)
+}
+
+/// The noun a pl ordinal ending at `e` agrees with: the next word, or —
+/// past a chain of ordinals joined by commas or conjunctions ("1., 2. i 3.
+/// nagroda") — the word after the last one. `None` when no noun follows:
+/// a conjunction or preposition not followed by an ordinal, punctuation,
+/// a digit.
+fn pl_chain_noun(c: &[char], e: usize) -> Option<String> {
+    const CONJ: &[&str] = &["i", "oraz", "lub", "albo", "czy", "a"];
+    const PREP: &[&str] = &[
+        "w", "we", "na", "z", "ze", "do", "od", "po", "za", "o", "przy", "dla", "przez", "u",
+    ];
+    let mut j = skip_ws(c, e);
+    loop {
+        if j < c.len() && c[j] == ',' {
+            j = pl_ordinal_at(c, skip_ws(c, j + 1))?;
+            j = skip_ws(c, j);
+            continue;
+        }
+        let mut k = j;
+        while k < c.len() && c[k].is_alphabetic() {
+            k += 1;
+        }
+        let word: String = c[j..k].iter().collect::<String>().to_lowercase();
+        if word.is_empty() || PREP.contains(&word.as_str()) {
+            return None;
+        }
+        if CONJ.contains(&word.as_str()) {
+            j = skip_ws(c, pl_ordinal_at(c, skip_ws(c, k))?);
+            continue;
+        }
+        return Some(word);
+    }
+}
+
+/// A masculine Polish ordinal in gender `g`. Only the tens and units words
+/// inflect; hundreds and thousands stay ("sto dwudziesta pierwsza"), so the
+/// last (at most two) words ending in -y/-i take adjective endings.
+fn pl_ordinal_gender(masc: &str, g: PlGender) -> String {
+    let mut words: Vec<String> = masc.split(' ').map(str::to_string).collect();
+    let n = words.len();
+    for w in words.iter_mut().skip(n.saturating_sub(2)) {
+        let stem = |k: usize| w[..w.len() - k].to_string();
+        let new = match g {
+            PlGender::Masc => continue,
+            PlGender::Fem if w.ends_with("gi") => format!("{}ga", stem(2)),
+            PlGender::Fem if w.ends_with('i') => format!("{}ia", stem(1)),
+            PlGender::Fem if w.ends_with('y') => format!("{}a", stem(1)),
+            PlGender::Neut if w.ends_with('i') => format!("{}ie", stem(1)),
+            PlGender::Neut if w.ends_with('y') => format!("{}e", stem(1)),
+            _ => continue,
+        };
+        *w = new;
+    }
+    words.join(" ")
+}
 
 /// `lang_registry.MONTH_NAMES` — month-name regex per lang (a non-capturing
 /// group). Keyed by the normalised lang. Substituted into date templates
@@ -277,17 +464,20 @@ struct DatePat {
 struct Res {
     temp_symbol: Regex,
     temps: Vec<(&'static str, Regex)>,
-    ordinals: Vec<(&'static str, Regex)>,
+    ordinals: Vec<(&'static str, Regex, OrdForm)>,
     dates: Vec<(&'static str, Vec<DatePat>)>,
     year: Regex,
     currency: Regex,
+    amount: Regex,
     clock: Regex,
     uhr: Regex,
 }
 
 impl Res {
     fn new() -> Res {
-        let re = |p: &str| Regex::new(p).expect("static regex");
+        // `\d` is ASCII-only here: native digits are normalised to ASCII
+        // before extraction (#228), and any other Unicode digit is text.
+        let re = |p: &str| Regex::new(&ascii_digits(p)).expect("static regex");
 
         let temps = TEMP_PATTERNS
             .iter()
@@ -296,7 +486,7 @@ impl Res {
 
         let ordinals = ORDINAL_PATTERNS
             .iter()
-            .map(|(lang, pat)| (*lang, re(pat)))
+            .map(|(lang, pat, form)| (*lang, re(pat), *form))
             .collect();
 
         // Build concrete date patterns: substitute `{month}` with the
@@ -327,6 +517,7 @@ impl Res {
             dates,
             year: re(r"\b(19\d{2}|20\d{2}|2100)\b"),
             currency: re(r"([$€£¥]\s*)(\d+(?:[.,]\d+)?)"),
+            amount: re(r"\d+(?:[.,]\d+)?"),
             // The trailing boundary is checked in code: a glued "pm" (#178)
             // has no `\b` before it.
             clock: re(r"\b(\d{1,2}):(\d{2})"),
@@ -339,10 +530,14 @@ impl Res {
         self.temps.iter().find(|(k, _)| *k == lang).map(|(_, r)| r)
     }
 
-    /// Ordinal regex — keyed by the normalised lang (`get_ordinal_pattern`).
-    fn ordinal_re(&self, lang: &str) -> Option<&Regex> {
+    /// Ordinal regexes — keyed by the normalised lang (`get_ordinal_pattern`).
+    fn ordinal_res(&self, lang: &str) -> Vec<(&Regex, OrdForm)> {
         let n = norm_lang(lang);
-        self.ordinals.iter().find(|(k, _)| *k == n).map(|(_, r)| r)
+        self.ordinals
+            .iter()
+            .filter(|(k, _, _)| *k == n)
+            .map(|(_, r, f)| (r, *f))
+            .collect()
     }
 
     /// Date patterns — keyed by the normalised lang (`get_date_patterns`).
@@ -358,6 +553,38 @@ impl Res {
     }
 }
 
+/// A pattern with every `\d` narrowed to `[0-9]` (the regex crate's `\d` is
+/// Unicode `Nd`).
+fn ascii_digits(p: &str) -> String {
+    p.replace(r"\d", "[0-9]")
+}
+
+/// The text with native decimal digits (Arabic-Indic, Devanagari,
+/// fullwidth, …) mapped to ASCII, the way `num2words("١٢٣")` reads them, and
+/// the Arabic decimal separator `٫` between two digits mapped to '.'. Char
+/// for char, so positions are unchanged (#228).
+fn normalize_digits(text: &str) -> String {
+    if text.is_ascii() {
+        return text.to_string();
+    }
+    let cs: Vec<char> = text.chars().collect();
+    let digit = |c: char| unicode_digit(c).is_some();
+    cs.iter()
+        .enumerate()
+        .map(|(i, &c)| match unicode_digit(c) {
+            Some(d) => char::from(b'0' + d as u8),
+            None if c == '\u{066B}'
+                && i > 0
+                && digit(cs[i - 1])
+                && cs.get(i + 1).is_some_and(|&n| digit(n)) =>
+            {
+                '.'
+            }
+            None => c,
+        })
+        .collect()
+}
+
 fn res() -> &'static Res {
     static R: OnceLock<Res> = OnceLock::new();
     R.get_or_init(Res::new)
@@ -365,27 +592,40 @@ fn res() -> &'static Res {
 
 // ------------------------------------------------------------- char space
 
+/// How far back (in chars) the context checks before a number look: far
+/// more than any "<month> <day>," prefix, abbreviation or article needs.
+const CONTEXT: usize = 256;
+
 /// The sentence with a byte-offset -> char-offset map, so regex byte spans
 /// become the char positions Python slices with.
 struct Text<'a> {
     s: &'a str,
     chars: Vec<char>,
-    b2c: HashMap<usize, usize>,
+    /// Byte offset -> char offset (only char boundaries are ever looked up).
+    b2c: Vec<usize>,
 }
 
 impl<'a> Text<'a> {
     fn new(s: &'a str) -> Text<'a> {
         let chars: Vec<char> = s.chars().collect();
-        let mut b2c = HashMap::with_capacity(chars.len() + 1);
+        let mut b2c = vec![0; s.len() + 1];
         for (ci, (bi, _)) in s.char_indices().enumerate() {
-            b2c.insert(bi, ci);
+            b2c[bi] = ci;
         }
-        b2c.insert(s.len(), chars.len());
+        b2c[s.len()] = chars.len();
         Text { s, chars, b2c }
     }
 
     fn span(&self, bstart: usize, bend: usize) -> (usize, usize) {
-        (self.b2c[&bstart], self.b2c[&bend])
+        (self.b2c[bstart], self.b2c[bend])
+    }
+
+    /// The (at most [`CONTEXT`]) chars before `pos`, and whether more text
+    /// precedes them. Context checks look only this far back, so they cost
+    /// O(1) per number instead of rebuilding the whole prefix (#256).
+    fn before(&self, pos: usize) -> (String, bool) {
+        let from = pos.saturating_sub(CONTEXT);
+        (self.slice(from, pos), from > 0)
     }
 
     fn slice(&self, a: usize, b: usize) -> String {
@@ -401,22 +641,34 @@ impl<'a> Text<'a> {
 enum Val {
     F(f64),
     I(BigInt),
+    /// A number as written, canonicalised to ASCII (`-5`, `3.50`): read
+    /// through the integer path when whole, else as a `Decimal`, so the
+    /// digits are kept as written (#234).
+    D(String),
 }
 
 enum Typ {
     TempSymbol,
     TempWord,
-    Ordinal,
+    Ordinal(OrdKind),
     OrdinalDate,
     DateNumber,
     Year,
-    Currency(char),
+    /// A currency amount and its ISO code; `None` (a symbol whose code is
+    /// unknown, e.g. `Z$`) leaves the token as written (#230).
+    Currency(Option<&'static str>),
     Number,
     /// English clock time `H:MM` as (hour, minute, am/pm suffix as
     /// written, e.g. "pm", "PM", "p.m.").
     Time(u32, u32, Option<String>),
     /// German clock time `H.MM Uhr` / `H:MM Uhr` as (hour, minute) (#183).
     UhrTime(u32, u32),
+    /// Clock time `H:MM` (or a dotted time in context) in es/fr/it/pt/sv/nl
+    /// as (hour, minute) (#192, #193).
+    Clock(u32, u32),
+    /// A numeric range `X-Y` (#229) as (to, joined with "to"): en reads
+    /// "X to Y", other languages "X - Y".
+    Range(BigInt, bool),
 }
 
 struct Ext {
@@ -471,7 +723,15 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < n {
-        if i > 0 && chars[i - 1].is_ascii_alphanumeric() {
+        if i > 0 && (chars[i - 1].is_ascii_alphanumeric() || chars[i - 1].is_numeric()) {
+            i += 1;
+            continue;
+        }
+        // A hyphen right after a letter of any script is not a minus sign
+        // (he "ו-2" is "and 2", ru "и-2"; #227): skip it so the digits match
+        // on their own. Only the sign test is Unicode-aware; the digit
+        // boundaries stay ASCII so "有5个" still reads its 5.
+        if chars[i] == '-' && i > 0 && is_word_letter(chars[i - 1]) {
             i += 1;
             continue;
         }
@@ -498,7 +758,10 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
                 end = k;
             }
         }
-        let ahead_ok = |e: usize| e >= n || !chars[e].is_ascii_alphanumeric();
+        // A digit glued to a character it cannot read ("5½", "10²") is
+        // left alone rather than read as "five½" (#228).
+        let ahead_ok =
+            |e: usize| e >= n || !(chars[e].is_ascii_alphanumeric() || chars[e].is_numeric());
         let fin = if ahead_ok(end) {
             Some(end)
         } else if end > int_end {
@@ -519,6 +782,19 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
     out
 }
 
+/// A letter or digit that a hyphen after it joins to a word (#227). Scripts
+/// written without spaces between words (Han, kana, Thai, Lao, Khmer,
+/// Myanmar) are excluded: zh "温度是-5度" is minus five.
+fn is_word_letter(c: char) -> bool {
+    c.is_alphanumeric()
+        && !matches!(c as u32,
+            0x3040..=0x30FF | 0x31F0..=0x31FF // kana
+            | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF // Han
+            | 0x0E00..=0x0EFF // Thai, Lao
+            | 0x1000..=0x109F // Myanmar
+            | 0x1780..=0x17FF) // Khmer
+}
+
 /// A number written with thousands separators starting at char `start`
 /// (`1,000,000`, `1.234,56`, `-1 000`; #151). Returns the end of the token and
 /// its value as a plain decimal string. Only tokens that really contain
@@ -528,8 +804,10 @@ fn plain_number_spans(chars: &[char]) -> Vec<(usize, usize)> {
 /// a dot not followed by exactly three digits is left to the later passes:
 /// de "1. Mai" is an ordinal, de "1.5" is kept as written, #183); the
 /// token must not touch an ASCII letter/digit on either side, like pass 7.
-/// ASCII spaces are not taken as separators in running text ("between
-/// 2 100 and"), only the no-break/thin spaces and apostrophes.
+/// ASCII spaces are taken as separators in running text only for the
+/// languages that group with spaces ([`groups_with_spaces`], #233: fr
+/// "10 000 personnes"), and only before exactly three digits; elsewhere
+/// ("between 2 100 and") only the no-break/thin spaces and apostrophes.
 fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, String)> {
     let n = chars.len();
     if start > 0 && chars[start - 1].is_ascii_alphanumeric() {
@@ -541,20 +819,35 @@ fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, Str
     }
     let mut j = start;
     if j < n && chars[j] == '-' {
+        // Not a sign after a letter of any script (#227).
+        if start > 0 && is_word_letter(chars[start - 1]) {
+            return None;
+        }
         j += 1;
     }
     if j >= n || !chars[j].is_ascii_digit() {
         return None;
     }
     let is_part = |c: char| c.is_ascii_digit() || is_part_sep(c);
+    let spaces = groups_with_spaces(lang);
+    // " 000" followed by a non-digit: a space-grouped thousands group.
+    let space_group = |k: usize| {
+        spaces
+            && chars[k] == ' '
+            && k > 0
+            && chars[k - 1].is_ascii_digit()
+            && k + 3 < n
+            && chars[k + 1..k + 4].iter().all(|c| c.is_ascii_digit())
+            && (k + 4 >= n || !chars[k + 4].is_ascii_digit())
+    };
     let mut end = j;
-    while end < n && is_part(chars[end]) {
+    while end < n && (is_part(chars[end]) || space_group(end)) {
         end += 1;
     }
     while end > j && !chars[end - 1].is_ascii_digit() {
         end -= 1;
     }
-    if end < n && chars[end].is_ascii_alphanumeric() {
+    if end < n && (chars[end].is_ascii_alphanumeric() || chars[end].is_numeric()) {
         return None;
     }
     let tok: String = chars[start..end].iter().collect();
@@ -578,6 +871,81 @@ fn grouped_token(chars: &[char], start: usize, lang: &str) -> Option<(usize, Str
 /// A separator [`grouped_token`] reads inside a number in running text.
 fn is_part_sep(c: char) -> bool {
     c == '.' || c == ',' || (c != ' ' && is_space_group_sep(c))
+}
+
+/// The currency symbol before a number starting at char `i` (`$5`, `€ 5`,
+/// `R$ 3,50`): (start of the token, ISO code). A letter-prefixed dollar is
+/// that country's dollar (`R$` BRL, `US$` USD, `C$` CAD, `A$` AUD, …), not
+/// USD with the letters glued onto the words; any other letter run before
+/// the symbol gives `None`, which leaves the token as written (#230).
+fn currency_before(chars: &[char], i: usize) -> Option<(usize, Option<&'static str>)> {
+    let mut k = i;
+    while k > 0 && chars[k - 1].is_whitespace() {
+        k -= 1;
+    }
+    let sym = *chars.get(k.checked_sub(1)?)?;
+    let code = symbol_code(sym)?;
+    let mut p = k - 1;
+    while p > 0 && chars[p - 1].is_ascii_alphabetic() {
+        p -= 1;
+    }
+    if p == k - 1 {
+        return Some((p, Some(code)));
+    }
+    let prefix: String = chars[p..k - 1].iter().collect();
+    let code = match (sym, prefix.as_str()) {
+        _ if p > 0 && chars[p - 1].is_alphanumeric() => None,
+        ('$', "US") => Some("USD"),
+        ('$', "R") => Some("BRL"),
+        ('$', "C" | "CA") => Some("CAD"),
+        ('$', "A" | "AU") => Some("AUD"),
+        ('$', "NZ") => Some("NZD"),
+        ('$', "HK") => Some("HKD"),
+        ('$', "S") => Some("SGD"),
+        ('$', "MX") => Some("MXN"),
+        _ => None,
+    };
+    Some((p, code))
+}
+
+/// A currency symbol after a number ending at char `e` (`5€`, `5 €`):
+/// (end of the token, ISO code). The symbol must end the word and must not
+/// open the next amount (`5 $10`).
+fn currency_after(chars: &[char], e: usize) -> Option<(usize, &'static str)> {
+    let n = chars.len();
+    let mut k = e;
+    if k < n && matches!(chars[k], ' ' | '\u{00A0}' | '\u{202F}') {
+        k += 1;
+    }
+    let code = symbol_code(*chars.get(k)?)?;
+    let mut after = k + 1;
+    // The symbol ends the word: whitespace or punctuation follows ("5 €₹"
+    // is not an amount).
+    let ends = |c: char| {
+        c.is_whitespace()
+            || (c.is_ascii_punctuation() && !matches!(c, '$' | '%'))
+            || matches!(c, '»' | '”' | '’' | '…')
+    };
+    if after < n && !ends(chars[after]) {
+        return None;
+    }
+    while after < n && chars[after].is_whitespace() {
+        after += 1;
+    }
+    if after < n && chars[after].is_ascii_digit() {
+        return None;
+    }
+    Some((k + 1, code))
+}
+
+fn symbol_code(c: char) -> Option<&'static str> {
+    match c {
+        '$' => Some("USD"),
+        '€' => Some("EUR"),
+        '£' => Some("GBP"),
+        '¥' => Some("JPY"),
+        _ => None,
+    }
 }
 
 /// An am/pm marker right after a clock time ending at char `at` (#178):
@@ -626,12 +994,12 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         let g0 = m.get(0).unwrap();
         let (s, e) = t.span(g0.start(), g0.end());
         if !overlap(&used, s, e) {
-            let v = pyfloat(m.get(1).unwrap().as_str())?;
+            let v = m.get(1).unwrap().as_str().replace(',', ".");
             exts.push(Ext {
                 start: s,
                 end: e,
                 text: g0.as_str().to_string(),
-                val: Val::F(v),
+                val: Val::D(v),
                 typ: Typ::TempSymbol,
             });
             mark(&mut used, s, e);
@@ -644,12 +1012,12 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
             if !overlap(&used, s, e) {
-                let v = pyfloat(m.get(1).unwrap().as_str())?;
+                let v = m.get(1).unwrap().as_str().replace(',', ".");
                 exts.push(Ext {
                     start: s,
                     end: e,
                     text: g0.as_str().to_string(),
-                    val: Val::F(v),
+                    val: Val::D(v),
                     typ: Typ::TempWord,
                 });
                 mark(&mut used, s, e);
@@ -669,23 +1037,39 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
         match grouped_token(&t.chars, i, lang) {
             Some((e, canonical)) if !overlap(&used, i, e) => {
-                // `[$€£¥]\s*` immediately before the number.
-                let mut k = i;
-                while k > 0 && t.chars[k - 1].is_whitespace() {
-                    k -= 1;
+                // A currency symbol right before or after the number
+                // ("$1,000", "5 000 000 €", #230); "1,000%" is left as
+                // written.
+                if e < n && t.chars[e] == '%' {
+                    mark(&mut used, i, e + 1);
+                    i = e + 1;
+                    continue;
                 }
-                let sym = (k > 0 && !canonical.starts_with('-'))
-                    .then(|| t.chars[k - 1])
-                    .filter(|c| matches!(c, '$' | '€' | '£' | '¥'));
-                let (s, typ) = match sym {
-                    Some(c) if !overlap(&used, k - 1, i) => (k - 1, Typ::Currency(c)),
-                    _ => (i, Typ::Number),
+                let neg = canonical.starts_with('-');
+                let cur = (!neg)
+                    .then(|| currency_before(&t.chars, i))
+                    .flatten()
+                    .filter(|&(k, _)| !overlap(&used, k, i))
+                    .map(|(k, code)| (k, e, code))
+                    .or_else(|| {
+                        (!neg)
+                            .then(|| currency_after(&t.chars, e))
+                            .flatten()
+                            .map(|(k, code)| (i, k, Some(code)))
+                    });
+                let (s, e, typ) = match cur {
+                    Some((s, e, code)) => (s, e, Typ::Currency(code)),
+                    None => (i, e, Typ::Number),
+                };
+                let val = match typ {
+                    Typ::Currency(_) => Val::F(pyfloat(&canonical)?),
+                    _ => Val::D(canonical),
                 };
                 exts.push(Ext {
                     start: s,
                     end: e,
                     text: t.slice(s, e),
-                    val: Val::F(pyfloat(&canonical)?),
+                    val,
                     typ,
                 });
                 mark(&mut used, s, e);
@@ -781,14 +1165,199 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
+    // 2d'. Clock times outside English (#192): "H:MM" is read as the
+    // language's spoken time (es "catorce treinta", fr "quatorze heures
+    // trente", de "vierzehn Uhr dreißig", it "quattordici e trenta", …)
+    // instead of two numbers around a kept colon ("catorce:treinta").
+    // Languages with no verified rule keep the time as written, and so does
+    // every language for a time with seconds ("14:30:45"). "H.MM" is a time
+    // only where the dot is the language's time notation and the context
+    // says so (#193): it after "alle"/"dalle"/"le"/"ore", sv after "kl."/
+    // "klockan", nl before "uur"; elsewhere it stays a decimal.
+    let base = lang.trim().to_lowercase().split(['-', '_']).next().unwrap_or("").to_string();
+    if base != "en" && !base.is_empty() {
+        let c = &t.chars;
+        let ruled = matches!(base.as_str(), "es" | "fr" | "de" | "it" | "pt" | "sv" | "nl");
+        let prev_word = |s: usize| -> String {
+            let mut k = s;
+            while k > 0 && c[k - 1].is_whitespace() {
+                k -= 1;
+            }
+            let e = k;
+            while k > 0 && (c[k - 1].is_alphabetic() || c[k - 1] == '.') {
+                k -= 1;
+            }
+            c[k..e].iter().filter(|&&ch| ch != '.').collect::<String>().to_lowercase()
+        };
+        // A trailing nl "uur" (with or without a space), claimed with the
+        // time so it is not read twice ("veertien uur dertig uur").
+        let uur_after = |e: usize| -> Option<usize> {
+            let mut k = e;
+            while k < n && c[k] == ' ' {
+                k += 1;
+            }
+            let w: String = c[k..n.min(k + 3)].iter().collect();
+            let after = k + 3;
+            (w == "uur" && (after >= n || !c[after].is_alphanumeric())).then_some(after)
+        };
+        let mut i = 0;
+        while i < n {
+            let d1 = (i..n.min(i + 2)).take_while(|&k| c[k].is_ascii_digit()).count();
+            let sep = i + d1;
+            if d1 == 0
+                || (i > 0 && (c[i - 1].is_alphanumeric() || matches!(c[i - 1], '.' | ':' | ',')))
+                || sep + 2 >= n
+                || !matches!(c[sep], ':' | '.')
+                || !(c[sep + 1].is_ascii_digit() && c[sep + 2].is_ascii_digit())
+            {
+                i += d1.max(1);
+                continue;
+            }
+            let mut e = sep + 3;
+            if e < n && c[e].is_ascii_digit() {
+                i = e;
+                continue;
+            }
+            let colon = c[sep] == ':';
+            let seconds = colon
+                && e + 2 < n
+                && c[e] == ':' && c[e + 1].is_ascii_digit() && c[e + 2].is_ascii_digit()
+                && (e + 3 >= n || !c[e + 3].is_alphanumeric());
+            let h: u32 = c[i..sep].iter().collect::<String>().parse().unwrap_or(99);
+            let mi: u32 = c[sep + 1..e].iter().collect::<String>().parse().unwrap_or(99);
+            if seconds {
+                // "14:30:45" is left as written in every language.
+                if !overlap(&used, i, e + 3) {
+                    mark(&mut used, i, e + 3);
+                }
+                i = e + 3;
+                continue;
+            }
+            // The time must end at a word boundary, and a dotted one must
+            // not run on into a date ("3.10.2024").
+            let uur = (base == "nl").then(|| uur_after(e)).flatten();
+            let runs_on = uur.is_none()
+                && e < n
+                && (c[e].is_alphanumeric()
+                    || (matches!(c[e], '.' | ':' | ',') && e + 1 < n && c[e + 1].is_ascii_digit()));
+            if runs_on || h > 23
+                || mi > 59
+            {
+                i = e;
+                continue;
+            }
+            if !colon {
+                let ctx_ok = match base.as_str() {
+                    "it" => matches!(prev_word(i).as_str(), "alle" | "dalle" | "le" | "ore"),
+                    "sv" => matches!(prev_word(i).as_str(), "kl" | "klockan"),
+                    "nl" => uur.is_some(),
+                    _ => false,
+                };
+                if !ctx_ok {
+                    i = e;
+                    continue;
+                }
+            }
+            if let Some(k) = uur {
+                e = k;
+            }
+            if overlap(&used, i, e) {
+                i = e;
+                continue;
+            }
+            if ruled {
+                exts.push(Ext {
+                    start: i,
+                    end: e,
+                    text: t.slice(i, e),
+                    val: Val::I(BigInt::from(h)),
+                    typ: if base == "de" { Typ::UhrTime(h, mi) } else { Typ::Clock(h, mi) },
+                });
+            }
+            mark(&mut used, i, e);
+            i = e;
+        }
+    }
+
+    // 2e. Digit groups joined by '-' or '.' (#229), which the later passes
+    // would read as one compound number ("1990-2000" -> "...ninety-two
+    // thousand") or a decimal with the rest glued on ("192.168.1.1"). A
+    // two-group dash run that looks like a range (Y > X, no leading zero,
+    // not a 3-4 phone number) is read "X to Y" in English and "X - Y"
+    // elsewhere; every other run — dates (25.12.2023, 2023-12-25), IP
+    // addresses, versions (v2.0.1), phone numbers (555-1234) — is claimed
+    // and left as written.
+    let mut i = 0;
+    while i < n {
+        let c = &t.chars;
+        if !c[i].is_ascii_digit() || (i > 0 && c[i - 1].is_ascii_digit()) {
+            i += 1;
+            continue;
+        }
+        let digits_from = |mut k: usize| {
+            while k < n && c[k].is_ascii_digit() {
+                k += 1;
+            }
+            k
+        };
+        let mut groups = vec![(i, digits_from(i))];
+        let mut j = groups[0].1;
+        let sep = (j + 1 < n && matches!(c[j], '-' | '.') && c[j + 1].is_ascii_digit())
+            .then(|| c[j]);
+        if let Some(sp) = sep {
+            while j + 1 < n && c[j] == sp && c[j + 1].is_ascii_digit() {
+                let k = digits_from(j + 1);
+                groups.push((j + 1, k));
+                j = k;
+            }
+        }
+        let end = j;
+        let enough = match sep {
+            Some('-') => groups.len() >= 2,
+            _ => groups.len() >= 3,
+        };
+        // Inside a longer numeric token ("1.5-3", "-5-3", "1-2.5"): leave it
+        // to the other passes.
+        let num_sep = |k: usize| matches!(c[k], '-' | '.' | ',');
+        let mid_token = (i > 0 && num_sep(i - 1))
+            || (end + 1 < n && num_sep(end) && c[end + 1].is_ascii_digit());
+        if !enough || mid_token || overlap(&used, i, end) {
+            i = end;
+            continue;
+        }
+        let glued = (i > 0 && c[i - 1].is_alphanumeric())
+            || (end < n && c[end].is_alphanumeric());
+        let range = (sep == Some('-') && groups.len() == 2 && !glued)
+            .then(|| {
+                let txt = |(a, b): (usize, usize)| t.slice(a, b);
+                let (x, y) = (txt(groups[0]), txt(groups[1]));
+                let lead0 = |g: &str| g.len() > 1 && g.starts_with('0');
+                let phone = x.len() == 3 && y.len() == 4;
+                let (xv, yv) = (pyint(&x).ok()?, pyint(&y).ok()?);
+                (!lead0(&x) && !lead0(&y) && !phone && yv > xv).then_some((xv, yv))
+            })
+            .flatten();
+        if let Some((xv, yv)) = range {
+            exts.push(Ext {
+                start: i,
+                end,
+                text: t.slice(i, end),
+                val: Val::I(xv),
+                typ: Typ::Range(yv, norm_lang(lang) == "en"),
+            });
+        }
+        mark(&mut used, i, end);
+        i = end;
+    }
+
     // 3. Standalone ordinals (registry-driven) — before dates. The ordinal
     // surface form owns its full span (digit + suffix); the date pass then
     // only fires where no ordinal was consumed. The integer is the first
     // non-empty capture group (CJK forms alternate which branch fills it).
-    if let Some(ore) = r.ordinal_re(lang) {
+    for (ore, form) in r.ordinal_res(lang) {
         for m in ore.captures_iter(t.s) {
             let g0 = m.get(0).unwrap();
-            let (s, e) = t.span(g0.start(), g0.end());
+            let (mut s, mut e) = t.span(g0.start(), g0.end());
             if overlap(&used, s, e) {
                 continue;
             }
@@ -797,26 +1366,96 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
             if g0.as_str().ends_with('.') && e < n && t.chars[e].is_ascii_digit() {
                 continue;
             }
-            let grp = (1..m.len())
-                .filter_map(|i| m.get(i))
-                .map(|mm| mm.as_str())
-                .find(|x| !x.is_empty());
-            let grp = match grp {
-                Some(x) => x,
-                None => continue,
+            let g1 = m.get(1).unwrap();
+            let c = &t.chars;
+            // The forms added for #232 check their boundaries by hand: the
+            // number must not continue a word or a number, the marker must
+            // end the word.
+            if form != OrdForm::Suffix {
+                let (ds, _) = t.span(g1.start(), g1.end());
+                if ds == s
+                    && ds > 0
+                    && (c[ds - 1].is_ascii_alphanumeric()
+                        || matches!(c[ds - 1], '.' | ',' | '-'))
+                {
+                    continue;
+                }
+                if matches!(form, OrdForm::Symbol | OrdForm::Hyphen)
+                    && e < n
+                    && c[e].is_alphanumeric()
+                {
+                    continue;
+                }
+            }
+            let kind = match form {
+                OrdForm::Suffix => OrdKind::Masc,
+                OrdForm::Symbol if g0.as_str().contains('ª') => OrdKind::Fem,
+                OrdForm::Symbol => OrdKind::Masc,
+                OrdForm::Dot => {
+                    let pl = norm_lang(lang) == "pl";
+                    let mut k = e;
+                    while k < n && c[k].is_whitespace() {
+                        k += 1;
+                    }
+                    // pl "1., 2. i 3. nagroda": a comma may follow when
+                    // another ordinal comes next.
+                    let comma_chain = pl && e < n && c[e] == ',' && pl_ordinal_at(c, skip_ws(c, e + 1)).is_some();
+                    if !comma_chain && (k == e || k >= n || !c[k].is_lowercase()) {
+                        continue;
+                    }
+                    if pl {
+                        // Agree with the noun that follows ("2. miejsce" ->
+                        // "drugie miejsce"), past coordinated ordinals
+                        // ("1. i 2. miejsce" -> "pierwsze i drugie"); a
+                        // month keeps the masculine date form ("1. maja"
+                        // -> "pierwszy maja").
+                        let word = pl_chain_noun(c, e).unwrap_or_default();
+                        let month = r.months_re(lang).is_some_and(|mr| {
+                            Regex::new(&format!("(?i)^{}$", mr))
+                                .is_ok_and(|re| re.is_match(&word))
+                        });
+                        match pl_noun_gender(&word) {
+                            g if !month && g != PlGender::Masc => OrdKind::Pl(g),
+                            _ => OrdKind::Masc,
+                        }
+                    } else {
+                        OrdKind::Masc
+                    }
+                }
+                OrdForm::Hyphen => {
+                    let ending = m.get(2).unwrap().as_str();
+                    match (norm_lang(lang).as_str(), ending) {
+                        ("ru", "й" | "ый" | "ий" | "ой") | ("uk", "й" | "ий") => OrdKind::Masc,
+                        ("ru", "я" | "ая" | "ья") => OrdKind::Fem,
+                        // Case forms ("-го", "-м"), "-е" (neuter "1-е место"
+                        // or plural "90-е годы"), "-летний"…: as written.
+                        _ => {
+                            mark(&mut used, s, e);
+                            continue;
+                        }
+                    }
+                }
+                OrdForm::Prefix | OrdForm::Vi => {
+                    (s, e) = t.span(g1.start(), g1.end());
+                    if form == OrdForm::Vi {
+                        OrdKind::Vi
+                    } else {
+                        OrdKind::Cardinal
+                    }
+                }
             };
             // Python `int(groups[0])`; a parse failure is a `ValueError`
             // -> `continue`, not an abort.
-            let v = match grp.parse::<BigInt>() {
+            let v = match g1.as_str().parse::<BigInt>() {
                 Ok(v) => v,
                 Err(_) => continue,
             };
             exts.push(Ext {
                 start: s,
                 end: e,
-                text: g0.as_str().to_string(),
+                text: t.slice(s, e),
                 val: Val::I(v),
-                typ: Typ::Ordinal,
+                typ: Typ::Ordinal(kind),
             });
             mark(&mut used, s, e);
         }
@@ -873,14 +1512,15 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     // active language (registry month list, so it extends with each new lang).
     if let Some(months) = r.months_re(lang) {
         let year_ctx =
-            Regex::new(&format!(r"(?i){}\s+\d+,\s*$", months)).expect("year-ctx regex");
+            Regex::new(&ascii_digits(&format!(r"(?i){}\s+\d+,\s*$", months)))
+                .expect("year-ctx regex");
         for m in r.year.captures_iter(t.s) {
             let g0 = m.get(0).unwrap();
             let (s, e) = t.span(g0.start(), g0.end());
             if overlap(&used, s, e) {
                 continue;
             }
-            let before = t.slice(0, s);
+            let (before, _) = t.before(s);
             if year_ctx.is_match(before.trim()) {
                 exts.push(Ext {
                     start: s,
@@ -894,28 +1534,51 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
         }
     }
 
-    // 6. Currency.
+    // 6. Currency: a symbol before the number ("$5", "R$ 3,50"), then
+    // after it ("5€", "5 €", #230). A percentage glued to its number
+    // ("50%") is claimed and left as written: no converter has a word for
+    // it.
     for m in r.currency.captures_iter(t.s) {
-        let g0 = m.get(0).unwrap();
-        let (s, e) = t.span(g0.start(), g0.end());
+        let g2 = m.get(2).unwrap();
+        let (i, e) = t.span(g2.start(), g2.end());
+        let Some((s, code)) = currency_before(&t.chars, i) else {
+            continue;
+        };
         if !overlap(&used, s, e) {
-            let v = pyfloat(m.get(2).unwrap().as_str())?;
-            let sym = m
-                .get(1)
-                .unwrap()
-                .as_str()
-                .trim()
-                .chars()
-                .next()
-                .unwrap_or('$');
+            let v = pyfloat(g2.as_str())?;
             exts.push(Ext {
                 start: s,
                 end: e,
-                text: g0.as_str().to_string(),
+                text: t.slice(s, e),
                 val: Val::F(v),
-                typ: Typ::Currency(sym),
+                typ: Typ::Currency(code),
             });
             mark(&mut used, s, e);
+        }
+    }
+    for m in r.amount.captures_iter(t.s) {
+        let g0 = m.get(0).unwrap();
+        let (s, e) = t.span(g0.start(), g0.end());
+        let c = &t.chars;
+        let num_sep = |k: usize| matches!(c[k], '-' | '.' | ',');
+        if (s > 0 && (c[s - 1].is_ascii_alphanumeric() || num_sep(s - 1)))
+            || overlap(&used, s, e)
+        {
+            continue;
+        }
+        if e < n && c[e] == '%' {
+            mark(&mut used, s, e + 1);
+            continue;
+        }
+        if let Some((end, code)) = currency_after(c, e) {
+            exts.push(Ext {
+                start: s,
+                end,
+                text: t.slice(s, end),
+                val: Val::F(pyfloat(g0.as_str())?),
+                typ: Typ::Currency(Some(code)),
+            });
+            mark(&mut used, s, end);
         }
     }
 
@@ -923,12 +1586,11 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     for (s, e) in plain_number_spans(&t.chars) {
         if !overlap(&used, s, e) {
             let text = t.slice(s, e);
-            let v = pyfloat(&text)?;
             exts.push(Ext {
                 start: s,
                 end: e,
+                val: Val::D(text.replace(',', ".")),
                 text,
-                val: Val::F(v),
                 typ: Typ::Number,
             });
             mark(&mut used, s, e);
@@ -1006,6 +1668,7 @@ impl Val {
     fn f(&self) -> f64 {
         match self {
             Val::F(v) => *v,
+            Val::D(s) => s.parse().unwrap_or(0.0),
             Val::I(_) => 0.0, // unreachable by construction
         }
     }
@@ -1013,7 +1676,7 @@ impl Val {
     fn i(&self) -> &BigInt {
         match self {
             Val::I(n) => n,
-            Val::F(_) => unreachable_bigint(), // unreachable by construction
+            _ => unreachable_bigint(), // unreachable by construction
         }
     }
 }
@@ -1030,10 +1693,34 @@ fn cardinal_float(l: &(dyn Lang + Sync), v: f64) -> Result<String, N2WError> {
     l.cardinal_float_entry(&FloatValue::Float { value: v, precision: prec }, None)
 }
 
-/// `num2words(v, to="ordinal", lang=...)` with a float.
-fn ordinal_float(l: &(dyn Lang + Sync), v: f64) -> Result<String, N2WError> {
-    let (_, prec) = py_float_repr(v)?;
-    l.ordinal_float_entry(&FloatValue::Float { value: v, precision: prec })
+/// `num2words("3.50", lang=...)`: a whole number takes the integer path, a
+/// decimal the `Decimal` path, which keeps its digits as written ("three
+/// point five zero", #234). `s` is canonical ASCII (`-?\d+(\.\d+)?`).
+fn cardinal_str(l: &(dyn Lang + Sync), s: &str) -> Result<String, N2WError> {
+    if !s.contains('.') {
+        return l.to_cardinal(&pyint(s)?);
+    }
+    let value = BigDecimal::from_str(s)
+        .map_err(|_| N2WError::Fallback("sentence: decimal parse".into()))?;
+    let precision = value.as_bigint_and_exponent().1.unsigned_abs() as u32;
+    l.cardinal_float_entry(&FloatValue::Decimal { value, precision }, None)
+}
+
+/// A [`Val::D`] split into (is negative, magnitude). "-0" is not negative.
+fn split_sign(val: &Val) -> Result<(bool, &str), N2WError> {
+    match val {
+        Val::D(s) => match s.strip_prefix('-') {
+            Some(m) => Ok((m.chars().any(|c| c.is_ascii_digit() && c != '0'), m)),
+            None => Ok((false, s.as_str())),
+        },
+        _ => Err(N2WError::Fallback("sentence: number value".into())),
+    }
+}
+
+/// A [`Val::D`] with "-0" normalised to "0".
+fn signed(val: &Val) -> Result<String, N2WError> {
+    let (neg, num) = split_sign(val)?;
+    Ok(if neg { format!("-{}", num) } else { num.to_string() })
 }
 
 /// `num2words(v, to="currency", currency=code, lang=...)` with a float:
@@ -1055,6 +1742,7 @@ fn fallback_en(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
     match val {
         Val::I(n) => ctx.en.to_cardinal(n),
         Val::F(v) => cardinal_float(ctx.en, *v),
+        Val::D(s) => cardinal_str(ctx.en, s),
     }
 }
 
@@ -1064,6 +1752,7 @@ fn cardinal_own(ctx: &Ctx, val: &Val) -> Result<String, N2WError> {
     match val {
         Val::I(n) => l.to_cardinal(n),
         Val::F(v) => cardinal_float(l, *v),
+        Val::D(s) => cardinal_str(l, s),
     }
 }
 
@@ -1084,40 +1773,48 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
         Typ::TempSymbol => {
             let (temp_word, celsius_word) =
                 temp_words(ctx.raw).unwrap_or(("degrees", "Celsius"));
-            let v = val.f();
+            let num = signed(val)?;
             let l = ctx.lang()?;
-            if v < 0.0 {
-                let neg = negative_word(ctx.raw);
-                Ok(format!(
-                    "{} {} {} {}",
-                    neg,
-                    cardinal_float(l, v.abs())?,
-                    temp_word,
-                    celsius_word
-                ))
-            } else {
-                Ok(format!(
-                    "{} {} {}",
-                    cardinal_float(l, v)?,
-                    temp_word,
-                    celsius_word
-                ))
+            Ok(format!("{} {} {}", cardinal_str(l, &num)?, temp_word, celsius_word))
+        }
+        Typ::TempWord => cardinal_str(ctx.lang()?, &signed(val)?),
+        Typ::Ordinal(kind) => {
+            let l = ctx.lang()?;
+            let n = val.i();
+            match kind {
+                OrdKind::Masc => l.to_ordinal(n),
+                OrdKind::Pl(g) => Ok(pl_ordinal_gender(&l.to_ordinal(n)?, *g)),
+                OrdKind::Cardinal => l.to_cardinal(n),
+                // Vietnamese: "thứ nhất", "thứ tư", else the cardinal.
+                OrdKind::Vi if *n == BigInt::from(1) => Ok("nhất".to_string()),
+                OrdKind::Vi if *n == BigInt::from(4) => Ok("tư".to_string()),
+                OrdKind::Vi => l.to_cardinal(n),
+                OrdKind::Fem => {
+                    let kw = Kwargs(vec![("gender".into(), KwVal::Str("f".into()))]);
+                    match l.to_ordinal_kw(n, &kw) {
+                        Ok(s) => Ok(s),
+                        Err(e) if !matches!(e, N2WError::Fallback(_)) => Err(e),
+                        // pt/it take no gender=: their ordinals are
+                        // masculine words in -o, each of which turns -a
+                        // ("vigésimo primeiro" -> "vigésima primeira").
+                        Err(_) => {
+                            let m = l.to_ordinal(n)?;
+                            let base = norm_lang(ctx.raw);
+                            if matches!(base.as_str(), "pt" | "it")
+                                && m.split(' ').all(|w| w.ends_with('o'))
+                            {
+                                Ok(m.split(' ')
+                                    .map(|w| format!("{}a", &w[..w.len() - 1]))
+                                    .collect::<Vec<_>>()
+                                    .join(" "))
+                            } else {
+                                Ok(m)
+                            }
+                        }
+                    }
+                }
             }
         }
-        Typ::TempWord => {
-            let v = val.f();
-            let l = ctx.lang()?;
-            if v < 0.0 {
-                Ok(format!(
-                    "{} {}",
-                    negative_word(ctx.raw),
-                    cardinal_float(l, v.abs())?
-                ))
-            } else {
-                cardinal_float(l, v)
-            }
-        }
-        Typ::Ordinal => ctx.lang()?.to_ordinal(val.i()),
         Typ::OrdinalDate => {
             if ctx.raw == "fr" && *val.i() == BigInt::from(1) {
                 return Ok("premier".to_string());
@@ -1162,6 +1859,88 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 m => format!("{} Uhr {}", hour, l.to_cardinal(&BigInt::from(m))?),
             })
         }
+        Typ::Clock(h, minute) => {
+            let l = ctx.lang()?;
+            let card = |x: u32| l.to_cardinal(&BigInt::from(x));
+            let (h, m) = (*h, *minute);
+            let base = ctx.raw.trim().to_lowercase();
+            Ok(match base.split(['-', '_']).next().unwrap_or("") {
+                // RAE: "las trece treinta" / "las trece y veinte", hours
+                // read "cero, una, dos…", full hours "las catorce horas".
+                "es" => {
+                    let hour = match h {
+                        1 => "una".to_string(),
+                        21 => "veintiuna".to_string(),
+                        h => card(h)?,
+                    };
+                    match m {
+                        0 if h == 1 => hour,
+                        0 => format!("{} horas", hour),
+                        m if m < 10 => format!("{} y {}", hour, card(m)?),
+                        m => format!("{} {}", hour, card(m)?),
+                    }
+                }
+                // "quatorze heures trente", "une heure", "vingt-et-une
+                // heures", "zéro heure dix" (heure is feminine, singular
+                // below two). The minutes count "minutes" (feminine) too:
+                // "quatorze heures vingt-et-une", "vingt-et-une heures une".
+                "fr" => {
+                    let fem = |x: u32| -> Result<String, N2WError> {
+                        let mut w = card(x)?;
+                        if w.ends_with("un") {
+                            w.push('e');
+                        }
+                        Ok(w)
+                    };
+                    let hour = fem(h)?;
+                    let unit = if h < 2 { "heure" } else { "heures" };
+                    match m {
+                        0 => format!("{} {}", hour, unit),
+                        m => format!("{} {} {}", hour, unit, fem(m)?),
+                    }
+                }
+                // "quattordici e trenta", "l'una e venti", "le quattordici".
+                "it" => {
+                    let hour = if h == 1 { "una".to_string() } else { card(h)? };
+                    match m {
+                        0 => hour,
+                        m => format!("{} e {}", hour, card(m)?),
+                    }
+                }
+                // "catorze e trinta", "duas e trinta", "catorze horas"
+                // (hora is feminine).
+                "pt" => {
+                    let hour = match h {
+                        1 => "uma".to_string(),
+                        2 => "duas".to_string(),
+                        21 => format!("{} e uma", card(20)?),
+                        22 => format!("{} e duas", card(20)?),
+                        h => card(h)?,
+                    };
+                    match m {
+                        0 if h == 1 => format!("{} hora", hour),
+                        0 => format!("{} horas", hour),
+                        m => format!("{} e {}", hour, card(m)?),
+                    }
+                }
+                // "fjorton och trettio", "klockan fjorton".
+                "sv" => match m {
+                    0 => card(h)?,
+                    m => format!("{} och {}", card(h)?, card(m)?),
+                },
+                // "veertien uur dertig", "veertien uur".
+                "nl" => match m {
+                    0 => format!("{} uur", card(h)?),
+                    m => format!("{} uur {}", card(h)?, card(m)?),
+                },
+                _ => return Err(N2WError::Value("no clock reading".into())),
+            })
+        }
+        Typ::Range(y, to) => {
+            let l = ctx.lang()?;
+            let (x, y) = (l.to_cardinal(val.i())?, l.to_cardinal(y)?);
+            Ok(if *to { format!("{} to {}", x, y) } else { format!("{} - {}", x, y) })
+        }
         Typ::Year => {
             let l = ctx.lang()?;
             match l.to_year(val.i()) {
@@ -1171,47 +1950,32 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 Err(_) => l.to_cardinal(val.i()),
             }
         }
-        Typ::Currency(sym) => {
-            let l = ctx.lang()?;
-            let code = match sym {
-                '$' => "USD",
-                '€' => "EUR",
-                '£' => "GBP",
-                '¥' => "JPY",
-                _ => "USD",
-            };
-            match currency_conv(l, val.f(), code) {
-                Ok(s) => Ok(s),
-                Err(e) if is_bail(&e) => Err(e),
-                // Python: fall back to the plain cardinal (float path).
-                Err(_) => cardinal_float(l, val.f()),
-            }
+        Typ::Currency(code) => {
+            // `convert` leaves the token as written when this fails (#230).
+            let code = code.ok_or_else(|| N2WError::Value("unknown currency".into()))?;
+            currency_conv(ctx.lang()?, val.f(), code)
         }
         Typ::Number => {
-            let v = val.f();
+            let (neg, num) = split_sign(val)?;
             let l = ctx.lang()?;
-            if v < 0.0 {
-                // abs() keeps the float type, so even -7 renders through
-                // the float path (ru: "семь целых ноль десятых").
-                let w = if ctx.ord_mode {
-                    ordinal_float(l, v.abs())?
-                } else {
-                    cardinal_float(l, v.abs())?
-                };
-                Ok(format!("{} {}", negative_word(ctx.raw), w))
-            } else if v == v.trunc() {
-                let n = BigInt::from_f64(v).ok_or_else(|| {
-                    N2WError::Overflow("cannot convert float infinity to integer".into())
-                })?;
+            if neg {
+                // A negative is read like num2words(-7): an integer stays on
+                // the integer path (ru "минус семь", not "минус семь целых
+                // ноль десятых", #225), with the converter's own negative
+                // word (pt_BR "menos", not "minus", #226).
+                cardinal_str(l, &signed(val)?)
+            } else if !num.contains('.') {
+                let n = pyint(num)?;
                 if ctx.ord_mode {
                     l.to_ordinal(&n)
                 } else {
                     l.to_cardinal(&n)
                 }
-            } else if ctx.ord_mode {
-                ordinal_float(l, v)
             } else {
-                cardinal_float(l, v)
+                // Decimals stay cardinal in ordinal mode too: "3,50" has no
+                // ordinal reading (pt used to say "terceiro", it "terzo
+                // virgola cinque", #231).
+                cardinal_str(l, num)
             }
         }
     }
@@ -1257,6 +2021,45 @@ fn leading_number(text: &str) -> Option<String> {
         }
     }
     Some(cs[..j].iter().collect())
+}
+
+/// Abbreviations whose dot does not end a sentence (#235), lowercased,
+/// inner dots removed ("e.g." -> "eg", "z.B." -> "zb").
+const ABBREVIATIONS: &[&str] = &[
+    "approx", "appr", "ca", "cca", "no", "nos", "nr", "num", "vs", "eg", "ie", "cf",
+    "fig", "vol", "ch", "chap", "sec", "p", "pp", "dr", "mr", "mrs", "ms", "st",
+    "prof", "jr", "sr", "tel",
+    "zb", "bzw", "ggf", "usw", "inkl", "zzgl", "vgl", "evtl", "s", "abs", "env", "aprox",
+    "pág", "pag", "núm", "nº", "blz", "str", "ок", "стр", "см",
+    // sv "kl. 14.30" (klockan): not a sentence end (#193).
+    "kl",
+];
+
+/// Whether the text before a number ends a sentence, so the number is
+/// capitalised: `!`/`?`, or a `.` that is neither the very first character
+/// (".5") nor the dot of an abbreviation ("approx. 5", "No. 5", #235).
+fn ends_sentence(bt: &str, more_before: bool) -> bool {
+    match bt.chars().last() {
+        Some('!') | Some('?') => true,
+        Some('.') => {
+            let head = bt[..bt.len() - 1].trim_end();
+            if head.is_empty() {
+                return more_before;
+            }
+            let word: String = head
+                .chars()
+                .rev()
+                .take_while(|c| c.is_alphabetic() || *c == '.' || *c == 'º')
+                .filter(|c| *c != '.')
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<String>()
+                .to_lowercase();
+            !ABBREVIATIONS.contains(&word.as_str())
+        }
+        _ => false,
+    }
 }
 
 /// `num2words`' language-key resolution (full key, "-"->"_", "xx_YY"
@@ -1393,16 +2196,81 @@ fn detect_language_impl(text: &str) -> String {
 }
 
 /// `num2words_sentence(text)` with `lang=None`: detect, then convert.
-pub fn convert_auto(text: &str, to: &str) -> Result<String, N2WError> {
+pub fn convert_auto(text: &str, to: &str, errors: Errors) -> Result<String, N2WError> {
     match detect_language(text) {
-        Some(lang) => convert(text, &lang, to),
+        Some(lang) => convert_with(text, &lang, to, errors),
         None => Err(N2WError::NotImplemented(
             "sentence: built without lang-detect".into(),
         )),
     }
 }
 
+/// What to do with a numeric token that cannot be converted (`errors=`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Errors {
+    /// Raise `ValueError` naming the token.
+    Raise,
+    /// Leave the token as written.
+    Ignore,
+}
+
+impl Errors {
+    /// Parse the `errors=` keyword; anything but "raise"/"ignore" is a
+    /// `ValueError`.
+    pub fn parse(s: &str) -> Result<Errors, N2WError> {
+        match s {
+            "raise" => Ok(Errors::Raise),
+            "ignore" => Ok(Errors::Ignore),
+            other => Err(N2WError::Value(format!(
+                "errors must be 'raise' or 'ignore', got '{}'",
+                other
+            ))),
+        }
+    }
+}
+
+/// With `errors="raise"`: fail on the first numeric character (ASCII or
+/// not, `²`, `½` included) left as written in an unconverted stretch
+/// `chars[a..b]`, naming the whitespace-delimited token around it.
+fn check_leftover(
+    chars: &[char],
+    a: usize,
+    b: usize,
+    lang: &str,
+    errors: Errors,
+) -> Result<(), N2WError> {
+    if errors == Errors::Ignore {
+        return Ok(());
+    }
+    let Some(p) = (a..b).find(|&i| chars[i].is_numeric()) else {
+        return Ok(());
+    };
+    let mut s = p;
+    while s > 0 && !chars[s - 1].is_whitespace() {
+        s -= 1;
+    }
+    let mut e = p;
+    while e < chars.len() && !chars[e].is_whitespace() {
+        e += 1;
+    }
+    while e > p + 1 && matches!(chars[e - 1], '.' | ',' | ';' | ':' | '!' | '?' | ')') {
+        e -= 1;
+    }
+    let token: String = chars[s..e].iter().collect();
+    Err(N2WError::Value(format!(
+        "cannot convert '{}' to words (lang='{}'); pass errors='ignore' to return it unchanged",
+        token, lang
+    )))
+}
+
+/// `num2words_sentence(text, lang, to)`: unconvertible tokens are left as
+/// written.
 pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
+    convert_with(text, lang, to, Errors::Ignore)
+}
+
+/// [`convert`] with an `errors=` policy for tokens it cannot convert.
+pub fn convert_with(text: &str, lang: &str, to: &str, errors: Errors) -> Result<String, N2WError> {
     // Validate language is supported (same message as the Python raise; the
     // shim's NotImplementedError catch re-runs the original, which raises
     // it identically).
@@ -1414,18 +2282,15 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         )));
     }
 
-    // Python's \d matches any Unicode decimal digit and float()/int() accept
-    // them; this port only handles ASCII digits — anything else goes back to
-    // the original converter.
-    if text.chars().any(|c| c.is_numeric() && !c.is_ascii_digit()) {
-        return Err(N2WError::NotImplemented(
-            "sentence: non-ascii digits".into(),
-        ));
-    }
-
-    let t = Text::new(text);
+    // Native decimal digits are read like ASCII ones; other numeric
+    // characters ("m²", "½") are left as written (#228). Extraction runs on
+    // the normalised text, replacement splices into the original, so an
+    // unconverted token keeps its own digits.
+    let norm = normalize_digits(text);
+    let t = Text::new(&norm);
     let exts = extract_numbers(&t, lang)?;
     if exts.is_empty() {
+        check_leftover(&t.chars, 0, t.chars.len(), lang, errors)?;
         return Ok(text.to_string());
     }
 
@@ -1436,10 +2301,21 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         ord_mode: to == "ordinal",
     };
 
-    // Replace from end to beginning to preserve positions.
-    let mut result: Vec<char> = t.chars.clone();
+    // Convert every extraction, then build the output in one forward pass:
+    // splicing into the text per number was quadratic (#256).
+    let mut repls: Vec<(usize, usize, String)> = Vec::with_capacity(exts.len());
     for e in exts.iter().rev() {
-        let mut converted = convert_number(&ctx, &e.val, &e.typ)?;
+        let mut converted = match &e.typ {
+            // An amount the language cannot name (no word for the code, or
+            // an unknown symbol) is left as written: the bare number would
+            // drop the unit, and £ and ¥ would read the same (#230).
+            Typ::Currency(_) => match convert_inner(&ctx, &e.val, &e.typ) {
+                Ok(s) => s,
+                Err(err) if is_bail(&err) => return Err(err),
+                Err(_) => continue,
+            },
+            _ => convert_number(&ctx, &e.val, &e.typ)?,
+        };
 
         // Brazilian Portuguese: a US-style '.' decimal in the token is
         // pronounced "ponto", not the default "vírgula". Pure Python reaches
@@ -1459,9 +2335,8 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
         let needs_cap = if e.start == 0 {
             true
         } else {
-            let before = t.slice(0, e.start);
-            let bt = before.trim_end();
-            matches!(bt.chars().last(), Some('.') | Some('!') | Some('?'))
+            let (before, more) = t.before(e.start);
+            ends_sentence(before.trim_end(), more)
         };
         if needs_cap && !converted.is_empty() {
             converted = capitalize_first(&converted);
@@ -1478,7 +2353,7 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
             }
             // German ordinal dates need case agreement.
             Typ::OrdinalDate if ctx.raw == "de" => {
-                let before = t.slice(0, e.start);
+                let (before, more) = t.before(e.start);
                 let b = before.trim().to_lowercase();
                 if b.ends_with("am")
                     || b.ends_with("zum")
@@ -1488,17 +2363,34 @@ pub fn convert(text: &str, lang: &str, to: &str) -> Result<String, N2WError> {
                     if !converted.ends_with('n') {
                         converted.push('n');
                     }
+                } else if ((b.is_empty() && !more) || b.ends_with(['.', '!', '?', ':', ';', ',', '(']))
+                    && converted.ends_with('e')
+                {
+                    // No article or preposition before it: strong
+                    // nominative, "1. Mai ist frei" -> "Erster Mai" (#195).
+                    converted.push('r');
                 }
                 converted
             }
             _ => converted,
         };
 
-        // Python slicing tolerates end > len (fr's num_end+2 quirk).
-        let end = e.end.min(result.len());
-        let start = e.start.min(end);
-        result.splice(start..end, replacement.chars());
+        repls.push((e.start, e.end, replacement));
     }
 
-    Ok(result.into_iter().collect())
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + text.len() / 2);
+    let mut pos = 0;
+    for (start, end, replacement) in repls.iter().rev() {
+        // Python slicing tolerates end > len (fr's num_end+2 quirk).
+        let end = (*end).min(chars.len());
+        let start = (*start).min(end).max(pos);
+        check_leftover(&chars, pos, start, lang, errors)?;
+        out.extend(&chars[pos..start]);
+        out.push_str(replacement);
+        pos = pos.max(end);
+    }
+    check_leftover(&chars, pos, chars.len(), lang, errors)?;
+    out.extend(&chars[pos..]);
+    Ok(out)
 }

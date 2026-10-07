@@ -31,9 +31,16 @@ class Num2WordsROTest(TestCase):
         )
         self.assertEqual(num2words(12, lang="ro", to="ordinal"), "al doisprezecelea")
         self.assertEqual(
-            num2words(130, lang="ro", to="ordinal"), "al una sută treizecilea"
+            num2words(130, lang="ro", to="ordinal"), "al o sută treizecilea"
         )
-        self.assertEqual(num2words(1003, lang="ro", to="ordinal"), "al una mie treilea")
+        self.assertEqual(num2words(1003, lang="ro", to="ordinal"), "al o mie treilea")
+        # #252: DOOM forms, not "al una sutălea" / "al una mielea".
+        self.assertEqual(num2words(100, lang="ro", to="ordinal"), "al o sutălea")
+        self.assertEqual(num2words(1000, lang="ro", to="ordinal"), "al o miilea")
+        self.assertEqual(num2words(2000, lang="ro", to="ordinal"), "al două miilea")
+        self.assertEqual(
+            num2words(10**6, lang="ro", to="ordinal"), "al un milionulea"
+        )
 
     def test_ordinal_num(self):
         self.assertEqual(num2words(1, lang="ro", to="ordinal_num"), "1-ul")

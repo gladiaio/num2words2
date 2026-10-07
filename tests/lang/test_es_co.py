@@ -26,7 +26,7 @@ TEST_CASES_TO_CURRENCY = (
     (2, "dos pesos"),
     (8, "ocho pesos"),
     (12, "doce pesos"),
-    (21, "veintiun pesos"),
+    (21, "veintiún pesos"),
     (81.25, "ochenta y un pesos y veinticinco centavos"),
     (100, "cien pesos"),
 )

@@ -34,15 +34,14 @@
 //! # The blanket `replace("uno", "un")`
 //!
 //! It is a plain substring replace, not a word-boundary one, so it also fires
-//! inside "veintiuno" and yields the **unaccented** "veintiun" — where ES's
-//! targeted replace would have produced the correctly accented "veintiún".
-//! Verified against the interpreter and preserved verbatim:
+//! inside "veintiuno" and yielded the **unaccented** "veintiun". The port
+//! restores the accent after it (#253):
 //!
 //! | input | output |
 //! |---|---|
-//! | `21` NIO | `veintiun córdobas` (not "veintiún") |
+//! | `21` NIO | `veintiún córdobas` (Python: "veintiun") |
 //! | `101.0` NIO | `ciento un córdobas con cero centavos` |
-//! | `21.21` NIO | `veintiun córdobas con veintiun centavos` |
+//! | `21.21` NIO | `veintiún córdobas con veintiún centavos` |
 //! | `1` NIO | `un córdoba` |
 //!
 //! Applying it to the finished string (rather than to the money/cents pieces)
@@ -75,9 +74,11 @@
 //!
 //! Verified against the interpreter; all are preserved verbatim.
 //!
-//! 1. **Unaccented "vigesimo"**. `to_ordinal` for 11..=29 does
-//!    `self.ords[dec].replace("é", "e")`, so 20 → "vigesimo" and 120 →
-//!    "centésimo vigesimo" — accented elsewhere ("trigésimo"), bare here.
+//! 1. ~~**Unaccented "vigesimo"**.~~ `to_ordinal` for 11..=29 does
+//!    `self.ords[dec].replace("é", "e")`, and 20 used to land there too.
+//!    Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 2. **`ords` typos**: 400 is `"cuadrigentésim"` (standard Spanish is
 //!    *cuadringentésimo*) and 700 is `"septigentésim"` (standard:
 //!    *septingentésimo*). Corpus rows 123456 and 700 confirm both.
@@ -507,9 +508,10 @@ impl LangEsNi {
             String::new()
         } else if value <= &ten {
             format!("{}{}", self.ords_get(value)?, gender_stem)
-        } else if value <= &BigInt::from(29) {
+        } else if value <= &BigInt::from(29) && *value != BigInt::from(20) {
             // RAE: simple forms preferred up to 30; "sobreesdrújula" spelling
-            // drops the accent via replace("é", "e") -> "decimo"/"vigesimo".
+            // drops the accent via replace("é", "e") -> "decimo"/"vigesimo"
+            // in the fused 11..=29 forms; 20 skips it (#252).
             gender_stem = "o";
             let dec = (value / &ten) * &ten;
             format!(
@@ -914,10 +916,13 @@ impl Lang for LangEsNi {
         // to this language's own default (" con") before the ported body.
         let separator = separator.unwrap_or(self.default_separator());
         let result = default_to_currency(self, val, currency, cents, separator, adjective)?;
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1105,19 +1110,18 @@ mod tests {
     }
 
     /// The blanket `replace("uno", "un")` fires inside "veintiuno" and "ciento
-    /// uno" too, yielding the **unaccented** "veintiun" where `Num2Word_ES`'s
-    /// targeted replace would have written "veintiún". Python bug, preserved.
-    /// All values confirmed against the live interpreter.
+    /// uno" too; Python left the unaccented "veintiun", the port restores
+    /// "veintiún" (#253).
     #[test]
     fn blanket_uno_replace_quirks() {
         let l = LangEsNi::new();
-        // "veintiuno" -> "veintiun", not "veintiún".
-        assert_eq!(cur(&l, "NIO", int("21")).unwrap(), "veintiun córdobas");
-        assert_eq!(cur(&l, "NIO", int("-21")).unwrap(), "menos veintiun córdobas");
+        // "veintiuno" -> "veintiún" (Python: the unaccented "veintiun").
+        assert_eq!(cur(&l, "NIO", int("21")).unwrap(), "veintiún córdobas");
+        assert_eq!(cur(&l, "NIO", int("-21")).unwrap(), "menos veintiún córdobas");
         // Both segments rewritten in one pass over the finished string.
         assert_eq!(
             cur(&l, "NIO", float("21.21")).unwrap(),
-            "veintiun córdobas con veintiun centavos"
+            "veintiún córdobas con veintiún centavos"
         );
         assert_eq!(
             cur(&l, "NIO", float("101.0")).unwrap(),
@@ -1132,7 +1136,7 @@ mod tests {
         // `super(Num2Word_ES, self)`; this is what that costs.
         assert_eq!(
             cur(&l, "EUR", float("2000000.21")).unwrap(),
-            "dos millones euros con veintiun céntimos"
+            "dos millones euros con veintiún céntimos"
         );
     }
 

@@ -5,8 +5,9 @@
 //! `hasattr` guard in `Num2Word_Base.__init__` never fires: Python never builds
 //! `self.cards` and never sets `self.MAXVAL`. `to_cardinal` is overridden
 //! outright and drives a hand-written `_int_to_word` recursion. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check at all** — see bug 1 below for what happens instead.
+//! `cards`/`merge` stay at their trait defaults here. Python has **no
+//! overflow check at all** (see bug 1); this port raises `OverflowError`
+//! from 10^15 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base` but overridden by KU (so the trait defaults
 //! are *not* used):
@@ -26,12 +27,13 @@
 //! This is a port, not a rewrite. Every item below looks wrong and is exactly
 //! what Python emits; each is pinned by a row in the frozen corpus.
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns bare digits.** The final
-//!    `return str(number)` has no word forms behind it, so `to_cardinal(10**9)`
-//!    == `"1000000000"` — the *numeral*, not words. There is no "milyar"
-//!    branch. This is the de facto ceiling, and it degrades silently rather
-//!    than raising `OverflowError`. Hence `to_ordinal(10**9)` ==
-//!    `"1000000000em"`, identical to `to_ordinal_num(10**9)`.
+//! 1. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` ends in a bare `return str(number)`, so
+//!    `to_cardinal(10**9)` was the digit string `"1000000000"`. This port
+//!    continues the million branch's composition with milyar (10^9) and
+//!    trilyon (10^12) — ku.wiktionary.org/wiki/milyar, /wiki/trilyon;
+//!    omniglot.com/language/numbers/kurdish.htm — so 10^9 == `"yek milyar"`,
+//!    and raises `OverflowError` at 10^15 (`maxval`).
 //! 2. **Asymmetric "yek" suppression.** The hundreds branch suppresses the
 //!    multiplier for exactly one hundred (`if h > 1`), so 100 == `"sed"`, but
 //!    the thousand and million branches recurse unconditionally, so 1000 ==
@@ -90,10 +92,10 @@
 //!     and `1.5` -> 50. A 3-decimal currency gets no special treatment: KU has no
 //!     `CURRENCY_PRECISION`, so KWD is truncated at 2 digits like everything else
 //!     (and falls back to TRY's forms per bug 7 regardless).
-//! 11. **Bug 1's digit fallback leaks into money.** `to_currency` calls
-//!     `_int_to_word` directly, so `to_currency(10**9, "USD")` is
-//!     `"1000000000 dolar"` and `to_currency(1234567890.12, "USD")` is
-//!     `"1234567890 dolar donzdeh sent"`.
+//! 11. **`to_currency` calls `_int_to_word` directly**, so Python's digit
+//!     fallback reached money too (`"1000000000 dolar"`). Since #147 it gets
+//!     the milyar/trilyon words and the 10^15 `OverflowError` like the
+//!     cardinal: `to_currency(10**9, "USD")` == `"yek milyar dolar"`.
 //! 12. **`pluralize` is dead code.** KU defines it, but `to_currency` inlines its
 //!     own `cr1[1] if left != 1 else cr1[0]` and Base's `to_cheque` takes `cr1[-1]`
 //!     unconditionally, so nothing in the library reaches it. It is ported anyway
@@ -123,7 +125,7 @@
 //! `self.ones[-1]` == "neh" — a latent trap this port cannot hit, since the
 //! only in-scope caller guarantees a non-negative argument.)
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -131,6 +133,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is load-bearing: Python builds
 /// `negword + cardinal` and only then `.strip()`s the result.
@@ -156,6 +159,17 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "sed";
 const THOUSAND: &str = "hezar";
 const MILLION: &str = "milyon";
+/// 10^9 and 10^12, absent from Python (gladiaio/num2words2#147):
+/// ku.wiktionary milyar, trilyon (short scale; "trilyon" = "hezar milyar").
+const BILLION: &str = "milyar";
+const TRILLION: &str = "trilyon";
+
+/// The exclusive ceiling (#147): 10^15 would need a word no source attests
+/// for Kurmanji.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
 
 /// The word for zero, emitted by `_int_to_word(0)`.
 const ZERO: &str = "sifir";
@@ -296,24 +310,21 @@ impl LangKu {
 
     /// Python's `_int_to_word`. `number` must be non-negative (guaranteed by
     /// [`LangKu::cardinal`], the only in-scope caller).
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
         // Bug 1: the Python chain of `if number < ...` branches ends in a bare
-        // `return str(number)`. Anything at or above 10^9 renders as digits.
-        // Checking the ceiling first also proves the remaining value fits a
-        // u64, so the cast below is sound rather than hopeful.
-        let billion = BigInt::from(1_000_000_000u64);
-        if *number >= billion {
-            return number.to_string();
-        }
+        // `return str(number)` at 10^9. The milyar/trilyon branches now carry
+        // on to the 10^15 maxval (#147); checking it first also proves the
+        // remaining value fits a u64, so the cast below is sound.
+        check_maxval(number, maxval_ceiling())?;
 
-        // Proven bounded: 0 <= number < 10^9.
+        // Proven bounded: 0 <= number < 10^15.
         let n = number
             .to_u64()
-            .expect("0 <= number < 10^9 is representable as u64");
-        self.int_to_word_small(n)
+            .expect("0 <= number < 10^15 is representable as u64");
+        Ok(self.int_to_word_small(n))
     }
 
-    /// The `< 10^9` half of `_int_to_word`, on a value proven to fit a u64.
+    /// The `< 10^15` body of `_int_to_word`, on a value proven to fit a u64.
     fn int_to_word_small(&self, number: u64) -> String {
         if number == 0 {
             return ZERO.to_string();
@@ -360,11 +371,19 @@ impl LangKu {
             }
             return s;
         }
-        // number < 10^9, enforced by int_to_word before the cast.
-        let (m, r) = (number / 1_000_000, number % 1_000_000);
+        // The million branch, then milyar and trilyon composed the same way
+        // (#147); number < 10^15, enforced by int_to_word before the cast.
+        let (unit, word) = if number < 1_000_000_000 {
+            (1_000_000, MILLION)
+        } else if number < 1_000_000_000_000 {
+            (1_000_000_000, BILLION)
+        } else {
+            (1_000_000_000_000, TRILLION)
+        };
+        let (m, r) = (number / unit, number % unit);
         let mut s = self.int_to_word_small(m);
         s.push(' ');
-        s.push_str(MILLION);
+        s.push_str(word);
         if r != 0 {
             s.push_str(AND);
             s.push_str(&self.int_to_word_small(r));
@@ -379,10 +398,10 @@ impl LangKu {
     /// The final `.strip()` is reproduced by `trim()` — it is a no-op for every
     /// integral input (the inner result never has surrounding whitespace), but
     /// it is what keeps `NEGWORD`'s trailing space from being observable.
-    fn cardinal(&self, value: &BigInt) -> String {
+    fn cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let inner = self.cardinal(&value.abs());
-            return format!("{}{}", NEGWORD, inner).trim().to_string();
+            let inner = self.cardinal(&value.abs())?;
+            return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
         self.int_to_word(value)
     }
@@ -440,7 +459,7 @@ impl LangKu {
 
         // `_int_to_word(int(left))` — `left` is the non-negative integer part.
         let left = BigInt::from_str(&int_str).map_err(|e| N2WError::Value(e.to_string()))?;
-        let mut ret = self.int_to_word(&left);
+        let mut ret = self.int_to_word(&left)?;
 
         if !frac_str.is_empty() {
             // `ret += " " + self.pointword`
@@ -481,6 +500,10 @@ fn decimal_sci_value_error(s: &str) -> N2WError {
 }
 
 impl Lang for LangKu {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -504,7 +527,7 @@ impl Lang for LangKu {
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        Ok(self.cardinal(value))
+        self.cardinal(value)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
@@ -513,7 +536,7 @@ impl Lang for LangKu {
         if value == &BigInt::from(1u32) {
             return Ok("yekem".to_string());
         }
-        Ok(format!("{}em", self.cardinal(value)))
+        Ok(format!("{}em", self.cardinal(value)?))
     }
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
@@ -523,7 +546,7 @@ impl Lang for LangKu {
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
         // KU ignores `longval` and the base class's BC/AD handling entirely.
-        Ok(self.cardinal(value))
+        self.cardinal(value)
     }
 
     /// `Num2Word_KU.to_cardinal` handles non-integers inline via `str(number)`,
@@ -594,7 +617,7 @@ impl Lang for LangKu {
                 let i = value
                     .as_whole_int()
                     .expect("a point-free, non-scientific Decimal is whole");
-                Ok(self.cardinal(&i))
+                self.cardinal(&i)
             }
         }
     }
@@ -726,7 +749,7 @@ impl Lang for LangKu {
         }
         .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
 
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, unit);
 
         // `if cents and right:` — `right` falsy (0) skips the segment, which is
         // why 1.0 and 12.005 render bare. cents=False drops it outright rather
@@ -752,6 +775,7 @@ impl Lang for LangKu {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -886,11 +910,11 @@ mod tests {
             l.to_currency(&flt("12.34"), "USD", true, None, true).unwrap(),
             "donzdeh dolar sî û çar sent"
         );
-        // Bug 11: _int_to_word's digit fallback reaches money.
-        assert_eq!(cur(&l, &int("1000000000"), "USD"), "1000000000 dolar");
+        // Bug 11: money shares _int_to_word's scales (#147, was digits).
+        assert_eq!(cur(&l, &int("1000000000"), "USD"), "yek milyar dolar");
         assert_eq!(
             cur(&l, &flt("1234567890.12"), "USD"),
-            "1234567890 dolar donzdeh sent"
+            "yek milyar û du sed û sî û çar milyon û pênc sed û şêst û heft hezar û heşt sed û not dolar donzdeh sent"
         );
         // -0.0 is not < 0 in Python; no negword.
         assert_eq!(cur(&l, &flt("-0.0"), "USD"), "sifir dolar");
@@ -948,15 +972,18 @@ mod tests {
     }
 
     /// Live-interpreter edges not in the frozen corpus: -0.0 (sign bit),
-    /// bug 1's digit fallback leaking into the integer part, and sci-notation
+    /// bug 1's (now worded, #147) >= 10^9 integer part, and sci-notation
     /// floats that make `int()` raise ValueError.
     #[test]
     fn cardinal_float_edges() {
         let l = ku();
         // str(-0.0) == "-0.0" starts with "-": negword is prepended.
         assert_eq!(cf(&l, -0.0), "negatîv sifir xal sifir");
-        // Bug 1: the >=1e9 integer part renders as bare digits.
-        assert_eq!(cf(&l, 1234567890.12), "1234567890 xal yek du");
+        // Bug 1 (#147): the >=1e9 integer part is words, no longer digits.
+        assert_eq!(
+            cf(&l, 1234567890.12),
+            "yek milyar û du sed û sî û çar milyon û pênc sed û şêst û heft hezar û heşt sed û not xal yek du"
+        );
         // Python str(1e16)=="1e+16" -> int() ValueError; likewise 1e-5, inf/nan.
         for v in [1e16, 1.5e16, 1e-5, f64::INFINITY, f64::NAN] {
             assert!(
@@ -989,7 +1016,10 @@ mod tests {
         assert_eq!(d("1.10"), "yek xal yek sifir");
         assert_eq!(d("12.345"), "donzdeh xal sê çar pênc");
         // Issue #603: exact at trillion scale, no float() round.
-        assert_eq!(d("98746251323029.99"), "98746251323029 xal neh neh");
+        assert_eq!(
+            d("98746251323029.99"),
+            "not û heşt trilyon û heft sed û çil û şeş milyar û du sed û pêncî û yek milyon û sê sed û bîst û sê hezar û bîst û neh xal neh neh"
+        );
         assert_eq!(d("0.001"), "sifir xal sifir sifir yek");
     }
 

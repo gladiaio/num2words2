@@ -3,14 +3,18 @@
 
 import unittest
 
-from num2words2 import num2words
+from num2words2 import _rust, num2words
 
 
 class ComprehensiveCurrencyTests(unittest.TestCase):
     """Test currency support across all languages based on matrix findings"""
 
     def test_full_support_languages(self):
-        """Test languages with full currency support (10/10)"""
+        """Every code either raises or names a different currency (#219).
+
+        These languages used to "support" all ten codes by printing their
+        own default currency for the unknown ones.
+        """
         full_support_langs = [
             "ar",
             "bn",
@@ -39,17 +43,17 @@ class ComprehensiveCurrencyTests(unittest.TestCase):
         ]
 
         for lang in full_support_langs:
+            default = num2words(100.50, lang=lang, to="currency")
             for currency in test_currencies:
                 try:
                     result = num2words(
                         100.50, lang=lang, to="currency", currency=currency
                     )
-                    self.assertIsNotNone(result, f"{lang} should support {currency}")
-                    self.assertTrue(
-                        len(result) > 0, f"{lang} {currency} output should not be empty"
-                    )
-                except Exception as e:
-                    self.fail(f"{lang} failed for {currency}: {e}")
+                except NotImplementedError:
+                    continue
+                self.assertTrue(result, f"{lang} {currency} output is empty")
+                if currency != _rust.default_currency(lang):
+                    self.assertNotEqual(result, default, f"{lang} {currency}")
 
     def test_polish_gbp_support(self):
         """Test newly added Polish GBP support"""
@@ -113,14 +117,14 @@ class ComprehensiveCurrencyTests(unittest.TestCase):
     def test_italian_negative_currency(self):
         """Test Italian negative currency bug fix"""
         test_cases = [
-            (-1, "EUR", "meno uno euro"),
+            (-1, "EUR", "meno un euro"),
             (-10, "EUR", "meno dieci euro"),
             (-5.50, "EUR", "meno cinque euro e cinquanta centesimi"),
             (-100, "EUR", "meno cento euro"),
-            (-1, "USD", "meno uno dollaro"),
+            (-1, "USD", "meno un dollaro"),
             (-5, "USD", "meno cinque dollari"),
             (-10.25, "USD", "meno dieci dollari e venticinque centesimi"),
-            (-1, "GBP", "meno uno sterlina"),
+            (-1, "GBP", "meno una sterlina"),
             (-2, "GBP", "meno due sterline"),
             (-50.75, "GBP", "meno cinquanta sterline e settantacinque penny"),
         ]
@@ -230,7 +234,7 @@ class ComprehensiveCurrencyTests(unittest.TestCase):
             ("ru", 2, "RUB", "два рубля"),
             ("ru", 5, "RUB", "пять рублей"),
             # Italian
-            ("it", 1, "EUR", "uno euro"),
+            ("it", 1, "EUR", "un euro"),
             ("it", 2, "EUR", "due euro"),
             ("it", 100, "EUR", "cento euro"),
         ]

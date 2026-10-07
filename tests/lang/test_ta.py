@@ -201,3 +201,15 @@ class Num2WordsTATest(TestCase):
         self.assertEqual(
             num2words(2023, lang="ta", to="year"), "இரண்டு ஆயிரத்து இருபது மூன்று"
         )
+
+    def test_fraction_is_read(self):
+        # gladiaio/num2words2#206: the fraction was dropped (2.5 -> "இரண்டு").
+        from decimal import Decimal
+
+        for v in ("2.5", 2.5, Decimal("2.5")):
+            self.assertEqual(num2words(v, lang="ta"), "இரண்டு புள்ளி ஐந்து")
+        self.assertEqual(num2words(0.5, lang="ta"), "பூஜ்ஜியம் புள்ளி ஐந்து")
+        self.assertEqual(
+            num2words(-0.25, lang="ta"), "கழித்தல் பூஜ்ஜியம் புள்ளி இரண்டு ஐந்து"
+        )
+        self.assertEqual(num2words(5.0, lang="ta"), "ஐந்து")

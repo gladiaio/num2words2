@@ -81,24 +81,14 @@
 //!
 //! # Faithfully reproduced Python bugs
 //!
-//! `to_ordinal` picks its suffix by testing the cardinal's final character
-//! against three hand-written character classes. Those classes are
-//! **incomplete**, and the resulting wrong forms are kept:
+//! `to_ordinal` used to pick its suffix by testing the cardinal's final
+//! character against three hand-written character classes, which were
+//! incomplete: 40 was "қырықінші", 10^9 "бір миллиардінші", and 20 the older
+//! "жиырманшы". Fixed (gladiaio/num2words2#148): the ending now harmonises
+//! on the last word's last vowel ("қырқыншы", "бір миллиардыншы",
+//! "жиырмасыншы"); see [`ordinal_suffix`]. What remains of the Python port:
 //!
-//! 1. `қ` (U+049B) is **missing** from the consonant class, and no vowel class
-//!    matches it either, so "қырық" (40) falls through to the `else` arm and
-//!    takes the front-vowel suffix: `to_ordinal(40)` == "қырықінші".
-//!    Idiomatic Kazakh is "қырқыншы".
-//! 2. The vowel arms append `ншы`/`нші` with no linking consonant, so
-//!    `to_ordinal(20)` == "жиырманшы" (idiomatic: "жиырмасыншы").
-//! 3. The back/front decision for consonant-final words inspects only the last
-//!    **two** characters, so "миллиард" (last two = "рд", no back vowel) is
-//!    misfiled as front: `to_ordinal(10**9)` == "бір миллиардінші"
-//!    (idiomatic: "бір миллиардыншы"). "триллион" and friends escape this only
-//!    because their last two characters are "он".
-//! 4. `у` (U+0443) appears in no class at all, so "елу" (50) also reaches the
-//!    `else` arm. Here the fallback happens to be right: "елуінші".
-//! 5. There is no "one thousand" elision: `to_cardinal(1000)` == "бір мың",
+//! 1. There is no "one thousand" elision: `to_cardinal(1000)` == "бір мың",
 //!    not "мың". Kept verbatim.
 //!
 //! # Error variants
@@ -153,19 +143,13 @@ const THOUSANDS: [&str; 11] = [
     "нониллион",
 ];
 
-/// Vowels taking the bare `ншы` suffix: а о ұ ы е э.
-const BACK_VOWELS: &str = "аоұыеэ";
+/// Back vowels: the ending is *-ыншы* / *-ншы*.
+const BACK_VOWELS: &str = "аоұыя";
 
-/// Vowels taking the bare `нші` suffix: ә і ү ө.
-const FRONT_VOWELS: &str = "әіүө";
-
-/// The consonant class. Transcribed verbatim from Python — note that `қ`
-/// (U+049B) and `у` (U+0443) are **absent**; see module bugs 1 and 4.
-const CONSONANTS: &str = "бвгғджзйклмнңпрстфхһцчшщ";
-
-/// Back vowels probed against the last two characters to choose `ыншы` over
-/// `інші` after a consonant: а о ұ ы.
-const LAST2_BACK: &str = "аоұы";
+/// Front vowels: the ending is *-інші* / *-нші*. `у` and `и` are left out of
+/// both classes: in Kazakh they are glides (/w/, /j/) after a vowel, so "елу"
+/// ends in a consonant and harmonises off its е — "елуінші".
+const FRONT_VOWELS: &str = "әеіөүэ";
 
 /// 10^33: the first value whose top 3-digit chunk has no `THOUSANDS` word.
 fn maxval() -> &'static BigInt {
@@ -179,44 +163,52 @@ fn overflow_error(n: &BigInt) -> N2WError {
     N2WError::Overflow(format!("abs({}) must be less than {}.", n, maxval()))
 }
 
-/// The suffix-selection tail of `Num2Word_KZ.to_ordinal`, shared by the
-/// integer path and the float/Decimal entry (Python has one method; its
+/// The ordinal ending for a spelled cardinal, shared by the integer path and
+/// the float/Decimal entry (Python has one method; its
 /// `cardinal = self.to_cardinal(number)` call is virtual over the input type,
-/// so the same character inspection runs on "бес" and on "бес бүтін нөл нөл"
-/// alike).
+/// so the same rule runs on "бес" and on "бес бүтін нөл" alike).
 ///
-/// Python indexes `cardinal[-1]` unguarded. `to_cardinal` of a non-zero value
-/// always yields at least one word, so the empty case is unreachable; an
-/// empty string would be an IndexError in Python, so mirror that rather than
-/// inventing a fallback.
+/// Only the **last word** is inspected (gladiaio/num2words2#148): the ending
+/// is *-(ы)ншы* after a back stem and *-(і)нші* after a front one, with the
+/// linking vowel dropped after a vowel-final stem (Wiktionary,
+/// `Module:number_list/data/kk`): бірінші, алтыншы, оныншы, жүзінші,
+/// миллиардыншы. Two numerals change their stem: қырық loses its unstressed
+/// ы (қырқыншы) and жиырма takes the -сыншы of the spelling dictionaries
+/// (жиырмасыншы; the older жиырманшы is also seen, see abai.kz/post/107881).
+///
+/// An empty cardinal would be an IndexError in Python (`cardinal[-1]`); it
+/// is unreachable, but mirrored rather than given an invented fallback.
 fn ordinal_suffix(cardinal: String) -> Result<String> {
-    let last = cardinal
+    if cardinal.is_empty() {
+        return Err(N2WError::Index("string index out of range".to_string()));
+    }
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal.as_str()),
+    };
+    match stem {
+        "қырық" => return Ok(format!("{}қырқыншы", head)),
+        "жиырма" => return Ok(format!("{}жиырмасыншы", head)),
+        _ => {}
+    }
+    let back = match stem
         .chars()
-        .next_back()
-        .ok_or_else(|| N2WError::Index("string index out of range".to_string()))?;
-
-    if BACK_VOWELS.contains(last) {
-        return Ok(format!("{}ншы", cardinal));
-    }
-    if FRONT_VOWELS.contains(last) {
-        return Ok(format!("{}нші", cardinal));
-    }
-    if CONSONANTS.contains(last) {
-        // Python: cardinal[-2:] — the last two *characters*, or the whole
-        // string if it is shorter than two.
-        let mut tail: Vec<char> = cardinal.chars().rev().take(2).collect();
-        tail.reverse();
-        let last2: String = tail.into_iter().collect();
-
-        // Python: any(v in cardinal[-2:] for v in "аоұы")
-        if LAST2_BACK.chars().any(|v| last2.contains(v)) {
-            return Ok(format!("{}ыншы", cardinal));
-        }
-        return Ok(format!("{}інші", cardinal));
-    }
-
-    // Default case: covers қ and у, neither of which is in any class.
-    Ok(format!("{}інші", cardinal))
+        .filter(|c| BACK_VOWELS.contains(*c) || FRONT_VOWELS.contains(*c))
+        .last()
+    {
+        Some(v) => BACK_VOWELS.contains(v),
+        // No vowel at all: not a Kazakh word; the front ending is what the
+        // old fallback arm gave.
+        None => false,
+    };
+    let after_vowel = stem.ends_with(|c: char| BACK_VOWELS.contains(c) || FRONT_VOWELS.contains(c));
+    let ending = match (back, after_vowel) {
+        (true, true) => "ншы",
+        (true, false) => "ыншы",
+        (false, true) => "нші",
+        (false, false) => "інші",
+    };
+    Ok(format!("{}{}", cardinal, ending))
 }
 
 /// `int(n)`'s ValueError for the no-`"."` branch of `to_cardinal`, reached
@@ -315,7 +307,6 @@ fn get_digits(n: u32) -> [usize; 3] {
 /// been constructed and any in-place mutation has happened):
 /// `{"KZT": ("теңге", "тиын"), "USD": ("доллар", "цент")}`. Every other code
 /// (GBP, JPY, KWD, BHD, INR, CNY, CHF, ...) raises `NotImplementedError`.
-
 ///
 /// # The one-element arity is the port, not a shortcut
 ///
@@ -538,7 +529,11 @@ impl Lang for LangKk {
             post_digits
         );
         // leading_zero_count = len(right) - len(right.lstrip("0")).
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
 
         // int(left): Python strips the sign from the string first, so `left` is
         // the integer part of the *absolute* value; the sign is carried
@@ -577,9 +572,9 @@ impl Lang for LangKk {
     ///
     /// * a **visible point** (any finite float below 1e16, or a Decimal with
     ///   positive scale) takes the fractional branch even for whole values —
-    ///   `5.0` -> "бес бүтін нөл нөл", `Decimal("5.00")` -> "бес бүтін нөл нөл
-    ///   нөл" (one "нөл" per leading zero of the fractional string plus
-    ///   `_int2word(0)`).
+    ///   `5.0` -> "бес бүтін нөл", `Decimal("5.00")` -> "бес бүтін нөл нөл"
+    ///   (one "нөл" per fractional digit written; Python added an extra one,
+    ///   gladiaio/num2words2#237).
     /// * **no point** funnels the whole string into `int(n)`: plain digit
     ///   Decimals ("5", "100") reach the integer path, while exponent forms
     ///   (`str(1e16) == "1e+16"`, `str(Decimal("1E+2")) == "1E+2"`) and

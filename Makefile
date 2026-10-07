@@ -21,7 +21,7 @@ install:  ## Install package in development mode
 
 dev-install:  ## Install package with development dependencies
 	$(PYTHON) -m pip install -e .
-	$(PYTHON) -m pip install -r requirements-test.txt
+	$(PYTHON) -m pip install -r tests/requirements-test.txt
 
 test:  ## Run tests with current Python version
 	$(PYTHON) -m pytest tests/ -v
@@ -102,7 +102,7 @@ install-tools:  ## Install development tools
 
 ci-test:  ## Run the same tests as in CI
 	@echo "🔄 Running CI-equivalent tests..."
-	tox -e py38,py39,py310,py311,py312,py313
+	tox -e py310,py311,py312,py313,py314,py315
 	@echo "✅ CI tests completed"
 
 migration-test:  ## Test the migration script

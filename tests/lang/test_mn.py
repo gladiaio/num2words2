@@ -78,6 +78,13 @@ class Num2WordsMNTest(TestCase):
         )
 
     def test_to_currency(self):
+        # An int keeps the currency noun, like a whole float (#221); these
+        # used to be bare cardinals ("жаран долоон мянга").
+        self.assertEqual(num2words(2, lang="mn", to="currency"), "хоёр төгрөг")
+        self.assertEqual(
+            num2words(2, lang="mn", to="currency"),
+            num2words(2.0, lang="mn", to="currency"),
+        )
         self.assertEqual(
             num2words(407.52, lang="mn", to="currency", currency="AUD"),
             "дөрвөн зуун долоон Австралийн доллар, тавин хоёр цент",
@@ -88,19 +95,19 @@ class Num2WordsMNTest(TestCase):
         )
         self.assertEqual(
             num2words(67000, lang="mn", to="currency", currency="GBP"),
-            "жаран долоон мянга",
+            "жаран долоон мянган фунт стерлинг",
         )
         self.assertEqual(
             num2words(12000, lang="mn", to="currency", currency="GBP"),
-            "арван хоёр мянга",
+            "арван хоёр мянган фунт стерлинг",
         )
         self.assertEqual(
             num2words(4000, lang="mn", to="currency", currency="GBP"),
-            "дөрвөн мянга",
+            "дөрвөн мянган фунт стерлинг",
         )
         self.assertEqual(
             num2words(500, lang="mn", to="currency", currency="SEK"),
-            "таван зуу",
+            "таван зуун Шведийн крон",
         )
         self.assertEqual(
             num2words(
@@ -114,11 +121,11 @@ class Num2WordsMNTest(TestCase):
         )
         self.assertEqual(
             num2words(6002, lang="mn", to="currency", currency="USD"),
-            "зургаан мянга хоёр",
+            "зургаан мянга хоёр Америк доллар",
         )
         self.assertEqual(
             num2words(6000, lang="mn", to="currency", currency="USD"),
-            "зургаан мянга",
+            "зургаан мянган Америк доллар",
         )
 
     def test_negative_decimals(self):

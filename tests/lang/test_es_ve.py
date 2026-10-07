@@ -25,7 +25,7 @@ TEST_CASES_TO_CURRENCY = (
     (2, "dos bolívares"),
     (8, "ocho bolívares"),
     (12, "doce bolívares"),
-    (21, "veintiun bolívares"),
+    (21, "veintiún bolívares"),
     (81.25, "ochenta y un bolívares y veinticinco centavos"),
     (100, "cien bolívares"),
 )

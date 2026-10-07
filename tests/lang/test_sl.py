@@ -255,7 +255,7 @@ class Num2WordsSLTest(TestCase):
         self.assertEqual(
             num2words(99.99, lang="sl"), "devetindevetdeset vejica devetindevetdeset"
         )
-        self.assertEqual(num2words(100.01, lang="sl"), "sto vejica ena")
+        self.assertEqual(num2words(100.01, lang="sl"), "sto vejica nič ena")
         self.assertEqual(num2words(100.5, lang="sl"), "sto vejica pet")
         self.assertEqual(
             num2words(123.45, lang="sl"), "sto triindvajset vejica petinštirideset"
@@ -265,7 +265,7 @@ class Num2WordsSLTest(TestCase):
             num2words(1234.56, lang="sl"),
             "tisoč dvesto štiriintrideset vejica šestinpetdeset",
         )
-        self.assertEqual(num2words(10000.01, lang="sl"), "deset tisoč vejica ena")
+        self.assertEqual(num2words(10000.01, lang="sl"), "deset tisoč vejica nič ena")
         self.assertEqual(num2words(-0.5, lang="sl"), "minus nič vejica pet")
         self.assertEqual(num2words(-1.5, lang="sl"), "minus ena vejica pet")
         self.assertEqual(num2words(-10.5, lang="sl"), "minus deset vejica pet")
@@ -317,36 +317,36 @@ class Num2WordsSLTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sl", to="currency", currency="EUR"),
-            "nič evrov ena cent",
+            "nič evrov en cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sl", to="currency", currency="EUR"),
             "nič evrov petdeset centov",
         )
         self.assertEqual(
-            num2words(1, lang="sl", to="currency", currency="EUR"), "ena evro"
+            num2words(1, lang="sl", to="currency", currency="EUR"), "en evro"
         )
         self.assertEqual(
             num2words(1.5, lang="sl", to="currency", currency="EUR"),
-            "ena evro petdeset centov",
+            "en evro petdeset centov",
         )
         self.assertEqual(
             num2words(0, lang="sl", to="currency", currency="USD"), "nič dolarjev"
         )
         self.assertEqual(
             num2words(0.01, lang="sl", to="currency", currency="USD"),
-            "nič dolarjev ena cent",
+            "nič dolarjev en cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sl", to="currency", currency="USD"),
             "nič dolarjev petdeset centov",
         )
         self.assertEqual(
-            num2words(1, lang="sl", to="currency", currency="USD"), "ena dolar"
+            num2words(1, lang="sl", to="currency", currency="USD"), "en dolar"
         )
         self.assertEqual(
             num2words(1.5, lang="sl", to="currency", currency="USD"),
-            "ena dolar petdeset centov",
+            "en dolar petdeset centov",
         )
 
     def test_year(self):
@@ -403,10 +403,6 @@ class Num2WordsSLTest(TestCase):
         # Test large numbers with ordinal flag
         self.assertEqual(num2words(10001, lang="sl", ordinal=True), "desettisočprvi")
 
-
-
-
-
     def test_more_ordinals(self):
         """Test additional ordinal numbers."""
         # Test compound ordinals
@@ -436,7 +432,7 @@ class Num2WordsSLTest(TestCase):
         # Test currency with fractional cents
         self.assertEqual(
             num2words(1.235, lang="sl", to="currency", currency="EUR"),
-            "ena evro triindvajset vejica pet centov",
+            "en evro triindvajset vejica pet centov",
         )
         self.assertEqual(
             num2words(10.999, lang="sl", to="currency", currency="EUR"),
@@ -447,7 +443,7 @@ class Num2WordsSLTest(TestCase):
         """Test additional currency cases."""
         # Test various amounts
         self.assertEqual(
-            num2words(2, lang="sl", to="currency", currency="EUR"), "dve evra"
+            num2words(2, lang="sl", to="currency", currency="EUR"), "dva evra"
         )
         self.assertEqual(
             num2words(3, lang="sl", to="currency", currency="EUR"), "tri evre"
@@ -465,10 +461,10 @@ class Num2WordsSLTest(TestCase):
             num2words(100, lang="sl", to="currency", currency="EUR"), "sto evrov"
         )
         self.assertEqual(
-            num2words(101, lang="sl", to="currency", currency="EUR"), "sto ena evro"
+            num2words(101, lang="sl", to="currency", currency="EUR"), "sto en evro"
         )
         self.assertEqual(
-            num2words(102, lang="sl", to="currency", currency="EUR"), "sto dve evra"
+            num2words(102, lang="sl", to="currency", currency="EUR"), "sto dva evra"
         )
         self.assertEqual(
             num2words(103, lang="sl", to="currency", currency="EUR"), "sto tri evre"
@@ -482,7 +478,7 @@ class Num2WordsSLTest(TestCase):
 
         # Test USD
         self.assertEqual(
-            num2words(2, lang="sl", to="currency", currency="USD"), "dve dolarja"
+            num2words(2, lang="sl", to="currency", currency="USD"), "dva dolarja"
         )
         self.assertEqual(
             num2words(3, lang="sl", to="currency", currency="USD"), "tri dolarje"
@@ -497,7 +493,7 @@ class Num2WordsSLTest(TestCase):
         # Test cents
         self.assertEqual(
             num2words(0.02, lang="sl", to="currency", currency="EUR"),
-            "nič evrov dve centa",
+            "nič evrov dva centa",
         )
         self.assertEqual(
             num2words(0.03, lang="sl", to="currency", currency="EUR"),
@@ -514,7 +510,7 @@ class Num2WordsSLTest(TestCase):
 
         # Test negative amounts
         self.assertEqual(
-            num2words(-1, lang="sl", to="currency", currency="EUR"), "minus ena evro"
+            num2words(-1, lang="sl", to="currency", currency="EUR"), "minus en evro"
         )
         self.assertEqual(
             num2words(-10, lang="sl", to="currency", currency="EUR"),
@@ -522,9 +518,8 @@ class Num2WordsSLTest(TestCase):
         )
         self.assertEqual(
             num2words(-1.5, lang="sl", to="currency", currency="EUR"),
-            "minus ena evro petdeset centov",
+            "minus en evro petdeset centov",
         )
-
 
     def test_to_cardinal_float_negative_zero(self):
         """Test negative zero handling in float conversion."""
@@ -534,5 +529,3 @@ class Num2WordsSLTest(TestCase):
         self.assertEqual(
             num2words(-0.99, lang="sl"), "minus nič vejica devetindevetdeset"
         )
-
-

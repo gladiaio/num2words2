@@ -108,6 +108,7 @@ class Num2WordsENINTest(TestCase):
 def test_en_in_currency_defaults_to_inr():
     # Regression for savoirfairelinux/num2words#313 — en_IN default currency.
     from num2words2 import num2words
+
     assert "rupee" in num2words(1, to="currency", lang="en_IN")
     assert "rupee" in num2words(1.50, to="currency", lang="en_IN")
     assert num2words(639098, to="currency", lang="en_IN").endswith("rupees")
@@ -117,6 +118,7 @@ def test_en_in_currency_defaults_to_inr():
 
 def test_en_in_paise_subunit():
     from num2words2 import num2words
+
     assert "paise" in num2words(1.50, to="currency", lang="en_IN")
     assert "paisa" in num2words(0.01, to="currency", lang="en_IN")
 
@@ -124,8 +126,9 @@ def test_en_in_paise_subunit():
 def test_en_in_extends_past_kharab():
     # Regression for num2words2#72 (ports savoirfairelinux/num2words#414).
     from num2words2 import num2words
-    assert num2words(10 ** 11, lang="en_IN") == "one kharab"
-    assert num2words(10 ** 13, lang="en_IN") == "one neel"
-    assert num2words(10 ** 15, lang="en_IN") == "one padma"
-    assert num2words(10 ** 17, lang="en_IN") == "one shankh"
-    assert num2words(10 ** 19, lang="en_IN") == "one mahashankh"
+
+    assert num2words(10**11, lang="en_IN") == "one kharab"
+    assert num2words(10**13, lang="en_IN") == "one neel"
+    assert num2words(10**15, lang="en_IN") == "one padma"
+    assert num2words(10**17, lang="en_IN") == "one shankh"
+    assert num2words(10**19, lang="en_IN") == "one mahashankh"

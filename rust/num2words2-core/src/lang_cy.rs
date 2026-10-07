@@ -185,24 +185,27 @@
 //!
 //! # More faithfully reproduced Python bugs (currency)
 //!
-//! 8. **`to_currency` ignores `currency=` entirely for `int` input.** CY's
-//!    override intercepts `isinstance(val, int)` *before* delegating to
-//!    `super()`, and its branch never consults `CURRENCY_FORMS`. So every int
-//!    is denominated in mutated GBP — `to_currency(2, "JPY")` is
-//!    `"dau bunnoedd"`, not an error and not yen. This is why the corpus shows
-//!    `currency:JPY` / `currency:KWD` / `currency:CHF` succeeding for `0`, `1`,
-//!    `2`, `100`, `1000000` while every float with the same code raises
-//!    `NotImplementedError`. Reproduced in [`LangCy::to_currency`].
+//! 8. **`to_currency` ignored `currency=` for `int` input (fixed, #201).**
+//!    CY's override intercepts `isinstance(val, int)` *before* delegating to
+//!    `super()`, and its branch never consulted `CURRENCY_FORMS`, so every int
+//!    was denominated in mutated GBP — `to_currency(2, "JPY")` was
+//!    `"dau bunnoedd"`. The int path now goes through `_money_verbose` like
+//!    floats, and an unknown code raises.
 //! 9. **The int branch said `"minws "`, not `"meinws "` (fixed, #180).** CY's
 //!    own `MINUS_PREFIX_WORD` is `"meinws "` and `to_cardinal` hardcodes
 //!    `("meinws", None)`, but Python's `to_currency` spells the negative
 //!    prefix `"minws "` — a typo. The port says `"meinws "` like the cardinal
 //!    and the float path: `to_currency(-1)` is `"meinws un bunt"`.
-//! 10. **The unit words in the int branch are pre-mutated literals.**
-//!     `"bunt"` / `"bunnoedd"` are the soft-mutated forms of `punt`/`punnoedd`,
-//!     hardcoded as strings rather than produced by [`softmutation`] — so the
-//!     mutation fires even when nothing precedes it that would trigger one
-//!     (`"dim bunnoedd"` after "dim", which triggers no mutation at all).
+//! 10. **The int and float paths disagreed on the noun (fixed, #201).**
+//!     The int branch printed the pre-mutated literals `"bunt"` / `"bunnoedd"`
+//!     after any numeral ("un bunt", but "dau bunnoedd", "pump bunnoedd"),
+//!     while floats counted with the singular ("dwy bunt", "pump punt"). Welsh
+//!     counts with the singular noun carrying the numeral's mutation, so both
+//!     paths now use `_money_verbose`: "un bunt" ("un" soft-mutates the
+//!     feminine *punt*, [`FEMININE_UNITS`]), "dwy bunt", "tair punt", "chwech
+//!     phunt", and "o bunnoedd" past 100. Where the tables carry no mutation
+//!     for a numeral the noun stays unmutated ("pump punt"; "pum punt" would
+//!     need a short form the tables lack). Pending a native-speaker review.
 //! 11. **`_cents_verbose(1, ...)` drops the numeral.** The `number > 1` guard
 //!     sends 1 to `m = [(OBJ, None)]`, so `0.01` renders `"... ceiniog"` — the
 //!     counted noun alone, with no "un".
@@ -791,6 +794,10 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m
 }
 
+/// Codes whose unit noun is feminine: GBP's *punt*. Euro, dolar and yuan are
+/// masculine.
+const FEMININE_UNITS: [&str; 1] = ["GBP"];
+
 /// `Num2Word_EUR.CURRENCY_ADJECTIVES`, inherited untouched.
 ///
 /// CY defines none of its own and this is literally the EUR class dict (`is`
@@ -1056,7 +1063,7 @@ impl LangCy {
     fn decimal_to_words(&self, value: &FloatValue) -> Result<String> {
         let (pre, post) = float2tuple(value);
         let prefix = self.to_cardinal_full(&pre.abs(), false, "masc", false)?;
-        let digits = format!("{:0>width$}", post, width = value.precision() as usize);
+        let digits = crate::strnum::zero_pad_left(&post.to_string(), value.precision() as usize);
         let mut parts: Vec<String> = Vec::new();
         for c in digits.chars() {
             let d = c.to_digit(10).expect("float2tuple yields decimal digits");
@@ -1264,6 +1271,7 @@ impl Lang for LangCy {
         value: &FloatValue,
         _precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value {
             FloatValue::Float { value, precision } => self.float_to_words(*value, *precision),
             // Python floored a fractional Decimal away (#156).
@@ -1285,6 +1293,7 @@ impl Lang for LangCy {
         value: &FloatValue,
         precision_override: Option<u32>,
     ) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         self.to_cardinal_float(value, precision_override)
     }
 
@@ -1591,6 +1600,18 @@ impl Lang for LangCy {
 
         let raw = self.to_cardinal_raw(number, false, "fem", false)?;
         let mut m: Vec<Word<'_>> = raw.iter().map(|&(w, mu)| (w, mu)).collect();
+        // "un" soft-mutates a feminine singular noun: "un bunt", "un bunt ar
+        // ddeg" (#201). The numeral tables leave "un" unmarked, so mark it
+        // where it directly precedes the counted noun of a feminine unit.
+        if FEMININE_UNITS.contains(&currency) {
+            if let Some(i) = m.iter().position(|&(w, _)| w == OBJ) {
+                // "un" itself, or the fused "hanner cant ac un" (51).
+                let (w, mu) = if i > 0 { m[i - 1] } else { ("", None) };
+                if mu.is_none() && (w == "un" || w.ends_with(" un")) {
+                    m[i - 1].1 = Some(SM);
+                }
+            }
+        }
 
         if number > &BigInt::from(100) {
             // CURRENCY_FORMS[currency][0][1] — the plural unit.
@@ -1651,8 +1672,9 @@ impl Lang for LangCy {
     ///                                separator=separator, adjective=adjective)
     /// ```
     ///
-    /// The int arm never reads `currency`, `cents`, `separator` or `adjective`,
-    /// and never touches `CURRENCY_FORMS` — hence module bugs 8, 9 and 10.
+    /// Python's int arm never read `currency` and printed hardcoded GBP
+    /// literals (module bugs 8–10); the port's goes through `_money_verbose`
+    /// like the float path (#201).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1670,11 +1692,16 @@ impl Lang for LangCy {
             // like the cardinal and the float path — bug 9 (#180).
             let minus_str = if v.is_negative() { "meinws " } else { "" };
             let abs_val = v.abs();
-            // Raises OverflowError past 999 * 10**33 (#159).
-            let money_str = self.to_cardinal(&abs_val)?;
-            // Pre-mutated GBP literals, whatever `currency` says — bugs 8, 10.
-            let currency_str = if abs_val.is_one() { "bunt" } else { "bunnoedd" };
-            return Ok(format!("{}{} {}", minus_str, money_str, currency_str));
+            // Python printed pre-mutated GBP literals whatever `currency` said
+            // ("dau bunnoedd", bugs 8, 10). The int path now names the unit
+            // like the float path does (#201): the numeral's own mutation on
+            // the singular noun, "un bunt", "dwy bunt", "tair punt", and the
+            // partitive above 100, "cant ac un o bunnoedd".
+            if !self.currency_forms.contains_key(currency) {
+                return Err(crate::currency::unknown_currency(self, currency));
+            }
+            let money_str = self.money_verbose(&abs_val, currency)?;
+            return Ok(format!("{}{}", minus_str, money_str));
         }
 
         // Floats/Decimals: `super().to_currency(...)` — Num2Word_Base's, minus

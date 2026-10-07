@@ -4,10 +4,10 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so the guard in
 //! `Num2Word_Base.__init__` never fires: `self.cards` is never built and
 //! `self.MAXVAL` is never assigned. `to_cardinal` is overridden outright and
-//! drives a private `_int_to_word` recursion. Consequently `cards`/`maxval`/
-//! `merge` stay at their trait defaults here, and there is **no overflow
-//! check** — arbitrarily large input is accepted and silently degraded (see
-//! bug 5 below). No integer input can make this language raise.
+//! drives a private `_int_to_word` recursion. Consequently `cards`/`merge`
+//! stay at their trait defaults here. Python has **no overflow check** —
+//! arbitrarily large input was silently degraded (see bug 5 below); this
+//! port raises `OverflowError` from 10^21 (`maxval`).
 //!
 //! `Num2Word_NN` overrides all four in-scope methods (`to_cardinal`,
 //! `to_ordinal`, `to_ordinal_num`, `to_year`), so nothing is inherited from
@@ -45,33 +45,41 @@
 //!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""` —
 //!    always falsy — so in Python every zero renders as the English "zero".
 //!    This port says the Nynorsk "null": `0 -> "null"`,
-//!    `to_ordinal(0) -> "null-de"`.
-//! 2. **No teens.** The `< 100` branch is a plain tens/ones split with no
-//!    11..19 special case, so 11 is "ti ein" (literally "ten one") instead of
-//!    "elleve", 12 is "ti to", 19 is "ti ni". This propagates upward:
-//!    `12345 -> "ti to tusen tre hundre førti fem"`.
+//!    `to_ordinal(0) -> "null"`.
+//! 2. **Teens (fixed, #216).** Python's `< 100` branch was a plain
+//!    tens/ones split with no 11..19 case, so 11 was "ti ein" and 12 "ti to".
+//!    This port uses the Nynorsk teens from [`TEENS`] (elleve, tolv, tretten,
+//!    …, nitten), matching `lang_nb.rs`: `12345 -> "tolv tusen tre hundre
+//!    førti fem"`.
 //! 3. **No "hundre"/"tusen" elision and no compounding.** Norwegian writes
 //!    "hundre" for 100 and compounds ("tjueein"); this module always prefixes
 //!    the multiplier and space-separates every token, so `100 -> "ein hundre"`
 //!    and `1000 -> "ein tusen"`.
 //! 4. **"million" never pluralises.** The `< 10^9` branch appends the bare
 //!    singular, so `10^7 -> "ti million"`, not "ti millionar".
-//! 5. **Everything >= 10^9 degrades to digits.** The final `else` is
-//!    `return str(number)  # Fallback for very large numbers` — no billion
-//!    word exists. So `10^9 -> "1000000000"` and, composed with the ordinal
-//!    suffix, `to_ordinal(10**9) -> "1000000000-de"`. This is the one place
-//!    where BigInt is load-bearing: the corpus reaches 10^21, well past u64,
-//!    and the value must round-trip as decimal digits. See [`int_to_word`].
-//! 6. **The ordinal is cardinal + "-de", unconditionally.** No stem changes,
-//!    no agreement, and the suffix binds to the last token only, so
-//!    `to_ordinal(1234567)` ends "...seksti sju-de". Negatives are *not*
-//!    rejected (base's `errmsg_negord` guard is bypassed by the override):
-//!    `to_ordinal(-1) -> "minus ein-de"`.
+//! 5. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` is `return str(number)  # Fallback for very large numbers`, so
+//!    `10^9 -> "1000000000"`. This port continues the `million` composition
+//!    with the Nynorsk long-scale words milliard (10^9), billion (10^12),
+//!    billiard (10^15) and trillion (10^18) — all in Nynorskordboka
+//!    (ordbokene.no), which has no "trilliard" — so `10^9 -> "ein milliard"`
+//!    (never pluralised, like bug 4), and raises `OverflowError` from 10^21
+//!    (`maxval`). See [`int_to_word`].
+//! 6. ~~**The ordinal was cardinal + "-de", unconditionally.**~~ No stem
+//!    changes and no agreement: 11 read "elleve-de", 1234567 ended
+//!    "...seksti sju-de". Fixed (#259): the last word takes its Nynorsk
+//!    ordinal ("ellevte", "sjuande", "trettande", "tjue første", "to
+//!    hundrede", "millionte"), and a bare scale word drops its "ein"
+//!    ("hundrede", "tusende"). 0 has no attested ordinal and stays "null".
+//!    Negatives are *not* rejected (base's `errmsg_negord` guard is
+//!    bypassed by the override): `to_ordinal(-1) -> "minus første"`. The
+//!    float/Decimal path still appends "-de" to the decimal reading
+//!    ("fem komma null-de").
 //! 7. **An unknown currency code silently becomes kroner.** `to_currency`
 //!    looks the code up with `CURRENCY_FORMS.get(currency, <first value>)`
 //!    instead of indexing, so anything outside NOK/USD/EUR renders with NOK's
 //!    forms rather than raising: `to_currency(12.34, "JPY")` is
-//!    "ti to kroner tretti fire øre". The inherited `to_cheque` indexes the
+//!    "tolv kroner tretti fire øre". The inherited `to_cheque` indexes the
 //!    same dict and *does* raise for those codes, so the two entry points
 //!    disagree about which currencies exist. Both halves are corpus-pinned.
 //! 8. **Currency precision is hardcoded to two decimals.** `to_currency`
@@ -105,8 +113,15 @@
 //! every recursive call passes a positive value. It is mirrored in
 //! [`int_to_word`] to keep the structure aligned with the source, but it can
 //! never fire. Note it would double the negword if it ever did.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dollar / euro with cent (same form in the
+//! plural). Examples in these docs that quote English nouns record Python's
+//! output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -114,6 +129,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup()`: note the trailing space — NN overrides base's `"(-) "`.
 const NEGWORD: &str = "minus ";
@@ -124,6 +140,11 @@ const POINTWORD: &str = "komma";
 /// through the dead conditional, and at 1..=9 for real digits.
 const ONES: [&str; 10] = [
     "", "ein", "to", "tre", "fire", "fem", "seks", "sju", "åtte", "ni",
+];
+
+/// 11..=19, which Python lacked (bug 2, fixed in #216).
+const TEENS: [&str; 9] = [
+    "elleve", "tolv", "tretten", "fjorten", "femten", "seksten", "sytten", "atten", "nitten",
 ];
 
 /// `self.tens`. Index 0 is `""` and unreachable (the branch requires n >= 10).
@@ -139,29 +160,85 @@ const MILLION: &str = "million";
 /// "zero" in Python, Nynorsk "null" here (#154).
 const ZERO_WORD: &str = "null";
 
-/// The ceiling of the worded range; at or above it Python returns `str(number)`.
+/// The ceiling of Python's worded range; at or above it Python returned
+/// `str(number)` (bug 5) and [`HIGH_SCALES`] take over here.
 const FALLBACK_AT: u64 = 1_000_000_000;
+
+/// The scales above `million` that Python lacks (gladiaio/num2words2#147),
+/// largest first, as `(power of ten, word)`. Nynorsk long scale, all in
+/// Nynorskordboka (ordbokene.no). Never pluralised, like `million` (bug 4).
+const HIGH_SCALES: [(u32, &str); 4] = [
+    (18, "trillion"),
+    (15, "billiard"),
+    (12, "billion"),
+    (9, "milliard"),
+];
+
+/// The ordinal of one cardinal word (#259): "første", "sjuande",
+/// "trettande", "tjuande", "hundrede", "tusende", "millionte". `None` for
+/// "null".
+fn ordinal_word(word: &str) -> Option<String> {
+    Some(match word {
+        "ein" => "første".to_string(),
+        "to" => "andre".to_string(),
+        "tre" => "tredje".to_string(),
+        "fire" => "fjerde".to_string(),
+        "fem" => "femte".to_string(),
+        "seks" => "sjette".to_string(),
+        "elleve" => "ellevte".to_string(),
+        "tolv" => "tolvte".to_string(),
+        HUNDRED => "hundrede".to_string(),
+        THOUSAND => "tusende".to_string(),
+        // sju, åtte, ni, ti, tretten..nitten ("trettande"), tjue..nitti.
+        w if ["sju", "åtte", "ni", "ti"].contains(&w) => format!("{}ande", w.trim_end_matches('e')),
+        w if TEENS.contains(&w) => format!("{}ande", w.trim_end_matches("en")),
+        w if TENS[2..].contains(&w) => format!("{}ande", w.trim_end_matches('e')),
+        w if w == MILLION || HIGH_SCALES.iter().any(|(_, s)| *s == w) => format!("{}te", w),
+        _ => return None,
+    })
+}
+
+/// The exclusive ceiling: Nynorskordboka has no word for 10^21 (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(21))
+}
 
 /// Python's `_int_to_word`.
 ///
 /// Splits the bounded case out into [`int_to_word_small`]: below `FALLBACK_AT`
-/// the value provably fits in a u64, and at or above it Python does not word
-/// the number at all — it just prints the digits, which `BigInt::to_string`
-/// reproduces for any magnitude. So no fixed-width cast is ever applied to a
-/// value that could exceed it: `to_u64()` returning `None` (a value past
-/// u64::MAX) lands in the same digits branch as 10^9 does.
-fn int_to_word(n: &BigInt) -> String {
+/// the value provably fits in a u64. At or above it Python printed the digits
+/// (bug 5); here the [`HIGH_SCALES`] word it, and the `maxval` check raises
+/// `OverflowError` past them (#147).
+fn int_to_word(n: &BigInt) -> Result<String> {
+    check_maxval(n, maxval_ceiling())?;
     if n.is_zero() {
-        return ZERO_WORD.to_string(); // bug 1
+        return Ok(ZERO_WORD.to_string()); // bug 1
     }
     if n.is_negative() {
         // Unreachable — see "Dead code reproduced" in the module docs.
-        return format!("{}{}", NEGWORD, int_to_word(&n.abs()));
+        return Ok(format!("{}{}", NEGWORD, int_to_word(&n.abs())?));
     }
-    match n.to_u64() {
-        Some(v) if v < FALLBACK_AT => int_to_word_small(v),
-        _ => n.to_string(), // bug 5: "Fallback for very large numbers"
+    if let Some(v) = n.to_u64() {
+        if v < FALLBACK_AT {
+            return Ok(int_to_word_small(v));
+        }
     }
+    // bug 5: Python's "Fallback for very large numbers" — words instead.
+    for &(exp, word) in HIGH_SCALES.iter() {
+        let scale = pow10_big(exp);
+        if n >= &scale {
+            let head = int_to_word(&(n / &scale))?;
+            let remainder = n % &scale;
+            let mut out = format!("{} {}", head, word);
+            if !remainder.is_zero() {
+                out.push(' ');
+                out.push_str(&int_to_word(&remainder)?);
+            }
+            return Ok(out);
+        }
+    }
+    unreachable!("every value >= 10^9 and below maxval has a HIGH_SCALES entry")
 }
 
 /// The worded range: `0 < n < 10^9`.
@@ -169,8 +246,10 @@ fn int_to_word_small(n: u64) -> String {
     debug_assert!(n > 0 && n < FALLBACK_AT);
     if n < 10 {
         ONES[n as usize].to_string()
+    } else if (11..20).contains(&n) {
+        // bug 2 (fixed, #216): Python had no teens and said "ti ein".
+        TEENS[(n - 11) as usize].to_string()
     } else if n < 100 {
-        // bug 2: no teens table, so 11 -> "ti ein".
         let (t, o) = ((n / 10) as usize, (n % 10) as usize);
         if o == 0 {
             TENS[t].to_string()
@@ -215,8 +294,8 @@ fn scale(head: &str, word: &str, remainder: u64) -> String {
 /// is correct Nynorsk and makes the `right != 1` test invisible for that entry.
 const FORMS: [(&str, [&str; 2], [&str; 2]); 3] = [
     ("NOK", ["krone", "kroner"], ["øre", "øre"]),
-    ("USD", ["dollar", "dollars"], ["cent", "cents"]),
-    ("EUR", ["euro", "euros"], ["cent", "cents"]),
+    ("USD", ["dollar", "dollar"], ["cent", "cent"]),
+    ("EUR", ["euro", "euro"], ["cent", "cent"]),
 ];
 
 /// `list(self.CURRENCY_FORMS.values())[0]` — the `.get()` default in
@@ -336,13 +415,13 @@ fn string_to_words(n: &str) -> Result<String> {
         Some((left, right)) => {
             // `ret += _int_to_word(int(left)) + " " + self.pointword + " "`
             let left_int = BigInt::from_str(left).map_err(|_| int_value_error(left))?;
-            let mut out = format!("{}{} {} ", ret, int_to_word(&left_int), POINTWORD);
+            let mut out = format!("{}{} {} ", ret, int_to_word(&left_int)?, POINTWORD);
             // `for digit in right: ret += _int_to_word(int(digit)) + " "`
             for ch in right.chars() {
                 let d = ch
                     .to_digit(10)
                     .ok_or_else(|| int_value_error(&ch.to_string()))?;
-                out.push_str(&int_to_word(&BigInt::from(d)));
+                out.push_str(&int_to_word(&BigInt::from(d))?);
                 out.push(' ');
             }
             // `return ret.strip()`
@@ -351,7 +430,7 @@ fn string_to_words(n: &str) -> Result<String> {
         None => {
             // `return (ret + _int_to_word(int(n))).strip()`
             let n_int = BigInt::from_str(n).map_err(|_| int_value_error(n))?;
-            Ok(format!("{}{}", ret, int_to_word(&n_int)).trim().to_string())
+            Ok(format!("{}{}", ret, int_to_word(&n_int)?).trim().to_string())
         }
     }
 }
@@ -398,6 +477,10 @@ impl Default for LangNn {
 }
 
 impl Lang for LangNn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -434,14 +517,31 @@ impl Lang for LangNn {
         // trailing space is always followed by a non-empty word, and
         // `_int_to_word` never returns "" — zero yields "null"). Mirrored
         // anyway to match the source line for line.
-        Ok(format!("{}{}", sign, int_to_word(&magnitude))
+        Ok(format!("{}{}", sign, int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        // bug 6: unconditional suffix on the cardinal, negatives included.
-        Ok(format!("{}-de", self.to_cardinal(value)?))
+        // bug 6 (#259): the last word takes its ordinal form; negatives are
+        // still accepted, as Python accepted them.
+        let cardinal = self.to_cardinal(value)?;
+        let (head, last) = match cardinal.rsplit_once(' ') {
+            Some((h, l)) => (Some(h), l),
+            None => (None, cardinal.as_str()),
+        };
+        let word = match ordinal_word(last) {
+            Some(w) => w,
+            // "null" has no attested Nynorsk ordinal; it stays as is.
+            None => return Ok(cardinal),
+        };
+        Ok(match head {
+            // A bare scale word drops its "ein": "hundrede", "millionte".
+            Some("ein") if [HUNDRED, THOUSAND, MILLION].contains(&last)
+                || HIGH_SCALES.iter().any(|(_, w)| *w == last) => word,
+            Some(h) => format!("{} {}", h, word),
+            None => word,
+        })
     }
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
@@ -584,7 +684,7 @@ impl Lang for LangNn {
     // `CURRENCY_FORMS[currency]` and turns the KeyError into a
     // NotImplementedError. The corpus pins both:
     //
-    //     currency:JPY 12.34 -> "ti to kroner tretti fire øre"
+    //     currency:JPY 12.34 -> "tolv kroner tretti fire øre"
     //     cheque:JPY   1234.56 -> NotImplementedError
     //
     // So `currency_forms` below reports only the three real codes (which is
@@ -683,7 +783,7 @@ impl Lang for LangNn {
         // `cr1, cr2 = self.CURRENCY_FORMS.get(currency, list(...values())[0])`
         let forms = self.forms.get(currency).unwrap_or(&self.fallback);
 
-        let mut result = format!("{} {}", int_to_word(&left), pick(&forms.unit, &left)?);
+        let mut result = format!("{} {}", int_to_word(&left)?, pick(&forms.unit, &left)?);
 
         // `if cents and right:` — a zero `right` drops the segment, and so
         // does `cents=False` (NN has no terse-digits branch).
@@ -691,7 +791,7 @@ impl Lang for LangNn {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                int_to_word(&right)?,
                 pick(&forms.subunit, &right)?
             ));
         }

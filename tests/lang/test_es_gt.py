@@ -26,7 +26,7 @@ TEST_CASES_TO_CURRENCY = (
     (2, "dos quetzales"),
     (8, "ocho quetzales"),
     (12, "doce quetzales"),
-    (21, "veintiun quetzales"),
+    (21, "veintiún quetzales"),
     (81.25, "ochenta y un quetzales y veinticinco centavos"),
     (100, "cien quetzales"),
 )

@@ -92,8 +92,9 @@
 //!    read alike and behave differently; both are reproduced as written.
 //! 8. `merge`'s dead `self.count += 0` in the `count >= 1` arm is a no-op and
 //!    is simply dropped.
-//! 9. `to_ordinal` never checks `MAXVAL` (only `to_cardinal` does), so ordinals
-//!    above 10^27 are rendered rather than raising `OverflowError`.
+//! 9. ~~`to_ordinal` never checks `MAXVAL`~~ (only `to_cardinal` does), so in
+//!    Python ordinals from 10^27 are rendered, wrongly ("dakuatriliaun rihun
+//!    idak" for 10^27). The port raises `OverflowError` there too (#215).
 //!
 //! # Error variants
 //!
@@ -104,10 +105,19 @@
 //! * `to_ordinal`'s `words_split[0]` would raise `IndexError` on empty `words`
 //!   → [`N2WError::Index`]. Believed unreachable (no card word is empty), but
 //!   modelled rather than silently swallowed.
-//! * `to_currency` with `abs(val) >= 10**26` → `decimal.InvalidOperation` →
-//!   [`N2WError::Custom`]. See [`decimal_prec_limit`].
+//! * `to_currency` with `abs(val) >= 10^27` → `OverflowError`, like the
+//!   cardinal. Python raised `decimal.InvalidOperation` from 10**26 already
+//!   (its `(Decimal(str(val)) * 100) % 1` overran the 28-digit default
+//!   context), below its own MAXVAL; the port does not (#215).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Tetum euro subunit or pound noun was found, so EUR
+//! and GBP raise NotImplementedError. Examples in these docs that quote
+//! English nouns record Python's output.
 
-use crate::base::{set_low_numwords, set_mid_numwords, splitnum, Cards, Lang, N2WError, Node, Result};
+use crate::base::{check_maxval, set_low_numwords, set_mid_numwords, splitnum, Cards, Lang, N2WError, Node, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -115,7 +125,6 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, Zero};
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 /// `merge`'s "these numbers get a -k suffix" table, from `to_ordinal`.
 /// Note the gaps: 1, 4 and 6 are deliberately absent (handled separately).
@@ -157,31 +166,11 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert("AUD", CurrencyForms::new(&DOLLAR, &CENTS));
     m.insert("CAD", CurrencyForms::new(&DOLLAR, &CENTS));
-    m.insert("EUR", CurrencyForms::new(&["euro", "euros"], &CENTS));
-    m.insert(
-        "GBP",
-        CurrencyForms::new(&["pound sterling", "pound sterling"], &["pence", "pence"]),
-    );
+    // EUR ("euros") and GBP ("pound sterling", "pence") were English; no
+    // reliable Tetum subunit / pound noun was found, so they raise
+    // NotImplementedError (#222).
     m.insert("USD", CurrencyForms::new(&DOLLAR, &CENTS));
     m
-}
-
-/// `10**28` — the point where `Decimal.__mod__` gives up.
-///
-/// `to_currency` opens with `(Decimal(str(val)) * 100) % 1`, which runs under
-/// the *default* decimal context (`prec=28`), not exact arithmetic.
-/// `Decimal.__mod__` raises `InvalidOperation(DivisionImpossible)` as soon as
-/// the integer quotient needs more than `prec` digits, and dividing by 1 makes
-/// that quotient `trunc(decimal_val * 100)`. So every `abs(val) >= 10**26`
-/// raises — int, float and Decimal alike — even though TET's own `MAXVAL` is
-/// 10**27 and `to_cardinal` would happily render the number.
-///
-/// The raise happens *before* the `CURRENCY_FORMS` lookup, so it beats the
-/// unknown-code branch too: `to_currency(10**26, "JPY")` is InvalidOperation,
-/// not NotImplementedError. Verified against the interpreter.
-fn decimal_prec_limit() -> &'static BigDecimal {
-    static LIMIT: OnceLock<BigDecimal> = OnceLock::new();
-    LIMIT.get_or_init(|| BigDecimal::from(BigInt::from(10).pow(28)))
 }
 
 /// Round to the default decimal context's 28 significant digits, ROUND_HALF_EVEN.
@@ -603,9 +592,12 @@ impl Lang for LangTet {
         // Python's `out` is initialised to "" and never assigned again.
         let out = "";
 
-        // Note: to_ordinal does NOT check MAXVAL. splitnum only returns None
+        // Python's to_ordinal does NOT check MAXVAL, and splitnum then reads
+        // 10**27 as "kuatriliaun rihun" (a thousand quadrillion). The port
+        // checks it like to_cardinal does (#215). splitnum only returns None
         // for negatives, which verify_ordinal has already rejected; Python
         // would hit `len(None)` -> TypeError, so model that shape.
+        check_maxval(value, &self.maxval)?;
         let tree = splitnum(self, value).ok_or_else(|| {
             N2WError::Type("object of type 'NoneType' has no len()".into())
         })?;
@@ -886,20 +878,17 @@ impl Lang for LangTet {
             CurrencyValue::Decimal { value, .. } => value.clone(),
         };
 
+        // Python's `% 1` below raised InvalidOperation(DivisionImpossible)
+        // from 10**26, under its own 10**27 MAXVAL. The ceiling is checked here
+        // instead, before the CURRENCY_FORMS lookup (#215).
+        check_maxval(&decimal_val.with_scale(0).as_bigint_and_exponent().0, &self.maxval)?;
+
         // has_fractional_cents = (decimal_val * 100) % 1 != 0
         //
         // The 100 is hardcoded in Python; CURRENCY_PRECISION is never consulted
-        // on this path. Both the context rounding and the DivisionImpossible
-        // limit fire before the CURRENCY_FORMS lookup below, matching Python's
-        // statement order.
+        // on this path. The context rounding fires before the CURRENCY_FORMS
+        // lookup below, matching Python's statement order.
         let scaled = decimal_context_round(&(&decimal_val * BigDecimal::from(100)));
-        if scaled.abs() >= *decimal_prec_limit() {
-            return Err(N2WError::Custom {
-                module: "decimal",
-                class: "InvalidOperation",
-                msg: "[<class 'decimal.DivisionImpossible'>]".to_string(),
-            });
-        }
         // `scaled >= 0` or not, with_scale(0) truncates toward zero — the same
         // direction Decimal's `%` uses, so the != 0 test agrees on both signs.
         let has_fractional_cents = &scaled - scaled.with_scale(0) != BigDecimal::zero();

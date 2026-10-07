@@ -8,9 +8,9 @@
 //! outright and drives `_int_to_word`, a plain recursive descent over the Lao
 //! myriad-style scale (สิบ/ຊາວ/ຮ້ອຍ/ພັນ/ໝື່ນ/ແສນ/ລ້ານ).
 //!
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here, and
-//! there is **no overflow check at all** — see bug 1 below for what happens
-//! instead.
+//! Consequently `cards`/`merge` stay at their trait defaults here. Python has
+//! **no overflow check at all** — see bug 1 below for what it did instead;
+//! this port raises `OverflowError` from 10^18 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base` and *not* overridden by LO:
 //!   * `to_cheque` — the only inherited method that runs. It reads
@@ -42,18 +42,22 @@
 //! This is a port, not a rewrite. Each of the following is wrong-looking but is
 //! exactly what Python emits, and each is pinned by the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the decimal digits.** The
-//!    final `else` arm is `return str(number)`, so `to_cardinal(10**9)` is the
-//!    ASCII string `"1000000000"`, not Lao words. Every value >= 10^9 is echoed
-//!    back as digits, forever — there is no `OverflowError` and no upper bound.
-//!    Corpus confirms this out to 10^21. See [`LangLo::int_to_word`].
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` arm is `return str(number)`, so `to_cardinal(10**9)` was the
+//!    ASCII string `"1000000000"`. Lao composes 10^9 as ພັນລ້ານ "thousand
+//!    million", 10^12 as ລ້ານລ້ານ and 10^15 as ພັນລ້ານລ້ານ (Wikipedia "Lao
+//!    language", numerals table), so the million arm now takes any
+//!    multiplier below 10^12 — 10^9 == `"ໜຶ່ງພັນ ລ້ານ"`, 10^12 ==
+//!    `"ໜຶ່ງ ລ້ານ ລ້ານ"` — and `OverflowError` is raised from 10^18. ຕື້
+//!    (Wiktionary, "billion") is the alternative 10^9 word not used. See
+//!    [`LangLo::int_to_word`].
 //! 2. **`to_ordinal` never calls `verify_ordinal`**, so negatives are accepted
 //!    and produce `"ທີ່" + to_cardinal(n)` — e.g. `to_ordinal(-1)` ==
 //!    `"ທີ່ລົບ ໜຶ່ງ"` ("th-minus one"). Most languages raise `TypeError` here.
 //! 3. **`to_ordinal`/`to_ordinal_num` are pure prefixing** — the "ordinal" is
 //!    just `"ທີ່"` glued onto the cardinal (or onto `str(number)`), with no
-//!    separator and no morphology. So `to_ordinal(10**9)` == `"ທີ່1000000000"`,
-//!    inheriting bug 1.
+//!    separator and no morphology. So Python's `to_ordinal(10**9)` was
+//!    `"ທີ່1000000000"`, inheriting bug 1; it is `"ທີ່ໜຶ່ງພັນ ລ້ານ"` now.
 //! 4. **`negword` carries a trailing space** (`"ລົບ "`, not `"ລົບ"`), unlike the
 //!    base class's convention of stripping it at the call site. `to_cardinal`
 //!    concatenates it raw, which happens to give the right single space —
@@ -166,7 +170,7 @@
 //!   [`split_currency`]; see that function for the exact conditions and the one
 //!   known gap.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -175,6 +179,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.ones`, indices 0..=9. Every read is guarded by a range check that
 /// pins the index into this table, so there is no `IndexError` path.
@@ -355,8 +360,8 @@ fn ones_at(n: &BigInt) -> &'static str {
 ///    `["1", "2345678901234568e+16"]`, so `left = int("1") = 1` and
 ///    `right = int("23") = 23`, giving `"ໜຶ່ງ ເອີໂຣ ຊາວສາມ ເຊັນ"` — one euro
 ///    and twenty-three cents for a value of ~1.2e16. This port instead reads
-///    the number it was handed and returns `"12345678901234568 ເອີໂຣ"` (bug 1's
-///    digit echo). Reproducing Python's answer would mean re-deriving
+///    the number it was handed and raises the 10^18-ceiling `OverflowError`
+///    only from 1e18 up — ~1.2e16 is spelled in words (#147). Reproducing Python's answer would mean re-deriving
 ///    `repr(float)` in Rust, which `currency.rs` deliberately keeps on the
 ///    Python side; the divergence only affects floats `>= 1e16`, where Python's
 ///    own output is nonsense.
@@ -508,27 +513,27 @@ impl LangLo {
     /// general tens arm).
     ///
     /// Beyond 10^9 the Python falls off the end of the chain into
-    /// `return str(number)`, echoing the decimal digits. That is bug 1 in the
-    /// module docs and is why this returns `String` rather than words for large
-    /// input — and why it cannot overflow or raise.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    /// `return str(number)`, echoing the decimal digits — bug 1 in the module
+    /// docs. Here the million arm takes over up to the 10^18 ceiling (#147).
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ONES[0].to_string();
+            return Ok(ONES[0].to_string());
         }
 
         if number.is_negative() {
             // Dead on every in-scope path (see module docs); ported for fidelity.
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         } else if number < &bi(10) {
-            return ones_at(number).to_string();
+            return Ok(ones_at(number).to_string());
         } else if number == &bi(10) {
-            return TEN.to_string();
+            return Ok(TEN.to_string());
         } else if number < &bi(20) {
-            return format!("{}{}", TEN, ones_at(&(number - 10u32)));
+            return Ok(format!("{}{}", TEN, ones_at(&(number - 10u32))));
         } else if number == &bi(20) {
-            return TWENTY.to_string();
+            return Ok(TWENTY.to_string());
         } else if number < &bi(30) {
-            return format!("{}{}", TWENTY, ones_at(&(number - 20u32)));
+            return Ok(format!("{}{}", TWENTY, ones_at(&(number - 20u32))));
         } else if number < &bi(100) {
             // 30..=99. Python: tens_word = ones[n // 10] + "ສິບ"; append the
             // units word only when non-zero.
@@ -536,9 +541,9 @@ impl LangLo {
             let ones_val = number % 10u32;
             let tens_word = format!("{}{}", ones_at(&tens_val), TEN);
             if ones_val.is_zero() {
-                return tens_word;
+                return Ok(tens_word);
             } else {
-                return format!("{}{}", tens_word, ones_at(&ones_val));
+                return Ok(format!("{}{}", tens_word, ones_at(&ones_val)));
             }
         }
 
@@ -558,31 +563,43 @@ impl LangLo {
                 let mut result = format!("{}{}", ones_at(&scale_val), suffix);
                 if !remainder.is_zero() {
                     result.push(' ');
-                    result.push_str(&self.int_to_word(&remainder));
+                    result.push_str(&self.int_to_word(&remainder)?);
                 }
-                return result;
+                return Ok(result);
             }
         }
 
-        if number < &bi(1_000_000_000) {
-            // 10^6..10^9-1. Unlike the arms above, the multiplier here is
-            // *recursed* (it can be 1..=999) and ລ້ານ carries a leading space.
+        {
+            // 10^6 and up. Unlike the arms above, the multiplier here is
+            // *recursed* and ລ້ານ carries a leading space. Python stopped at a
+            // multiplier of 999 and returned `str(number)` beyond (bug 1); it
+            // now runs to the maxval check's 10^12 - 1, so 10^9 reads
+            // "thousand million" and 10^12 "million million" (#147).
             let millions_val = number / 1_000_000u32;
             let remainder = number % 1_000_000u32;
-            let mut result = format!("{}{}", self.int_to_word(&millions_val), MILLION);
+            let mut result = format!("{}{}", self.int_to_word(&millions_val)?, MILLION);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            Ok(result)
         }
-
-        // Bug 1: `return str(number)` — the digits, verbatim, with no ceiling.
-        number.to_string()
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147): the million arm composes
+/// 10^9 as "thousand million" and 10^12/10^15 as "(thousand) million
+/// million"; a multiplier of 10^12 would stack a third ລ້ານ, unattested.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(18))
+}
+
 impl Lang for LangLo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -617,14 +634,14 @@ impl Lang for LangLo {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         let ret = if value.is_negative() { NEGWORD } else { "" };
         // int(n) after stripping "-" is exactly abs(value).
-        let words = self.int_to_word(&value.abs());
+        let words = self.int_to_word(&value.abs())?;
         Ok(format!("{}{}", ret, words).trim().to_string())
     }
 
     /// Port of `Num2Word_LO.to_ordinal`: `"ທີ່" + self.to_cardinal(number)`.
     ///
     /// No `verify_ordinal`, so negatives pass straight through (bug 2), and no
-    /// separator, so large values give `"ທີ່1000000000"` (bugs 1 + 3).
+    /// separator (bug 3; Python's `"ທີ່1000000000"` for 10^9 was bug 1).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         let cardinal = self.to_cardinal(value)?;
         Ok(format!("{}{}", ORDINAL_PREFIX, cardinal))
@@ -719,7 +736,7 @@ impl Lang for LangLo {
 
         if let Some((left, right)) = n.split_once('.') {
             // ret += _int_to_word(int(left)) + " " + pointword + " "
-            ret.push_str(&self.int_to_word(&py_int(left)?));
+            ret.push_str(&self.int_to_word(&py_int(left)?)?);
             ret.push(' ');
             // Python uses `self.pointword` raw here (not title()); is_title is
             // false anyway, so this matches either way.
@@ -727,7 +744,7 @@ impl Lang for LangLo {
             ret.push(' ');
             // for digit in right: ret += _int_to_word(int(digit)) + " "
             for ch in right.chars() {
-                ret.push_str(&self.int_to_word(&py_digit(ch)?));
+                ret.push_str(&self.int_to_word(&py_digit(ch)?)?);
                 ret.push(' ');
             }
             Ok(ret.trim().to_string())
@@ -735,7 +752,7 @@ impl Lang for LangLo {
             // else: (ret + _int_to_word(int(n))).strip() — reached when str()
             // has no dot: a point-free Decimal ("5" -> integer reading) or an
             // exponent form ("1e+16"/"1E+2", where int() raises ValueError).
-            ret.push_str(&self.int_to_word(&py_int(n)?));
+            ret.push_str(&self.int_to_word(&py_int(n)?)?);
             Ok(ret.trim().to_string())
         }
     }
@@ -899,13 +916,13 @@ impl Lang for LangLo {
 
         // cr1[0] / cr2[0]: the *first* form. LO never reaches for the plural
         // slot (only `to_cheque`'s `cr1[-1]` does), and both slots are equal.
-        let mut result = format!("{} {}", self.int_to_word(&left), forms.unit[0]);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, forms.unit[0]);
 
         // `cents and right` — `right` is an int, so 0 is falsy and the whole
         // segment vanishes. Bugs 7 and 8.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(&forms.subunit[0]);
         }
@@ -920,6 +937,7 @@ impl Lang for LangLo {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -967,7 +985,12 @@ mod float_tests {
         assert_eq!(d("0.01"), "ສູນ ຈຸດ ສູນ ໜຶ່ງ");
         assert_eq!(d("1.10"), "ໜຶ່ງ ຈຸດ ໜຶ່ງ ສູນ");
         assert_eq!(d("12.345"), "ສິບສອງ ຈຸດ ສາມ ສີ່ ຫ້າ");
-        assert_eq!(d("98746251323029.99"), "98746251323029 ຈຸດ ເກົ້າ ເກົ້າ");
+        // Python echoed the integer part as digits; it reads "98 million
+        // million 746251 million ..." now (#147).
+        assert_eq!(
+            d("98746251323029.99"),
+            "ເກົ້າສິບແປດ ລ້ານ ເຈັດແສນ ສີ່ໝື່ນ ຫົກພັນ ສອງຮ້ອຍ ຫ້າສິບໜຶ່ງ ລ້ານ ສາມແສນ ສອງໝື່ນ ສາມພັນ ຊາວເກົ້າ ຈຸດ ເກົ້າ ເກົ້າ"
+        );
         assert_eq!(d("0.001"), "ສູນ ຈຸດ ສູນ ສູນ ໜຶ່ງ");
     }
 
@@ -1028,15 +1051,15 @@ mod float_tests {
             lo.cardinal_float_entry(&e16, None),
             Err(N2WError::Value(_))
         ));
-        // str(Decimal("1E+2")) == "1E+2": int("1E+2") -> ValueError.
+        // #211: str(Decimal("1E+2")) is written out ("100"), so it reads.
         let d1e2 = FloatValue::Decimal {
             value: BigDecimal::from_str("1E+2").unwrap(),
             precision: 2,
         };
-        assert!(matches!(
-            lo.ordinal_float_entry(&d1e2),
-            Err(N2WError::Value(_))
-        ));
+        assert_eq!(
+            lo.ordinal_float_entry(&d1e2).unwrap(),
+            lo.to_ordinal(&BigInt::from(100)).unwrap()
+        );
         // ordinal_num echoes the repr instead of converting.
         assert_eq!(lo.ordinal_num_float_entry(&e16, "1e+16").unwrap(), "ທີ່1e+16");
     }

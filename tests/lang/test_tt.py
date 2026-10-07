@@ -191,11 +191,20 @@ class Num2WordsTTTest(TestCase):
             num2words(999999999, lang="tt"),
             "тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз",
         )
-        self.assertEqual(num2words(1000000000, lang="tt"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="tt"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="tt"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="tt"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="tt"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="tt"), "бер миллиард")
+        self.assertEqual(
+            num2words(1234567890, lang="tt"),
+            "бер миллиард ике йөз утыз дүрт миллион биш йөз алтмыш җиде мең сигез йөз туксан",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="tt"),
+            "тугыз миллиард тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз",
+        )
+        self.assertEqual(num2words(10000000000, lang="tt"), "ун миллиард")
+        self.assertEqual(
+            num2words(99999999999, lang="tt"),
+            "туксан тугыз миллиард тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -246,43 +255,43 @@ class Num2WordsTTTest(TestCase):
 
     def test_ordinal(self):
         """Test ordinal numbers."""
-        self.assertEqual(num2words(1, lang="tt", ordinal=True), "бер-нче")
-        self.assertEqual(num2words(2, lang="tt", ordinal=True), "ике-нче")
-        self.assertEqual(num2words(3, lang="tt", ordinal=True), "өч-нче")
-        self.assertEqual(num2words(4, lang="tt", ordinal=True), "дүрт-нче")
-        self.assertEqual(num2words(5, lang="tt", ordinal=True), "биш-нче")
-        self.assertEqual(num2words(6, lang="tt", ordinal=True), "алты-нче")
-        self.assertEqual(num2words(7, lang="tt", ordinal=True), "җиде-нче")
-        self.assertEqual(num2words(8, lang="tt", ordinal=True), "сигез-нче")
-        self.assertEqual(num2words(9, lang="tt", ordinal=True), "тугыз-нче")
-        self.assertEqual(num2words(10, lang="tt", ordinal=True), "ун-нче")
-        self.assertEqual(num2words(11, lang="tt", ordinal=True), "ун бер-нче")
-        self.assertEqual(num2words(12, lang="tt", ordinal=True), "ун ике-нче")
-        self.assertEqual(num2words(13, lang="tt", ordinal=True), "ун өч-нче")
-        self.assertEqual(num2words(14, lang="tt", ordinal=True), "ун дүрт-нче")
-        self.assertEqual(num2words(15, lang="tt", ordinal=True), "ун биш-нче")
-        self.assertEqual(num2words(16, lang="tt", ordinal=True), "ун алты-нче")
-        self.assertEqual(num2words(17, lang="tt", ordinal=True), "ун җиде-нче")
-        self.assertEqual(num2words(18, lang="tt", ordinal=True), "ун сигез-нче")
-        self.assertEqual(num2words(19, lang="tt", ordinal=True), "ун тугыз-нче")
-        self.assertEqual(num2words(20, lang="tt", ordinal=True), "егерме-нче")
-        self.assertEqual(num2words(21, lang="tt", ordinal=True), "егерме бер-нче")
-        self.assertEqual(num2words(22, lang="tt", ordinal=True), "егерме ике-нче")
-        self.assertEqual(num2words(25, lang="tt", ordinal=True), "егерме биш-нче")
-        self.assertEqual(num2words(30, lang="tt", ordinal=True), "утыз-нче")
-        self.assertEqual(num2words(40, lang="tt", ordinal=True), "кырык-нче")
-        self.assertEqual(num2words(50, lang="tt", ordinal=True), "илле-нче")
-        self.assertEqual(num2words(60, lang="tt", ordinal=True), "алтмыш-нче")
-        self.assertEqual(num2words(70, lang="tt", ordinal=True), "җитмеш-нче")
-        self.assertEqual(num2words(80, lang="tt", ordinal=True), "сиксән-нче")
-        self.assertEqual(num2words(90, lang="tt", ordinal=True), "туксан-нче")
-        self.assertEqual(num2words(100, lang="tt", ordinal=True), "бер йөз-нче")
-        self.assertEqual(num2words(101, lang="tt", ordinal=True), "бер йөз бер-нче")
-        self.assertEqual(num2words(200, lang="tt", ordinal=True), "ике йөз-нче")
-        self.assertEqual(num2words(500, lang="tt", ordinal=True), "биш йөз-нче")
-        self.assertEqual(num2words(1000, lang="tt", ordinal=True), "бер мең-нче")
-        self.assertEqual(num2words(1001, lang="tt", ordinal=True), "бер мең бер-нче")
-        self.assertEqual(num2words(10000, lang="tt", ordinal=True), "ун мең-нче")
+        self.assertEqual(num2words(1, lang="tt", ordinal=True), "беренче")
+        self.assertEqual(num2words(2, lang="tt", ordinal=True), "икенче")
+        self.assertEqual(num2words(3, lang="tt", ordinal=True), "өченче")
+        self.assertEqual(num2words(4, lang="tt", ordinal=True), "дүртенче")
+        self.assertEqual(num2words(5, lang="tt", ordinal=True), "бишенче")
+        self.assertEqual(num2words(6, lang="tt", ordinal=True), "алтынчы")
+        self.assertEqual(num2words(7, lang="tt", ordinal=True), "җиденче")
+        self.assertEqual(num2words(8, lang="tt", ordinal=True), "сигезенче")
+        self.assertEqual(num2words(9, lang="tt", ordinal=True), "тугызынчы")
+        self.assertEqual(num2words(10, lang="tt", ordinal=True), "унынчы")
+        self.assertEqual(num2words(11, lang="tt", ordinal=True), "ун беренче")
+        self.assertEqual(num2words(12, lang="tt", ordinal=True), "ун икенче")
+        self.assertEqual(num2words(13, lang="tt", ordinal=True), "ун өченче")
+        self.assertEqual(num2words(14, lang="tt", ordinal=True), "ун дүртенче")
+        self.assertEqual(num2words(15, lang="tt", ordinal=True), "ун бишенче")
+        self.assertEqual(num2words(16, lang="tt", ordinal=True), "ун алтынчы")
+        self.assertEqual(num2words(17, lang="tt", ordinal=True), "ун җиденче")
+        self.assertEqual(num2words(18, lang="tt", ordinal=True), "ун сигезенче")
+        self.assertEqual(num2words(19, lang="tt", ordinal=True), "ун тугызынчы")
+        self.assertEqual(num2words(20, lang="tt", ordinal=True), "егерменче")
+        self.assertEqual(num2words(21, lang="tt", ordinal=True), "егерме беренче")
+        self.assertEqual(num2words(22, lang="tt", ordinal=True), "егерме икенче")
+        self.assertEqual(num2words(25, lang="tt", ordinal=True), "егерме бишенче")
+        self.assertEqual(num2words(30, lang="tt", ordinal=True), "утызынчы")
+        self.assertEqual(num2words(40, lang="tt", ordinal=True), "кырыгынчы")
+        self.assertEqual(num2words(50, lang="tt", ordinal=True), "илленче")
+        self.assertEqual(num2words(60, lang="tt", ordinal=True), "алтмышынчы")
+        self.assertEqual(num2words(70, lang="tt", ordinal=True), "җитмешенче")
+        self.assertEqual(num2words(80, lang="tt", ordinal=True), "сиксәненче")
+        self.assertEqual(num2words(90, lang="tt", ordinal=True), "туксанынчы")
+        self.assertEqual(num2words(100, lang="tt", ordinal=True), "бер йөзенче")
+        self.assertEqual(num2words(101, lang="tt", ordinal=True), "бер йөз беренче")
+        self.assertEqual(num2words(200, lang="tt", ordinal=True), "ике йөзенче")
+        self.assertEqual(num2words(500, lang="tt", ordinal=True), "биш йөзенче")
+        self.assertEqual(num2words(1000, lang="tt", ordinal=True), "бер меңенче")
+        self.assertEqual(num2words(1001, lang="tt", ordinal=True), "бер мең беренче")
+        self.assertEqual(num2words(10000, lang="tt", ordinal=True), "ун меңенче")
 
     def test_currency(self):
         """Test currency conversion."""
@@ -305,40 +314,40 @@ class Num2WordsTTTest(TestCase):
             "бер сум илле тиен",
         )
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="USD"), "нуль dollars"
+            num2words(0, lang="tt", to="currency", currency="USD"), "нуль доллар"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="USD"),
-            "нуль dollars бер cent",
+            "нуль доллар бер цент",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="USD"),
-            "нуль dollars илле cents",
+            "нуль доллар илле цент",
         )
         self.assertEqual(
-            num2words(1, lang="tt", to="currency", currency="USD"), "бер dollar"
+            num2words(1, lang="tt", to="currency", currency="USD"), "бер доллар"
         )
         self.assertEqual(
             num2words(1.5, lang="tt", to="currency", currency="USD"),
-            "бер dollar илле cents",
+            "бер доллар илле цент",
         )
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="EUR"), "нуль euros"
+            num2words(0, lang="tt", to="currency", currency="EUR"), "нуль евро"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="EUR"),
-            "нуль euros бер cent",
+            "нуль евро бер цент",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="EUR"),
-            "нуль euros илле cents",
+            "нуль евро илле цент",
         )
         self.assertEqual(
-            num2words(1, lang="tt", to="currency", currency="EUR"), "бер euro"
+            num2words(1, lang="tt", to="currency", currency="EUR"), "бер евро"
         )
         self.assertEqual(
             num2words(1.5, lang="tt", to="currency", currency="EUR"),
-            "бер euro илле cents",
+            "бер евро илле цент",
         )
 
     def test_year(self):
@@ -385,4 +394,3 @@ class Num2WordsTTTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tt"), num2words("100", lang="tt"))
         self.assertEqual(num2words(1000, lang="tt"), num2words("1000", lang="tt"))
-

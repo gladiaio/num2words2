@@ -25,7 +25,7 @@ class Num2WordsSOTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="so"), "zero")
+        self.assertEqual(num2words(0, lang="so"), "eber")
         self.assertEqual(num2words(1, lang="so"), "kow")
         self.assertEqual(num2words(2, lang="so"), "laba")
         self.assertEqual(num2words(3, lang="so"), "saddex")
@@ -210,63 +210,72 @@ class Num2WordsSOTest(TestCase):
             num2words(999999999, lang="so"),
             "sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal",
         )
-        self.assertEqual(num2words(1000000000, lang="so"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="so"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="so"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="so"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="so"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="so"), "kow bilyan")
+        self.assertEqual(
+            num2words(1234567890, lang="so"),
+            "kow bilyan laba boqol soddon afar milyan shan boqol lixdan toddoba kun siddeed boqol sagaashan",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="so"),
+            "sagaal bilyan sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal",
+        )
+        self.assertEqual(num2words(10000000000, lang="so"), "toban bilyan")
+        self.assertEqual(
+            num2words(99999999999, lang="so"),
+            "sagaashan sagaal bilyan sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="so"), "minus kow")
-        self.assertEqual(num2words(-2, lang="so"), "minus laba")
-        self.assertEqual(num2words(-5, lang="so"), "minus shan")
-        self.assertEqual(num2words(-10, lang="so"), "minus toban")
-        self.assertEqual(num2words(-11, lang="so"), "minus toban kow")
-        self.assertEqual(num2words(-20, lang="so"), "minus labaatan")
-        self.assertEqual(num2words(-50, lang="so"), "minus konton")
-        self.assertEqual(num2words(-99, lang="so"), "minus sagaashan sagaal")
-        self.assertEqual(num2words(-100, lang="so"), "minus kow boqol")
-        self.assertEqual(num2words(-101, lang="so"), "minus kow boqol kow")
-        self.assertEqual(num2words(-200, lang="so"), "minus laba boqol")
+        self.assertEqual(num2words(-1, lang="so"), "taban kow")
+        self.assertEqual(num2words(-2, lang="so"), "taban laba")
+        self.assertEqual(num2words(-5, lang="so"), "taban shan")
+        self.assertEqual(num2words(-10, lang="so"), "taban toban")
+        self.assertEqual(num2words(-11, lang="so"), "taban toban kow")
+        self.assertEqual(num2words(-20, lang="so"), "taban labaatan")
+        self.assertEqual(num2words(-50, lang="so"), "taban konton")
+        self.assertEqual(num2words(-99, lang="so"), "taban sagaashan sagaal")
+        self.assertEqual(num2words(-100, lang="so"), "taban kow boqol")
+        self.assertEqual(num2words(-101, lang="so"), "taban kow boqol kow")
+        self.assertEqual(num2words(-200, lang="so"), "taban laba boqol")
         self.assertEqual(
-            num2words(-999, lang="so"), "minus sagaal boqol sagaashan sagaal"
+            num2words(-999, lang="so"), "taban sagaal boqol sagaashan sagaal"
         )
-        self.assertEqual(num2words(-1000, lang="so"), "minus kow kun")
-        self.assertEqual(num2words(-1001, lang="so"), "minus kow kun kow")
-        self.assertEqual(num2words(-10000, lang="so"), "minus toban kun")
-        self.assertEqual(num2words(-100000, lang="so"), "minus kow boqol kun")
-        self.assertEqual(num2words(-1000000, lang="so"), "minus kow milyan")
+        self.assertEqual(num2words(-1000, lang="so"), "taban kow kun")
+        self.assertEqual(num2words(-1001, lang="so"), "taban kow kun kow")
+        self.assertEqual(num2words(-10000, lang="so"), "taban toban kun")
+        self.assertEqual(num2words(-100000, lang="so"), "taban kow boqol kun")
+        self.assertEqual(num2words(-1000000, lang="so"), "taban kow milyan")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="so"), "zero point kow")
-        self.assertEqual(num2words(0.5, lang="so"), "zero point shan")
-        self.assertEqual(num2words(0.9, lang="so"), "zero point sagaal")
-        self.assertEqual(num2words(1.1, lang="so"), "kow point kow")
-        self.assertEqual(num2words(1.5, lang="so"), "kow point shan")
-        self.assertEqual(num2words(2.5, lang="so"), "laba point shan")
-        self.assertEqual(num2words(3.14, lang="so"), "saddex point kow afar")
-        self.assertEqual(num2words(10.5, lang="so"), "toban point shan")
-        self.assertEqual(num2words(11.11, lang="so"), "toban kow point kow kow")
-        self.assertEqual(num2words(20.2, lang="so"), "labaatan point laba")
+        self.assertEqual(num2words(0.1, lang="so"), "eber dhibic kow")
+        self.assertEqual(num2words(0.5, lang="so"), "eber dhibic shan")
+        self.assertEqual(num2words(0.9, lang="so"), "eber dhibic sagaal")
+        self.assertEqual(num2words(1.1, lang="so"), "kow dhibic kow")
+        self.assertEqual(num2words(1.5, lang="so"), "kow dhibic shan")
+        self.assertEqual(num2words(2.5, lang="so"), "laba dhibic shan")
+        self.assertEqual(num2words(3.14, lang="so"), "saddex dhibic kow afar")
+        self.assertEqual(num2words(10.5, lang="so"), "toban dhibic shan")
+        self.assertEqual(num2words(11.11, lang="so"), "toban kow dhibic kow kow")
+        self.assertEqual(num2words(20.2, lang="so"), "labaatan dhibic laba")
         self.assertEqual(
-            num2words(99.99, lang="so"), "sagaashan sagaal point sagaal sagaal"
+            num2words(99.99, lang="so"), "sagaashan sagaal dhibic sagaal sagaal"
         )
-        self.assertEqual(num2words(100.01, lang="so"), "kow boqol point zero kow")
-        self.assertEqual(num2words(100.5, lang="so"), "kow boqol point shan")
+        self.assertEqual(num2words(100.01, lang="so"), "kow boqol dhibic eber kow")
+        self.assertEqual(num2words(100.5, lang="so"), "kow boqol dhibic shan")
         self.assertEqual(
-            num2words(123.45, lang="so"), "kow boqol labaatan saddex point afar shan"
+            num2words(123.45, lang="so"), "kow boqol labaatan saddex dhibic afar shan"
         )
-        self.assertEqual(num2words(1000.5, lang="so"), "kow kun point shan")
+        self.assertEqual(num2words(1000.5, lang="so"), "kow kun dhibic shan")
         self.assertEqual(
             num2words(1234.56, lang="so"),
-            "kow kun laba boqol soddon afar point shan lix",
+            "kow kun laba boqol soddon afar dhibic shan lix",
         )
-        self.assertEqual(num2words(10000.01, lang="so"), "toban kun point zero kow")
-        self.assertEqual(num2words(-0.5, lang="so"), "minus zero point shan")
-        self.assertEqual(num2words(-1.5, lang="so"), "minus kow point shan")
-        self.assertEqual(num2words(-10.5, lang="so"), "minus toban point shan")
+        self.assertEqual(num2words(10000.01, lang="so"), "toban kun dhibic eber kow")
+        self.assertEqual(num2words(-0.5, lang="so"), "taban eber dhibic shan")
+        self.assertEqual(num2words(-1.5, lang="so"), "taban kow dhibic shan")
+        self.assertEqual(num2words(-10.5, lang="so"), "taban toban dhibic shan")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -311,15 +320,15 @@ class Num2WordsSOTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="so", to="currency", currency="SOS"), "zero shilin"
+            num2words(0, lang="so", to="currency", currency="SOS"), "eber shilin"
         )
         self.assertEqual(
             num2words(0.01, lang="so", to="currency", currency="SOS"),
-            "zero shilin kow sent",
+            "eber shilin kow sent",
         )
         self.assertEqual(
             num2words(0.5, lang="so", to="currency", currency="SOS"),
-            "zero shilin konton sent",
+            "eber shilin konton sent",
         )
         self.assertEqual(
             num2words(1, lang="so", to="currency", currency="SOS"), "kow shilin"
@@ -329,40 +338,40 @@ class Num2WordsSOTest(TestCase):
             "kow shilin konton sent",
         )
         self.assertEqual(
-            num2words(0, lang="so", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="so", to="currency", currency="USD"), "eber doolar"
         )
         self.assertEqual(
             num2words(0.01, lang="so", to="currency", currency="USD"),
-            "zero dollars kow cent",
+            "eber doolar kow senti",
         )
         self.assertEqual(
             num2words(0.5, lang="so", to="currency", currency="USD"),
-            "zero dollars konton cents",
+            "eber doolar konton senti",
         )
         self.assertEqual(
-            num2words(1, lang="so", to="currency", currency="USD"), "kow dollar"
+            num2words(1, lang="so", to="currency", currency="USD"), "kow doolar"
         )
         self.assertEqual(
             num2words(1.5, lang="so", to="currency", currency="USD"),
-            "kow dollar konton cents",
+            "kow doolar konton senti",
         )
         self.assertEqual(
-            num2words(0, lang="so", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="so", to="currency", currency="EUR"), "eber yuuro"
         )
         self.assertEqual(
             num2words(0.01, lang="so", to="currency", currency="EUR"),
-            "zero euros kow cent",
+            "eber yuuro kow senti",
         )
         self.assertEqual(
             num2words(0.5, lang="so", to="currency", currency="EUR"),
-            "zero euros konton cents",
+            "eber yuuro konton senti",
         )
         self.assertEqual(
-            num2words(1, lang="so", to="currency", currency="EUR"), "kow euro"
+            num2words(1, lang="so", to="currency", currency="EUR"), "kow yuuro"
         )
         self.assertEqual(
             num2words(1.5, lang="so", to="currency", currency="EUR"),
-            "kow euro konton cents",
+            "kow yuuro konton senti",
         )
 
     def test_year(self):
@@ -396,7 +405,7 @@ class Num2WordsSOTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="so"), "zero")
+        self.assertEqual(num2words("0", lang="so"), "eber")
         self.assertEqual(num2words("1", lang="so"), "kow")
         self.assertEqual(num2words("10", lang="so"), "toban")
         self.assertEqual(num2words("100", lang="so"), "kow boqol")
@@ -408,9 +417,8 @@ class Num2WordsSOTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="so"), "zero")
+        self.assertEqual(num2words(0, lang="so"), "eber")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="so"), num2words("100", lang="so"))
         self.assertEqual(num2words(1000, lang="so"), num2words("1000", lang="so"))
-

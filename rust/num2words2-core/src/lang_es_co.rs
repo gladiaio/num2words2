@@ -43,10 +43,11 @@
 //! This is a port, not a rewrite. All of the following are verified against
 //! the interpreter and the frozen corpus, and are preserved verbatim:
 //!
-//! 1. **`to_ordinal(20)` == "vigesimo"** — unaccented. The `value <= 29` arm
-//!    applies `.replace("é", "e")` to build "decimo-"/"vigesimo-" prefixes,
-//!    and it fires even when the unit digit is 0, so 20 loses its accent while
-//!    30 ("trigésimo") keeps it. Likewise 120 → "centésimo vigesimo".
+//! 1. ~~**`to_ordinal(20)` == "vigesimo"**~~ — the `value <= 29` arm's
+//!    `.replace("é", "e")` for the fused "decimo-"/"vigesimo-" prefixes also
+//!    fired on 20. Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 2. **The ordinal scale disagrees with the cardinal scale.** `ords` maps
 //!    1e9 → "billonésim" and 1e12 → "trillonésim", but the *cards* call 10^12
 //!    "billón" and 10^18 "trillón". So `to_cardinal(10**9)` == "mil millones"
@@ -461,10 +462,10 @@ impl LangEsCo {
             String::new()
         } else if *value <= ten {
             format!("{}{}", self.ord_word(value)?, gender_stem)
-        } else if *value <= BigInt::from(29) {
+        } else if *value <= BigInt::from(29) && *value != BigInt::from(20) {
             // RAE: simple forms up to 30. The local rebind to "o" here means a
-            // feminine 21 is still "vigesimoprimera", and the é-stripping
-            // fires even when value % 10 == 0, so 20 -> "vigesimo".
+            // feminine 21 is still "vigesimoprimera". 20 is not fused, so it
+            // skips this arm and keeps "vigésimo" (#252).
             gender_stem = "o";
             let dec = (value / 10u32) * 10u32;
             format!(
@@ -905,8 +906,9 @@ impl Lang for LangEsCo {
             // ES_CO's blanket rewrite, applied to ES's already-stripped return.
             // It is what turns to_cardinal(21)'s "veintiuno" into the
             // unaccented "veintiun pesos" — ES's targeted "veintiuno euro"
-            // rewrite never runs on this path, so the accent is never restored.
-            return Ok(result.replace("uno", "un"));
+            // rewrite never runs on this path; the accent is restored after
+            // it (#253).
+            return Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "));
         }
 
         // ---- float path: Num2Word_Base's, then two layers of patching ----
@@ -926,12 +928,14 @@ impl Lang for LangEsCo {
         let result = result.replace("uno dólar", "un dólar");
 
         // Num2Word_ES_CO's own rewrite, mopping up every "uno" the six above
-        // missed — including inside words. This is why 21.21 USD is "veintiun
+        // missed — including inside words. In Python 21.21 USD was "veintiun
         // dólares y veintiun centavos" (accent lost: ES's "uno dólar"/"uno
-        // centavo" rules already consumed the "uno", leaving "veintiun") while
-        // 21.21 EUR keeps both accents ("veintiún euros y veintiún céntimos").
+        // centavo" rules already consumed the "uno", leaving "veintiun"); the
+        // accent is restored after it (#253), as 21.21 EUR always had it.
         // It also rescues cases ES's word-keyed rules cannot see, e.g.
         // adjective=True USD 1.0 -> "uno US dólar ..." -> "un US dólar ...".
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }

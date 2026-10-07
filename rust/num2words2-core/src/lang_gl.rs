@@ -5,10 +5,10 @@
 //! `hasattr` probe in `Num2Word_Base.__init__` never fires: Python builds
 //! **no `self.cards`** and **never sets `self.MAXVAL`**. `to_cardinal` is
 //! overridden outright and drives `_int_to_word`, a plain recursive
-//! divide-by-scale routine. Consequently `cards`/`maxval`/`merge` stay at
-//! their trait defaults here, and there is **no overflow check at all** —
-//! `MAXVAL` does not exist on the instance, and touching it would be an
-//! `AttributeError`. Nothing in the four in-scope modes touches it.
+//! divide-by-scale routine. Consequently `cards`/`merge` stay at their trait
+//! defaults here. Python has **no overflow check at all** — `MAXVAL` does
+//! not exist on the instance; this port reports and enforces a `maxval` of
+//! 10^24 (bug 5, gladiaio/num2words2#147).
 //!
 //! Inherited from `Num2Word_Base` and left alone by GL — but GL happens to
 //! re-declare two of them identically, so the observable behaviour is the
@@ -105,14 +105,16 @@
 //!    multiplier, so 1000 == "un mil" (real Galician: "mil").
 //! 4. **`millón` is never pluralised** and the scale word is never joined
 //!    with "de": 10^7 == "dez millón" (real: "dez millóns").
-//! 5. **Hard ceiling at 10^9 that returns digits instead of words.** The
-//!    final `else` of `_int_to_word` is `return str(number)` — a "fallback
-//!    for very large numbers" that silently emits the numeral. So
-//!    `to_cardinal(10**9)` == "1000000000" (a *string of digits*, not
-//!    words), `to_ordinal(10**9)` == "1000000000-o", and this holds for
-//!    every value >= 10^9 no matter how large. It does **not** raise
-//!    `OverflowError`. Verified against corpus rows up to 10^21.
-//!    Negatives inherit it too: `to_cardinal(-10**9)` == "menos 1000000000".
+//! 5. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` of `_int_to_word` is `return str(number)`, so
+//!    `to_cardinal(10**9)` was the digit string "1000000000". Galician has
+//!    no word for 10^9 — it says "mil millóns" (RAG lists no "millardo") —
+//!    and uses the long scale above it: billón 10^12 ("un millón de
+//!    millóns") and trillón 10^18 (academia.gal/dicionario, "billón",
+//!    "trillón"). So the `millón` branch now takes multipliers up to
+//!    999999 — 10^9 == "un mil millón", in bug 3/4's style — and `billón`
+//!    and `trillón` branches compose the same way; `OverflowError` from
+//!    10^24 (`maxval`).
 //! 6. **`to_ordinal` is just the cardinal plus a literal `"-o"` suffix**,
 //!    hyphen included: 0 == "cero-o", 100 == "un cento-o". Not a real
 //!    Galician ordinal ("primeiro", "centésimo").
@@ -138,8 +140,14 @@
 //! `ones`/`tens` are never indexed out of range, and the 10^9 fallback
 //! swallows what would otherwise overflow. `Result` is returned only to
 //! satisfy the trait.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses dólar/dólares with centavo/centavos. Examples in these
+//! docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -147,6 +155,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`. Note the trailing space, verbatim from `lang_GL.py`'s
 /// `setup()`; the word is Galician here, English there (#154). GL's
@@ -161,6 +170,19 @@ const POINTWORD: &str = "coma";
 
 /// What `_int_to_word(0)` returns. English "zero" in Python; "cero" here.
 const ZERO_WORD: &str = "cero";
+
+/// The `millón` scale and the long-scale words above it (#147), largest
+/// first, as `(power of ten, word)`. Each takes a multiplier up to 999999:
+/// 10^9 is "mil millóns", 10^15 "mil billóns" (academia.gal/dicionario,
+/// "billón", "trillón").
+const SCALES: [(u32, &str); 3] = [(18, "trillón"), (12, "billón"), (6, MILLION)];
+
+/// The exclusive ceiling: 10^24 would need a cuatrillón, which is not
+/// in the sources the scale table is drawn from (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(24))
+}
 
 /// `self.ones`. Index 0 is the empty string — that emptiness is load-bearing:
 /// it is what makes `_int_to_word(0)` fall through to [`ZERO_WORD`].
@@ -256,7 +278,7 @@ impl LangGl {
                 // "dollar"/"dollars" (English) in a Galician module. Real
                 // Galician is "dólar"/"dólares". Corpus-confirmed.
                 "USD",
-                CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+                CurrencyForms::new(&["dólar", "dólares"], &["centavo", "centavos"]),
             ),
         ]
         .into_iter()
@@ -370,21 +392,23 @@ impl LangGl {
 
     /// `_int_to_word`.
     ///
-    /// Mirrors the Python cascade exactly, including the `str(number)`
-    /// fallback for `number >= 10**9` (module docs, bug 5).
+    /// Mirrors the Python cascade, except that its `str(number)` fallback
+    /// for `number >= 10**9` is replaced by the long-scale branches and the
+    /// `maxval` check (module docs, bug 5, #147).
     ///
     /// All divisions here run on non-negative values (the `< 0` arm recurses
     /// on `abs` first), so Rust's truncating `/` and `%` agree with Python's
     /// floor `//` and `%` — no `div_mod_floor` needed.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // Python: `return self.ones[0] if self.ones[0] else "zero"`.
         // ONES[0] == "" is falsy, so this always yields the zero word.
         if number.is_zero() {
-            return if ONES[0].is_empty() {
+            return Ok(if ONES[0].is_empty() {
                 ZERO_WORD.to_string()
             } else {
                 ONES[0].to_string()
-            };
+            });
         }
 
         // Unreachable from the four in-scope modes: `to_cardinal` strips the
@@ -392,28 +416,27 @@ impl LangGl {
         // non-negative values. Ported anyway because Python has it, and
         // `to_currency` (out of scope) does reach `_int_to_word` directly.
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
         let ten = BigInt::from(10);
         let hundred = BigInt::from(100);
         let thousand = BigInt::from(1000);
         let million = BigInt::from(1_000_000);
-        let billion = BigInt::from(1_000_000_000);
 
         if number < &ten {
             // 1..=9: always in range.
-            return ONES[idx(number)].to_string();
+            return Ok(ONES[idx(number)].to_string());
         }
 
         if number < &hundred {
             let tens_val = number / &ten; // 1..=9
             let ones_val = number % &ten; // 0..=9
             if ones_val.is_zero() {
-                return TENS[idx(&tens_val)].to_string();
+                return Ok(TENS[idx(&tens_val)].to_string());
             }
             // Bare space join — no "e". See module docs, bug 1.
-            return format!("{} {}", TENS[idx(&tens_val)], ONES[idx(&ones_val)]);
+            return Ok(format!("{} {}", TENS[idx(&tens_val)], ONES[idx(&ones_val)]));
         }
 
         if number < &thousand {
@@ -423,38 +446,43 @@ impl LangGl {
             let mut result = format!("{} {}", ONES[idx(&hundreds_val)], HUNDRED);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         if number < &million {
             let thousands_val = number / &thousand; // 1..=999
             let remainder = number % &thousand;
             // Always recurses on the multiplier — see module docs, bug 3.
-            let mut result = format!("{} {}", self.int_to_word(&thousands_val), THOUSAND);
+            let mut result = format!("{} {}", self.int_to_word(&thousands_val)?, THOUSAND);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
-        if number < &billion {
-            let millions_val = number / &million; // 1..=999
-            let remainder = number % &million;
-            // MILLION is never pluralised — see module docs, bug 4.
-            let mut result = format!("{} {}", self.int_to_word(&millions_val), MILLION);
-            if !remainder.is_zero() {
-                result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+        // Python stopped here: `if number < 10**9` was the last branch and
+        // `return str(number)` followed (bug 5). Galician says 10^9 as "mil
+        // millóns", so the `millón` branch takes multipliers up to 999999,
+        // and `billón` (10^12) and `trillón` (10^18) compose the same way;
+        // the maxval check keeps the trillón multiplier below 10^6 (#147).
+        for &(exp, word) in SCALES.iter() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let scale_val = number / &scale;
+                let remainder = number % &scale;
+                // Never pluralised — see module docs, bug 4.
+                let mut result = format!("{} {}", self.int_to_word(&scale_val)?, word);
+                if !remainder.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&remainder)?);
+                }
+                return Ok(result);
             }
-            return result;
         }
-
-        // Python: `return str(number)  # Fallback for very large numbers`.
-        // Emits digits, not words, and never raises. Module docs, bug 5.
-        number.to_string()
+        unreachable!("every value >= 10^6 and below maxval has a SCALES entry")
     }
 
     /// GL's `to_cardinal` string body, run on a reconstructed `str(number)`.
@@ -489,9 +517,9 @@ impl LangGl {
             ret.push_str(NEGWORD);
         }
         if let Some((left, right)) = n.split_once('.') {
-            // int(left): the integer part (may exceed 10^9 -> str fallback).
+            // int(left): the integer part (>= 10^24 raises OverflowError, #147).
             let left_int = BigInt::from_str(left).map_err(|_| int_value_err(left))?;
-            ret.push_str(&self.int_to_word(&left_int));
+            ret.push_str(&self.int_to_word(&left_int)?);
             ret.push(' ');
             ret.push_str(self.pointword());
             ret.push(' ');
@@ -500,13 +528,13 @@ impl LangGl {
                 let d = ch
                     .to_digit(10)
                     .ok_or_else(|| int_value_err(&ch.to_string()))?;
-                ret.push_str(&self.int_to_word(&BigInt::from(d)));
+                ret.push_str(&self.int_to_word(&BigInt::from(d))?);
                 ret.push(' ');
             }
             Ok(ret.trim().to_string())
         } else {
             let v = BigInt::from_str(n).map_err(|_| int_value_err(n))?;
-            ret.push_str(&self.int_to_word(&v));
+            ret.push_str(&self.int_to_word(&v)?);
             Ok(ret.trim().to_string())
         }
     }
@@ -643,6 +671,10 @@ fn decimal_to_py_str(d: &BigDecimal) -> Result<String> {
 }
 
 impl Lang for LangGl {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -730,7 +762,7 @@ impl Lang for LangGl {
         // Python's trailing `.strip()`. `_int_to_word` never returns padding,
         // so in practice this only trims NEGWORD's space off a "-0"-ish edge
         // that BigInt cannot produce — but reproduce it regardless.
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.int_to_word(&n)?).trim().to_string())
     }
 
     /// `to_ordinal`: cardinal + a literal "-o". No `verify_ordinal()` call,
@@ -887,7 +919,7 @@ impl Lang for LangGl {
         let cr2 = &forms.subunit;
 
         let one = BigInt::from(1);
-        let left_str = self.int_to_word(&left);
+        let left_str = self.int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -898,7 +930,7 @@ impl Lang for LangGl {
         // drop the whole segment (bug 16), and `cents=False` drops it too
         // rather than falling back to `_cents_terse` (bug 14).
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = self.int_to_word(&right)?;
             // Python: `result += separator + cents_str + " " + ...`. No space
             // is inserted *before* the separator; GL's " " default supplies
             // the single space itself.

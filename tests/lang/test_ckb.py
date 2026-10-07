@@ -54,12 +54,11 @@ class TestCKB(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "سی و هەشت دینار", {"cents": False, "currency": "IQD"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "سی و هەشت دینار 40 فلس", {"cents": False, "currency": "IQD"}),
         ("1.50", "یەک دینار پەنجا فلس", {"cents": True, "currency": "IQD"}),
         (12.34, "دوانزە دۆلار سی و چوار سەنت", {"currency": "USD"}),
         (12.34, "دوانزە یۆرۆ سی و چوار سەنت", {"currency": "EUR"}),
-        # Unknown codes fall back to the first CURRENCY_FORMS entry (IQD).
-        (12.34, "دوانزە دینار سی و چوار فلس", {"currency": "GBP"}),
     ]
 
     # to_year ignores longval and delegates to to_cardinal — no year pairing.
@@ -82,6 +81,11 @@ class TestCKB(LangTest, TestCase):
 
     def test_currency(self):
         self._run_currency_tests()
+
+    def test_unknown_currency_code_raises(self):
+        # Unknown codes used to fall back to the default currency (#219).
+        with self.assertRaisesRegex(NotImplementedError, 'Currency code "GBP"'):
+            num2words(12.34, lang="ckb", to="currency", currency="GBP")
 
     def test_float(self):
         self._run_float_tests()

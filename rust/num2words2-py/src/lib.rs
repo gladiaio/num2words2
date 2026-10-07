@@ -10,11 +10,15 @@
 mod sentencepath;
 
 use bigdecimal::BigDecimal;
-use num2words2_core::base::{Kwargs, KwVal, Lang};
+use num2words2_core::base::{
+    floatord_error, py_num_str, year_float_error, Kwargs, KwVal, Lang,
+};
+use num2words2_core::currency::to_currency_checked;
+use num2words2_core::floatpath::cardinal_with_precision;
 use num2words2_core::presentation::{self, CentsArg};
 use num2words2_core::strnum::{
-    has_py_digit, number_notation, parse_grouped, python_decimal_str, python_int_parse,
-    Grouped, ParsedNumber,
+    has_py_digit, is_malformed_number, number_notation, parse_grouped, python_decimal_str,
+    python_int_parse, Grouped, ParsedNumber,
 };
 use num2words2_core::N2WError;
 use num2words2_core::{CurrencyValue, FloatValue};
@@ -88,6 +92,27 @@ fn declined(lang: &str, to: &str, kwargs: Option<&Bound<'_, PyDict>>) -> PyErr {
             keys.join(", ")
         ))
     }
+}
+
+/// Name the language in a core "does not support to='...'" raise: the core
+/// does not know its own key, so `base::unsupported_mode` leaves the prefix
+/// to the binder (`lang='ru' does not support to='fraction'`).
+fn name_lang(lang: &str, e: N2WError) -> N2WError {
+    match e {
+        N2WError::NotImplemented(m) if m.starts_with("does not support") => {
+            N2WError::NotImplemented(format!("lang='{}' {}", lang, m))
+        }
+        other => other,
+    }
+}
+
+/// `to='fraction'` takes a "numerator/denominator" string; any other input
+/// is a caller error (#217).
+fn fraction_type_error(got: &str) -> N2WError {
+    N2WError::Type(format!(
+        "to='fraction' expects a 'numerator/denominator' string, got {}",
+        got
+    ))
 }
 
 // The Rust-core-declines signal. NOT a NotImplementedError subclass: the
@@ -212,34 +237,80 @@ fn finish(r: Result<String, N2WError>) -> PyResult<Option<String>> {
     opt(r).map_err(map_err)
 }
 
+/// Backstop for issue #204: every `#[pyfunction]` body runs inside this.
+/// A Rust panic would otherwise reach Python as pyo3's `PanicException`,
+/// a `BaseException` that `except Exception` does not catch. Here it becomes
+/// a plain `RuntimeError`. Only works because the release profile unwinds
+/// (`panic = "unwind"` in rust/Cargo.toml); under `abort` the process dies.
+fn guard<T>(f: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| {
+        let msg = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".to_string());
+        Err(PyRuntimeError::new_err(format!(
+            "internal error: {msg}; please report this at \
+             https://github.com/gladiaio/num2words2/issues"
+        )))
+    })
+}
+
+/// The currency `to='currency'` uses when `currency=` is omitted.
 #[pyfunction]
-fn supported_langs() -> Vec<&'static str> {
-    num2words2_core::supported_lang_keys()
+fn default_currency(lang: &str) -> PyResult<String> {
+    guard(|| Ok(need_lang(lang)?.default_currency().to_string()))
+}
+
+#[pyfunction]
+fn supported_langs() -> PyResult<Vec<&'static str>> {
+    guard(|| Ok(num2words2_core::supported_lang_keys()))
+}
+
+/// `{alias: canonical}` for the keys that share a converter (#245).
+#[pyfunction]
+fn lang_aliases() -> PyResult<std::collections::HashMap<&'static str, &'static str>> {
+    guard(|| Ok(num2words2_core::LANG_ALIASES.iter().copied().collect()))
 }
 
 #[pyfunction]
 fn to_cardinal(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_cardinal(&value))
+    guard(|| finish(need_lang(lang)?.to_cardinal(&value)))
 }
 
 #[pyfunction]
 fn to_ordinal(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal(&value))
+    guard(|| finish(need_lang(lang)?.to_ordinal(&value)))
 }
 
 #[pyfunction]
 fn to_ordinal_num(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal_num(&value))
+    guard(|| finish(need_lang(lang)?.to_ordinal_num(&value)))
 }
 
 #[pyfunction]
 fn to_year(lang: &str, value: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_year(&value))
+    guard(|| finish(need_lang(lang)?.to_year(&value)))
 }
 
 #[pyfunction]
 fn to_fraction(lang: &str, numerator: BigInt, denominator: BigInt) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_fraction(&numerator, &denominator))
+    guard(|| finish(fraction_core(need_lang(lang)?, lang, &numerator, &denominator)))
+}
+
+/// "n/d": a zero denominator is ZeroDivisionError in every language, ahead
+/// of a language's "does not support to='fraction'" (#217).
+fn fraction_core(
+    l: &'static (dyn Lang + Sync),
+    lang: &str,
+    n: &BigInt,
+    d: &BigInt,
+) -> Result<String, N2WError> {
+    use bigdecimal::num_traits::Zero;
+    if d.is_zero() {
+        return Err(N2WError::ZeroDivision("denominator must not be zero".into()));
+    }
+    l.to_fraction(n, d).map_err(|e| name_lang(lang, e))
 }
 
 /// `value` is `str(val)` from the Python side and `is_int` says whether the
@@ -249,6 +320,21 @@ fn to_fraction(lang: &str, numerator: BigInt, denominator: BigInt) -> PyResult<O
 #[pyfunction]
 #[pyo3(signature = (lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective))]
 fn to_currency(
+    lang: &str,
+    value: &str,
+    is_int: bool,
+    has_decimal: bool,
+    is_float: bool,
+    currency: Option<&str>,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: Option<bool>,
+) -> PyResult<Option<String>> {
+    guard(|| to_currency_impl(lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn to_currency_impl(
     lang: &str,
     value: &str,
     is_int: bool,
@@ -283,6 +369,16 @@ fn to_cardinal_float(
     decimal_str: &str,
     precision_override: Option<u32>,
 ) -> PyResult<Option<String>> {
+    guard(|| to_cardinal_float_impl(lang, value, precision, decimal_str, precision_override))
+}
+
+fn to_cardinal_float_impl(
+    lang: &str,
+    value: f64,
+    precision: u32,
+    decimal_str: &str,
+    precision_override: Option<u32>,
+) -> PyResult<Option<String>> {
     let l = need_lang(lang)?;
     let v = float_value(value, precision, decimal_str).map_err(map_err)?;
     finish(l.cardinal_float_entry(&v, precision_override))
@@ -300,6 +396,16 @@ fn to_cardinal_float_raw(
     decimal_str: &str,
     precision_override: Option<u32>,
 ) -> PyResult<Option<String>> {
+    guard(|| to_cardinal_float_raw_impl(lang, value, precision, decimal_str, precision_override))
+}
+
+fn to_cardinal_float_raw_impl(
+    lang: &str,
+    value: f64,
+    precision: u32,
+    decimal_str: &str,
+    precision_override: Option<u32>,
+) -> PyResult<Option<String>> {
     let l = need_lang(lang)?;
     let v = float_value(value, precision, decimal_str).map_err(map_err)?;
     finish(l.to_cardinal_float(&v, precision_override))
@@ -310,35 +416,33 @@ fn float_value(value: f64, precision: u32, decimal_str: &str) -> Result<FloatVal
         Ok(FloatValue::Float { value, precision })
     } else {
         let d = BigDecimal::from_str(decimal_str).map_err(|e| N2WError::Value(e.to_string()))?;
-        use bigdecimal::num_traits::Zero;
-        // BigDecimal cannot carry Decimal("-0.0")'s sign. For zero, both
-        // float2tuple arms produce pre=0/post=0, so demoting to the float
-        // arm with a signed zero is behaviourally identical — except in the
-        // languages that render the two differently, which declare it and
-        // get the Python fallback (byte-correct by construction).
-        // Neg-zero Decimal is handled by the caller (which knows `to`) via
-        // `neg_zero_decimal`; here it simply demotes to a signed-zero float,
-        // exact wherever the language does not distinguish the two.
-        if d.is_zero() && decimal_str.trim_start().starts_with('-') {
-            return Ok(FloatValue::Float { value: -0.0, precision });
-        }
+        // BigDecimal has no signed zero, so Decimal('-0.0') reads as zero
+        // (#237).
         Ok(FloatValue::Decimal { value: d, precision })
     }
 }
 
-/// `Decimal('-0.0')`: a zero-valued decimal string with a leading minus.
-fn is_neg_zero_decimal(decimal_str: &str, value: f64) -> bool {
-    !decimal_str.is_empty() && value == 0.0 && decimal_str.trim_start().starts_with('-')
-}
-
 /// Float/Decimal input across all four int modes, kwargs included.
-/// `repr_str` is Python's `str(number)` — base's to_ordinal_num returns the
-/// value unchanged and the dispatcher str()s it, which Rust cannot recompute
-/// (repr(float) is shortest-round-trip; str(Decimal) has its own spec).
+/// `repr_str` is Python's `str(number)`: the written value precision= reads
+/// when `decimal_str` is empty (#218).
 #[pyfunction]
 #[pyo3(signature = (lang, to, value, precision, decimal_str, repr_str, precision_override, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn to_float(
+    lang: &str,
+    to: &str,
+    value: f64,
+    precision: u32,
+    decimal_str: &str,
+    repr_str: &str,
+    precision_override: Option<u32>,
+    kwargs: PyKwargs,
+) -> PyResult<Option<String>> {
+    guard(|| to_float_impl(lang, to, value, precision, decimal_str, repr_str, precision_override, kwargs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn to_float_impl(
     lang: &str,
     to: &str,
     value: f64,
@@ -375,15 +479,26 @@ fn to_float_core(
     precision_override: Option<u32>,
     kw: &Kwargs,
 ) -> Result<Option<String>, N2WError> {
-    // Decimal('-0.0') the language renders specially (BigDecimal can't hold
-    // the sign) — serve it natively before the demotion to Float{-0.0}.
-    if is_neg_zero_decimal(decimal_str, value) && kw.is_empty() {
-        if let Some(res) = l.neg_zero_decimal(to) {
-            return opt(res);
-        }
+    // A negative zero reads as zero, without "minus" (#237).
+    let v = float_value(value + 0.0, precision, decimal_str)?;
+    // The integer modes take an integral value of any input type as that
+    // integer — 1999.0, Decimal('1999.0') and '1999' read like 1999
+    // (gladiaio/num2words2#213); the language never sees the float form.
+    if matches!(to, "ordinal" | "ordinal_num" | "year") {
+        return match v.as_whole_int() {
+            Some(n) => int_int_mode(l, to, &n, kw),
+            None => Err(fraction_error(to, &v)),
+        };
     }
-    let v = float_value(value, precision, decimal_str)?;
     let r = match to {
+        // precision= reads the value as written, never the f64 (#218).
+        "cardinal" if precision_override.is_some() => {
+            let exact = if decimal_str.is_empty() { repr_str } else { decimal_str };
+            match BigDecimal::from_str(exact) {
+                Ok(d) => cardinal_with_precision(l, &d, precision_override.unwrap(), kw),
+                Err(e) => Err(N2WError::Value(e.to_string())),
+            }
+        }
         "cardinal" => {
             if kw.is_empty() {
                 l.cardinal_float_entry(&v, precision_override)
@@ -391,54 +506,64 @@ fn to_float_core(
                 l.to_cardinal_float_kw(&v, precision_override, kw)
             }
         }
-        // year owns its kwargs (zh_TW era=, ...); the hook declines the
-        // ones a language does not take.
-        "year" => l.year_float_kw(&v, kw),
-        // kwargs on the other non-cardinal float modes stay unported.
-        _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        "ordinal" => l.ordinal_float_entry(&v),
-        // PR savoirfairelinux/num2words#666: an integer-valued float (1.0,
-        // 2.0, 21.0) is a valid ordinal and must format without the decimal
-        // point ("1st", not "1.0st"). Mirror the dispatcher's int-conversion:
-        // route a whole float through the integer to_ordinal_num, which the
-        // corpus already covers. The dispatcher guards on `isinstance(number,
-        // float)`, so this must NOT fire for Decimal input — including
-        // Decimal('-0.0'), which the binder demotes to Float{-0.0}. A non-empty
-        // `decimal_str` marks a Decimal; gate on it so Decimals keep their
-        // scale ("5.00th", "-0.0ste") via the unchanged entry.
-        "ordinal_num" => match (decimal_str.is_empty(), v.whole_float_int()) {
-            (true, Some(n)) => l.to_ordinal_num(&n),
-            _ => l.ordinal_num_float_entry(&v, repr_str),
-        },
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
 }
 
+/// The one rule for a non-integral value in an integer mode
+/// (gladiaio/num2words2#214): `TypeError`, raised here before the language
+/// is called. Languages used to truncate (cs 2.5 -> "druhý"), glue an
+/// ordinal suffix onto the cardinal float ("daou point pemp-vet") or fall
+/// back to the cardinal.
+fn fraction_error(to: &str, v: &FloatValue) -> N2WError {
+    if to == "year" {
+        year_float_error(v)
+    } else {
+        floatord_error(py_num_str(v))
+    }
+}
+
 #[pyfunction]
 fn to_cardinal_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_cardinal_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_cardinal_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 fn to_ordinal_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_ordinal_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 fn to_ordinal_num_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_ordinal_num_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_ordinal_num_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 fn to_year_kw(lang: &str, value: BigInt, kwargs: PyKwargs) -> PyResult<Option<String>> {
-    finish(need_lang(lang)?.to_year_kw(&value, &kwbag(kwargs)))
+    guard(|| finish(need_lang(lang)?.to_year_kw(&value, &kwbag(kwargs))))
 }
 
 #[pyfunction]
 #[pyo3(signature = (lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective, kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn to_currency_kw(
+    lang: &str,
+    value: &str,
+    is_int: bool,
+    has_decimal: bool,
+    is_float: bool,
+    currency: Option<&str>,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: Option<bool>,
+    kwargs: PyKwargs,
+) -> PyResult<Option<String>> {
+    guard(|| to_currency_kw_impl(lang, value, is_int, has_decimal, is_float, currency, cents, separator, adjective, kwargs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn to_currency_kw_impl(
     lang: &str,
     value: &str,
     is_int: bool,
@@ -482,6 +607,20 @@ fn from_string(
     adjective: Option<bool>,
     kwargs: PyKwargs,
 ) -> PyResult<(u8, Option<String>)> {
+    guard(|| from_string_impl(lang, s, to, currency, cents, separator, adjective, kwargs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn from_string_impl(
+    lang: &str,
+    s: &str,
+    to: &str,
+    currency: Option<&str>,
+    cents: bool,
+    separator: Option<&str>,
+    adjective: Option<bool>,
+    kwargs: PyKwargs,
+) -> PyResult<(u8, Option<String>)> {
     let l = need_lang(lang)?;
     from_string_core(
         l,
@@ -493,6 +632,7 @@ fn from_string(
         separator,
         adjective,
         &kwbag(kwargs),
+        sentencepath::Errors::Ignore,
     )
 }
 
@@ -509,6 +649,7 @@ fn from_string_core(
     separator: Option<&str>,
     adjective: Option<bool>,
     kw: &Kwargs,
+    errors: sentencepath::Errors,
 ) -> PyResult<(u8, Option<String>)> {
     // "n/d" fraction strings route straight to to_fraction, whatever `to`
     // says — mirroring the dispatcher, where this check precedes the mode
@@ -522,7 +663,7 @@ fn from_string_core(
                 // let the original raise it.
                 return Ok((1, None));
             }
-            return finish(l.to_fraction(&n, &d)).map(|r| (0, r));
+            return finish(fraction_core(l, lang, &n, &d)).map(|r| (0, r));
         }
     }
 
@@ -565,6 +706,12 @@ fn from_string_core(
                 Grouped::Invalid(msg) => return Err(map_err(N2WError::Value(msg))),
                 Grouped::NotGrouped => {
                     if catchable {
+                        if is_malformed_number(s) {
+                            return Err(map_err(N2WError::Value(format!(
+                                "cannot read {:?} as a number",
+                                s.trim()
+                            ))));
+                        }
                         if has_py_digit(s) {
                             // The dispatcher routes a mixed text+digit string to
                             // num2words_sentence — now the Rust sentence converter,
@@ -572,7 +719,7 @@ fn from_string_core(
                             // this path are exotic (the sentence converter takes
                             // none); defer those rare cases.
                             if kw.is_empty() {
-                                return match sentencepath::convert(s, lang, to) {
+                                return match sentencepath::convert_with(s, lang, to, errors) {
                                     Ok(out) => Ok((0, Some(out))),
                                     Err(N2WError::Fallback(_)) => Ok((1, None)),
                                     Err(e) => Err(map_err(e)),
@@ -626,15 +773,37 @@ fn from_string_core(
                         // it is the first token of the currency string ("un").
                         match (normal, l.to_ordinal_kw(&n, &gkw)) {
                             (Ok(norm), Ok(ord)) => {
-                                let card = if one {
+                                // The currency path spells the whole part in
+                                // its attributive form: a final "uno" becomes
+                                // "un"/"una" ("treinta y un euros") and
+                                // "veintiuno" becomes "veintiún". Try the
+                                // standalone cardinal and each apocopated
+                                // form, so 21, 31, 101, ... still take the
+                                // ordinal.
+                                let cands: Vec<String> = if one {
                                     norm.split_once(' ').map(|(a, _)| a.to_string())
-                                        .unwrap_or_default()
+                                        .into_iter().collect()
                                 } else {
-                                    l.to_cardinal(&n).unwrap_or_default()
+                                    let card = l.to_cardinal(&n).unwrap_or_default();
+                                    let mut v = vec![card.clone()];
+                                    if let Ok(mv) = l.money_verbose(&n, cur) {
+                                        v.push(mv);
+                                    }
+                                    if let Some(stem) = card.strip_suffix("uno") {
+                                        for end in ["un", "ún", "una"] {
+                                            v.push(format!("{stem}{end}"));
+                                        }
+                                    }
+                                    v
                                 };
-                                Ok(norm.strip_prefix(&card)
-                                    .map(|rest| format!("{}{}", ord, rest))
-                                    .unwrap_or(norm))
+                                let rest = cands.iter().filter(|c| !c.is_empty()).find_map(|c| {
+                                    norm.strip_prefix(c.as_str())
+                                        .filter(|r| r.is_empty() || r.starts_with(' '))
+                                });
+                                Ok(match rest {
+                                    Some(rest) => format!("{}{}", ord, rest),
+                                    None => norm,
+                                })
                             }
                             (other, _) => other,
                         }
@@ -653,6 +822,12 @@ fn from_string_core(
                 _ => dec_mode(l, to, &value, kw, currency, cents, separator, adjective),
             }
         }
+        // An integer in exponent form ("1e3", "1.5e2"): its plain digits
+        // go to the integer modes (#211).
+        ParsedNumber::Dec(value) if value.as_bigint_and_exponent().1 < 0 => {
+            let n = value.with_scale(0).as_bigint_and_exponent().0;
+            int_mode(l, to, &n, kw, currency, cents, separator, adjective)
+        }
         ParsedNumber::Dec(value) => {
             dec_mode(l, to, &value, kw, currency, cents, separator, adjective)
         }
@@ -666,7 +841,7 @@ fn from_string_core(
         // A hook the language hasn't ported yet: let the original Python
         // string path handle it rather than guessing.
         Err(N2WError::Fallback(_)) => Ok((1, None)),
-        other => finish(other).map(|v| (0, v)),
+        other => finish(other.map_err(|e| name_lang(lang, e))).map(|v| (0, v)),
     }
 }
 
@@ -684,12 +859,13 @@ fn int_mode(
     match to {
         "cardinal" => l.to_cardinal_kw(n, kw),
         "ordinal" => l.to_ordinal_kw(n, kw),
-        "ordinal_num" => l.to_ordinal_num_kw(n, kw),
+        "ordinal_num" => ordinal_num_signed(l, n, kw),
         "year" => l.to_year_kw(n, kw),
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
-            l.to_currency_kw(
+            to_currency_checked(
+                l,
                 &CurrencyValue::Int(n.clone()),
                 currency,
                 cents,
@@ -698,17 +874,13 @@ fn int_mode(
                 kw,
             )
         }
-        // Python: getattr(converter, "to_fraction")(number) — TypeError
-        // (missing denominator) when the class has the method, AttributeError
-        // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
-        // AttributeError, so probe with the cheap (1,1) call (denominator==1
-        // short-circuits to to_cardinal(1) everywhere else).
-        "fraction" => match l.to_fraction(&BigInt::from(1), &BigInt::from(1)) {
-            Err(e @ N2WError::Attribute(_)) => Err(e),
-            _ => Err(N2WError::Type(
-                "to_fraction() missing 1 required positional argument: 'denominator'".into(),
-            )),
-        },
+        // A plain number string ("5", "1.5") is not a fraction (#217).
+        "fraction" => Err(fraction_type_error("a plain number")),
+        // Cheque amounts usually arrive as strings (#223).
+        "cheque" => l.to_cheque(
+            &BigDecimal::from(n.clone()),
+            currency.unwrap_or(l.default_currency()),
+        ),
         other => Err(N2WError::Fallback(other.to_string())),
     }
 }
@@ -727,6 +899,13 @@ fn dec_mode(
     let prec = value.as_bigint_and_exponent().1.unsigned_abs() as u32;
     let fv = FloatValue::Decimal { value: value.clone(), precision: prec };
     let repr = python_decimal_str(value);
+    // '1999.0' in an integer mode reads like 1999 (#213).
+    if matches!(to, "ordinal" | "ordinal_num" | "year") {
+        return match fv.as_whole_int() {
+            Some(n) => int_mode(l, to, &n, kw, currency, cents, separator, adjective),
+            None => Err(fraction_error(to, &fv)),
+        };
+    }
     match to {
         "cardinal" => {
             if kw.is_empty() {
@@ -740,7 +919,8 @@ fn dec_mode(
         "currency" => {
             let adjective = adjective.unwrap_or(l.default_adjective());
             let currency = currency.unwrap_or(l.default_currency());
-            l.to_currency_kw(
+            to_currency_checked(
+                l,
                 &CurrencyValue::Decimal {
                     value: value.clone(),
                     has_decimal: repr.contains('.'),
@@ -754,21 +934,11 @@ fn dec_mode(
                 kw,
             )
         }
-        "year" => l.year_float_kw(&fv, kw),
         _ if !kw.is_empty() => Err(N2WError::Fallback("kwargs".into())),
-        "ordinal" => l.ordinal_float_entry(&fv),
-        "ordinal_num" => l.ordinal_num_float_entry(&fv, &repr),
-        // Python: getattr(converter, "to_fraction")(number) — TypeError
-        // (missing denominator) when the class has the method, AttributeError
-        // when it doesn't (BN/ID/DV). Their Rust to_fraction reproduces the
-        // AttributeError, so probe with the cheap (1,1) call (denominator==1
-        // short-circuits to to_cardinal(1) everywhere else).
-        "fraction" => match l.to_fraction(&BigInt::from(1), &BigInt::from(1)) {
-            Err(e @ N2WError::Attribute(_)) => Err(e),
-            _ => Err(N2WError::Type(
-                "to_fraction() missing 1 required positional argument: 'denominator'".into(),
-            )),
-        },
+        // A plain number string ("5", "1.5") is not a fraction (#217).
+        "fraction" => Err(fraction_type_error("a plain number")),
+        // Cheque amounts usually arrive as strings (#223).
+        "cheque" => l.to_cheque(value, currency.unwrap_or(l.default_currency())),
         other => Err(N2WError::Fallback(other.to_string())),
     }
 }
@@ -776,7 +946,7 @@ fn dec_mode(
 #[pyfunction]
 #[pyo3(signature = (lang, value, currency=None))]
 fn to_cheque(lang: &str, value: &str, currency: Option<&str>) -> PyResult<Option<String>> {
-    cheque_core(need_lang(lang)?, value, currency).map_err(map_err)
+    guard(|| cheque_core(need_lang(lang)?, value, currency).map_err(map_err))
 }
 
 /// The cheque router, shared by the `to_cheque` entry point and `num2words`.
@@ -788,6 +958,20 @@ fn cheque_core(
     let currency = currency.unwrap_or(l.default_currency());
     let d = BigDecimal::from_str(value).map_err(|e| N2WError::Value(e.to_string()))?;
     opt(l.to_cheque(&d, currency))
+}
+
+/// `style='us'` on a cheque (#220): drop the "AND" inside the amount words
+/// ("ONE HUNDRED ONE AND 50/100"), keeping the one that joins the cents.
+fn cheque_style(out: &str, style: Option<&str>, lang: &str) -> String {
+    if style != Some("us") || !lang.starts_with("en") {
+        return out.to_string();
+    }
+    match out.rfind(" AND ") {
+        Some(i) if out[i..].contains('/') => {
+            format!("{}{}", out[..i].replace(" AND ", " "), &out[i..])
+        }
+        _ => out.replace(" AND ", " "),
+    }
 }
 
 /// The whole-number int modes (`_RUST_TYPES`), shared by `num2words`. Mirrors
@@ -804,14 +988,37 @@ fn int_int_mode(
         "cardinal" => l.to_cardinal_kw(n, kw),
         "ordinal" if kw.is_empty() => l.to_ordinal(n),
         "ordinal" => l.to_ordinal_kw(n, kw),
-        "ordinal_num" if kw.is_empty() => l.to_ordinal_num(n),
-        "ordinal_num" => l.to_ordinal_num_kw(n, kw),
+        "ordinal_num" => ordinal_num_signed(l, n, kw),
         "year" if kw.is_empty() => l.to_year(n),
         "year" => l.to_year_kw(n, kw),
         // int_int_mode is only ever called with `to` in RUST_TYPES.
         other => Err(N2WError::Fallback(other.to_string())),
     };
     opt(r)
+}
+
+/// `to='ordinal_num'` accepts a negative value exactly when the language's
+/// `to='ordinal'` does (#214). be/et/fi/ja/pl/sv/uk/zh/... raised "Cannot
+/// treat negative num" for the ordinal but returned "-3." / "第-3" for the
+/// numeral, so the ordinal's error wins; ce/hi/hu/sq read -3 as an ordinal
+/// but rejected the numeral, which is then the positive numeral with a
+/// minus sign ("-3.").
+fn ordinal_num_signed(
+    l: &'static (dyn Lang + Sync),
+    n: &BigInt,
+    kw: &Kwargs,
+) -> Result<String, N2WError> {
+    if n.sign() != num_bigint::Sign::Minus {
+        return l.to_ordinal_num_kw(n, kw);
+    }
+    match l.to_ordinal_kw(n, kw) {
+        Err(N2WError::Fallback(_)) => l.to_ordinal_num_kw(n, kw),
+        Err(e) => Err(e),
+        Ok(_) => match l.to_ordinal_num_kw(n, kw) {
+            Err(N2WError::Type(_)) => l.to_ordinal_num_kw(&-n, kw).map(|s| format!("-{}", s)),
+            other => other,
+        },
+    }
 }
 
 /// The currency router, shared by `num2words`. Mirrors the shim's
@@ -832,25 +1039,7 @@ fn currency_core(
     let v = CurrencyValue::parse(value, is_int, has_decimal, is_float)?;
     let adjective = adjective.unwrap_or(l.default_adjective());
     let currency = currency.unwrap_or(l.default_currency());
-    let r = if kw.is_empty() {
-        l.to_currency(&v, currency, cents, separator, adjective)
-    } else {
-        l.to_currency_kw(&v, currency, cents, separator, adjective, kw)
-    };
-    opt(r)
-}
-
-/// `to='fraction'` with a non-string number. The shim probed
-/// `_RUST.to_fraction(lang, 1, 1)`: an `AttributeError` (BN/ID/DV have no
-/// `to_fraction`) re-raises, anything else becomes the missing-`denominator`
-/// `TypeError`.
-fn fraction_probe(l: &'static (dyn Lang + Sync)) -> N2WError {
-    match l.to_fraction(&BigInt::from(1), &BigInt::from(1)) {
-        Err(e @ N2WError::Attribute(_)) => e,
-        _ => N2WError::Type(
-            "to_fraction() missing 1 required positional argument: 'denominator'".into(),
-        ),
-    }
+    opt(to_currency_checked(l, &v, currency, cents, separator, adjective, kw))
 }
 
 // --- Argument classification for the unified `num2words` entry -------------
@@ -895,16 +1084,39 @@ fn get_opt_bool(kwargs: Option<&Bound<'_, PyDict>>, key: &str) -> PyResult<Optio
     }
 }
 
-/// `precision` — an `Option<u32>` kwarg.
+/// `precision` — an `Option<u32>` kwarg. A negative value is a caller
+/// error, not an internal conversion failure (#218).
 fn get_precision(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<u32>> {
     match dict_get(kwargs, "precision")? {
-        Some(v) if !v.is_none() => Ok(Some(v.extract::<u32>()?)),
+        Some(v) if !v.is_none() => {
+            let p = v.extract::<i64>()?;
+            u32::try_from(p).map(Some).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "precision= must be a non-negative integer, got {}",
+                    p
+                ))
+            })
+        }
         _ => Ok(None),
     }
 }
 
 /// Classify the `cents=` object and run the core's normalisation + guard.
-fn classify_cents(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<(bool, bool)>> {
+/// A value outside the five accepted ones is a caller error (#220).
+fn classify_cents(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(bool, bool)> {
+    let got = match dict_get(kwargs, "cents")? {
+        Some(v) => v.repr()?.to_string(),
+        None => String::new(),
+    };
+    classify_cents_raw(kwargs)?.ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "cents= must be True, False, 'verbose', 'terse' or 'omit'; got {}",
+            got
+        ))
+    })
+}
+
+fn classify_cents_raw(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Option<(bool, bool)>> {
     Ok(match dict_get(kwargs, "cents")? {
         None => presentation::normalize_cents(CentsArg::Absent),
         Some(v) => {
@@ -977,6 +1189,35 @@ fn extras_to_kwargs(
     Ok(Some(Kwargs(out)))
 }
 
+/// A finite float/Decimal argument, normalised once before any language
+/// sees it (gladiaio/num2words2#211). Python writes large and tiny values in
+/// exponent form (`1e+21`, `1e-05`, `Decimal('1E+3')`), and the language
+/// readers `int()` or digit-walk that string: ~80 raised `ValueError`, ce/cy/
+/// rm* `IndexError`, en_AERO read the mantissa digits.
+enum Normalised {
+    /// An integer written in exponent form (`1e+21`, `Decimal('1E+3')`):
+    /// served by the integer modes, as its plain digit string.
+    Int(BigInt),
+    /// A value in positional notation. `decimal` selects the exact Decimal
+    /// arm of the float path; a float whose repr used an exponent (`1e-05`)
+    /// takes it too, with its repr written out (`0.00001`).
+    Frac { value: f64, repr: String, decimal: bool },
+}
+
+/// `repr` is Python's `str(number)`.
+fn normalise_num(repr: &str, value: f64, is_decimal: bool) -> Normalised {
+    if !repr.contains(['e', 'E']) {
+        return Normalised::Frac { value, repr: repr.to_string(), decimal: is_decimal };
+    }
+    match BigDecimal::from_str(repr) {
+        Ok(d) if d.is_integer() && (!is_decimal || d.as_bigint_and_exponent().1 <= 0) => {
+            Normalised::Int(d.with_scale(0).as_bigint_and_exponent().0)
+        }
+        Ok(d) => Normalised::Frac { value, repr: python_decimal_str(&d), decimal: true },
+        Err(_) => Normalised::Frac { value, repr: repr.to_string(), decimal: is_decimal },
+    }
+}
+
 /// abs(exponent) of `Decimal(str(number))` — the shim's fractional-precision
 /// computation. BigDecimal parses the same repr forms (`"1.5"`, `"1e-05"`, ...)
 /// and yields the identical scale.
@@ -999,20 +1240,66 @@ fn num2words(
     to: &str,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<String>> {
-    // Captured before any normalisation: the core keys off the *arrival* type
-    // (a plain int vs a float/Decimal vs a str), not a post-parse value.
+    guard(|| num2words_impl(py, number, ordinal, lang, to, kwargs))
+}
+
+fn num2words_impl(
+    py: Python<'_>,
+    number: &Bound<'_, PyAny>,
+    ordinal: bool,
+    lang: &str,
+    to: &str,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<String>> {
+    // The core keys off the *arrival* type (an int vs a float/Decimal vs a
+    // str), not a post-parse value. Numeric types are normalised first
+    // (gladiaio/num2words2#236): anything with `__index__` (IntEnum, numpy
+    // ints) is an int, anything else with `__float__` (numpy floats) a
+    // float, in every mode. bool is rejected: True is not the number one.
+    if number.is_instance_of::<PyBool>() {
+        return Err(PyTypeError::new_err("bool is not a number"));
+    }
     let is_str = number.is_instance_of::<PyString>();
-    let plain_int = number.is_exact_instance_of::<PyInt>(); // type(number) is int
-    let intish = number.is_instance_of::<PyInt>(); // isinstance(number, int) — incl. bool
-    let is_float = number.is_instance_of::<PyFloat>();
+    let mut is_float = number.is_instance_of::<PyFloat>();
     // Only import `decimal` for objects that could actually be a Decimal.
-    let is_decimal = if is_str || is_float || intish {
+    let is_decimal = if is_str || is_float || number.is_instance_of::<PyInt>() {
         false
     } else {
         let decimal_cls = py.import("decimal")?.getattr("Decimal")?;
         number.is_instance(&decimal_cls)?
     };
+    // -0.0 / Decimal('-0') read as zero, without "minus", in every
+    // language (#237): '-0.0' as a string already did.
+    let normalised: Bound<'_, PyAny> = if is_str {
+        number.clone()
+    } else if is_decimal {
+        if number.call_method0("is_zero")?.is_truthy()? {
+            number.call_method0("copy_abs")?
+        } else {
+            number.clone()
+        }
+    } else if is_float || !number.hasattr("__index__")? {
+        if !is_float && !number.hasattr("__float__")? {
+            return Err(PyTypeError::new_err(format!(
+                "expected a number or a numeric string, got {}",
+                number.get_type().name()?
+            )));
+        }
+        is_float = true;
+        // `+ 0.0` turns -0.0 into 0.0 and leaves every other value alone.
+        PyFloat::new(py, number.extract::<f64>()? + 0.0).into_any()
+    } else {
+        py.import("operator")?.getattr("index")?.call1((number,))?
+    };
+    let number = &normalised;
+    let plain_int = !is_str && !is_float && !is_decimal; // an int, via __index__
+    let intish = plain_int;
     let plain_num = is_float || is_decimal;
+
+    // `errors=` belongs to the dispatcher, never to a language converter
+    // (which would decline an unknown kwarg): read it and drop it here.
+    let (errors, stripped) = take_errors(kwargs, "raise")?;
+    let kwargs = stripped.as_ref().or(kwargs);
 
     let resolved = presentation::resolve_lang(lang).ok_or_else(|| unknown_lang(lang))?;
     let lang = resolved.as_str();
@@ -1026,7 +1313,13 @@ fn num2words(
         if !CONVERTER_TYPES.contains(&to_final) {
             return Err(unknown_converter(to_final));
         }
-        let cents = classify_cents(kwargs)?;
+        // cents= only matters for currency; elsewhere an odd value keeps
+        // declining as before.
+        let cents = if to_final == "currency" {
+            Some(classify_cents(kwargs)?)
+        } else {
+            classify_cents_raw(kwargs)?
+        };
         let extras = extras_to_kwargs(
             kwargs,
             &[
@@ -1038,13 +1331,50 @@ fn num2words(
                 "precision",
             ],
         )?;
-        let (cents_bool, kw) = match (cents, extras) {
-            (Some((c, _drop)), Some(kw)) => (c, kw),
+        let (cents_bool, drop_cents, kw) = match (cents, extras) {
+            (Some((c, drop)), Some(kw)) => (c, drop, kw),
             _ => return Err(declined(lang, to_final, kwargs)),
         };
         let currency = get_opt_str(kwargs, "currency")?;
         let separator = get_opt_str(kwargs, "separator")?;
         let adjective = get_opt_bool(kwargs, "adjective")?;
+        // "NaN"/"inf" have no numeric ordinal; some languages echoed the token
+        // ("NaN", "Infinity-তম"), others raised InvalidOperation (#224).
+        if to_final == "ordinal_num"
+            && matches!(
+                num2words2_core::strnum::python_decimal_parse(&s),
+                Ok(ParsedNumber::Inf { .. }) | Ok(ParsedNumber::NaN)
+            )
+        {
+            return Err(PyValueError::new_err(format!(
+                "to='ordinal_num' needs a finite number, got {:?}",
+                s.trim()
+            )));
+        }
+        // precision= applies to a numeric string like to a float (#218).
+        if let (Some(p), "cardinal") = (get_precision(kwargs)?, to_final) {
+            if let Ok(ParsedNumber::Dec(d)) | Ok(ParsedNumber::DecPoint { value: d, .. }) =
+                l.str_to_number(&s)
+            {
+                return match cardinal_with_precision(l, &d, p, &kw) {
+                    Ok(o) => Ok(Some(presentation::apply_style(&o, style.as_deref(), to_final, lang))),
+                    Err(N2WError::Fallback(_)) => Err(declined(lang, to_final, kwargs)),
+                    Err(e) => Err(map_err(name_lang(lang, e))),
+                };
+            }
+        }
+        // cents='omit' truncates toward zero, as int() does for a float or
+        // a Decimal (#220): "1.99" -> "one euro".
+        let s = if drop_cents && to_final == "currency" {
+            match l.str_to_number(&s) {
+                Ok(ParsedNumber::Dec(d)) | Ok(ParsedNumber::DecPoint { value: d, .. }) => {
+                    d.with_scale_round(0, bigdecimal::RoundingMode::Down).to_string()
+                }
+                _ => s,
+            }
+        } else {
+            s
+        };
         return match from_string_core(
             l,
             lang,
@@ -1055,9 +1385,15 @@ fn num2words(
             separator.as_deref(),
             adjective,
             &kw,
+            errors,
         )? {
-            (0, out) => Ok(out
-                .map(|o| presentation::apply_style(&o, style.as_deref(), to_final, lang))),
+            (0, out) => Ok(out.map(|o| {
+                if to_final == "cheque" {
+                    cheque_style(&o, style.as_deref(), lang)
+                } else {
+                    presentation::apply_style(&o, style.as_deref(), to_final, lang)
+                }
+            })),
             _ => Err(declined(lang, to_final, kwargs)),
         };
     }
@@ -1099,40 +1435,67 @@ fn num2words(
         )?;
         if let (true, Some(kw)) = (finite, items) {
             let value = number.extract::<f64>()?;
-            let repr_str = pystr(number)?;
-            let prec = decimal_scale(&repr_str);
-            let decimal_str = if is_decimal {
-                repr_str.clone()
-            } else {
-                String::new()
+            let r = match normalise_num(&pystr(number)?, value, is_decimal) {
+                Normalised::Int(n) => int_int_mode(l, to, &n, &kw),
+                Normalised::Frac { value, repr, decimal } => {
+                    let prec = decimal_scale(&repr);
+                    let decimal_str = if decimal { repr.clone() } else { String::new() };
+                    let precision_override = get_precision(kwargs)?;
+                    to_float_core(
+                        l,
+                        to,
+                        value,
+                        prec,
+                        &decimal_str,
+                        &repr,
+                        precision_override,
+                        &kw,
+                    )
+                }
             };
-            let precision_override = get_precision(kwargs)?;
-            return match to_float_core(
-                l,
-                to,
-                value,
-                prec,
-                &decimal_str,
-                &repr_str,
-                precision_override,
-                &kw,
-            ) {
+            return match r {
                 Ok(out) => {
                     Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
                 }
                 Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
-                Err(e) => Err(map_err(e)),
+                Err(e) => Err(map_err(name_lang(lang, e))),
             };
         }
-        // not finite or items None -> fall through
+        // NaN / ±inf: the same outcome as the strings "NaN" / "inf"; the
+        // language decides (base: ValueError / OverflowError).
+        if !finite {
+            let f = number.extract::<f64>()?;
+            let r = if f.is_nan() {
+                l.nan_result(to)
+            } else {
+                l.inf_result(f < 0.0, to)
+            };
+            return finish(r);
+        }
+        // items None -> fall through
+    }
+
+    // NaN / ±inf has no amount to spell (#236): a clear ValueError rather
+    // than the Rust parser's "invalid digit found in string".
+    if plain_num && (to == "currency" || to == "cheque") {
+        let f = number.extract::<f64>()?;
+        if !f.is_finite() {
+            return Err(PyValueError::new_err(format!(
+                "cannot convert {} to {}",
+                if f.is_nan() { "NaN" } else { "Infinity" },
+                to
+            )));
+        }
     }
 
     // currency
     if to == "currency" && (intish || is_float || is_decimal) {
-        if let Some((cents_bool, drop)) = classify_cents(kwargs)? {
-            // cents='omit' on a float truncates to an int so no cents segment
-            // appears (the int path drops cents naturally).
-            let num_obj: Bound<'_, PyAny> = if drop && is_float {
+        {
+            let (cents_bool, drop) = classify_cents(kwargs)?;
+            // cents='omit' on a float or Decimal truncates to an int (toward
+            // zero, Python's int()) so no cents segment appears (the int path
+            // drops cents naturally). #220: Decimal used to keep its cents.
+            let num_obj: Bound<'_, PyAny> = if drop && (is_float || is_decimal) {
                 py.import("builtins")?.getattr("int")?.call1((number,))?
             } else {
                 number.clone()
@@ -1148,7 +1511,14 @@ fn num2words(
                     "adjective",
                 ],
             )? {
-                let value_str = pystr(&num_obj)?;
+                let mut value_str = pystr(&num_obj)?;
+                // #211: '1E+3' / '1e+21' written out before the language
+                // int()s it.
+                if value_str.contains(['e', 'E']) {
+                    if let Ok(d) = BigDecimal::from_str(&value_str) {
+                        value_str = python_decimal_str(&d);
+                    }
+                }
                 let is_int_arg = num_obj.is_exact_instance_of::<PyInt>();
                 let is_float_arg = num_obj.is_instance_of::<PyFloat>();
                 let has_decimal_arg = is_float_arg || value_str.contains('.');
@@ -1168,13 +1538,15 @@ fn num2words(
                     &kw,
                 ) {
                     Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
-                    Err(e) => Err(map_err(e)),
-                    Ok(out) => Ok(out),
+                    Err(e) => Err(map_err(name_lang(lang, e))),
+                    // style='us' applies to every input type (#220).
+                    Ok(out) => {
+                        Ok(out.map(|o| presentation::apply_style(&o, style.as_deref(), to, lang)))
+                    }
                 };
             }
             // items None -> fall through
         }
-        // cents guard fail -> fall through
     }
 
     // cheque
@@ -1183,33 +1555,68 @@ fn num2words(
         let currency = get_opt_str(kwargs, "currency")?;
         return match cheque_core(l, &value_str, currency.as_deref()) {
             Err(N2WError::Fallback(_)) => Err(declined(lang, to, kwargs)),
-            Err(e) => Err(map_err(e)),
-            Ok(out) => Ok(out),
+            Err(e) => Err(map_err(name_lang(lang, e))),
+            Ok(out) => Ok(out.map(|o| cheque_style(&o, style.as_deref(), lang))),
         };
     }
 
     // fraction
     if to == "fraction" {
-        return Err(map_err(fraction_probe(l)));
+        let tname = number.get_type().name()?.to_string();
+        return Err(map_err(fraction_type_error(&tname)));
     }
 
     Err(declined(lang, to, kwargs))
 }
 
+/// The `errors=` keyword ("raise" | "ignore", default `default`) and, when
+/// it was given, a copy of `kwargs` without it.
+fn take_errors<'py>(
+    kwargs: Option<&Bound<'py, PyDict>>,
+    default: &str,
+) -> PyResult<(sentencepath::Errors, Option<Bound<'py, PyDict>>)> {
+    let Some(kw) = kwargs else {
+        return Ok((sentencepath::Errors::parse(default).map_err(map_err)?, None));
+    };
+    let Some(v) = kw.get_item("errors")? else {
+        return Ok((sentencepath::Errors::parse(default).map_err(map_err)?, None));
+    };
+    let mode = match v.extract::<String>() {
+        Ok(m) => m,
+        Err(_) => pystr(&v)?,
+    };
+    let errors = sentencepath::Errors::parse(&mode).map_err(map_err)?;
+    let rest = kw.copy()?;
+    rest.del_item("errors")?;
+    Ok((errors, Some(rest)))
+}
+
 /// `num2words_sentence` — dispatches on `lang=None` (auto-detect) vs a fixed
-/// language, so the Python surface is a pass-through. `**kwargs` are accepted
-/// and ignored, matching the historic signature.
+/// language, so the Python surface is a pass-through. `errors="ignore"` (the
+/// default) leaves a token it cannot convert as written, `errors="raise"`
+/// raises ValueError naming it. Other `**kwargs` are accepted and ignored,
+/// matching the historic signature.
 #[pyfunction]
-#[pyo3(signature = (sentence, lang=Some("en".to_string()), to="cardinal", **_kwargs))]
+#[pyo3(signature = (sentence, lang=Some("en".to_string()), to="cardinal", **kwargs))]
 fn num2words_sentence(
     sentence: &str,
     lang: Option<String>,
     to: &str,
-    _kwargs: Option<&Bound<'_, PyDict>>,
+    kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<String> {
+    guard(|| num2words_sentence_impl(sentence, lang, to, kwargs))
+}
+
+fn num2words_sentence_impl(
+    sentence: &str,
+    lang: Option<String>,
+    to: &str,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<String> {
+    let (errors, _) = take_errors(kwargs, "ignore")?;
     match lang.as_deref() {
-        None => sentencepath::convert_auto(sentence, to).map_err(map_err),
-        Some(l) => sentencepath::convert(sentence, l, to).map_err(map_err),
+        None => sentencepath::convert_auto(sentence, to, errors).map_err(map_err),
+        Some(l) => sentencepath::convert_with(sentence, l, to, errors).map_err(map_err),
     }
 }
 
@@ -1218,6 +1625,10 @@ fn num2words_sentence(
 #[pyfunction]
 #[pyo3(signature = (value, locale, separator))]
 fn group_digits(value: BigInt, locale: &str, separator: &str) -> PyResult<String> {
+    guard(|| group_digits_impl(value, locale, separator))
+}
+
+fn group_digits_impl(value: BigInt, locale: &str, separator: &str) -> PyResult<String> {
     fn group(s: &str, size: usize, sep: &str) -> String {
         let bytes = s.as_bytes();
         let mut parts: Vec<&str> = Vec::new();
@@ -1251,20 +1662,16 @@ fn group_digits(value: BigInt, locale: &str, separator: &str) -> PyResult<String
 /// `num2words2.maxval(lang)` — the per-language MAXVAL ceiling (issue #582).
 #[pyfunction]
 fn maxval(lang: &str) -> PyResult<Option<BigInt>> {
-    let l = match get_lang(lang) {
-        Some(l) => l,
-        None => {
-            let nl = lang.replace('-', "_");
-            if let Some(l) = get_lang(&nl) {
-                l
-            } else {
-                let prefix: String = nl.chars().take(2).collect();
-                get_lang(&prefix).ok_or_else(|| {
-                    PyNotImplementedError::new_err(format!("No MAXVAL for lang='{}'", lang))
-                })?
-            }
-        }
-    };
+    guard(|| maxval_impl(lang))
+}
+
+fn maxval_impl(lang: &str) -> PyResult<Option<BigInt>> {
+    // Same code resolution as `num2words` (#238).
+    let l = presentation::resolve_lang(lang)
+        .and_then(|k| get_lang(&k))
+        .ok_or_else(|| {
+            PyNotImplementedError::new_err(format!("No MAXVAL for lang='{}'", lang))
+        })?;
     Ok(l.python_maxval())
 }
 
@@ -1273,7 +1680,7 @@ fn maxval(lang: &str) -> PyResult<Option<BigInt>> {
 #[pyfunction]
 #[pyo3(signature = (text, lang, to))]
 fn sentence(text: &str, lang: &str, to: &str) -> PyResult<String> {
-    sentencepath::convert(text, lang, to).map_err(map_err)
+    guard(|| sentencepath::convert(text, lang, to).map_err(map_err))
 }
 
 /// `num2words_sentence(text)` with `lang=None` — lingua-rs detection, then
@@ -1282,13 +1689,13 @@ fn sentence(text: &str, lang: &str, to: &str) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (text, to))]
 fn sentence_auto(text: &str, to: &str) -> PyResult<String> {
-    sentencepath::convert_auto(text, to).map_err(map_err)
+    guard(|| sentencepath::convert_auto(text, to, sentencepath::Errors::Ignore).map_err(map_err))
 }
 
 /// Detection alone, for the agreement harness. None on slim builds.
 #[pyfunction]
-fn detect_language(text: &str) -> Option<String> {
-    sentencepath::detect_language(text)
+fn detect_language(text: &str) -> PyResult<Option<String>> {
+    guard(|| Ok(sentencepath::detect_language(text)))
 }
 
 #[pymodule]
@@ -1299,6 +1706,8 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<NumberTooLargeError>(),
     )?;
     m.add_function(wrap_pyfunction!(supported_langs, m)?)?;
+    m.add_function(wrap_pyfunction!(default_currency, m)?)?;
+    m.add_function(wrap_pyfunction!(lang_aliases, m)?)?;
     m.add_function(wrap_pyfunction!(to_cardinal, m)?)?;
     m.add_function(wrap_pyfunction!(to_ordinal, m)?)?;
     m.add_function(wrap_pyfunction!(to_ordinal_num, m)?)?;

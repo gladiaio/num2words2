@@ -76,13 +76,12 @@ class TestKY(LangTest, TestCase):
     ]
 
     currency_tests = [
-        (38.4, "отуз сегиз сом", {"cents": False, "currency": "KGS"}),
+        # cents=False keeps the cents as digits (#220).
+        (38.4, "отуз сегиз сом 40 тыйын", {"cents": False, "currency": "KGS"}),
         ("0", "нөл сом", {"cents": True, "currency": "KGS"}),
         ("1.50", "бир сом элүү тыйын", {"cents": True, "currency": "KGS"}),
         (12.34, "он эки доллар отуз төрт сент", {"currency": "USD"}),
         (12.34, "он эки рубль отуз төрт копейка", {"currency": "RUB"}),
-        # Unknown codes fall back to the first entry in CURRENCY_FORMS (KGS).
-        (12.34, "он эки сом отуз төрт тыйын", {"currency": "GBP"}),
     ]
 
     # to_year ignores longval and delegates to to_cardinal, so there is no
@@ -107,6 +106,11 @@ class TestKY(LangTest, TestCase):
 
     def test_currency(self):
         self._run_currency_tests()
+
+    def test_unknown_currency_code_raises(self):
+        # Unknown codes used to fall back to the default currency (#219).
+        with self.assertRaisesRegex(NotImplementedError, 'Currency code "GBP"'):
+            num2words(12.34, lang="ky", to="currency", currency="GBP")
 
     def test_float(self):
         self._run_float_tests()

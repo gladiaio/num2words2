@@ -5,9 +5,9 @@
 //! `hasattr` guard in `Num2Word_Base.__init__` never fires: Python builds no
 //! `self.cards` and never sets `self.MAXVAL`. `to_cardinal` is overridden
 //! outright and drives a plain recursive `_int_to_word`. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — `to_cardinal` never raises for any integer input
-//! (see bug 3 below for what happens past 10^9 instead).
+//! `cards`/`merge` stay at their trait defaults here. Python has **no
+//! overflow check** (see bug 3 below for what it did past 10^9); this port
+//! raises `OverflowError` from 10^24 (`maxval`).
 //!
 //! All four in-scope modes are overridden by Python, so nothing here falls
 //! through to a `Num2Word_Base` default:
@@ -32,18 +32,20 @@
 //!    fimm", i.e. the thousands part reads "ten two thousand".
 //! 2. **No copula anywhere.** Faroese joins the last two elements with "og"
 //!    ("hundrað og ein"); this module joins every fragment with a bare space,
-//!    so 101 → "ein hundrað ein". Numerals are also never inflected for gender
-//!    ("tvey"/"trý" are the neuter forms, used for everything).
-//! 3. **Everything >= 10^9 falls back to digits.** The `_int_to_word` chain
-//!    stops at `million`, and the final `else` is `return str(number)` — a
-//!    literal comment-flagged "Fallback for very large numbers". So
-//!    `to_cardinal(10**9)` == "1000000000" (a digit string, not words) and
-//!    `to_cardinal(10**21)` == "1000000000000000000000". No exception is
-//!    raised. Modelled by the last arm of [`LangFo::int_to_word`].
-//! 4. **The 10^9 fallback poisons the ordinal.** `to_ordinal` appends "-ti" to
-//!    whatever `to_cardinal` returned without inspecting it, so
-//!    `to_ordinal(10**9)` == "1000000000-ti" — digits with a word suffix glued
-//!    on. Confirmed in the corpus.
+//!    so 101 → "ein hundrað ein". Numerals are never inflected for gender
+//!    ("tvey"/"trý" are the neuter forms) except before a currency noun
+//!    (#260).
+//! 3. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` chain stops at `million`, and the final `else` is
+//!    `return str(number)`, so `to_cardinal(10**9)` was the digit string
+//!    "1000000000". This port continues the same `N <scale>` composition with
+//!    the Faroese long-scale words milliard (10^9), billión (10^12), billiard
+//!    (10^15), trillión (10^18) and trilliard (10^21) — fo.wikipedia "Langi
+//!    og stutti talstigin fyri stór tøl", Omniglot "Numbers in Faroese" — and
+//!    raises `OverflowError` from 10^24 (`maxval`).
+//! 4. **`to_ordinal` glues "-ti" onto whatever the cardinal returned**
+//!    without inspecting it. Python's 10^9 fallback made that
+//!    "1000000000-ti"; since #147 it is "ein milliard-ti".
 //! 5. **`to_ordinal` accepts negatives.** Python never calls
 //!    `Num2Word_Base.verify_ordinal`, which would have raised `TypeError` for
 //!    negative input. So `to_ordinal(-1)` == "minus ein-ti" rather than
@@ -61,24 +63,23 @@
 //!
 //! # Error variants
 //!
-//! The four *integer* modes never raise: there is no `MAXVAL` to overflow,
-//! every table index is bounded by its enclosing branch, and negatives are
-//! handled rather than rejected. The integer corpus for "fo" is `ok: true`
-//! across `cardinal`/`ordinal`/`ordinal_num`/`year`.
+//! The four *integer* modes raise only `OverflowError`, at `maxval` 10^24
+//! (#147): every table index is bounded by its enclosing branch, and
+//! negatives are handled rather than rejected.
 //!
 //! The **float/Decimal** path *can* raise, and only one way: `to_cardinal`
 //! re-parses the sign-stripped `str(number)` with `int()`, so any point-less
 //! form that is not an integer literal — `repr(1e16)` == "1e+16",
 //! `str(Decimal("1E+2"))` == "1E+2", "inf"/"nan"/"Infinity" — raises
 //! `ValueError: invalid literal for int() with base 10: '...'`. Values whose
-//! string *does* show a point never raise, whatever their size (the >= 10^9
-//! integer part just leaks digits, bug 3). Routing is pinned by the
+//! string *does* show a point raise only when their integer part reaches
+//! `maxval` (bug 3, #147). Routing is pinned by the
 //! wholefloat corpus: `13x ValueError` rows for 1e+16/1e+20/1E+2/1E+20 across
 //! cardinal/ordinal/year, and `ok` rows for every pointed form including
 //! "-0.0" -> "minus null komma null" (see [`route_by_str`]).
 //!
-//! `to_currency` never raises either — see bug 8 below, it has no
-//! `NotImplementedError` path at all. The **only** raising surface in this
+//! `to_currency` raises only the same `maxval` OverflowError — see bug 8
+//! below, it has no `NotImplementedError` path at all. The **only** raising surface in this
 //! module is `to_cheque`, which `Num2Word_FO` does *not* override: the
 //! inherited `Num2Word_Base.to_cheque` subscripts `CURRENCY_FORMS[currency]`
 //! and converts the `KeyError` into `NotImplementedError`. So `cheque:GBP`
@@ -131,8 +132,16 @@
 //!    left-to-right off the string: `12.999` → `"999"[:2]` → 99 cents, and
 //!    `0.5` → `"5".ljust(2, "0")` → "50" → 50 cents. So a trailing digit is
 //!    dropped rather than rounded up (`.999` does not carry to the next unit).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dollari/dollarar and evra/evrur with sent. The
+//! numeral agrees with the noun (#260): "tvær evrur", "tríggjar krónur",
+//! "tveir dollarar", "eitt oyra" (was "tvey evrur" etc.). Examples in these
+//! docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -141,6 +150,25 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+/// The scales above `million` that Python lacks (gladiaio/num2words2#147),
+/// largest first, as `(power of ten, word)`: the Faroese long scale per
+/// fo.wikipedia "Langi og stutti talstigin fyri stór tøl" and Omniglot.
+/// Composed like `million` — multiplier, space, uninflected word.
+const HIGH_SCALES: [(u32, &str); 5] = [
+    (21, "trilliard"),
+    (18, "trillión"),
+    (15, "billiard"),
+    (12, "billión"),
+    (9, "milliard"),
+];
+
+/// The exclusive ceiling: 10^24 (kvadrillión) is past the scale table (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(24))
+}
 
 /// `self.negword`. Note the **trailing space**, which is part of the literal
 /// in Python (`"minus "`) and differs from the `Num2Word_Base` convention.
@@ -315,14 +343,57 @@ pub struct LangFo {
     currency_forms: HashMap<&'static str, CurrencyForms>,
 }
 
+/// Grammatical gender of a currency noun, for numeral agreement (#260).
+#[derive(Clone, Copy)]
+enum Gender {
+    Masculine,
+    Feminine,
+    Neuter,
+    /// No sourced gender ("sent"): the counting forms stay.
+    Unknown,
+}
+
+/// "dollari" is masculine, "króna" and "evra" feminine, "oyra" neuter.
+/// "sent" has no dictionary gender to hand and keeps the counting forms.
+fn noun_gender(singular: &str) -> Gender {
+    match singular {
+        "dollari" => Gender::Masculine,
+        "króna" | "evra" => Gender::Feminine,
+        "oyra" => Gender::Neuter,
+        _ => Gender::Unknown,
+    }
+}
+
+/// The cardinal's last word agreeing with the noun that follows (#260).
+/// 1, 2 and 3 inflect: ein/ein/eitt, tveir/tvær/tvey, tríggir/tríggjar/trý.
+/// The counting forms `_int_to_word` produces are "ein", "tvey", "trý".
+fn agree(words: String, gender: Gender) -> String {
+    let (head, last) = match words.rsplit_once(' ') {
+        Some((h, l)) => (Some(h), l),
+        None => (None, words.as_str()),
+    };
+    let form = match (gender, last) {
+        (Gender::Masculine, "tvey") => "tveir",
+        (Gender::Masculine, "trý") => "tríggir",
+        (Gender::Feminine, "tvey") => "tvær",
+        (Gender::Feminine, "trý") => "tríggjar",
+        (Gender::Neuter, "ein") => "eitt",
+        _ => return words,
+    };
+    match head {
+        Some(h) => format!("{} {}", h, form),
+        None => form.to_string(),
+    }
+}
+
 impl LangFo {
     pub fn new() -> Self {
         // Insertion order is irrelevant to a HashMap; FALLBACK_CURRENCY
         // captures the one place Python's ordering was observable.
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             ("DKK", &["króna", "krónur"][..], &["oyra", "oyru"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
+            ("USD", &["dollari", "dollarar"][..], &["sent", "sent"][..]),
+            ("EUR", &["evra", "evrur"][..], &["sent", "sent"][..]),
         ]
         .into_iter()
         .map(|(k, u, s)| (k, CurrencyForms::new(u, s)))
@@ -373,41 +444,43 @@ impl LangFo {
 
     /// Port of `Num2Word_FO._int_to_word`.
     ///
-    /// Infallible: mirrors Python exactly, and Python cannot raise here. Every
+    /// Raises only `OverflowError`, at `maxval` (#147); Python instead
+    /// stringified everything from 10^9 (bug 3). Every
     /// `ONES`/`TENS` index is bounded by the enclosing range check (a value
     /// `< 100` divided by 10 is `< 10`), so the `to_usize` casts below are
     /// proven safe rather than assumed — the BigInt is only narrowed once the
     /// branch has established it fits.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // Python: `return self.ones[0] if self.ones[0] else "zero"`.
         // ONES[0] is "" → falsy → the fallback always wins. The condition is
         // kept verbatim rather than folded to ZERO_WORD to document the dead arm.
         if number.is_zero() {
-            return if ONES[0].is_empty() {
+            return Ok(if ONES[0].is_empty() {
                 ZERO_WORD.to_string()
             } else {
                 ONES[0].to_string()
-            };
+            });
         }
 
         // Unreachable from `to_cardinal`, which strips the sign before calling
         // in. Kept because Python has it: it would double the negword prefix.
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
         if *number < BigInt::from(10) {
             // 1..=9; ONES[0] is unreachable (the is_zero arm caught it).
-            return ONES[number.to_usize().expect("< 10")].to_string();
+            return Ok(ONES[number.to_usize().expect("< 10")].to_string());
         }
 
         if *number < BigInt::from(100) {
             let (tens_val, ones_val) = number.div_mod_floor(&BigInt::from(10));
             let tens_word = TENS[tens_val.to_usize().expect("< 10")];
             if ones_val.is_zero() {
-                return tens_word.to_string();
+                return Ok(tens_word.to_string());
             }
-            return format!("{} {}", tens_word, ONES[ones_val.to_usize().expect("< 10")]);
+            return Ok(format!("{} {}", tens_word, ONES[ones_val.to_usize().expect("< 10")]));
         }
 
         if *number < BigInt::from(1000) {
@@ -417,34 +490,47 @@ impl LangFo {
             let mut result = format!("{} {}", ONES[hundreds_val.to_usize().expect("< 10")], HUNDRED);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         if *number < BigInt::from(1_000_000) {
             let (thousands_val, remainder) = number.div_mod_floor(&BigInt::from(1000));
-            let mut result = format!("{} {}", self.int_to_word(&thousands_val), THOUSAND);
+            let mut result = format!("{} {}", self.int_to_word(&thousands_val)?, THOUSAND);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         if *number < BigInt::from(1_000_000_000) {
             let (millions_val, remainder) = number.div_mod_floor(&BigInt::from(1_000_000));
-            let mut result = format!("{} {}", self.int_to_word(&millions_val), MILLION);
+            let mut result = format!("{} {}", self.int_to_word(&millions_val)?, MILLION);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
-        // Python: `return str(number)  # Fallback for very large numbers`.
-        // Digits, verbatim, no words and no exception. See bug 3.
-        number.to_string()
+        // Python: `return str(number)  # Fallback for very large numbers` —
+        // bug 3. The scales above million instead, same composition (#147);
+        // the maxval check above keeps the multiplier below 1000.
+        for &(exp, word) in HIGH_SCALES.iter() {
+            let scale = pow10_big(exp);
+            if *number >= scale {
+                let (scale_val, remainder) = number.div_mod_floor(&scale);
+                let mut result = format!("{} {}", self.int_to_word(&scale_val)?, word);
+                if !remainder.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&remainder)?);
+                }
+                return Ok(result);
+            }
+        }
+        unreachable!("every value >= 10^9 and below maxval has a HIGH_SCALES entry")
     }
 }
 
@@ -455,6 +541,10 @@ impl Default for LangFo {
 }
 
 impl Lang for LangFo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -494,7 +584,7 @@ impl Lang for LangFo {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_FO.to_ordinal`: cardinal + a literal "-ti", with no
@@ -610,13 +700,13 @@ impl Lang for LangFo {
 
         // ret += _int_to_word(int(left)) [+ " komma " + per-digit words];
         // strip. `pointword` is used raw — FO applies no title() here.
-        let mut tokens: Vec<String> = vec![self.int_to_word(&left)];
+        let mut tokens: Vec<String> = vec![self.int_to_word(&left)?];
         if !right_str.is_empty() {
             tokens.push(POINTWORD.to_string());
             for ch in right_str.chars() {
                 // Each char is one decimal digit; int(digit) ∈ 0..=9.
                 let d = ch.to_digit(10).unwrap_or(0);
-                tokens.push(self.int_to_word(&BigInt::from(d)));
+                tokens.push(self.int_to_word(&BigInt::from(d))?);
             }
         }
         let joined = tokens.join(" ");
@@ -649,7 +739,7 @@ impl Lang for LangFo {
             StrRoute::WholeDigits(abs_int) => {
                 // `(ret + self._int_to_word(int(n))).strip()`, with the sign
                 // already peeled off the string into `ret = self.negword`.
-                let body = self.int_to_word(&abs_int);
+                let body = self.int_to_word(&abs_int)?;
                 if value.is_negative() {
                     Ok(format!("{}{}", NEGWORD, body).trim().to_string())
                 } else {
@@ -730,6 +820,16 @@ impl Lang for LangFo {
         self.currency_forms.get(code)
     }
 
+    /// The cheque's amount agrees with the unit noun like `to_currency`'s
+    /// (#260): "TVÆR AND 00/100 EVRUR".
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        Ok(match self.currency_forms.get(currency) {
+            Some(f) => agree(words, noun_gender(&f.unit[0])),
+            None => words,
+        })
+    }
+
     /// Port of `Num2Word_FO.to_currency`.
     ///
     /// ```python
@@ -800,7 +900,7 @@ impl Lang for LangFo {
         };
 
         let one = BigInt::one();
-        let left_str = self.int_to_word(&left);
+        let left_str = agree(self.int_to_word(&left)?, noun_gender(&forms.unit[0]));
         let mut result = format!(
             "{} {}",
             left_str,
@@ -810,7 +910,7 @@ impl Lang for LangFo {
         // `if cents and right:` — a truthiness test on the cent count, not on
         // the type of `val`. See bug 11.
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = agree(self.int_to_word(&right)?, noun_gender(&forms.subunit[0]));
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');

@@ -77,17 +77,23 @@ class CliTestCase(unittest.TestCase):
         self.assertTrue(output.err.lower().startswith("usage:"), output.err)
 
     def test_cli_list_langs(self):
-        """You should be able to list all available languages"""
-        output = self.cli.run_cmd("--list-languages")
-        self.assertEqual(
-            sorted(_RUST.supported_langs()),
-            [out for out in output.out.strip().splitlines() if out],
-        )
-        output = self.cli.run_cmd("-L")
-        self.assertEqual(
-            sorted(_RUST.supported_langs()),
-            [out for out in output.out.strip().splitlines() if out],
-        )
+        """-L lists each canonical code once, aliases after it (#245)."""
+        aliases = _RUST.lang_aliases()
+        canonical = sorted(c for c in _RUST.supported_langs() if c not in aliases)
+        for flag in ("--list-languages", "-L"):
+            output = self.cli.run_cmd(flag)
+            lines = [out for out in output.out.strip().splitlines() if out]
+            self.assertEqual(canonical, [ln.split(" ")[0] for ln in lines])
+            self.assertIn("cs (cz)", lines)
+            self.assertIn("zh (cn, zh_CN)", lines)
+            listed = {ln.split(" ")[0] for ln in lines}
+            for alias in ("cz", "dk", "jp", "jw", "cn", "uz_cyr", "en_aero_icao"):
+                self.assertNotIn(alias, listed)
+        # Every supported code is reachable from the listing.
+        shown = set()
+        for ln in lines:
+            shown.update(ln.replace("(", "").replace(")", "").replace(",", "").split())
+        self.assertEqual(shown, set(_RUST.supported_langs()))
 
     def test_cli_list_converters(self):
         """You should be able to list all available converters"""
@@ -126,3 +132,69 @@ class CliTestCase(unittest.TestCase):
             ).strip(),
             "ciento cincuenta euros con cincuenta y cinco céntimos",
         )
+
+    def test_cli_error_is_one_clean_line(self):
+        """No Python reprs in errors (#245)."""
+        for args, msg in [
+            (("abc",), "not a number"),
+            (("0.5", "-t", "fraction"), "expects a fraction"),
+            (("1e400",), "too large"),
+        ]:
+            output = self.cli.run_cmd(*args)
+            self.assertEqual(output.return_code, 1)
+            self.assertIn(msg, output.err)
+            self.assertEqual(len(output.err.strip().splitlines()), 1, output.err)
+            self.assertNotIn("<class", output.err)
+
+    def test_cli_negative_numbers(self):
+        """'-1e3' and '-0.5' are numbers, not options (#245)."""
+        self.assertEqual(self.cli.run_cmd("-1e3").out.strip(), "minus one thousand")
+        self.assertEqual(self.cli.run_cmd("-0.5").out.strip(), "minus zero point five")
+        self.assertEqual(self.cli.run_cmd("-5", "-l", "fr").out.strip(), "moins cinq")
+        self.assertEqual(
+            self.cli.run_cmd("-l", "fr", "-1e3").out.strip(), "moins mille"
+        )
+        self.assertEqual(self.cli.run_cmd("-1x").return_code, 2)
+
+    def test_cli_currency_options(self):
+        """--currency/-c, --cents, --adjective and --style reach num2words."""
+        out = self.cli.run_cmd("2.14", "-t", "currency", "-c", "USD").out
+        self.assertEqual(out.strip(), "two dollars, fourteen cents")
+        out = self.cli.run_cmd(
+            "2.14", "-t", "currency", "--currency", "USD", "--adjective"
+        ).out
+        self.assertEqual(out.strip(), "two US dollars, fourteen cents")
+        out = self.cli.run_cmd(
+            "2.14", "-t", "currency", "--cents", "terse", "-c", "USD"
+        ).out
+        self.assertEqual(
+            out.strip(),
+            num2words.num2words("2.14", to="currency", currency="USD", cents="terse"),
+        )
+        out = self.cli.run_cmd("101", "-t", "ordinal", "--style", "terse").out
+        self.assertEqual(out.strip(), "hundred and first")
+
+    def test_cli_errors_option(self):
+        """--errors passes num2words()'s errors= through (#228)."""
+        output = self.cli.run_cmd("50%")
+        self.assertEqual(output.return_code, 1)
+        self.assertIn("cannot convert '50%'", output.err)
+        output = self.cli.run_cmd("50%", "--errors", "raise")
+        self.assertEqual(output.return_code, 1)
+        output = self.cli.run_cmd("50%", "--errors", "ignore")
+        self.assertEqual(output.return_code, 0, output.err)
+        self.assertEqual(output.out.strip(), "50%")
+        self.assertEqual(self.cli.run_cmd("5", "--errors", "nope").return_code, 2)
+
+    def test_cli_non_utf8_stdout(self):
+        """A cp1252 stdout prints UTF-8 rather than failing (#245)."""
+        env = os.environ.copy()
+        env.pop("PYTHONUTF8", None)
+        env["PYTHONIOENCODING"] = "cp1252"
+        proc = subprocess.run(
+            self.cli.cmd_list + ["3", "-l", "ru"],
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.decode("utf-8").strip(), "три")

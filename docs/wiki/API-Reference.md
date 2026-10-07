@@ -202,13 +202,13 @@ See [Sentence Conversion](Sentence-Conversion).
 ## Runtime Discovery
 
 ```python
-from num2words2 import CONVERTER_CLASSES, CONVERTER_TYPES
+from num2words2 import CONVERTER_TYPES
 
-sorted(CONVERTER_CLASSES)
-sorted(CONVERTER_TYPES)
+sorted(CONVERTER_TYPES)  # every `to=` value
 ```
 
-The CLI provides the same discovery:
+There is no public table of converter classes: every conversion runs in the
+Rust core. The CLI lists the language codes and the `to=` values:
 
 ```bash
 num2words2 --list-languages

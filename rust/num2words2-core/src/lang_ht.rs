@@ -1,5 +1,14 @@
 //! Port of `lang_HT.py` (Haitian Creole / Kreyòl ayisyen).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milya" (10^9; ht.wikipedia "Milya"), composed like the million
+//! arm, and raises `OverflowError` from 10^12, which `maxval()` reports. No
+//! word for 10^12 is attested. Where the notes below describe the digit
+//! fallback ("1000000000", "no overflow check"), they describe Python; that
+//! arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_HT` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `__init__` never enters the `if any(hasattr(...))` branch: `self.cards` is
@@ -40,12 +49,13 @@
 //!    10^9 … 10^21. This is the reason no overflow ever occurs: arbitrarily
 //!    large BigInts stringify instead of raising.
 //! 4. **`to_ordinal` accepts negatives and zero.** HT never calls
-//!    `verify_ordinal`, so `to_ordinal(-1)` == "minus en-yèm" and
-//!    `to_ordinal(0)` == "zero-yèm" rather than raising `TypeError`.
-//! 5. **Zero is spelled via a falsy-string dodge.** `_int_to_word(0)` returns
-//!    `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""`, which is
-//!    falsy, so the branch always yields "zero". The `self.ones[0]` arm is
-//!    unreachable dead code.
+//!    `verify_ordinal`, so `to_ordinal(-1)` == "mwens en-yèm" and
+//!    `to_ordinal(0)` == "zewo-yèm" rather than raising `TypeError`.
+//! 5. **Zero, decimal and minus (fixed, gladiaio/num2words2#154).** Python
+//!    answered `self.ones[0] if self.ones[0] else "zero"` (always "zero") and
+//!    kept the base's English "point"/"minus ". The port says the Creole
+//!    "zewo", "vigil" (comma: Haiti writes a decimal comma, French "virgule")
+//!    and "mwens": `num2words(-1.5)` == "mwens en vigil senk".
 //!
 //! # Error behaviour
 //!
@@ -60,8 +70,14 @@
 //!
 //! No cross-call mutable state: `setup()` only assigns constant tables, and no
 //! method writes to `self`. The Rust stateless path is a faithful equivalent.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dola / ewo with santim. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -70,14 +86,15 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword` — note the **trailing space**, which `to_cardinal` relies on
 /// as the separator before the number words (and `.strip()` later trims when
 /// the number part is empty, which cannot actually happen here).
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "mwens ";
 
 /// `self.pointword` (float path only; out of scope, kept for trait fidelity).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "vigil";
 
 /// `self.ones`. Index 0 is `""` — see bug 5 in the module docs.
 const ONES: [&str; 10] = [
@@ -148,7 +165,7 @@ fn billion() -> BigInt {
 fn int_to_word(number: &BigInt) -> String {
     // `self.ones[0] if self.ones[0] else "zero"` — ones[0] == "" is falsy.
     if number.is_zero() {
-        return "zero".to_string();
+        return "zewo".to_string();
     }
 
     // Dead code in practice: `to_cardinal` strips the sign before calling, and
@@ -160,6 +177,22 @@ fn int_to_word(number: &BigInt) -> String {
 
     // `else: return str(number)` — the digit fallback for >= 10^9.
     if number >= &billion() {
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+        // Unreachable: callers check `maxval_ceiling()` first.
         return number.to_string();
     }
 
@@ -179,7 +212,7 @@ fn int_to_word(number: &BigInt) -> String {
 /// the enclosing range check).
 fn int_to_word_small(n: u64) -> String {
     if n == 0 {
-        return "zero".to_string();
+        return "zewo".to_string();
     }
 
     if n < 10 {
@@ -269,16 +302,16 @@ fn int_to_word_small(n: u64) -> String {
 /// | input | `str(input)` | Python `to_currency` |
 /// |---|---|---|
 /// | `1e-05` (float) | `"1e-05"` | `ValueError` |
-/// | `Decimal("0.00001")` | `"0.00001"` | `"zero euros"` |
+/// | `Decimal("0.00001")` | `"0.00001"` | `"zewo euros"` |
 ///
 /// Both parse to the *same* `BigDecimal` (mantissa 1, scale 5), because
 /// `BigDecimal::from_str` normalises `"1e-05"` and `"0.00001"` to one value.
 /// `CurrencyValue::Decimal` carries no float/Decimal tag, so the distinction is
 /// unrecoverable here and no rule can satisfy both. This takes the
-/// `Decimal`-correct branch (`"zero euros"`), which also stays correct for every
+/// `Decimal`-correct branch (`"zewo euros"`), which also stays correct for every
 /// float `|val| >= 1e-4` — including the corpus's smallest, `0.01`, and
 /// `0.001`, whose `str` is still positional. A float in `(0, 1e-4)` is the one
-/// input that diverges: Python raises `ValueError`, this returns `"zero euros"`.
+/// input that diverges: Python raises `ValueError`, this returns `"zewo euros"`.
 /// Nothing in the corpus reaches it; flagged in the port report.
 fn split_currency_parts(val: &CurrencyValue) -> Result<(BigInt, BigInt)> {
     let d = match val {
@@ -562,6 +595,23 @@ fn positional_parts(value: &FloatValue) -> (bool, BigInt, Option<String>) {
     (neg, pre, Some(frac))
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 1] = [(9, "milya")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangHt {
     /// `Num2Word_HT.CURRENCY_FORMS`, built once here rather than per call.
     currency_forms: HashMap<&'static str, CurrencyForms>,
@@ -592,11 +642,11 @@ impl LangHt {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dola", "dola"], &["santim", "santim"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["ewo", "ewo"], &["santim", "santim"]),
         );
         LangHt {
             fallback_forms: currency_forms["HTG"].clone(),
@@ -606,6 +656,10 @@ impl LangHt {
 }
 
 impl Lang for LangHt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -621,7 +675,7 @@ impl Lang for LangHt {
     /// `to_ordinal(float/Decimal)` — Python's `to_ordinal` is
     /// `to_cardinal(number) + "-yèm"` for *any* input (no
     /// `verify_ordinal`), so the float path is the float cardinal put through
-    /// the same literal transformation: `5.0` -> "senk point zero-yèm".
+    /// the same literal transformation: `5.0` -> "senk vigil zewo-yèm".
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -670,7 +724,7 @@ impl Lang for LangHt {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "vigil"
     }
 
     /// Port of `Num2Word_HT.to_cardinal`, integer path only.
@@ -703,7 +757,7 @@ impl Lang for LangHt {
             ("", value.clone())
         };
 
-        Ok(format!("{}{}", ret, int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -798,13 +852,13 @@ impl Lang for LangHt {
         //   return ret.strip()
         let mut ret = String::new();
         if neg {
-            ret.push_str(NEGWORD); // "minus " — trailing space preserved
+            ret.push_str(NEGWORD); // "mwens " — trailing space preserved
         }
-        ret.push_str(&int_to_word(&pre));
+        ret.push_str(&checked_int_to_word(&pre)?);
 
         if let Some(frac) = frac {
             ret.push(' ');
-            ret.push_str(POINTWORD); // self.pointword == "point"
+            ret.push_str(POINTWORD); // self.pointword == "vigil"
             for ch in frac.chars() {
                 // `int(digit)` for a single character: always 0..=9 here, but
                 // reproduce the ValueError shape defensively for parity.
@@ -815,7 +869,7 @@ impl Lang for LangHt {
                     ))
                 })?;
                 ret.push(' ');
-                ret.push_str(&int_to_word(&BigInt::from(d)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(d))?);
             }
         }
 
@@ -919,7 +973,7 @@ impl Lang for LangHt {
     /// 6. **An unknown currency code silently becomes HTG.** `.get(currency,
     ///    list(self.CURRENCY_FORMS.values())[0])` falls back to the first dict
     ///    value rather than raising, so `currency:GBP` renders Haitian gourdes:
-    ///    `to_currency(0, "GBP")` == "zero goud". Only HTG/USD/EUR are real;
+    ///    `to_currency(0, "GBP")` == "zewo goud". Only HTG/USD/EUR are real;
     ///    GBP, JPY, KWD, BHD, INR, CNY and CHF — 7 of the corpus's 9 codes —
     ///    all silently print "goud"/"santim". `to_cheque` does *not* share this
     ///    fallback, which is why it raises on the same codes.
@@ -976,14 +1030,14 @@ impl Lang for LangHt {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
         // Bugs 8 and 9: a *value* test, not a type test, and not a terse form.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }

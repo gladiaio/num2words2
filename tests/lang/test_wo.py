@@ -25,7 +25,7 @@ class Num2WordsWOTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="wo"), "zero")
+        self.assertEqual(num2words(0, lang="wo"), "tus")
         self.assertEqual(num2words(1, lang="wo"), "benn")
         self.assertEqual(num2words(2, lang="wo"), "ñaar")
         self.assertEqual(num2words(3, lang="wo"), "ñett")
@@ -244,68 +244,74 @@ class Num2WordsWOTest(TestCase):
             num2words(999999999, lang="wo"),
             "juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent tamndareet juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent junni juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent",
         )
-        self.assertEqual(num2words(1000000000, lang="wo"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="wo"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="wo"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="wo"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="wo"), "99999999999")
+        # No attested Wolof scale word above tamndareet (#147).
+        with self.assertRaises(OverflowError):
+            num2words(1000000000, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(1234567890, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(9999999999, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(10000000000, lang="wo")
+        with self.assertRaises(OverflowError):
+            num2words(99999999999, lang="wo")
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="wo"), "minus benn")
-        self.assertEqual(num2words(-2, lang="wo"), "minus ñaar")
-        self.assertEqual(num2words(-5, lang="wo"), "minus juróom")
-        self.assertEqual(num2words(-10, lang="wo"), "minus fukk")
-        self.assertEqual(num2words(-11, lang="wo"), "minus fukk benn")
-        self.assertEqual(num2words(-20, lang="wo"), "minus ñaar-fukk")
-        self.assertEqual(num2words(-50, lang="wo"), "minus juróom-fukk")
+        self.assertEqual(num2words(-1, lang="wo"), "moins benn")
+        self.assertEqual(num2words(-2, lang="wo"), "moins ñaar")
+        self.assertEqual(num2words(-5, lang="wo"), "moins juróom")
+        self.assertEqual(num2words(-10, lang="wo"), "moins fukk")
+        self.assertEqual(num2words(-11, lang="wo"), "moins fukk benn")
+        self.assertEqual(num2words(-20, lang="wo"), "moins ñaar-fukk")
+        self.assertEqual(num2words(-50, lang="wo"), "moins juróom-fukk")
         self.assertEqual(
-            num2words(-99, lang="wo"), "minus juróom-ñeent-fukk juróom-ñeent"
+            num2words(-99, lang="wo"), "moins juróom-ñeent-fukk juróom-ñeent"
         )
-        self.assertEqual(num2words(-100, lang="wo"), "minus benn téeméer")
-        self.assertEqual(num2words(-101, lang="wo"), "minus benn téeméer benn")
-        self.assertEqual(num2words(-200, lang="wo"), "minus ñaar téeméer")
+        self.assertEqual(num2words(-100, lang="wo"), "moins benn téeméer")
+        self.assertEqual(num2words(-101, lang="wo"), "moins benn téeméer benn")
+        self.assertEqual(num2words(-200, lang="wo"), "moins ñaar téeméer")
         self.assertEqual(
             num2words(-999, lang="wo"),
-            "minus juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent",
+            "moins juróom-ñeent téeméer juróom-ñeent-fukk juróom-ñeent",
         )
-        self.assertEqual(num2words(-1000, lang="wo"), "minus benn junni")
-        self.assertEqual(num2words(-1001, lang="wo"), "minus benn junni benn")
-        self.assertEqual(num2words(-10000, lang="wo"), "minus fukk junni")
-        self.assertEqual(num2words(-100000, lang="wo"), "minus benn téeméer junni")
-        self.assertEqual(num2words(-1000000, lang="wo"), "minus benn tamndareet")
+        self.assertEqual(num2words(-1000, lang="wo"), "moins benn junni")
+        self.assertEqual(num2words(-1001, lang="wo"), "moins benn junni benn")
+        self.assertEqual(num2words(-10000, lang="wo"), "moins fukk junni")
+        self.assertEqual(num2words(-100000, lang="wo"), "moins benn téeméer junni")
+        self.assertEqual(num2words(-1000000, lang="wo"), "moins benn tamndareet")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="wo"), "zero point benn")
-        self.assertEqual(num2words(0.5, lang="wo"), "zero point juróom")
-        self.assertEqual(num2words(0.9, lang="wo"), "zero point juróom-ñeent")
-        self.assertEqual(num2words(1.1, lang="wo"), "benn point benn")
-        self.assertEqual(num2words(1.5, lang="wo"), "benn point juróom")
-        self.assertEqual(num2words(2.5, lang="wo"), "ñaar point juróom")
-        self.assertEqual(num2words(3.14, lang="wo"), "ñett point benn ñeent")
-        self.assertEqual(num2words(10.5, lang="wo"), "fukk point juróom")
-        self.assertEqual(num2words(11.11, lang="wo"), "fukk benn point benn benn")
-        self.assertEqual(num2words(20.2, lang="wo"), "ñaar-fukk point ñaar")
+        self.assertEqual(num2words(0.1, lang="wo"), "tus kos benn")
+        self.assertEqual(num2words(0.5, lang="wo"), "tus kos juróom")
+        self.assertEqual(num2words(0.9, lang="wo"), "tus kos juróom-ñeent")
+        self.assertEqual(num2words(1.1, lang="wo"), "benn kos benn")
+        self.assertEqual(num2words(1.5, lang="wo"), "benn kos juróom")
+        self.assertEqual(num2words(2.5, lang="wo"), "ñaar kos juróom")
+        self.assertEqual(num2words(3.14, lang="wo"), "ñett kos benn ñeent")
+        self.assertEqual(num2words(10.5, lang="wo"), "fukk kos juróom")
+        self.assertEqual(num2words(11.11, lang="wo"), "fukk benn kos benn benn")
+        self.assertEqual(num2words(20.2, lang="wo"), "ñaar-fukk kos ñaar")
         self.assertEqual(
             num2words(99.99, lang="wo"),
-            "juróom-ñeent-fukk juróom-ñeent point juróom-ñeent juróom-ñeent",
+            "juróom-ñeent-fukk juróom-ñeent kos juróom-ñeent juróom-ñeent",
         )
-        self.assertEqual(num2words(100.01, lang="wo"), "benn téeméer point zero benn")
-        self.assertEqual(num2words(100.5, lang="wo"), "benn téeméer point juróom")
+        self.assertEqual(num2words(100.01, lang="wo"), "benn téeméer kos tus benn")
+        self.assertEqual(num2words(100.5, lang="wo"), "benn téeméer kos juróom")
         self.assertEqual(
             num2words(123.45, lang="wo"),
-            "benn téeméer ñaar-fukk ñett point ñeent juróom",
+            "benn téeméer ñaar-fukk ñett kos ñeent juróom",
         )
-        self.assertEqual(num2words(1000.5, lang="wo"), "benn junni point juróom")
+        self.assertEqual(num2words(1000.5, lang="wo"), "benn junni kos juróom")
         self.assertEqual(
             num2words(1234.56, lang="wo"),
-            "benn junni ñaar téeméer ñett-fukk ñeent point juróom juróom-benn",
+            "benn junni ñaar téeméer ñett-fukk ñeent kos juróom juróom-benn",
         )
-        self.assertEqual(num2words(10000.01, lang="wo"), "fukk junni point zero benn")
-        self.assertEqual(num2words(-0.5, lang="wo"), "minus zero point juróom")
-        self.assertEqual(num2words(-1.5, lang="wo"), "minus benn point juróom")
-        self.assertEqual(num2words(-10.5, lang="wo"), "minus fukk point juróom")
+        self.assertEqual(num2words(10000.01, lang="wo"), "fukk junni kos tus benn")
+        self.assertEqual(num2words(-0.5, lang="wo"), "moins tus kos juróom")
+        self.assertEqual(num2words(-1.5, lang="wo"), "moins benn kos juróom")
+        self.assertEqual(num2words(-10.5, lang="wo"), "moins fukk kos juróom")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -358,15 +364,15 @@ class Num2WordsWOTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="wo", to="currency", currency="XOF"), "zero dërëm"
+            num2words(0, lang="wo", to="currency", currency="XOF"), "tus dërëm"
         )
         self.assertEqual(
             num2words(0.01, lang="wo", to="currency", currency="XOF"),
-            "zero dërëm benn santim",
+            "tus dërëm benn santim",
         )
         self.assertEqual(
             num2words(0.5, lang="wo", to="currency", currency="XOF"),
-            "zero dërëm juróom-fukk santim",
+            "tus dërëm juróom-fukk santim",
         )
         self.assertEqual(
             num2words(1, lang="wo", to="currency", currency="XOF"), "benn dërëm"
@@ -375,42 +381,12 @@ class Num2WordsWOTest(TestCase):
             num2words(1.5, lang="wo", to="currency", currency="XOF"),
             "benn dërëm juróom-fukk santim",
         )
-        self.assertEqual(
-            num2words(0, lang="wo", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="wo", to="currency", currency="USD"),
-            "zero dollars benn cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="wo", to="currency", currency="USD"),
-            "zero dollars juróom-fukk cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="wo", to="currency", currency="USD"), "benn dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="wo", to="currency", currency="USD"),
-            "benn dollar juróom-fukk cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="wo", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="wo", to="currency", currency="EUR"),
-            "zero euros benn cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="wo", to="currency", currency="EUR"),
-            "zero euros juróom-fukk cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="wo", to="currency", currency="EUR"), "benn euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="wo", to="currency", currency="EUR"),
-            "benn euro juróom-fukk cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="wo", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="wo", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -454,7 +430,7 @@ class Num2WordsWOTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="wo"), "zero")
+        self.assertEqual(num2words("0", lang="wo"), "tus")
         self.assertEqual(num2words("1", lang="wo"), "benn")
         self.assertEqual(num2words("10", lang="wo"), "fukk")
         self.assertEqual(num2words("100", lang="wo"), "benn téeméer")
@@ -466,9 +442,8 @@ class Num2WordsWOTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="wo"), "zero")
+        self.assertEqual(num2words(0, lang="wo"), "tus")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="wo"), num2words("100", lang="wo"))
         self.assertEqual(num2words(1000, lang="wo"), num2words("1000", lang="wo"))
-

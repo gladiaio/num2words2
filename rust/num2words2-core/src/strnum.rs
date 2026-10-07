@@ -257,6 +257,19 @@ pub fn number_notation(lang: &str) -> Notation {
     }
 }
 
+/// Whether a language groups thousands with a space (`10 000`, `1 234,5`):
+/// fr, ru, uk, pl, cs, sk, sv, nb/nn/no, fi, et, lt, lv, bg, hu. Typed text
+/// uses a plain ASCII space as often as a no-break one, so the sentence
+/// converter accepts it as grouping for these languages only (#233).
+pub fn groups_with_spaces(lang: &str) -> bool {
+    let key = lang.to_ascii_lowercase().replace('-', "_");
+    matches!(
+        key.split('_').next().unwrap_or(""),
+        "fr" | "ru" | "uk" | "pl" | "cs" | "sk" | "sv" | "nb" | "nn" | "no" | "fi" | "et"
+            | "lt" | "lv" | "bg" | "hu"
+    )
+}
+
 /// Outcome of [`parse_grouped`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Grouped {
@@ -402,6 +415,33 @@ pub fn parse_grouped(s: &str, notation: Notation) -> Grouped {
     Grouped::Number { canonical, decimal_comma: decimal == Some(',') }
 }
 
+/// A single token that is plainly meant as a number but is not one Python's
+/// `Decimal()` (or [`parse_grouped`]) accepts: only ASCII digits, `_` and
+/// `.` after an optional sign ("1__0", "_1", "1_000_", "1..2"), or a
+/// `0x`/`0o`/`0b` literal ("0x10"). The dispatcher raises `ValueError` for
+/// these instead of handing them to the sentence converter, which read
+/// "1__0" as "One__zero" (gladiaio/num2words2#237). Anything with other
+/// letters ("H2O", "1st", "10%") is still text.
+pub fn is_malformed_number(s: &str) -> bool {
+    let t = s.trim();
+    let body = t.strip_prefix(['+', '-']).unwrap_or(t);
+    if !body.bytes().any(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    if body.bytes().all(|b| b.is_ascii_digit() || b == b'_' || b == b'.') {
+        return true;
+    }
+    let lower = body.to_ascii_lowercase();
+    let radix = |p: &str, ok: fn(u8) -> bool| {
+        lower.strip_prefix(p).is_some_and(|r| {
+            !r.is_empty() && r.bytes().all(|b| ok(b) || b == b'_')
+        })
+    };
+    radix("0x", |b| b.is_ascii_hexdigit())
+        || radix("0o", |b| (b'0'..=b'7').contains(&b))
+        || radix("0b", |b| b == b'0' || b == b'1')
+}
+
 /// Python's `int(str)` — used by the "n/d" fraction-string branch. Accepts
 /// surrounding whitespace, a sign, PEP-515 underscores and Unicode digits;
 /// no dot, no exponent.
@@ -441,39 +481,76 @@ pub fn python_int_parse(s: &str) -> Option<BigInt> {
     Some(v)
 }
 
-/// Python's `str(Decimal)` — the to-scientific-string algorithm from the
-/// General Decimal Arithmetic spec. Needed because `has_decimal` checks
-/// `"." in str(number)` and `to_ordinal_num`'s base default returns the
-/// value itself, which the dispatcher then str()s.
+/// Python's `str(Decimal)` in positional notation — the fixed-point branch of
+/// the General Decimal Arithmetic to-scientific-string algorithm, applied to
+/// every value. Python switches to scientific form (`1E+3`, `1E-7`) for a
+/// positive exponent or a small adjusted exponent; every language reader
+/// downstream `int()`s or digit-walks this string, so the exponent form made
+/// them crash or read the mantissa (gladiaio/num2words2#211). Values are
+/// therefore always written out: `Decimal('1E+3')` -> `"1000"`,
+/// `Decimal('1E-7')` -> `"0.0000001"`. Needed because `has_decimal` checks
+/// `"." in str(number)` and the language readers walk its digits.
 pub fn python_decimal_str(d: &BigDecimal) -> String {
     let (mant, scale) = d.as_bigint_and_exponent();
     let exponent = -scale; // Python's as_tuple().exponent
     let neg = mant.sign() == num_bigint::Sign::Minus;
     let digits = mant.magnitude().to_string();
     let ndigits = digits.len() as i64;
-    let adjusted = exponent + ndigits - 1;
     let sign = if neg { "-" } else { "" };
 
-    if exponent <= 0 && adjusted >= -6 {
-        // Fixed-point notation.
-        if exponent == 0 {
-            return format!("{}{}", sign, digits);
-        }
-        let point = ndigits + exponent;
-        if point <= 0 {
-            return format!("{}0.{}{}", sign, "0".repeat((-point) as usize), digits);
-        }
-        let (i, f) = digits.split_at(point as usize);
-        return format!("{}{}.{}", sign, i, f);
+    if exponent >= 0 {
+        return format!("{}{}{}", sign, digits, "0".repeat(exponent as usize));
     }
-    // Scientific notation.
-    let exp = adjusted;
-    let mantissa = if digits.len() == 1 {
-        digits
-    } else {
-        format!("{}.{}", &digits[..1], &digits[1..])
-    };
-    format!("{}{}E{}{}", sign, mantissa, if exp >= 0 { "+" } else { "" }, exp)
+    let point = ndigits + exponent;
+    if point <= 0 {
+        return format!("{}0.{}{}", sign, "0".repeat((-point) as usize), digits);
+    }
+    let (i, f) = digits.split_at(point as usize);
+    format!("{}{}.{}", sign, i, f)
+}
+
+#[cfg(test)]
+mod malformed_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_numbers() {
+        for s in ["0x10", "0X1F", "0b101", "0o17", "1__0", "_1", "1_000_", "-_1",
+                  "1..2", " 1__0 "] {
+            assert!(is_malformed_number(s), "{}", s);
+        }
+        for s in ["H2O", "1st", "10%", "abc", "1-2", "5 kg", "x1", "0xZZ", "", "_"] {
+            assert!(!is_malformed_number(s), "{}", s);
+        }
+    }
+}
+
+#[cfg(test)]
+mod decimal_str_tests {
+    use super::*;
+
+    #[test]
+    fn never_scientific() {
+        for (s, want) in [("1E+3", "1000"), ("1.5E+3", "1500"), ("1E-7", "0.0000001"),
+                          ("0.00001", "0.00001"), ("-12.50", "-12.50"), ("0", "0"),
+                          ("0.0", "0.0"), ("123", "123")] {
+            let d = BigDecimal::from_str(s).unwrap();
+            assert_eq!(python_decimal_str(&d), want, "{}", s);
+        }
+    }
+}
+
+/// `format!("{:0>width$}", s)` without its limit: `format!` panics with
+/// "Formatting argument out of range" once `width` exceeds 65535, and the
+/// width is often a user-controlled Decimal scale (issue #204).
+pub fn zero_pad_left(s: &str, width: usize) -> String {
+    let len = s.chars().count();
+    if len >= width {
+        return s.to_string();
+    }
+    let mut out = "0".repeat(width - len);
+    out.push_str(s);
+    out
 }
 
 #[cfg(test)]

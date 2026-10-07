@@ -1,0 +1,321 @@
+"""Regression tests for the fourth audit pass over num2words_sentence
+(#195, #225-#235)."""
+
+import pytest
+
+from num2words2 import num2words, num2words_sentence
+
+# --- #234 / #194: decimals keep their digits as written -------------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        (
+            "3.50 dollars, Python 3.10",
+            "en",
+            "Three point five zero dollars, Python three point one zero",
+        ),
+        ("3,50 m", "fr", "Trois virgule cinq zéro m"),
+        ("Es kostet 3,50 Euro", "de", "Es kostet drei Komma fünf null Euro"),
+        (
+            "1,234.50 x",
+            "en",
+            "One thousand, two hundred and thirty-four point five zero x",
+        ),
+    ],
+)
+def test_trailing_zeros_kept(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+@pytest.mark.parametrize("lang", ["en", "fr", "ru", "ja", "pt_BR"])
+def test_decimal_matches_num2words_string(lang):
+    word = num2words_sentence("x 3.50", lang=lang).split(" ", 1)[1]
+    expected = num2words("3.50", lang=lang)
+    if lang == "pt_BR":
+        expected = expected.replace("vírgula", "ponto")
+    assert word == expected
+
+
+# --- #225: negatives and temperatures take the integer path ---------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("-5 x", "ru", "Минус пять x"),
+        ("-5 x", "cs", "Mínus pět x"),
+        ("-5 x", "id", "Min lima x"),  # id says "min" (#226)
+        ("25°C", "ru", "Двадцать пять градусов Цельсия"),
+        ("-5°C", "ru", "Минус пять градусов Цельсия"),
+        ("-5 x", "en", "Minus five x"),
+        ("-0 x", "en", "Zero x"),
+    ],
+)
+def test_negative_integers_not_read_as_decimals(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #226: the negative word comes from the converter ---------------------
+
+
+@pytest.mark.parametrize(
+    "lang", ["pt_BR", "ca", "zh_CN", "fr_CH", "sr_Latn", "es_CO", "el", "ja"]
+)
+def test_negative_word_from_converter(lang):
+    assert num2words_sentence("x -7", lang=lang) == "x " + num2words(-7, lang=lang)
+
+
+def test_negative_temperature_uses_converter_word():
+    assert num2words_sentence("-7°C", lang="pt_BR").startswith("Menos sete")
+
+
+# --- #231: to="ordinal" keeps decimals (and negatives) cardinal -----------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        (
+            "Custa 3,50 euros, 1.234,5 unidades.",
+            "pt",
+            "Custa três vírgula cinco zero euros, mil duzentos e trinta e quatro"
+            " vírgula cinco unidades.",
+        ),
+        ("Stojí 3,50 Kč.", "cs", "Stojí tři čárka pět Kč."),
+        ("Costa 3,50 euro", "it", "Costa tre virgola cinque zero euro"),
+        ("3,5 x", "ru", "Три целых пять десятых x"),
+        ("It costs 3.50 euros", "en", "It costs three point five zero euros"),
+        ("3 x", "pt", "Terceiro x"),
+    ],
+)
+def test_ordinal_mode_decimals_stay_cardinal(text, lang, expected):
+    assert num2words_sentence(text, lang=lang, to="ordinal") == expected
+
+
+# --- #227: a hyphen after a letter of any script is not a minus -----------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("מקום 1 ו-2.", "he", "מקום אחת ו-שתיים."),
+        ("é-2", "fr", "é-deux"),
+        ("и-2", "ru", "и-два"),
+        ("x-2", "en", "x-two"),
+        ("и -2", "ru", "и минус два"),
+        ("我有5个苹果", "zh", "我有五个苹果"),
+        # Scripts without word spaces: the hyphen is a sign.
+        ("温度是-5度", "zh", "温度是负五度"),
+    ],
+)
+def test_hyphen_after_letter_is_not_minus(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #228: unreadable numeric characters no longer fail the whole call ----
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("5 m²", "en", "Five m²"),
+        ("½ cup and 3 eggs", "en", "½ cup and three eggs"),
+        ("5½ x", "en", "5½ x"),
+        ("10² x", "en", "10² x"),
+        ("12٫5", "en", "Twelve point five"),
+        ("١٢٣ x", "ar", num2words("١٢٣", lang="ar") + " x"),
+        ("१२ x", "hi", "बारह x"),
+        ("５個", "ja", "五個"),
+    ],
+)
+def test_non_ascii_digits(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+def test_arabic_decimal_separator_both_entry_points():
+    expected = num2words("12.5", lang="ar")
+    assert num2words_sentence("١٢٫٥", lang="ar") == expected
+    assert num2words("١٢٫٥", lang="ar") == expected
+
+
+# --- #229: ranges, phone numbers and dotted sequences ---------------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        (
+            "years 1990-2000",
+            "en",
+            "years one thousand, nine hundred and ninety to two thousand",
+        ),
+        ("pages 10-20.", "en", "pages ten to twenty."),
+        ("Jahre 1990-2000", "de", "Jahre eintausendneunhundertneunzig - zweitausend"),
+        # Left as written: phone numbers, Y <= X, ISO and dotted dates,
+        # IP addresses, versions, glued letters.
+        ("call 555-1234", "en", "call 555-1234"),
+        ("score 3-2", "en", "score 3-2"),
+        ("2023-12-25", "en", "2023-12-25"),
+        ("25.12.2023", "ru", "25.12.2023"),
+        ("192.168.1.1", "en", "192.168.1.1"),
+        ("v2.0.1", "en", "v2.0.1"),
+        ("10-20km", "en", "10-20km"),
+        ("version 3.10", "en", "version three point one zero"),
+    ],
+)
+def test_ranges_and_sequences(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #233: thousands grouped with a plain space ---------------------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("10 000 personnes", "fr", "Dix mille personnes"),
+        ("il y a 3 000", "fr", "il y a trois mille"),
+        ("10 000 человек", "ru", "Десять тысяч человек"),
+        ("10 000 lidí", "cs", "Deset tisíc lidí"),
+        ("1 234,5 x", "pl", "Tysiąc dwieście trzydzieści cztery przecinek pięć x"),
+        # Not exact three-digit groups, or not a space-grouping language.
+        ("En 2023 100 personnes", "fr", "En deux mille vingt-trois cent personnes"),
+        ("between 2 100 and", "en", "between two one hundred and"),
+    ],
+)
+def test_space_grouped_thousands(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #230: currency symbols ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        # No word for the code in this language: the token stays as written.
+        ("Pay £3.50 or ¥100.", "nb", "Pay £3.50 or ¥100."),
+        ("¥100 x", "ru", "¥100 x"),
+        ("€5", "ko", "€5"),
+        # Letter-prefixed dollars are their own currency, never glued.
+        ("Custa R$ 3,50", "pt_BR", "Custa três reais e cinquenta centavos"),
+        ("US$ 5", "en", "Five dollars, zero cents"),
+        ("Z$10", "en", "Z$10"),
+        ("x€5", "en", "x€5"),
+        # Symbol after the number; '%' has no word anywhere, so it is kept.
+        (
+            "€5 or 5€, 50% or 2.5%",
+            "en",
+            "Five euros, zero cents or five euros, zero cents, 50% or 2.5%",
+        ),
+        ("5€", "fr", "Cinq euros et zéro centime"),
+        ("5,50 € x", "de", "Fünf Euro und fünfzig Cent x"),
+        (
+            "1 234,50 €",
+            "fr",
+            "Mille deux cent trente-quatre euros et cinquante centimes",
+        ),
+        ("Test 5 €₹¥", "en", "Test five €₹¥"),
+    ],
+)
+def test_currency_symbols(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #232: native ordinal notations ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("1-й и 2-я место", "ru", "Первый и вторая место"),
+        ("в 90-е годы", "ru", "в 90-е годы"),  # "-е" is ambiguous: kept
+        ("5-летний", "ru", "5-летний"),
+        ("1-й", "uk", "Перший"),
+        ("1. i 2. miejsce.", "pl", "Pierwsze i drugie miejsce."),
+        ("Mam 3. Potem", "pl", "Mam trzy. Potem"),  # sentence end
+        ("1. místo", "cs", "První místo"),
+        ("1. maj", "da", "Første maj"),
+        ("1. mai", "nb", "Første mai"),
+        ("1. sırada", "tr", "Birinci sırada"),
+        ("Il 1° posto", "it", "Il primo posto"),
+        ("la 1ª volta", "it", "la prima volta"),
+        ("a 2ª posição", "pt", "a segunda posição"),
+        ("a 21ª posição", "pt_BR", "a vigésima primeira posição"),
+        ("la 2ª vez", "es", "la segunda vez"),
+        ("第1位", "ja", "第一位"),
+        ("3番目", "ja", "三番目"),
+        ("제1회", "ko", "제일회"),
+        ("và thứ 2", "vi", "và thứ hai"),
+        ("thứ 1 và thứ 4", "vi", "thứ nhất và thứ tư"),
+    ],
+)
+def test_native_ordinal_notations(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #195: de strong ending when no article or preposition precedes -------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1. Mai ist frei", "Erster Mai ist frei"),
+        ("Heute, 3. Oktober, ist frei", "Heute, dritter Oktober, ist frei"),
+        ("am 3. Oktober", "am dritten Oktober"),
+        ("Der 1. Mai", "Der erste Mai"),
+        ("das 1. Mal", "das erste Mal"),
+    ],
+)
+def test_de_ordinal_date_strong_ending(text, expected):
+    assert num2words_sentence(text, lang="de") == expected
+
+
+# --- #235: no capital after an abbreviation or a leading dot --------------
+
+
+@pytest.mark.parametrize(
+    "text,lang,expected",
+    [
+        ("approx. 5 kg", "en", "approx. five kg"),
+        ("ca. 5 Leute", "de", "ca. fünf Leute"),
+        ("z.B. 5 Leute", "de", "z.B. fünf Leute"),
+        ("No. 5", "en", "No. five"),
+        ("e.g. 5 apples", "en", "e.g. five apples"),
+        (".5", "en", ".five"),
+        # Real sentence ends still capitalise.
+        ("I have cats. 5 dogs", "en", "I have cats. Five dogs"),
+        ("Done! 5 more", "en", "Done! Five more"),
+    ],
+)
+def test_capitalisation_after_dot(text, lang, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+# --- #232 follow-up: pl ordinals agree with the following noun -------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("2. miejsce", "Drugie miejsce"),
+        ("1. nagroda", "Pierwsza nagroda"),
+        ("3. część", "Trzecia część"),
+        ("21. edycja", "Dwudziesta pierwsza edycja"),
+        ("121. rocznica", "Sto dwudziesta pierwsza rocznica"),
+        ("2. kierowca", "Drugi kierowca"),
+        ("1002. noc", "Tysiąc druga noc"),
+        ("3. dzień", "Trzeci dzień"),
+        ("1. maja", "Pierwszy maja"),  # dates stay masculine nominative
+        # Coordinated ordinals agree with the shared noun.
+        ("1. i 2. miejsce", "Pierwsze i drugie miejsce"),
+        ("1., 2. i 3. nagroda", "Pierwsza, druga i trzecia nagroda"),
+        # No noun after the chain: masculine.
+        ("1. i potem", "Pierwszy i potem"),
+        ("1. w domu", "Pierwszy w domu"),
+    ],
+)
+def test_pl_ordinal_gender(text, expected):
+    assert num2words_sentence(text, lang="pl") == expected

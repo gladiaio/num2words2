@@ -1,5 +1,23 @@
 //! Port of `lang_SU.py` (Sundanese).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "koma" (decimal) — best candidate: Sundanese is written
+//!   in Indonesia, which uses a decimal comma read "koma"; CLDR su.xml says
+//!   "titik" instead.
+//! Minus is "minus": CLDR's su.xml rbnf rule has "mineus", but a review by
+//!   five LLMs (GPT-5.6, Gemini 3.8, Grok 4.7, DeepSeek V4, Qwen 3.8) found
+//!   3 of 5 preferring "minus" as the spoken form; still worth a native check.
+//!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "miliar" (10^9) and "triliun" (10^12) (su.wikipedia "Républik
+//! Indonésia"), composed like the million arm, and raises `OverflowError` from
+//! 10^15, which `maxval()` reports. Where the notes below describe the digit
+//! fallback ("1000000000", "no overflow check"), they describe Python; that
+//! arm is now unreachable.
+//!
 //! Registry check: `__init__.py` maps `"su" -> lang_SU.Num2Word_SU()`, so this
 //! is the class the key actually resolves to.
 //!
@@ -24,10 +42,11 @@
 //! This is a port, not a rewrite. Each of the following looks wrong and is
 //! nevertheless exactly what Python emits (verified against the frozen corpus):
 //!
-//! 1. **`to_cardinal(0)` == "zero"**, not a Sundanese word. `_int_to_word`
-//!    opens with `return self.ones[0] if self.ones[0] else "zero"`, and
-//!    `ones[0]` is the empty string — always falsy — so the English fallback
-//!    fires unconditionally. The idiomatic Sundanese "nol" never appears.
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** `_int_to_word` opens with
+//!    `return self.ones[0] if self.ones[0] else "zero"` and `ones[0]` is the
+//!    empty string, so Python always said the English "zero". The port says
+//!    the Sundanese "nol". The decimal word and negword are the
+//!    best candidates "koma" and "minus" (see UNVERIFIED above).
 //! 2. **The teens are built compositionally and come out wrong.** 11..19 go
 //!    through the generic `tens[1] + " " + ones[n]` path, yielding
 //!    "sapuluh hiji" (lit. "ten one") for 11 and "sapuluh dua" for 12. Real
@@ -123,7 +142,7 @@
 //!
 //! 7. **Cents are truncated to two digits, never rounded.** `12.345` and
 //!    `12.999` give 34 and 99 cents; `0.001` gives `"001"[:2] == "00"` -> 0
-//!    cents, i.e. plain "zero euros".
+//!    cents, i.e. plain "nol euros".
 //! 8. **`ljust` scales a short fraction.** `0.5` -> `"5".ljust(2,"0")` ==
 //!    `"50"` -> fifty cents. Correct here, but arrived at by string padding.
 //! 9. **An `int` skips cents structurally, not by an `isinstance` check.**
@@ -144,8 +163,14 @@
 //! `Display`, which is *not* the same function: bigdecimal renders `2.5e+20`
 //! as "25e+19" and `0.0` as "0", and flips to exponential form on its own
 //! thresholds. See [`python_str`] for the one regime that cannot be recovered.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dolar / euro with sen. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -155,16 +180,17 @@ use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is part of the Python attribute.
 const NEGWORD: &str = "minus ";
 /// `self.pointword`.
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "koma";
 
 /// The `"zero"` fallback in `_int_to_word`. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""`, so this is
 /// the only reachable result for 0.
-const ZERO: &str = "zero";
+const ZERO: &str = "nol";
 
 /// `self.ones`. Index 0 is `""` (see bug 1) and is never used as a word.
 const ONES: [&str; 10] = [
@@ -190,7 +216,9 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "ratus";
 /// `self.thousand`.
 const THOUSAND: &str = "rebu";
-/// `self.million`.
+/// `self.million`. Wiktionary spells it "yuta" (from Old Sundanese); both are
+/// attested and "juta" is the more frequent in modern prose, so it is kept
+/// (#258).
 const MILLION: &str = "juta";
 
 /// Python's `CURRENCY_FORMS` **insertion order**. Load-bearing: `to_currency`
@@ -219,7 +247,7 @@ const CURRENCY_ORDER: [&str; 3] = ["IDR", "USD", "EUR"];
 /// The notation Python chose is *not* always recoverable. `str(1e-05)` is
 /// `'1e-05'` but `str(Decimal('0.00001'))` is `'0.00001'`; both parse to the
 /// identical `BigDecimal(1, scale=5)`, and Python's two answers differ
-/// (ValueError vs "zero euros"). Same for a 17-significant-digit float at
+/// (ValueError vs "nol euros"). Same for a 17-significant-digit float at
 /// `e+16` (scale lands on 0). This function takes the fixed reading in both
 /// cases, which is right for `Decimal` input and wrong for `float` input.
 /// Recovering it needs the original string, which `CurrencyValue::Decimal`
@@ -231,7 +259,7 @@ fn python_str(d: &BigDecimal) -> String {
     // `val < 0` guard is false for -0.0, so Python keeps the string "-0.0" and
     // then reads int("-0") == 0. BigDecimal drops the sign of zero at parse
     // time, so this returns "0.0" — a different string, the same 0/0 split,
-    // and the same "zero euros".)
+    // and the same "nol euros".)
     let digits = int_val.abs().to_string();
 
     if scale < 0 {
@@ -306,6 +334,16 @@ fn float_no_point_repr(v: f64) -> String {
     format!("{}e+{}", mant, exp)
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "miliar"), (12, "triliun")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangSu {
     /// `Num2Word_SU.CURRENCY_FORMS`. Built once here rather than per call —
     /// the registry holds `LangSu` in a `OnceLock`, so this is constructed
@@ -328,6 +366,13 @@ impl Default for LangSu {
 }
 
 impl LangSu {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         let mut currency_forms = HashMap::with_capacity(CURRENCY_ORDER.len());
         // Arity is load-bearing: to_currency indexes cr1[1]/cr2[1] for the
@@ -340,11 +385,11 @@ impl LangSu {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dolar", "dolar"], &["sen", "sen"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["euro", "euro"], &["sen", "sen"]),
         );
         let currency_fallback = currency_forms[CURRENCY_ORDER[0]].clone();
         LangSu {
@@ -422,6 +467,22 @@ impl LangSu {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Python: `return str(number)  # Fallback for very large numbers`.
         // No words, no OverflowError — just the digits (bug 3).
         number.to_string()
@@ -429,6 +490,10 @@ impl LangSu {
 }
 
 impl Lang for LangSu {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -449,7 +514,7 @@ impl Lang for LangSu {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "koma"
     }
 
     /// Port of `Num2Word_SU.to_cardinal`, integer path only.
@@ -471,7 +536,7 @@ impl Lang for LangSu {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_SU.to_ordinal`: cardinal + "-na", sign and all
@@ -502,7 +567,7 @@ impl Lang for LangSu {
     ///
     /// Python's `to_cardinal` is string-driven: `"." in str(number)` picks the
     /// decimal grammar, and `str(5.0)` is `"5.0"`, so **whole floats keep
-    /// their ".0" tail** ("lima point zero") instead of taking Base's
+    /// their ".0" tail** ("lima koma nol") instead of taking Base's
     /// whole-value integer route. Without a visible point the sign-free string
     /// lands in `int(n)`:
     ///   * `Decimal("5")` -> `"5"` -> the integer path ("lima");
@@ -525,7 +590,7 @@ impl Lang for LangSu {
             FloatValue::Float { value, .. } => float_no_point_repr(*value),
             FloatValue::Decimal { value, .. } => python_decimal_str(&value.abs()),
         };
-        let body = self.int_to_word(&py_int(&text)?);
+        let body = self.checked_int_to_word(&py_int(&text)?)?;
         let out = if is_negative {
             format!("{}{}", NEGWORD, body)
         } else {
@@ -536,7 +601,7 @@ impl Lang for LangSu {
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + "-na"` with no type guard, so floats get
-    /// the full decimal phrase plus the suffix ("lima point zero-na") and the
+    /// the full decimal phrase plus the suffix ("lima koma nol-na") and the
     /// exponential-form ValueError propagates unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!("{}-na", self.cardinal_float_entry(value, None)?))
@@ -603,15 +668,15 @@ impl Lang for LangSu {
     ///
     /// Consequences reproduced:
     ///
-    /// * `1.005` → "hiji point zero zero lima" and `2.675` → "dua point genep
+    /// * `1.005` → "hiji koma nol nol lima" and `2.675` → "dua point genep
     ///   tujuh lima": the repr digits are taken verbatim, so the f64 artefacts
     ///   (`674.9999…`) never arise — there is no `abs(value-pre)*10**p` here.
-    /// * Trailing repr zeros survive: `str(1.0)` == "1.0" → "hiji point zero",
-    ///   and the Decimal `1.10` → "hiji point hiji zero".
+    /// * Trailing repr zeros survive: `str(1.0)` == "1.0" → "hiji koma nol",
+    ///   and the Decimal `1.10` → "hiji koma hiji nol".
     /// * Bug 3 leaks in: a `left` ≥ 10^9 is emitted as bare digits, so the
-    ///   Decimal `98746251323029.99` → "98746251323029 point salapan salapan".
+    ///   Decimal `98746251323029.99` → "98746251323029 koma salapan salapan".
     /// * The sign is peeled off `str(number)` exactly as Python does, so
-    ///   `str(-0.0)` == "-0.0" would yield "minus zero point zero" (Rust's
+    ///   `str(-0.0)` == "-0.0" would yield "minus nol koma nol" (Rust's
     ///   fixed formatting preserves the negative-zero sign, matching repr).
     fn to_cardinal_float(
         &self,
@@ -656,13 +721,13 @@ impl Lang for LangSu {
         match n.split_once('.') {
             Some((left, right)) => {
                 // ret += _int_to_word(int(left)) + " " + pointword + " "
-                ret.push_str(&self.int_to_word(&py_int(left)?));
+                ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
                 ret.push(' ');
                 ret.push_str(POINTWORD);
                 ret.push(' ');
                 // for digit in right: ret += _int_to_word(int(digit)) + " "
                 for ch in right.chars() {
-                    ret.push_str(&self.int_to_word(&py_int(&ch.to_string())?));
+                    ret.push_str(&self.checked_int_to_word(&py_int(&ch.to_string())?)?);
                     ret.push(' ');
                 }
                 Ok(ret.trim().to_string())
@@ -674,7 +739,7 @@ impl Lang for LangSu {
                 // Python's own `int(n)` raises ValueError — which py_int
                 // reproduces (N2WError::Value). Integer Decimals (scale 0,
                 // e.g. Decimal("5")) also land here and convert normally.
-                Ok(format!("{}{}", ret, self.int_to_word(&py_int(n)?))
+                Ok(format!("{}{}", ret, self.checked_int_to_word(&py_int(n)?)?)
                     .trim()
                     .to_string())
             }
@@ -763,7 +828,7 @@ impl Lang for LangSu {
 
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             if left.is_one() { &cr.unit[0] } else { &cr.unit[1] }
         );
 
@@ -771,7 +836,7 @@ impl Lang for LangSu {
         // That is the test 1.0 fails ("00" -> 0) and 0.01 passes ("01" -> 1).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() {
                 &cr.subunit[0]

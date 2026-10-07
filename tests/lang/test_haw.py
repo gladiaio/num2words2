@@ -25,7 +25,7 @@ class Num2WordsHAWTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="haw"), "zero")
+        self.assertEqual(num2words(0, lang="haw"), "'ole")
         self.assertEqual(num2words(1, lang="haw"), "'ekahi")
         self.assertEqual(num2words(2, lang="haw"), "'elua")
         self.assertEqual(num2words(3, lang="haw"), "'ekolu")
@@ -222,70 +222,79 @@ class Num2WordsHAWTest(TestCase):
             num2words(999999999, lang="haw"),
             "'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
         )
-        self.assertEqual(num2words(1000000000, lang="haw"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="haw"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="haw"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="haw"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="haw"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="haw"), "'ekahi piliona")
+        self.assertEqual(
+            num2words(1234567890, lang="haw"),
+            "'ekahi piliona 'elua haneli kanakolu 'ehā miliona 'elima haneli kanaono 'ehiku kaukani 'ewalu haneli kanaiwa",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="haw"),
+            "'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
+        )
+        self.assertEqual(num2words(10000000000, lang="haw"), "'umi piliona")
+        self.assertEqual(
+            num2words(99999999999, lang="haw"),
+            "kanaiwa 'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
+        )
 
     def test_negative_numbers(self):
-        """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="haw"), "minus 'ekahi")
-        self.assertEqual(num2words(-2, lang="haw"), "minus 'elua")
-        self.assertEqual(num2words(-5, lang="haw"), "minus 'elima")
-        self.assertEqual(num2words(-10, lang="haw"), "minus 'umi")
-        self.assertEqual(num2words(-11, lang="haw"), "minus 'umi 'ekahi")
-        self.assertEqual(num2words(-20, lang="haw"), "minus iwakālua")
-        self.assertEqual(num2words(-50, lang="haw"), "minus kanalima")
-        self.assertEqual(num2words(-99, lang="haw"), "minus kanaiwa 'eiwa")
-        self.assertEqual(num2words(-100, lang="haw"), "minus 'ekahi haneli")
-        self.assertEqual(num2words(-101, lang="haw"), "minus 'ekahi haneli 'ekahi")
-        self.assertEqual(num2words(-200, lang="haw"), "minus 'elua haneli")
+        """Negative numbers: 'i'o 'ole follows the number (#263)."""
+        self.assertEqual(num2words(-1, lang="haw"), "'ekahi 'i'o 'ole")
+        self.assertEqual(num2words(-2, lang="haw"), "'elua 'i'o 'ole")
+        self.assertEqual(num2words(-5, lang="haw"), "'elima 'i'o 'ole")
+        self.assertEqual(num2words(-10, lang="haw"), "'umi 'i'o 'ole")
+        self.assertEqual(num2words(-11, lang="haw"), "'umi 'ekahi 'i'o 'ole")
+        self.assertEqual(num2words(-20, lang="haw"), "iwakālua 'i'o 'ole")
+        self.assertEqual(num2words(-50, lang="haw"), "kanalima 'i'o 'ole")
+        self.assertEqual(num2words(-99, lang="haw"), "kanaiwa 'eiwa 'i'o 'ole")
+        self.assertEqual(num2words(-100, lang="haw"), "'ekahi haneli 'i'o 'ole")
+        self.assertEqual(num2words(-101, lang="haw"), "'ekahi haneli 'ekahi 'i'o 'ole")
+        self.assertEqual(num2words(-200, lang="haw"), "'elua haneli 'i'o 'ole")
         self.assertEqual(
-            num2words(-999, lang="haw"), "minus 'eiwa haneli kanaiwa 'eiwa"
+            num2words(-999, lang="haw"), "'eiwa haneli kanaiwa 'eiwa 'i'o 'ole"
         )
-        self.assertEqual(num2words(-1000, lang="haw"), "minus 'ekahi kaukani")
-        self.assertEqual(num2words(-1001, lang="haw"), "minus 'ekahi kaukani 'ekahi")
-        self.assertEqual(num2words(-10000, lang="haw"), "minus 'umi kaukani")
-        self.assertEqual(num2words(-100000, lang="haw"), "minus 'ekahi haneli kaukani")
-        self.assertEqual(num2words(-1000000, lang="haw"), "minus 'ekahi miliona")
+        self.assertEqual(num2words(-1000, lang="haw"), "'ekahi kaukani 'i'o 'ole")
+        self.assertEqual(
+            num2words(-1001, lang="haw"), "'ekahi kaukani 'ekahi 'i'o 'ole"
+        )
+        self.assertEqual(num2words(-10000, lang="haw"), "'umi kaukani 'i'o 'ole")
+        self.assertEqual(
+            num2words(-100000, lang="haw"), "'ekahi haneli kaukani 'i'o 'ole"
+        )
+        self.assertEqual(num2words(-1000000, lang="haw"), "'ekahi miliona 'i'o 'ole")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="haw"), "zero point 'ekahi")
-        self.assertEqual(num2words(0.5, lang="haw"), "zero point 'elima")
-        self.assertEqual(num2words(0.9, lang="haw"), "zero point 'eiwa")
-        self.assertEqual(num2words(1.1, lang="haw"), "'ekahi point 'ekahi")
-        self.assertEqual(num2words(1.5, lang="haw"), "'ekahi point 'elima")
-        self.assertEqual(num2words(2.5, lang="haw"), "'elua point 'elima")
-        self.assertEqual(num2words(3.14, lang="haw"), "'ekolu point 'ekahi 'ehā")
-        self.assertEqual(num2words(10.5, lang="haw"), "'umi point 'elima")
+        self.assertEqual(num2words(0.1, lang="haw"), "'ole kiko 'ekahi")
+        self.assertEqual(num2words(0.5, lang="haw"), "'ole kiko 'elima")
+        self.assertEqual(num2words(0.9, lang="haw"), "'ole kiko 'eiwa")
+        self.assertEqual(num2words(1.1, lang="haw"), "'ekahi kiko 'ekahi")
+        self.assertEqual(num2words(1.5, lang="haw"), "'ekahi kiko 'elima")
+        self.assertEqual(num2words(2.5, lang="haw"), "'elua kiko 'elima")
+        self.assertEqual(num2words(3.14, lang="haw"), "'ekolu kiko 'ekahi 'ehā")
+        self.assertEqual(num2words(10.5, lang="haw"), "'umi kiko 'elima")
+        self.assertEqual(num2words(11.11, lang="haw"), "'umi 'ekahi kiko 'ekahi 'ekahi")
+        self.assertEqual(num2words(20.2, lang="haw"), "iwakālua kiko 'elua")
+        self.assertEqual(num2words(99.99, lang="haw"), "kanaiwa 'eiwa kiko 'eiwa 'eiwa")
         self.assertEqual(
-            num2words(11.11, lang="haw"), "'umi 'ekahi point 'ekahi 'ekahi"
+            num2words(100.01, lang="haw"), "'ekahi haneli kiko 'ole 'ekahi"
         )
-        self.assertEqual(num2words(20.2, lang="haw"), "iwakālua point 'elua")
-        self.assertEqual(
-            num2words(99.99, lang="haw"), "kanaiwa 'eiwa point 'eiwa 'eiwa"
-        )
-        self.assertEqual(
-            num2words(100.01, lang="haw"), "'ekahi haneli point zero 'ekahi"
-        )
-        self.assertEqual(num2words(100.5, lang="haw"), "'ekahi haneli point 'elima")
+        self.assertEqual(num2words(100.5, lang="haw"), "'ekahi haneli kiko 'elima")
         self.assertEqual(
             num2words(123.45, lang="haw"),
-            "'ekahi haneli iwakālua 'ekolu point 'ehā 'elima",
+            "'ekahi haneli iwakālua 'ekolu kiko 'ehā 'elima",
         )
-        self.assertEqual(num2words(1000.5, lang="haw"), "'ekahi kaukani point 'elima")
+        self.assertEqual(num2words(1000.5, lang="haw"), "'ekahi kaukani kiko 'elima")
         self.assertEqual(
             num2words(1234.56, lang="haw"),
-            "'ekahi kaukani 'elua haneli kanakolu 'ehā point 'elima 'eono",
+            "'ekahi kaukani 'elua haneli kanakolu 'ehā kiko 'elima 'eono",
         )
         self.assertEqual(
-            num2words(10000.01, lang="haw"), "'umi kaukani point zero 'ekahi"
+            num2words(10000.01, lang="haw"), "'umi kaukani kiko 'ole 'ekahi"
         )
-        self.assertEqual(num2words(-0.5, lang="haw"), "minus zero point 'elima")
-        self.assertEqual(num2words(-1.5, lang="haw"), "minus 'ekahi point 'elima")
-        self.assertEqual(num2words(-10.5, lang="haw"), "minus 'umi point 'elima")
+        self.assertEqual(num2words(-0.5, lang="haw"), "'ole kiko 'elima 'i'o 'ole")
+        self.assertEqual(num2words(-1.5, lang="haw"), "'ekahi kiko 'elima 'i'o 'ole")
+        self.assertEqual(num2words(-10.5, lang="haw"), "'umi kiko 'elima 'i'o 'ole")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -334,15 +343,15 @@ class Num2WordsHAWTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="haw", to="currency", currency="USD"), "zero kālā"
+            num2words(0, lang="haw", to="currency", currency="USD"), "'ole kālā"
         )
         self.assertEqual(
             num2words(0.01, lang="haw", to="currency", currency="USD"),
-            "zero kālā 'ekahi keneka",
+            "'ole kālā 'ekahi keneka",
         )
         self.assertEqual(
             num2words(0.5, lang="haw", to="currency", currency="USD"),
-            "zero kālā kanalima keneka",
+            "'ole kālā kanalima keneka",
         )
         self.assertEqual(
             num2words(1, lang="haw", to="currency", currency="USD"), "'ekahi kālā"
@@ -351,24 +360,9 @@ class Num2WordsHAWTest(TestCase):
             num2words(1.5, lang="haw", to="currency", currency="USD"),
             "'ekahi kālā kanalima keneka",
         )
-        self.assertEqual(
-            num2words(0, lang="haw", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="haw", to="currency", currency="EUR"),
-            "zero euros 'ekahi cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="haw", to="currency", currency="EUR"),
-            "zero euros kanalima cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="haw", to="currency", currency="EUR"), "'ekahi euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="haw", to="currency", currency="EUR"),
-            "'ekahi euro kanalima cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="haw", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -413,7 +407,7 @@ class Num2WordsHAWTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="haw"), "zero")
+        self.assertEqual(num2words("0", lang="haw"), "'ole")
         self.assertEqual(num2words("1", lang="haw"), "'ekahi")
         self.assertEqual(num2words("10", lang="haw"), "'umi")
         self.assertEqual(num2words("100", lang="haw"), "'ekahi haneli")
@@ -425,9 +419,8 @@ class Num2WordsHAWTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="haw"), "zero")
+        self.assertEqual(num2words(0, lang="haw"), "'ole")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="haw"), num2words("100", lang="haw"))
         self.assertEqual(num2words(1000, lang="haw"), num2words("1000", lang="haw"))
-

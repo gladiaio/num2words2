@@ -92,13 +92,9 @@ class Num2WordsLATest(TestCase):
         self.assertEqual(num2words(300, lang="la"), "trecentī")
         self.assertEqual(num2words(333, lang="la"), "trecentī trīgintā trēs")
         self.assertEqual(num2words(400, lang="la"), "quadringentī")
-        self.assertEqual(
-            num2words(444, lang="la"), "quadringentī quadrāgintā quattuor"
-        )
+        self.assertEqual(num2words(444, lang="la"), "quadringentī quadrāgintā quattuor")
         self.assertEqual(num2words(500, lang="la"), "quīngentī")
-        self.assertEqual(
-            num2words(555, lang="la"), "quīngentī quīnquāgintā quīnque"
-        )
+        self.assertEqual(num2words(555, lang="la"), "quīngentī quīnquāgintā quīnque")
         self.assertEqual(num2words(600, lang="la"), "sescentī")
         self.assertEqual(num2words(666, lang="la"), "sescentī sexāgintā sex")
         self.assertEqual(num2words(700, lang="la"), "septingentī")
@@ -114,16 +110,10 @@ class Num2WordsLATest(TestCase):
         self.assertEqual(num2words(1001, lang="la"), "mīlle ūnus")
         self.assertEqual(num2words(1010, lang="la"), "mīlle decem")
         self.assertEqual(num2words(1100, lang="la"), "mīlle centum")
-        self.assertEqual(
-            num2words(1111, lang="la"), "mīlle centum ūndecim"
-        )
-        self.assertEqual(
-            num2words(1234, lang="la"), "mīlle ducentī trīgintā quattuor"
-        )
+        self.assertEqual(num2words(1111, lang="la"), "mīlle centum ūndecim")
+        self.assertEqual(num2words(1234, lang="la"), "mīlle ducentī trīgintā quattuor")
         self.assertEqual(num2words(1500, lang="la"), "mīlle quīngentī")
-        self.assertEqual(
-            num2words(1999, lang="la"), "mīlle nōngentī nōnāgintā novem"
-        )
+        self.assertEqual(num2words(1999, lang="la"), "mīlle nōngentī nōnāgintā novem")
         self.assertEqual(num2words(2000, lang="la"), "duo mīlia")
         self.assertEqual(num2words(2001, lang="la"), "duo mīlia ūnus")
         self.assertEqual(num2words(2020, lang="la"), "duo mīlia vīgintī")
@@ -143,9 +133,7 @@ class Num2WordsLATest(TestCase):
             "quīnque mīlia quīngentī quīnquāgintā quīnque",
         )
         self.assertEqual(num2words(6000, lang="la"), "sex mīlia")
-        self.assertEqual(
-            num2words(6666, lang="la"), "sex mīlia sescentī sexāgintā sex"
-        )
+        self.assertEqual(num2words(6666, lang="la"), "sex mīlia sescentī sexāgintā sex")
         self.assertEqual(num2words(7000, lang="la"), "septem mīlia")
         self.assertEqual(
             num2words(7777, lang="la"), "septem mīlia septingentī septuāgintā septem"
@@ -160,9 +148,7 @@ class Num2WordsLATest(TestCase):
         )
         self.assertEqual(num2words(10000, lang="la"), "decem mīlia")
         self.assertEqual(num2words(10001, lang="la"), "decem mīlia ūnus")
-        self.assertEqual(
-            num2words(11111, lang="la"), "ūndecim mīlia centum ūndecim"
-        )
+        self.assertEqual(num2words(11111, lang="la"), "ūndecim mīlia centum ūndecim")
         self.assertEqual(
             num2words(12345, lang="la"),
             "duodecim mīlia trecentī quadrāgintā quīnque",
@@ -192,9 +178,7 @@ class Num2WordsLATest(TestCase):
     def test_cardinal_large(self):
         """Test large cardinal numbers (millions and billions)."""
         self.assertEqual(num2words(1000000, lang="la"), "ūnus milio")
-        self.assertEqual(
-            num2words(1000001, lang="la"), "ūnus milio ūnus"
-        )
+        self.assertEqual(num2words(1000001, lang="la"), "ūnus milio ūnus")
         self.assertEqual(
             num2words(1111111, lang="la"),
             "ūnus milio centum ūndecim mīlia centum ūndecim",
@@ -218,9 +202,7 @@ class Num2WordsLATest(TestCase):
             num2words(99999999, lang="la"),
             "nōnāgintā novem miliones nōngenta nōnāgintā novem mīlia nōngentī nōnāgintā novem",
         )
-        self.assertEqual(
-            num2words(100000000, lang="la"), "centum miliones"
-        )
+        self.assertEqual(num2words(100000000, lang="la"), "centum miliones")
         self.assertEqual(
             num2words(123456789, lang="la"),
             "centum vīgintī trēs miliones quadringenta quīnquāgintā sex mīlia septingentī octōgintā novem",
@@ -230,10 +212,19 @@ class Num2WordsLATest(TestCase):
             "nōngentī nōnāgintā novem miliones nōngenta nōnāgintā novem mīlia nōngentī nōnāgintā novem",
         )
         self.assertEqual(num2words(1000000000, lang="la"), "ūnus miliardus")
-        self.assertEqual(num2words(1234567890, lang="la"), "ūnus miliardus ducentī trīgintā quattuor miliones quīngenta sexāgintā septem mīlia octingentī nōnāgintā")
-        self.assertEqual(num2words(9999999999, lang="la"), "novem miliardi nōngentī nōnāgintā novem miliones nōngenta nōnāgintā novem mīlia nōngentī nōnāgintā novem")
+        self.assertEqual(
+            num2words(1234567890, lang="la"),
+            "ūnus miliardus ducentī trīgintā quattuor miliones quīngenta sexāgintā septem mīlia octingentī nōnāgintā",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="la"),
+            "novem miliardi nōngentī nōnāgintā novem miliones nōngenta nōnāgintā novem mīlia nōngentī nōnāgintā novem",
+        )
         self.assertEqual(num2words(10000000000, lang="la"), "decem miliardi")
-        self.assertEqual(num2words(99999999999, lang="la"), "nōnāgintā novem miliardi nōngentī nōnāgintā novem miliones nōngenta nōnāgintā novem mīlia nōngentī nōnāgintā novem")
+        self.assertEqual(
+            num2words(99999999999, lang="la"),
+            "nōnāgintā novem miliardi nōngentī nōnāgintā novem miliones nōngenta nōnāgintā novem mīlia nōngentī nōnāgintā novem",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -248,16 +239,12 @@ class Num2WordsLATest(TestCase):
         self.assertEqual(num2words(-100, lang="la"), "minus centum")
         self.assertEqual(num2words(-101, lang="la"), "minus centum ūnus")
         self.assertEqual(num2words(-200, lang="la"), "minus ducentī")
-        self.assertEqual(
-            num2words(-999, lang="la"), "minus nōngentī nōnāgintā novem"
-        )
+        self.assertEqual(num2words(-999, lang="la"), "minus nōngentī nōnāgintā novem")
         self.assertEqual(num2words(-1000, lang="la"), "minus mīlle")
         self.assertEqual(num2words(-1001, lang="la"), "minus mīlle ūnus")
         self.assertEqual(num2words(-10000, lang="la"), "minus decem mīlia")
         self.assertEqual(num2words(-100000, lang="la"), "minus centum mīlia")
-        self.assertEqual(
-            num2words(-1000000, lang="la"), "minus ūnus milio"
-        )
+        self.assertEqual(num2words(-1000000, lang="la"), "minus ūnus milio")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
@@ -285,7 +272,9 @@ class Num2WordsLATest(TestCase):
             num2words(1234.56, lang="la"),
             "mīlle ducentī trīgintā quattuor virgula quīnque sex",
         )
-        self.assertEqual(num2words(10000.01, lang="la"), "decem mīlia virgula nullus ūnus")
+        self.assertEqual(
+            num2words(10000.01, lang="la"), "decem mīlia virgula nullus ūnus"
+        )
         self.assertEqual(num2words(-0.5, lang="la"), "minus nullus virgula quīnque")
         self.assertEqual(num2words(-1.5, lang="la"), "minus ūnus virgula quīnque")
         self.assertEqual(num2words(-10.5, lang="la"), "minus decem virgula quīnque")
@@ -352,8 +341,9 @@ class Num2WordsLATest(TestCase):
             "vīcēsimae prīmae",
         )
         self.assertEqual(
-            num2words(2000, lang="la", to="ordinal", gender="n", case="abl",
-                      macrons=False),
+            num2words(
+                2000, lang="la", to="ordinal", gender="n", case="abl", macrons=False
+            ),
             "bis millesimo",
         )
         self.assertEqual(num2words(21, lang="la", to="ordinal_num"), "XXI")
@@ -363,15 +353,15 @@ class Num2WordsLATest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="la", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="la", to="currency", currency="EUR"), "zero eurones"
         )
         self.assertEqual(
             num2words(0.01, lang="la", to="currency", currency="EUR"),
-            "zero euros unus centesima",
+            "zero eurones unus centesima",
         )
         self.assertEqual(
             num2words(0.5, lang="la", to="currency", currency="EUR"),
-            "zero euros quinquaginta centesimae",
+            "zero eurones quinquaginta centesimae",
         )
         self.assertEqual(
             num2words(1, lang="la", to="currency", currency="EUR"), "unus euro"
@@ -381,30 +371,28 @@ class Num2WordsLATest(TestCase):
             "unus euro quinquaginta centesimae",
         )
         self.assertEqual(
-            num2words(0, lang="la", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="la", to="currency", currency="USD"), "zero dollaria"
         )
         self.assertEqual(
             num2words(0.01, lang="la", to="currency", currency="USD"),
-            "zero dollars unus cent",
+            "zero dollaria unus centesima",
         )
         self.assertEqual(
             num2words(0.5, lang="la", to="currency", currency="USD"),
-            "zero dollars quinquaginta cents",
+            "zero dollaria quinquaginta centesimae",
         )
         self.assertEqual(
-            num2words(1, lang="la", to="currency", currency="USD"), "unus dollar"
+            num2words(1, lang="la", to="currency", currency="USD"), "unus dollarium"
         )
         self.assertEqual(
             num2words(1.5, lang="la", to="currency", currency="USD"),
-            "unus dollar quinquaginta cents",
+            "unus dollarium quinquaginta centesimae",
         )
 
     def test_year(self):
         """Test year conversion."""
         self.assertEqual(num2words(1000, lang="la", to="year"), "mīlle")
-        self.assertEqual(
-            num2words(1066, lang="la", to="year"), "mīlle sexāgintā sex"
-        )
+        self.assertEqual(num2words(1066, lang="la", to="year"), "mīlle sexāgintā sex")
         self.assertEqual(
             num2words(1492, lang="la", to="year"),
             "mīlle quadringentī nōnāgintā duo",
@@ -413,12 +401,8 @@ class Num2WordsLATest(TestCase):
             num2words(1776, lang="la", to="year"),
             "mīlle septingentī septuāgintā sex",
         )
-        self.assertEqual(
-            num2words(1800, lang="la", to="year"), "mīlle octingentī"
-        )
-        self.assertEqual(
-            num2words(1900, lang="la", to="year"), "mīlle nōngentī"
-        )
+        self.assertEqual(num2words(1800, lang="la", to="year"), "mīlle octingentī")
+        self.assertEqual(num2words(1900, lang="la", to="year"), "mīlle nōngentī")
         self.assertEqual(
             num2words(1984, lang="la", to="year"),
             "mīlle nōngentī octōgintā quattuor",
@@ -455,4 +439,3 @@ class Num2WordsLATest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="la"), num2words("100", lang="la"))
         self.assertEqual(num2words(1000, lang="la"), num2words("1000", lang="la"))
-

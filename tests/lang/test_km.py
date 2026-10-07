@@ -199,11 +199,27 @@ class Num2WordsKMTest(TestCase):
             num2words(999999999, lang="km"),
             "ប្រាំបួនរយ កៅសិបប្រាំបួន លាន ប្រាំបួនសែន ប្រាំបួនម៉ឺន ប្រាំបួនពាន់ ប្រាំបួនរយ កៅសិបប្រាំបួន",
         )
-        self.assertEqual(num2words(1000000000, lang="km"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="km"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="km"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="km"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="km"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="km"),
+            "មួយពាន់ លាន",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="km"),
+            "មួយពាន់ ពីររយ សាមសិបបួន លាន ប្រាំសែន ប្រាំមួយម៉ឺន ប្រាំពីរពាន់ ប្រាំបីរយ កៅសិប",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="km"),
+            "ប្រាំបួនពាន់ ប្រាំបួនរយ កៅសិបប្រាំបួន លាន ប្រាំបួនសែន ប្រាំបួនម៉ឺន ប្រាំបួនពាន់ ប្រាំបួនរយ កៅសិបប្រាំបួន",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="km"),
+            "មួយម៉ឺន លាន",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="km"),
+            "ប្រាំបួនម៉ឺន ប្រាំបួនពាន់ ប្រាំបួនរយ កៅសិបប្រាំបួន លាន ប្រាំបួនសែន ប្រាំបួនម៉ឺន ប្រាំបួនពាន់ ប្រាំបួនរយ កៅសិបប្រាំបួន",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -402,4 +418,3 @@ class Num2WordsKMTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="km"), num2words("100", lang="km"))
         self.assertEqual(num2words(1000, lang="km"), num2words("1000", lang="km"))
-

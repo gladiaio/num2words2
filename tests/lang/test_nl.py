@@ -439,10 +439,10 @@ class Num2WordsNLTest(TestCase):
         self.assertEqual(num2words(1000, lang="nl"), num2words("1000", lang="nl"))
 
 
-
 def test_nl_year_no_spaces_for_2100_plus():
     # Regression for num2words2#60 (ports savoirfairelinux/num2words#519).
     from num2words2 import num2words
+
     assert num2words(2100, lang="nl", to="year") == "eenentwintighonderd"
     assert num2words(2150, lang="nl", to="year") == "eenentwintighonderdvijftig"
     assert num2words(2500, lang="nl", to="year") == "vijfentwintighonderd"

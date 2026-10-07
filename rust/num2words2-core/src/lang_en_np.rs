@@ -634,6 +634,13 @@ impl Lang for LangEnNp {
             (if abs_n.is_one() { "quarter" } else { "quarters" }).to_string()
         } else {
             let mut w = self.to_ordinal(&abs_d)?;
+            // 1/100 is "one hundredth", not "one one hundredth" (#217): the
+            // ordinal of a power of ten already starts with "one".
+            if matches!(abs_d.to_string().strip_prefix('1'), Some(z) if z.bytes().all(|b| b == b'0')) {
+                if let Some(rest) = w.strip_prefix("one ") {
+                    w = rest.to_string();
+                }
+            }
             if !abs_n.is_one() {
                 w.push('s');
             }

@@ -1,5 +1,15 @@
 //! Port of `lang_MT.py` (Maltese).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "biljun" (10^9) and "triljun" (10^12) (Wiktionary;
+//! newsbook.com.mt), composed like the million arm, and raises `OverflowError`
+//! from 10^15, which `maxval()` reports. The plural ("żewġ biljuni") is not
+//! applied, as for miljun. Where the notes below describe the digit fallback
+//! ("1000000000", "no overflow check"), they describe Python; that arm is now
+//! unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_MT` subclasses `Num2Word_Base` but
 //! defines only `setup()` — no `high_numwords`/`mid_numwords`/`low_numwords`.
 //! `Num2Word_Base.__init__` guards its card-table build behind
@@ -52,7 +62,7 @@
 //!    following consonant. Hence `to_ordinal(30)` == "l-tletin" (Maltese:
 //!    "it-tletin"), `to_ordinal(20)` == "l-għoxrin", and — because the branch
 //!    is a bare `else` with no guard on sign or zero —
-//!    `to_ordinal(0)` == "l-zero" and `to_ordinal(-1)` == "l-minus wieħed".
+//!    `to_ordinal(0)` == "l-żero" and `to_ordinal(-1)` == "l-minus wieħed".
 //!    Those last two are nonsense, are not errors, and are in the corpus.
 //! 6. **`to_ordinal_num` is `str(number) + "."` with no sign guard**, so
 //!    `to_ordinal_num(-1)` == "-1.".
@@ -60,9 +70,10 @@
 //!    it is a bare delegation to `to_cardinal`. So `to_year(-500)` ==
 //!    "minus ħamsa mija" (no "BC"), and `to_year(1984)` reads as a plain
 //!    cardinal rather than the usual year-pair phrasing.
-//! 8. **`negword` carries a trailing space** ("minus ") and `pointword` is the
-//!    English "point". `to_cardinal` relies on a final `.strip()` to tidy the
-//!    seam.
+//! 8. **`negword` carries a trailing space** ("minus ", which is Maltese).
+//!    `to_cardinal` relies on a final `.strip()` to tidy the seam. Python's
+//!    zero and `pointword` were the English "zero"/"point"; the port says
+//!    "żero" and "punt" (fixed, gladiaio/num2words2#154).
 //!
 //! # Float / Decimal cardinal path
 //!
@@ -85,13 +96,13 @@
 //! whole-value shortcut of the base `cardinal_float_entry` is wrong here. All
 //! four float entry hooks are therefore overridden:
 //! * `cardinal_float_entry` — everything through the string algorithm:
-//!   `5.0` -> "ħamsa point zero", `Decimal("5.00")` -> "ħamsa point zero
+//!   `5.0` -> "ħamsa punt żero", `Decimal("5.00")` -> "ħamsa point zero
 //!   zero", `-0.0` -> "minus zero point zero", `Decimal("12.")` (str "12", no
 //!   dot) -> "għaxra tnejn". Exponent-form strings ("1e+16", "1E+2") have no
 //!   dot either, so `int()` raises `ValueError` — corpus-pinned.
 //! * `ordinal_float_entry` — the 1..=10 ladder is *numeric* (`5.0 == 5` ->
 //!   "il-ħames"); everything else is `"l-" + to_cardinal(number)`, float
-//!   spelling and ValueErrors included ("l-minus zero point zero").
+//!   spelling and ValueErrors included ("l-minus żero punt żero").
 //! * `ordinal_num_float_entry` — `str(number) + "."`, no error even on
 //!   exponent forms ("1e+16.").
 //! * `year_float_entry` — bare `to_cardinal` delegation.
@@ -100,12 +111,12 @@
 //! * The integer-part bugs 1-4 reach floats too: `12.34` -> "għaxra tnejn
 //!   point …" (broken teens), `100.5` -> "wieħed mija point …" (un-elided
 //!   hundred), and the digit-leaking fallback surfaces in the huge Decimal row
-//!   `98746251323029.99` -> "98746251323029 point disgħa disgħa".
+//!   `98746251323029.99` -> "98746251323029 punt disgħa disgħa".
 //! * The `precision=` kwarg is inert — MT's method never reads `self.precision`
 //!   (`num2words(1.5, lang='mt', precision=5)` == the un-overridden result), so
 //!   `precision_override` is accepted and ignored.
 //! * Fractional digits are spelt one glyph at a time via the same `_int_to_word`
-//!   ladder, so a leading-zero fraction reads "zero …": `0.01` -> "zero point
+//!   ladder, so a leading-zero fraction reads "żero …": `0.01` -> "zero point
 //!   zero wieħed".
 //!
 //! # Errors
@@ -169,7 +180,7 @@
 //! 13. **`cents=True` still hides zero cents.** The guard is `if cents and
 //!    right:` — a truthiness test on the cent *count* — so a float with zero
 //!    cents drops the segment entirely: `to_currency(1.0)` == "wieħed ewro",
-//!    not "wieħed ewro zero ċenteżmi". This is the opposite of
+//!    not "wieħed ewro żero ċenteżmi". This is the opposite of
 //!    `Num2Word_Base.to_currency`, which always shows a float's cents. Because
 //!    MT reaches the same result for `1` and `1.0`, the int/float distinction
 //!    that `CurrencyValue` preserves is **not** observable here — but it is
@@ -187,8 +198,14 @@
 //! and `'1e+16'.split(".")` leaves the whole token for `int()`). Mapped to
 //! [`N2WError::Value`] with CPython's exact message. See `concerns` in the
 //! port report for the one input band where this cannot be reproduced.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses dollaru/dollari with ċenteżmu/ċenteżmi, like EUR.
+//! Examples in these docs that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -196,15 +213,17 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword = "minus "` — the trailing space is load-bearing in
 /// Python's `ret + self._int_to_word(...)` seam, then removed by `.strip()`.
 const NEGWORD: &str = "minus ";
 
-/// `setup`: `self.pointword = "point"` — the English word, not a Maltese one.
+/// `setup`: `self.pointword` — Python's English "point", here the Maltese
+/// "punt" (gladiaio/num2words2#154).
 /// Used by [`LangMt::to_cardinal_float`] as the integer/fraction separator,
 /// verbatim (MT does *not* run it through `title()`, unlike `Num2Word_Base`).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "punt";
 
 /// `setup`: `self.ones`. Index 0 is the empty string — see [`ZERO`].
 const ONES: [&str; 10] = [
@@ -223,9 +242,9 @@ const THOUSAND: &str = "elf";
 const MILLION: &str = "miljun";
 
 /// Python: `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""`,
-/// which is falsy, so this branch *always* yields "zero" — the conditional is
-/// dead code. Corpus: `to_cardinal(0)` == "zero".
-const ZERO: &str = "zero";
+/// which is falsy, so Python *always* yielded the English "zero"; the port
+/// says the Maltese "żero" (gladiaio/num2words2#154).
+const ZERO: &str = "żero";
 
 /// `to_ordinal`'s hard-coded ladder for 1..=10, indexed by `n - 1`.
 ///
@@ -281,7 +300,7 @@ fn py_int(s: &str) -> Result<BigInt> {
 /// and appends `.0` to anything that would otherwise look like an integer.
 /// Rust's `{}` does none of this, so both `1e16` and `1.0` would come out
 /// wrong in opposite directions. Both matter to MT: `str(1.0)` is `"1.0"` →
-/// "wieħed point zero", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
+/// "wieħed punt żero", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
 /// `ValueError`.
 ///
 /// The `precision` that `FloatValue::Float` carries is deliberately *not* used
@@ -298,7 +317,7 @@ fn python_float_repr(v: f64) -> String {
         return (if v.is_sign_negative() { "-inf" } else { "inf" }).to_string();
     }
     // The sign bit, not `v < 0.0`: repr(-0.0) is "-0.0", and MT renders that
-    // "minus zero point zero".
+    // "minus żero punt żero".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let a = v.abs();
 
@@ -371,6 +390,16 @@ fn python_str(v: &FloatValue) -> String {
     }
 }
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "biljun"), (12, "triljun")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 pub struct LangMt {
     /// `Num2Word_MT.CURRENCY_FORMS`. Built once in [`LangMt::new`] and stored;
     /// the py binding holds the `LangMt` in a `OnceLock`, so this table is
@@ -393,6 +422,13 @@ impl Default for LangMt {
 }
 
 impl LangMt {
+    /// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+    /// entry point that hands over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     pub fn new() -> Self {
         // CURRENCY_FORMS = {
         //     "EUR": (("ewro", "ewro"), ("ċenteżmu", "ċenteżmi")),
@@ -405,9 +441,11 @@ impl LangMt {
         let eur = CurrencyForms::new(&["ewro", "ewro"], &["ċenteżmu", "ċenteżmi"]);
         let mut currency_forms = HashMap::new();
         currency_forms.insert("EUR", eur.clone());
+        // Python's USD entry was English ("dollars", "cents"); the Maltese
+        // nouns follow EUR's 1 / other split (#222).
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dollaru", "dollari"], &["ċenteżmu", "ċenteżmi"]),
         );
         LangMt {
             currency_forms,
@@ -497,6 +535,22 @@ impl LangMt {
             return result;
         }
 
+        // Scale words above a million (gladiaio/num2words2#147), composed like
+        // the million arm. Every entry point rejects values at or above
+        // `maxval_ceiling()` first, so the top quotient is always below 1000.
+        for &(exp, word) in SCALES.iter().rev() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale)), word);
+                let rest = number % &scale;
+                if !rest.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&rest));
+                }
+                return result;
+            }
+        }
+
         // Python: `return str(number)  # Fallback for very large numbers`.
         // No words, no error — the raw decimal string (bug 4). Only reachable
         // at top level: every recursive call above passes a value < 10^9.
@@ -505,6 +559,10 @@ impl LangMt {
 }
 
 impl Lang for LangMt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -524,7 +582,7 @@ impl Lang for LangMt {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "punt"
     }
 
     /// Port of `Num2Word_MT.to_cardinal`.
@@ -539,7 +597,7 @@ impl Lang for LangMt {
         let ret = if value.is_negative() { NEGWORD } else { "" };
         let magnitude = value.abs();
         // Python: `return (ret + self._int_to_word(int(n))).strip()`.
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -644,7 +702,7 @@ impl Lang for LangMt {
             // Python: `ret += self._int_to_word(int(left)) + " " + self.pointword + " "`.
             // `int(left)` on a huge integer part re-enters the digit-leaking
             // fallback (bug 4); `_int_to_word` already reproduces that.
-            ret.push_str(&self.int_to_word(&py_int(left)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
@@ -654,7 +712,7 @@ impl Lang for LangMt {
             // is unreachable in the positional regime this path targets.
             for ch in right.chars() {
                 let d = py_int(&ch.to_string())?;
-                ret.push_str(&self.int_to_word(&d));
+                ret.push_str(&self.checked_int_to_word(&d)?);
                 ret.push(' ');
             }
             // Python: `return ret.strip()`.
@@ -662,7 +720,7 @@ impl Lang for LangMt {
         } else {
             // No dot in the reconstructed string. Python:
             // `return (ret + self._int_to_word(int(n))).strip()`.
-            ret.push_str(&self.int_to_word(&py_int(mag)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(mag)?)?);
             Ok(ret.trim().to_string())
         }
     }
@@ -671,8 +729,8 @@ impl Lang for LangMt {
 
     /// `to_cardinal(float/Decimal)` — the **full** routing, whole values
     /// included. MT's `to_cardinal` reads `str(number)`, so a whole-valued
-    /// float keeps its ".0" tail (`5.0` -> "ħamsa point zero", `-0.0` ->
-    /// "minus zero point zero") and an exponent-form repr raises ValueError;
+    /// float keeps its ".0" tail (`5.0` -> "ħamsa punt żero", `-0.0` ->
+    /// "minus żero punt żero") and an exponent-form repr raises ValueError;
     /// the base default's whole -> integer-path route would get both wrong. A
     /// Decimal without a visible point (`Decimal("12.")` -> "12") lands in the
     /// same string algorithm's else branch, which *is* the integer path — the
@@ -690,7 +748,7 @@ impl Lang for LangMt {
     /// return "il-ħames" (corpus: ordinal 5.0 / 5.00 -> "il-ħames"). Anything
     /// else — 0.0, negatives, non-integral values, 11.0 and up — falls into
     /// the bare else: `"l-" + self.to_cardinal(number)`, where the cardinal
-    /// spells the float ("l-għaxra wieħed point zero") or raises the
+    /// spells the float ("l-għaxra wieħed punt żero") or raises the
     /// exponent-form ValueError before the prefix is attached.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         // `as_whole_int` is None for fractional values and NaN/±inf, all of
@@ -845,7 +903,7 @@ impl Lang for LangMt {
 
         // Python: `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`.
         // Both table entries have arity 2, so index 1 is always populated.
-        let left_str = self.int_to_word(&left);
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -855,7 +913,7 @@ impl Lang for LangMt {
         // Python: `if cents and right:` — `right` is truthiness-tested, so zero
         // cents drop the whole segment even when `cents=True` (bug 13).
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right);
+            let cents_str = self.checked_int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');

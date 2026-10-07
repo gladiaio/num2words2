@@ -187,6 +187,22 @@ fn build_currency_forms() -> HashMap<&'static str, (CurrencyForms, &'static str)
     m
 }
 
+/// A cardinal before a masculine noun (#253). Every SL currency noun (evro,
+/// dolar, cent) is masculine, but the standalone cardinal ends in the
+/// feminine/neuter "ena"/"dve": "en evro", "dva evra", "sto en evro". 3 and 4
+/// already agree with the table's accusative plural ("tri evre").
+fn sl_masculine(cardinal: String) -> String {
+    let (stem, last) = match cardinal.rsplit_once(' ') {
+        Some((stem, last)) => (format!("{} ", stem), last),
+        None => (String::new(), cardinal.as_str()),
+    };
+    match last {
+        "ena" => format!("{}en", stem),
+        "dve" => format!("{}dva", stem),
+        _ => cardinal,
+    }
+}
+
 /// `Num2Word_SL.pluralize`'s index selection, over the `n % 100` residue.
 ///
 /// ```python
@@ -672,7 +688,10 @@ impl Lang for LangSl {
     ///    fractional string digit by digit, SL emits it whole:
     ///    `self.to_cardinal(int(post_str))`. So `12.34` is "dvanajst vejica
     ///    štiriintrideset" (34), never "... tri štiri"; `12.345` is
-    ///    "dvanajst vejica tristo petinštirideset" (345).
+    ///    "dvanajst vejica tristo petinštirideset" (345). Python's `int()`
+    ///    also dropped leading zeros, so `0.05` read exactly like `0.5`; the
+    ///    port reads each leading zero as "nič" (gladiaio/num2words2#205):
+    ///    `0.05` is "nič vejica nič pet".
     ///
     /// 2. **Always float-casts, even Decimal.** Python does
     ///    `self.float2tuple(float(value))` unconditionally, so the exact-Decimal
@@ -732,11 +751,19 @@ impl Lang for LangSl {
         if precision > 0 {
             out.push(self.title(self.pointword()));
             // self.to_cardinal(int(post_str)) — the whole fraction, one number.
-            // post_str is all digits, so the parse cannot fail; 0 on the empty
-            // string mirrors nothing reachable but keeps this total.
-            let post_num =
-                BigInt::parse_bytes(post_str.as_bytes(), 10).unwrap_or_else(BigInt::zero);
-            out.push(self.to_cardinal(&post_num)?);
+            // Python's int() dropped the leading zeros, so 0.05 read like 0.5
+            // ("nič vejica pet"); each one is now read as "nič" first
+            // (gladiaio/num2words2#205): "nič vejica nič pet".
+            let digits = post_str.trim_start_matches('0');
+            for _ in 0..post_str.len() - digits.len() {
+                out.push(self.to_cardinal(&BigInt::zero())?);
+            }
+            if !digits.is_empty() {
+                // All ASCII digits, so the parse cannot fail.
+                let post_num =
+                    BigInt::parse_bytes(digits.as_bytes(), 10).unwrap_or_else(BigInt::zero);
+                out.push(self.to_cardinal(&post_num)?);
+            }
         }
 
         Ok(out.join(" "))
@@ -851,6 +878,17 @@ impl Lang for LangSl {
         pick_form(&BigDecimal::from(rem), forms)
     }
 
+    /// The numeral before the (masculine) unit noun (#253): see
+    /// [`sl_masculine`].
+    fn money_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(sl_masculine(self.to_cardinal(number)?))
+    }
+
+    /// The numeral before the (masculine) "cent" (#253).
+    fn cents_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(sl_masculine(self.to_cardinal(number)?))
+    }
+
     /// Port of `Num2Word_SL.to_currency`.
     ///
     /// Three of the five parameters are dead upstream and so are ignored here:
@@ -867,7 +905,7 @@ impl Lang for LangSl {
     ///
     /// `is_integer_input = isinstance(val, int)` gates the cents segment: a
     /// true `int` never prints cents, a float always does — including `1.0`,
-    /// which is why `currency:EUR` of `1` is "ena evro" but of `1.0` is "ena
+    /// which is why `currency:EUR` of `1` is "en evro" but of `1.0` is "en
     /// evro nič centov". `has_decimal` is therefore unused here: SL does not
     /// consult it, and the `Int`/`Decimal` variants already carry the only
     /// distinction SL makes.
@@ -884,9 +922,9 @@ impl Lang for LangSl {
     /// it:
     ///
     /// ```text
-    /// to_currency(1.005,  "EUR")  "ena evro nič vejica pet centov"          both
-    /// to_currency(1.0025, "EUR")  "ena evro nič vejica petindvajset centov" Python
-    ///                             "ena evro nič vejica dve pet centov"      here
+    /// to_currency(1.005,  "EUR")  "en evro nič vejica pet centov"          both
+    /// to_currency(1.0025, "EUR")  "en evro nič vejica petindvajset centov" Python
+    ///                             "en evro nič vejica dve pet centov"      here
     /// ```
     ///
     /// Measured, not assumed: diffed against the live interpreter over 1751
@@ -943,7 +981,7 @@ impl Lang for LangSl {
         } else {
             String::new()
         };
-        let money_str = self.to_cardinal(&left)?;
+        let money_str = self.money_verbose(&left, currency)?;
         let left_form = self.pluralize(&left, &forms.unit)?;
 
         // Integer: no cents.
@@ -963,7 +1001,7 @@ impl Lang for LangSl {
             } else {
                 // parse_currency_parts already applied `with_scale(0)` on this
                 // path, so the unscaled value is the whole subunit count.
-                self.to_cardinal(&right.as_bigint_and_exponent().0)?
+                self.cents_verbose(&right.as_bigint_and_exponent().0, currency)?
             }
         } else {
             "nič".to_string()
@@ -993,38 +1031,16 @@ impl Lang for LangSl {
         }
     }
 
-    /// `Num2Word_Base.to_cheque` — inherited, and it cannot succeed for SL.
-    ///
-    /// ```python
-    /// try:
-    ///     cr1, _cr2 = self.CURRENCY_FORMS[currency]
-    /// except KeyError:
-    ///     raise NotImplementedError(...)
-    /// ```
-    ///
-    /// Every SL entry is a **3-tuple**, so the unpack raises
-    /// `ValueError: too many values to unpack (expected 2)` — from inside the
-    /// `try`, where only `KeyError` is caught, so it propagates. An unknown
-    /// code raises `KeyError` on the subscript first and converts to
-    /// NotImplementedError as usual. So the implemented codes fail *harder*
-    /// than the unimplemented ones:
-    ///
-    /// ```text
-    /// cheque:EUR 1234.56  ValueError            cheque:GBP 1234.56  NotImplementedError
-    /// cheque:USD 1234.56  ValueError            cheque:JPY 1234.56  NotImplementedError
-    /// ```
-    ///
-    /// Both arms are corpus rows and both are reproduced. `val` is untouched
-    /// because Python never gets far enough to look at it — the unpack is the
-    /// first statement after the subscript.
-    fn to_cheque(&self, _val: &BigDecimal, currency: &str) -> Result<String> {
-        self.lookup_currency(currency)?;
-        Err(N2WError::Value(
-            "too many values to unpack (expected 2)".into(),
-        ))
+    // SL's CURRENCY_FORMS entries carry more than two forms, so Base's
+    // `cr1, _cr2 = ...` unpack raised ValueError for every known code.
+    // No cheque rules, so NotImplementedError ("lang='sl' does not support
+    // to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1054,12 +1070,12 @@ mod tests {
     fn corpus_currency_implemented() {
         let eur = [
             "nič evrov",
-            "ena evro",
-            "dve evra",
+            "en evro",
+            "dva evra",
             "sto evrov",
             "dvanajst evrov štiriintrideset centov",
-            "nič evrov ena cent",
-            "ena evro nič centov",
+            "nič evrov en cent",
+            "en evro nič centov",
             "devetindevetdeset evrov devetindevetdeset centov",
             "tisoč dvesto štiriintrideset evrov šestinpetdeset centov",
             "minus dvanajst evrov štiriintrideset centov",
@@ -1068,12 +1084,12 @@ mod tests {
         ];
         let usd = [
             "nič dolarjev",
-            "ena dolar",
-            "dve dolarja",
+            "en dolar",
+            "dva dolarja",
             "sto dolarjev",
             "dvanajst dolarjev štiriintrideset centov",
-            "nič dolarjev ena cent",
-            "ena dolar nič centov",
+            "nič dolarjev en cent",
+            "en dolar nič centov",
             "devetindevetdeset dolarjev devetindevetdeset centov",
             "tisoč dvesto štiriintrideset dolarjev šestinpetdeset centov",
             "minus dvanajst dolarjev štiriintrideset centov",
@@ -1105,14 +1121,11 @@ mod tests {
         }
     }
 
-    /// `to_cheque` never succeeds: the implemented codes hit the 3-tuple
-    /// unpack (ValueError), the rest hit the subscript (NotImplementedError).
+    /// SL has no cheque rules (#223): every code raises NotImplementedError,
+    /// where Python crashed with ValueError on the 3-tuple unpack.
     #[test]
     fn corpus_cheque() {
-        for code in ["EUR", "USD"] {
-            assert!(matches!(cheque("1234.56", code), Err(N2WError::Value(_))), "{}", code);
-        }
-        for code in ["GBP", "JPY", "KWD", "BHD", "INR", "CNY", "CHF"] {
+        for code in ["EUR", "USD", "GBP", "JPY", "KWD"] {
             assert!(
                 matches!(cheque("1234.56", code), Err(N2WError::NotImplemented(_))),
                 "{}",
@@ -1131,8 +1144,8 @@ mod tests {
             (4, "štiri evre"),
             (5, "pet evrov"),
             (21, "enaindvajset evrov"),
-            (101, "sto ena evro"),
-            (102, "sto dve evra"),
+            (101, "sto en evro"),
+            (102, "sto dva evra"),
             (103, "sto tri evre"),
             (104, "sto štiri evre"),
         ] {
@@ -1153,7 +1166,7 @@ mod tests {
     #[test]
     fn negative_int_has_no_cents() {
         assert_eq!(currency("-5", "EUR").unwrap(), "minus pet evrov");
-        assert_eq!(currency("-1", "EUR").unwrap(), "minus ena evro");
+        assert_eq!(currency("-1", "EUR").unwrap(), "minus en evro");
     }
 
     /// `cents`, `separator` and `adjective` are all dead upstream.
@@ -1202,10 +1215,10 @@ mod tests {
             (1.5, "ena vejica pet"),
             (2.25, "dve vejica petindvajset"),
             (3.14, "tri vejica štirinajst"),
-            (0.01, "nič vejica ena"),
+            (0.01, "nič vejica nič ena"),
             (0.1, "nič vejica ena"),
             (0.99, "nič vejica devetindevetdeset"),
-            (1.01, "ena vejica ena"),
+            (1.01, "ena vejica nič ena"),
             (12.34, "dvanajst vejica štiriintrideset"),
             (99.99, "devetindevetdeset vejica devetindevetdeset"),
             (100.5, "sto vejica pet"),
@@ -1214,7 +1227,7 @@ mod tests {
             (-1.5, "minus ena vejica pet"),
             (-12.34, "minus dvanajst vejica štiriintrideset"),
             // f64-artefact cases: 1.005 -> post 5 (padded "005"), 2.675 -> 675.
-            (1.005, "ena vejica pet"),
+            (1.005, "ena vejica nič nič pet"),
             (2.675, "dve vejica šeststo petinsedemdeset"),
         ] {
             assert_eq!(cardinal_float(f), want, "{}", f);
@@ -1227,7 +1240,7 @@ mod tests {
     #[test]
     fn corpus_cardinal_dec() {
         for (s, want) in [
-            ("0.01", "nič vejica ena"),
+            ("0.01", "nič vejica nič ena"),
             ("1.10", "ena vejica ena"),
             ("12.345", "dvanajst vejica tristo petinštirideset"),
             (
@@ -1236,7 +1249,7 @@ mod tests {
                  enainpetdeset milijon tristo triindvajset tisoč devetindvajset vejica \
                  osemindevetdeset",
             ),
-            ("0.001", "nič vejica ena"),
+            ("0.001", "nič vejica nič nič ena"),
         ] {
             assert_eq!(cardinal_dec(s), want, "{}", s);
         }

@@ -520,42 +520,12 @@ impl Lang for LangZh {
         Ok(out)
     }
 
-    /// `Num2Word_Base.to_cheque` under ZH_CN's single-string CURRENCY_FORMS.
-    ///
-    /// The base does `cr1, _cr2 = self.CURRENCY_FORMS[currency]` — a tuple
-    /// unpack of a *string*, which iterates characters. A 2-char name
-    /// ("欧元") unpacks to cr1="欧"; 1 char raises "not enough values to
-    /// unpack", 3+ chars "too many values to unpack" — both ValueError,
-    /// which the corpus records for CNY (人民币) and CHF (瑞士法郎).
-    fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
-        let cr = zh_cn_currency_form(currency).ok_or_else(|| {
-            N2WError::NotImplemented(format!(
-                "Currency code \"{}\" not implemented for \"{}\"",
-                currency,
-                self.lang_name()
-            ))
-        })?;
-        let nchars = cr.chars().count();
-        if nchars != 2 {
-            return Err(N2WError::Value(if nchars < 2 {
-                format!("not enough values to unpack (expected 2, got {})", nchars)
-            } else {
-                format!("too many values to unpack (expected 2)")
-            }));
-        }
-        let unit: String = cr.chars().take(1).collect();
-
-        let is_negative = val.sign() == num_bigint::Sign::Minus;
-        let abs_val = if is_negative { -val } else { val.clone() };
-        let whole = abs_val.with_scale(0).as_bigint_and_exponent().0;
-        let sub = ((&abs_val - BigDecimal::from(whole.clone())) * BigDecimal::from(100))
-            .with_scale(0)
-            .as_bigint_and_exponent()
-            .0;
-        let words = self.to_cardinal(&whole)?;
-        let sign = if is_negative { "MINUS " } else { "" };
-        // .upper() is a no-op on Chinese text.
-        Ok(format!("{}{} AND {:02}/100 {}", sign, words, sub, unit))
+    // ZH_CN's CURRENCY_FORMS are bare strings, so Base's unpack split the
+    // name into characters: half a name for 2-char codes, ValueError otherwise.
+    // No cheque rules, so NotImplementedError ("lang='zh' does not support
+    // to='cheque'", #223).
+    fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
+        Err(crate::base::unsupported_mode("cheque"))
     }
 
     /// This language's own `to_currency(currency=...)` default,
@@ -694,6 +664,7 @@ impl Lang for LangZh {
     /// (`int(-0.0) == -0.0`, `abs(-0.0) == -0.0`) and renders "第零". A whole
     /// value then takes `to_cardinal`'s integer path, prefixed with 第.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as ordinal.",
@@ -722,6 +693,7 @@ impl Lang for LangZh {
     /// TypeError(`errmsg_floatyear`); a whole value renders digit-by-digit
     /// through the integer `to_year` (`int(-0.0)` is 0 → no 公元前 prefix).
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
+        value.reject_non_finite()?; // #204: no panic on NaN/inf
         match value.as_whole_int() {
             None => Err(N2WError::Type(format!(
                 "Cannot treat float {} as year.",
@@ -960,6 +932,7 @@ impl Lang for LangZh {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;

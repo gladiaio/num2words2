@@ -60,12 +60,12 @@
 //!    (most others just append -н/-ан). Kept verbatim, as is `TWENTIES[8]`
 //!    ("ная"/"наян") and `ONES[4]` ("дөрөв"/"дөрвөн", with the vowel dropping
 //!    out of the stem).
-//! 6. **`to_currency` on an `int` ignores the currency entirely.** The method
-//!    opens with `if isinstance(val, int): return self.to_cardinal(val)` — no
-//!    table lookup, no unit word, no `NotImplementedError`. So
-//!    `to_currency(100, "BHD")` is "зуу" (a bare cardinal) even though BHD is
-//!    absent from `CURRENCY_FORMS`, while `to_currency(12.34, "BHD")` raises.
-//!    The corpus pins both halves of that split. See [`LangMn::to_currency`].
+//! 6. **`to_currency` on an `int` ignored the currency entirely (fixed,
+//!    #221).** Python opens with `if isinstance(val, int): return
+//!    self.to_cardinal(val)` — no unit word, no `NotImplementedError`, so
+//!    `to_currency(2)` was a bare "хоёр". The port reads an int like a whole
+//!    float ("хоёр төгрөг") and raises for an unknown code on both paths.
+//!    See [`LangMn::to_currency`].
 //! 7. **The 1/100 divisor is hardcoded, `CURRENCY_PRECISION` is never read.**
 //!    `to_currency` computes `(Decimal(str(val)) * 100) % 1` and calls
 //!    `parse_currency_parts` without a `divisor=`, taking its default of 100.
@@ -84,11 +84,9 @@
 //! 10. **`CURRENCY_ADJECTIVES["CZK"]` is `"Чехийн "` with a trailing space**,
 //!    and `prefix_currency` joins with `"%s %s"` — so CZK renders the double
 //!    space "Чехийн  крон". Reproduced verbatim; no corpus row covers CZK.
-//! 11. **`CURRENCY_FORMS["KWD"]` is `"динaр"` with a LATIN SMALL LETTER A**
-//!    (U+0061) where the Cyrillic а (U+0430) belongs. It survives `.upper()`
-//!    as a Latin "A", which is why the cheque corpus expects "ДИНAР". The
-//!    tables here were generated from the live interpreter rather than
-//!    transcribed, so the mixed script is preserved byte for byte.
+//! 11. ~~**`CURRENCY_FORMS["KWD"]` is `"динaр"` with a LATIN SMALL LETTER A**~~
+//!    (U+0061) where the Cyrillic а (U+0430) belongs, so the cheque read
+//!    "ДИНAР" with a Latin "A". Fixed (gladiaio/num2words2#222): "динар".
 //!
 //! # Error variants
 //!
@@ -128,10 +126,11 @@
 //!
 //! Python quirks in this branch, all reproduced:
 //!
-//! * **`int(right) == 0` returns before the `len(right) > 6` raise.** So
+//! * **`int(right) == 0` returns before the decimal-places check.** So
 //!   `Decimal("1.00000000")` is "нэг" (all-zero fraction, integer early
-//!   return) while `Decimal("1.10000000")` raises `NotImplementedError` (eight
-//!   non-zero decimal places). The early return is `_int2word(int(float(n)))`,
+//!   return). Python raised an empty `NotImplementedError` beyond six places
+//!   (`0.1234567`); the port reads up to eleven, "арван саяны" … "зуун
+//!   тэрбумын" (#212), and names the limit in the error past that. The early return is `_int2word(int(float(n)))`,
 //!   which re-casts through f64 and so is signed but lossy for huge integers.
 //! * **`str(value)` with no "." hits the integer `else` and its `int(str)`
 //!   raises `ValueError`** — `invalid literal for int() with base 10: '…'` —
@@ -289,21 +288,28 @@ const ORD_DUGAAR: &str = "дугаар";
 const ORD_DUGEER: &str = "дүгээр";
 
 /// `POINT_WORDS`: the connective between whole and fractional part, keyed on
-/// the **number of decimal places** (`len(right)`), 1..=6 in Python. Index 0 is
-/// a placeholder — the fractional branch is only reached with 1..=6 digits (a
-/// 0-digit fraction hits the integer `else`, and >6 raises). This is what makes
+/// the **number of decimal places** (`len(right)`). Python stops at 6 and
+/// raised an empty `NotImplementedError` beyond; the port continues the same
+/// pattern on the module's own scale words сая and тэрбум up to 11
+/// (gladiaio/num2words2#212). Index 0 is a placeholder — a 0-digit fraction
+/// hits the integer `else`. This is what makes
 /// the MN float path irreducible to Base's `pointword`: Base emits one
 /// `pointword` then each digit; MN emits *one* scale word chosen by digit count
 /// and the fraction as a whole number. So 0.5 is "аравны тав" (tenths + five),
 /// not "(.) тав".
-const POINT_WORDS: [&str; 7] = [
-    "",              // 0 unused
-    "аравны",        // 1  tenths
-    "зууны",         // 2  hundredths
-    "мянганы",       // 3  thousandths
-    "арван мянганы", // 4  ten-thousandths
-    "зуун мянганы",  // 5  hundred-thousandths
-    "саяны",         // 6  millionths
+const POINT_WORDS: [&str; 12] = [
+    "",               // 0 unused
+    "аравны",         // 1  tenths
+    "зууны",          // 2  hundredths
+    "мянганы",        // 3  thousandths
+    "арван мянганы",  // 4  ten-thousandths
+    "зуун мянганы",   // 5  hundred-thousandths
+    "саяны",          // 6  millionths
+    "арван саяны",    // 7  ten-millionths
+    "зуун саяны",     // 8  hundred-millionths
+    "тэрбумын",       // 9  billionths
+    "арван тэрбумын", // 10 ten-billionths
+    "зуун тэрбумын",  // 11 hundred-billionths
 ];
 
 // These mirror crashes in lang_MN.py, not deliberate raises: the exception
@@ -587,10 +593,15 @@ fn mn_to_cardinal_str(n: &str, all_suffixed: bool) -> Result<String> {
             return int2word(&f64_trunc_to_bigint(f)?, all_suffixed);
         }
 
-        // `fractional_length = len(right); if fractional_length > 6: raise
-        // NotImplementedError()` — empty message, matching the bare raise.
-        if right.len() > 6 {
-            return Err(N2WError::NotImplemented(String::new()));
+        // Python: `if fractional_length > 6: raise NotImplementedError()`,
+        // with an empty message, so 0.1234567 failed (#212). The table now
+        // runs to 11 places; past it the error says why.
+        if right.len() >= POINT_WORDS.len() {
+            return Err(N2WError::NotImplemented(format!(
+                "Mongolian decimals are read up to {} places, got {}",
+                POINT_WORDS.len() - 1,
+                right.len()
+            )));
         }
 
         let left_int = left
@@ -704,8 +715,8 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert("JPY", CurrencyForms::new(&["иен"], &["сен"]));
     m.insert("KPW", CurrencyForms::new(&["вон"], &["чон"]));
     m.insert("KRW", CurrencyForms::new(&["вон"], &["чон"]));
-    // "динaр" carries a LATIN "a" (U+0061), not Cyrillic "а" — quirk 11.
-    m.insert("KWD", CurrencyForms::new(&["динaр"], &["филс"]));
+    // Python's "динaр" carried a Latin "a" (U+0061) — quirk 11, fixed (#222).
+    m.insert("KWD", CurrencyForms::new(&["динар"], &["филс"]));
     m.insert("KZT", CurrencyForms::new(&["тенге"], &["тийн"]));
     m.insert("MNT", CurrencyForms::new(&["төгрөг"], &["мөнгө"]));
     m.insert("MYR", CurrencyForms::new(&["ринггит"], &["сен"]));
@@ -1116,12 +1127,15 @@ impl Lang for LangMn {
         separator: Option<&str>,
         adjective: bool,
     ) -> Result<String> {
+        // Python's `if isinstance(val, int): return self.to_cardinal(val)`
+        // dropped the currency noun ("хоёр" for 2). An int takes the same
+        // path as a whole float instead: "хоёр төгрөг" (quirk 6, #221).
+        let int_value;
         let d = match val {
-            // `if isinstance(val, int): return self.to_cardinal(val)` — the
-            // whole method, for an int. The sign is kept (to_cardinal(-5) is
-            // "хасах тав"), `all_suffixed` is not passed, and `currency` is
-            // never looked at. Quirk 6.
-            CurrencyValue::Int(v) => return int2word(v, false),
+            CurrencyValue::Int(v) => {
+                int_value = BigDecimal::from(v.clone());
+                &int_value
+            }
             CurrencyValue::Decimal { value, .. } => value,
         };
 
@@ -1142,9 +1156,7 @@ impl Lang for LangMn {
         let (left, right, is_negative) =
             parse_currency_parts(val, false, has_fractional_cents, DIVISOR);
 
-        // The lookup happens *after* parsing, exactly as in Python. Only
-        // reachable for a float, so an unknown code raises here but not on the
-        // int path above.
+        // The lookup happens *after* parsing, exactly as in Python.
         let forms = self.currency_forms(currency).ok_or_else(|| {
             N2WError::NotImplemented(format!(
                 "Currency code \"{}\" not implemented for \"{}\"",
@@ -1242,6 +1254,7 @@ impl Lang for LangMn {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1313,18 +1326,17 @@ mod tests {
     /// Branch ordering and boundaries confirmed against the live interpreter.
     #[test]
     fn edge_cases() {
-        // int(right)==0 early return runs BEFORE the >6 raise.
+        // int(right)==0 early return runs BEFORE the decimal-places check.
         assert_eq!(dec("1.00000000", 8).unwrap(), "нэг");
         assert_eq!(dec("1.000000", 6).unwrap(), "нэг");
         assert_eq!(dec("12.000", 3).unwrap(), "арван хоёр");
-        // Non-zero fraction beyond six places raises NotImplementedError().
+        // Seven to eleven places read on (#212; Python raised an empty
+        // NotImplementedError beyond six).
+        assert_eq!(dec("1.10000000", 8).unwrap(), "нэг, зуун саяны арван сая");
+        assert!(f(1.1234567, 7).unwrap().starts_with("нэг, арван саяны нэг сая"));
         assert!(matches!(
-            dec("1.10000000", 8),
-            Err(N2WError::NotImplemented(m)) if m.is_empty()
-        ));
-        assert!(matches!(
-            f(1.1234567, 7),
-            Err(N2WError::NotImplemented(m)) if m.is_empty()
+            dec("0.123456789012", 12),
+            Err(N2WError::NotImplemented(m)) if !m.is_empty()
         ));
         // Signed zero: str(-0.0)=="-0.0" -> is_negative, but the zero-fraction
         // early return drops the sign, so "тэг".
@@ -1361,14 +1373,15 @@ mod tests {
             l.cardinal_float_entry(&fv(1e20, 20), None),
             Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1e+20'"
         ));
-        assert!(matches!(
-            l.cardinal_float_entry(&dv("1E+2", 2), None),
-            Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1E+2'"
-        ));
-        assert!(matches!(
-            l.cardinal_float_entry(&dv("1E+20", 20), None),
-            Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1E+20'"
-        ));
+        // #211: str(Decimal) is written out ("100"), so it reads.
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+2", 2), None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
+        );
+        assert_eq!(
+            format!("{:?}", l.cardinal_float_entry(&dv("1E+20", 20), None)),
+            format!("{:?}", l.to_cardinal(&BigInt::from(10).pow(20)))
+        );
         // Whole values still route through the fraction branch's early return
         // (visible ".") or the int arm (no ".").
         assert_eq!(l.cardinal_float_entry(&fv(5.0, 1), None).unwrap(), "тав");
@@ -1449,10 +1462,10 @@ mod tests {
             l.year_float_entry(&fv(1e16, 16)),
             Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1e+16'"
         ));
-        assert!(matches!(
-            l.year_float_entry(&dv("1E+2", 2)),
-            Err(N2WError::Value(_))
-        ));
+        assert_eq!(
+            l.year_float_entry(&dv("1E+2", 2)).unwrap(),
+            l.to_year(&BigInt::from(100)).unwrap()
+        );
     }
 
     /// The `all_suffixed` kwarg, and the quirk-1 drop across the negative
@@ -1501,10 +1514,10 @@ mod tests {
         ));
         assert!(matches!(l.str_to_number("1e3"), Ok(ParsedNumber::Dec(_))));
         assert!(matches!(l.str_to_number("NaN"), Ok(ParsedNumber::NaN)));
-        // "1e3" parses to Decimal('1E+3'); the cardinal entry then raises.
-        assert!(matches!(
-            l.cardinal_float_entry(&dv("1E+3", 3), None),
-            Err(N2WError::Value(m)) if m == "invalid literal for int() with base 10: '1E+3'"
-        ));
+        // "1e3" parses to Decimal('1E+3'), written out as "1000" (#211).
+        assert_eq!(
+            l.cardinal_float_entry(&dv("1E+3", 3), None).unwrap(),
+            l.to_cardinal(&BigInt::from(1000)).unwrap()
+        );
     }
 }

@@ -1,5 +1,14 @@
 //! Port of `lang_JW.py` (Javanese).
 //!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milyar" (10^9) and "triliun" (10^12), the forms in use
+//! (jv.wikipedia "UNDP"), composed like the million arm, and raises
+//! `OverflowError` from 10^15, which `maxval()` reports. Where the notes below
+//! describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Registry note: the key `"jv"` resolves to `Num2Word_JW` — `__init__.py` has
 //! both `"jw": lang_JW.Num2Word_JW()` (line 342) and
 //! `"jv": lang_JW.Num2Word_JW()` (line 406, "Alias for Javanese (modern ISO
@@ -37,7 +46,7 @@
 //!
 //! Because `to_ordinal` / `to_ordinal_num` / `to_year` are plain wrappers with
 //! no type guard, they accept floats and Decimals too: `to_ordinal(5.0)` ==
-//! "lima point zero-e" (the float grammar plus the suffix) and
+//! "lima koma nol-e" (the float grammar plus the suffix) and
 //! `to_ordinal_num(5.0)` == "5.0." (`str(number)` plus a dot — yes, `"-0.0."`
 //! and `"1e+16."` are real outputs). The `ordinal_float_entry` /
 //! `ordinal_num_float_entry` hooks below reproduce exactly that; `to_year`'s
@@ -48,10 +57,12 @@
 //! This is a port, not a rewrite. All of the following look wrong but are
 //! exactly what Python emits, verified against `bench/corpus.jsonl`:
 //!
-//! 1. **Zero is English.** `_int_to_word(0)` is
-//!    `self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""`, which is
-//!    falsy, so the fallback always wins and `to_cardinal(0)` == `"zero"` —
-//!    not the Javanese "nol". The `self.ones[0]` arm is unreachable.
+//! 1. **Zero and decimal (fixed, gladiaio/num2words2#154).** Python's
+//!    `_int_to_word(0)` is `self.ones[0] if self.ones[0] else "zero"` with
+//!    `ones[0] == ""`, so it always said "zero", and `pointword` was the
+//!    English "point". The port says "nol" and "koma" (decimal comma, as
+//!    jv.wikipedia writes "angka ing samburiné koma"): 1.5 == "siji koma
+//!    lima". The negword stays "minus ", the word in use.
 //! 2. **No teens, and inconsistent hundreds.** The tens table is applied
 //!    positionally with no special forms, so 11 is "sepuluh siji" (lit. "ten
 //!    one") rather than the real Javanese "sewelas", and 12 is "sepuluh loro"
@@ -159,8 +170,14 @@
 //!     non-numeric token. Unreachable for any value `str()` renders in plain
 //!     decimal notation; see the exponent-notation note on
 //!     [`LangJv::to_currency`].
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dolar / euro with sen. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -170,13 +187,14 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`, set in `setup()`. Note the trailing space: `to_cardinal`
 /// concatenates it directly and relies on `.strip()` only for the ends.
 const NEGWORD: &str = "minus ";
 
-/// The `"zero"` from `_int_to_word`'s falsy-`ones[0]` fallback (bug 1).
-const ZERO_WORD: &str = "zero";
+/// `_int_to_word`'s zero: "nol" where Python said the English "zero" (bug 1).
+const ZERO_WORD: &str = "nol";
 
 /// `self.ones`. Index 0 is `""` and is never emitted — `_int_to_word` returns
 /// early for 0, and every other lookup uses a nonzero digit.
@@ -210,7 +228,7 @@ const MILLION: &str = "yuta";
 /// `self.pointword`, set in `setup()`. Used by the float/Decimal branch of
 /// `to_cardinal` (see [`cardinal_from_repr`]); the same value the
 /// [`pointword`](LangJv::pointword) hook returns.
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "koma";
 
 /// `self.__class__.__name__`. The file is `lang_jv.rs` but the Python class is
 /// `Num2Word_JW` — the `jv`/`jw` keys share one class (see the header). This is
@@ -236,6 +254,23 @@ const BASE_DEFAULT_SEPARATOR: &str = ",";
 /// EUR, and dicts have preserved insertion order since 3.7, so the first value
 /// is IDR's.
 const FALLBACK_CURRENCY: &str = "IDR";
+
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "milyar"), (12, "triliun")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
 
 pub struct LangJv {
     /// `Num2Word_JW.CURRENCY_FORMS`, built once in [`LangJv::new`] and never
@@ -264,11 +299,11 @@ impl LangJv {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dolar", "dolar"], &["sen", "sen"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["euro", "euro"], &["sen", "sen"]),
         );
 
         // `list(CURRENCY_FORMS.values())[0]` resolved once — see bug 9.
@@ -365,6 +400,22 @@ fn int_to_word(number: &BigInt) -> String {
             result.push_str(&int_to_word(&remainder));
         }
         return result;
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // `return str(number)  # Fallback for very large numbers` (bug 3).
@@ -469,10 +520,10 @@ fn shortest_repr_digits(a: f64) -> (String, i32) {
 /// * exponent form when `decpt <= -4 || decpt > 16` (so `str(1e16) == "1e+16"`
 ///   but `str(1e15) == "1000000000000000.0"`), exponent `%+.02d`;
 /// * otherwise positional, appending `.0` if nothing follows the point — which
-///   is why `1.0` renders "siji point zero" rather than "siji".
+///   is why `1.0` renders "siji koma nol" rather than "siji".
 ///
 /// The sign is read from the sign *bit*, so `str(-0.0) == "-0.0"` and JW's
-/// `startswith("-")` fires: `-0.0` renders "minus zero point zero".
+/// `startswith("-")` fires: `-0.0` renders "minus nol koma nol".
 fn py_str_f64(v: f64) -> String {
     if v.is_nan() {
         return "nan".to_string();
@@ -513,7 +564,7 @@ fn py_str_f64(v: f64) -> String {
 ///
 /// `BigDecimal::from_str` keeps the written scale rather than normalising, so
 /// `"1.10"` stays coefficient 110 / scale 2 — which is what makes the trailing
-/// "zero" appear ("siji point siji zero"). `(coefficient, -scale)` is exactly
+/// "zero" appear ("siji koma siji nol"). `(coefficient, -scale)` is exactly
 /// Python's `(_int, _exp)`. (Copied from the CEB port, validated against
 /// CPython over 40,029 Decimals; the only divergence is negative zero, which
 /// `BigInt` cannot represent — see the port report.)
@@ -565,7 +616,7 @@ fn py_str_decimal(value: &BigDecimal) -> String {
 /// fractional character goes through the *full* `_int_to_word`, so a `0` digit
 /// becomes "zero" (bug 1) exactly as an integer 0 would. `int(left)` is the
 /// whole integer part, so bug 3 applies there too: at 1e9 and above it comes
-/// back as bare digits ("98746251323029 point sanga sanga").
+/// back as bare digits ("98746251323029 koma sanga sanga").
 fn cardinal_from_repr(n: &str) -> Result<String> {
     // n = str(number).strip()
     let n = n.trim();
@@ -581,24 +632,28 @@ fn cardinal_from_repr(n: &str) -> Result<String> {
         Some((left, right)) => {
             // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
             let mut ret = ret;
-            ret.push_str(&int_to_word(&py_int(left)?));
+            ret.push_str(&checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
             // for digit in right: ret += self._int_to_word(int(digit)) + " "
             for digit in right.chars() {
-                ret.push_str(&int_to_word(&BigInt::from(py_int_digit(digit)?)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(py_int_digit(digit)?))?);
                 ret.push(' ');
             }
             // return ret.strip()
             Ok(ret.trim().to_string())
         }
         // else: return (ret + self._int_to_word(int(n))).strip()
-        None => Ok(format!("{}{}", ret, int_to_word(&py_int(n)?)).trim().to_string()),
+        None => Ok(format!("{}{}", ret, checked_int_to_word(&py_int(n)?)?).trim().to_string()),
     }
 }
 
 impl Lang for LangJv {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -614,8 +669,8 @@ impl Lang for LangJv {
     /// `to_ordinal(float/Decimal)`. `Num2Word_JW.to_ordinal` is
     /// `self.to_cardinal(number) + "-e"` with **no type guard**, so a float or
     /// Decimal rides the same decimal grammar as `to_cardinal` and then takes
-    /// the suffix: `to_ordinal(5.0)` == "lima point zero-e", `to_ordinal(-0.0)`
-    /// == "minus zero point zero-e", and a whole `Decimal("100")` ==
+    /// the suffix: `to_ordinal(5.0)` == "lima koma nol-e", `to_ordinal(-0.0)`
+    /// == "minus nol koma nol-e", and a whole `Decimal("100")` ==
     /// "siji atus-e" (the ordinal analogue of keeping the ".0" tail). An
     /// exponent-notation repr (`str(1e16)` == "1e+16", `str(Decimal("1E+2"))`
     /// == "1E+2") makes the inner `int()` raise its ValueError *before*
@@ -691,7 +746,7 @@ impl Lang for LangJv {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "koma"
     }
 
     /// Python's `to_cardinal`, integer path.
@@ -710,7 +765,7 @@ impl Lang for LangJv {
         // Python's `.strip()`. Only ever trims NEGWORD's trailing space in the
         // (impossible) event of an empty word — `_int_to_word` never returns
         // "" — but reproduced so the shape matches.
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// `return cardinal + "-e"` — one suffix for every number, no agreement,
@@ -744,7 +799,7 @@ impl Lang for LangJv {
     /// literal digits of `str(number)`. `FloatValue::precision` is likewise
     /// unused — `str(number)` is recomputed from the raw f64 / BigDecimal, which
     /// is more faithful than any digit count. Verified live: `precision=1`,
-    /// `2`, `5` all give "loro point enem pitu lima" for 2.675.
+    /// `2`, `5` all give "loro koma enem pitu lima" for 2.675.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -840,7 +895,7 @@ impl Lang for LangJv {
     ///     `N2WError::Value`. Python's `int("1e+21")` raises `ValueError`: same
     ///     variant, different message text.
     ///   * `1e-05`, `1e-06` — `Display` renders them plain (`"0.00001"`), so
-    ///     this returns "zero rupiah" where Python raises `ValueError`.
+    ///     this returns "nol rupiah" where Python raises `ValueError`.
     ///   * `1.2345678901234568e+16` — `Display` renders `"12345678901234568"`,
     ///     so this returns "12345678901234568 rupiah" (via the `str(number)`
     ///     fallback, bug 3) where Python splits the repr on its `"."` and
@@ -876,7 +931,7 @@ impl Lang for LangJv {
         // `val >= 0`, whose `str()` carries no sign anyway. The one input where
         // the two strings differ is `-0.0` (`val < 0` is False, so Python keeps
         // `"-0.0"` while this yields `"0.0"`), and it converges regardless —
-        // `int("-0") == int("0") == 0`, giving "zero rupiah" on both sides.
+        // `int("-0") == int("0") == 0`, giving "nol rupiah" on both sides.
         let is_negative = val.is_negative();
         let s = match val {
             CurrencyValue::Int(v) => v.abs().to_string(),
@@ -928,7 +983,7 @@ impl Lang for LangJv {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left.is_one() { &cr1[0] } else { &cr1[1] }
         );
 
@@ -936,7 +991,7 @@ impl Lang for LangJv {
         // with zero cents drops the whole segment (bug 6).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }
@@ -987,25 +1042,25 @@ mod float_tests {
     fn corpus_cardinal_float() {
         // Every `"to": "cardinal"` row for jv with a dot in `arg`.
         let cases = [
-            ("0.0", "zero point zero"),
-            ("0.5", "zero point lima"),
-            ("1.0", "siji point zero"),
-            ("1.5", "siji point lima"),
-            ("2.25", "loro point loro lima"),
-            ("3.14", "telu point siji papat"),
-            ("0.01", "zero point zero siji"),
-            ("0.1", "zero point siji"),
-            ("0.99", "zero point sanga sanga"),
-            ("1.01", "siji point zero siji"),
-            ("12.34", "sepuluh loro point telu papat"),
-            ("99.99", "sanga puluh sanga point sanga sanga"),
-            ("100.5", "siji atus point lima"),
-            ("1234.56", "siji ewu loro atus telung puluh papat point lima enem"),
-            ("-0.5", "minus zero point lima"),
-            ("-1.5", "minus siji point lima"),
-            ("-12.34", "minus sepuluh loro point telu papat"),
-            ("1.005", "siji point zero zero lima"),
-            ("2.675", "loro point enem pitu lima"),
+            ("0.0", "nol koma nol"),
+            ("0.5", "nol koma lima"),
+            ("1.0", "siji koma nol"),
+            ("1.5", "siji koma lima"),
+            ("2.25", "loro koma loro lima"),
+            ("3.14", "telu koma siji papat"),
+            ("0.01", "nol koma nol siji"),
+            ("0.1", "nol koma siji"),
+            ("0.99", "nol koma sanga sanga"),
+            ("1.01", "siji koma nol siji"),
+            ("12.34", "sepuluh loro koma telu papat"),
+            ("99.99", "sanga puluh sanga koma sanga sanga"),
+            ("100.5", "siji atus koma lima"),
+            ("1234.56", "siji ewu loro atus telung puluh papat koma lima enem"),
+            ("-0.5", "minus nol koma lima"),
+            ("-1.5", "minus siji koma lima"),
+            ("-12.34", "minus sepuluh loro koma telu papat"),
+            ("1.005", "siji koma nol nol lima"),
+            ("2.675", "loro koma enem pitu lima"),
         ];
         for (arg, want) in cases {
             assert_eq!(card_float(arg), want, "float {}", arg);
@@ -1016,11 +1071,11 @@ mod float_tests {
     fn corpus_cardinal_dec() {
         // Every `"to": "cardinal_dec"` row for jv.
         let cases = [
-            ("0.01", "zero point zero siji"),
-            ("1.10", "siji point siji zero"),
-            ("12.345", "sepuluh loro point telu papat lima"),
-            ("98746251323029.99", "98746251323029 point sanga sanga"),
-            ("0.001", "zero point zero zero siji"),
+            ("0.01", "nol koma nol siji"),
+            ("1.10", "siji koma siji nol"),
+            ("12.345", "sepuluh loro koma telu papat lima"),
+            ("98746251323029.99", "sanga puluh wolu triliun pitu atus patang puluh enem milyar loro atus seket siji yuta telu atus rong puluh telu ewu rong puluh sanga koma sanga sanga"),
+            ("0.001", "nol koma nol nol siji"),
         ];
         for (arg, want) in cases {
             assert_eq!(card_dec(arg), want, "dec {}", arg);
@@ -1030,15 +1085,15 @@ mod float_tests {
     #[test]
     fn negative_zero_float_carries_sign() {
         // str(-0.0) == "-0.0" -> the sign bit fires JW's startswith("-").
-        assert_eq!(card_float("-0.0"), "minus zero point zero");
+        assert_eq!(card_float("-0.0"), "minus nol koma nol");
     }
 
     #[test]
     fn extra_live_interpreter_rows() {
-        assert_eq!(card_float("1000000000.5"), "1000000000 point lima");
+        assert_eq!(card_float("1000000000.5"), "siji milyar koma lima");
         assert_eq!(
             card_float("12345.678"),
-            "sepuluh loro ewu telu atus patang puluh lima point enem pitu wolu"
+            "sepuluh loro ewu telu atus patang puluh lima koma enem pitu wolu"
         );
         // Decimal that stringifies without a dot -> integer branch.
         assert_eq!(card_dec("100"), "siji atus");

@@ -121,7 +121,7 @@ compiled Rust extension, built per platform::
 Prebuilt wheels are published for:
 
 * **Linux** — x86_64 and aarch64 (manylinux2014)
-* **macOS** — Apple Silicon (arm64); Intel (x86_64) from a later release
+* **macOS** — Apple Silicon (arm64) and Intel (x86_64)
 * **Windows** — x86_64
 
 On any other platform, pip falls back to the source distribution and builds the
@@ -168,7 +168,7 @@ The project uses pre-commit hooks to ensure code quality. To set up your develop
 
 This will automatically format and lint your code before each commit using:
 
-* autopep8 - PEP 8 formatting
+* black - code formatting
 * autoflake - removes unused imports and variables
 * isort - sorts imports
 * flake8 - style and quality checks
@@ -239,9 +239,9 @@ Command line::
     $ num2words2 10001
     ten thousand and one
     $ num2words2 24,120.10
-    twenty-four thousand, one hundred and twenty point one
+    twenty-four thousand, one hundred and twenty point one zero
     $ num2words2 24,120.10 -l es
-    veinticuatro mil ciento veinte punto uno
+    veinticuatro mil ciento veinte punto uno cero
     $ num2words2 2.14 -l es --to currency
     dos euros con catorce céntimos
 
@@ -249,11 +249,11 @@ In code there's only one function to use::
 
     >>> from num2words2 import num2words
     >>> num2words(42)
-    forty-two
+    'forty-two'
     >>> num2words(42, to='ordinal')
-    forty-second
+    'forty-second'
     >>> num2words(42, lang='fr')
-    quarante-deux
+    'quarante-deux'
 
 Besides the numerical argument, there are two main optional arguments, ``to:`` and ``lang:``
 
@@ -264,73 +264,20 @@ Besides the numerical argument, there are two main optional arguments, ``to:`` a
 * ``ordinal_num``
 * ``year``
 * ``currency``
+* ``cheque`` (bank-cheque format, e.g. ``ONE AND 00/100 DOLLARS``)
+* ``fraction`` (also used automatically for ``'n/d'`` strings such as ``'1/3'``)
 
-**lang:** The language in which to convert the number. Supported values are:
+**lang:** The language code (default ``en``). ``num2words2`` supports 120+
+languages and 170+ codes, including regional variants such as ``pt_BR``,
+``fr_BE``, ``sr_Latn``, ``zh_TW`` and the aviation/ICAO codes
+``en_Aero_ICAO`` & co. For the live list, run::
 
-* ``en`` (English, default)
-* ``am`` (Amharic)
-* ``ar`` (Arabic)
-* ``az`` (Azerbaijani)
-* ``be`` (Belarusian)
-* ``bn`` (Bangladeshi)
-* ``ca`` (Catalan)
-* ``ce`` (Chechen)
-* ``cs`` (Czech)
-* ``cy`` (Welsh)
-* ``da`` (Danish)
-* ``de`` (German)
-* ``en_GB`` (English - Great Britain)
-* ``en_IN`` (English - India)
-* ``en_NG`` (English - Nigeria)
-* ``es`` (Spanish)
-* ``es_CO`` (Spanish - Colombia)
-* ``es_CR`` (Spanish - Costa Rica)
-* ``es_GT`` (Spanish - Guatemala)
-* ``es_VE`` (Spanish - Venezuela)
-* ``eu`` (EURO)
-* ``fa`` (Farsi)
-* ``fi`` (Finnish)
-* ``fr`` (French)
-* ``fr_BE`` (French - Belgium)
-* ``fr_CH`` (French - Switzerland)
-* ``fr_DZ`` (French - Algeria)
-* ``he`` (Hebrew)
-* ``hi`` (Hindi)
-* ``hu`` (Hungarian)
-* ``hy`` (Armenian)
-* ``id`` (Indonesian)
-* ``is`` (Icelandic)
-* ``it`` (Italian)
-* ``ja`` (Japanese)
-* ``kn`` (Kannada)
-* ``ko`` (Korean)
-* ``kz`` (Kazakh)
-* ``mn`` (Mongolian)
-* ``lt`` (Lithuanian)
-* ``lv`` (Latvian)
-* ``nl`` (Dutch)
-* ``no`` (Norwegian)
-* ``pl`` (Polish)
-* ``pt`` (Portuguese)
-* ``pt_BR`` (Portuguese - Brazilian)
-* ``ro`` (Romanian)
-* ``ru`` (Russian)
-* ``sl`` (Slovene)
-* ``sk`` (Slovak)
-* ``sr`` (Serbian)
-* ``sv`` (Swedish)
-* ``te`` (Telugu)
-* ``tet`` (Tetum)
-* ``tg`` (Tajik)
-* ``tr`` (Turkish)
-* ``th`` (Thai)
-* ``uk`` (Ukrainian)
-* ``vi`` (Vietnamese)
-* ``zh`` (Chinese - Traditional)
-* ``zh_CN`` (Chinese - Simplified / Mainland China)
-* ``zh_TW`` (Chinese - Traditional / Taiwan)
-* ``zh_HK`` (Chinese - Traditional / Hong Kong)
+    num2words2 --list-languages
 
+The full table with language names is in `REFERENCE.md
+<https://github.com/gladiaio/num2words2/blob/main/REFERENCE.md#locale-codes>`_.
+
+Codes are matched case-insensitively and hyphens are read as underscores.
 You can supply values like ``fr_FR``; if the country doesn't exist but the
 language does, the code will fall back to the base language (i.e. ``fr``). If
 you supply an unsupported language, ``NotImplementedError`` is raised.

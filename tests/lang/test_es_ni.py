@@ -26,7 +26,7 @@ TEST_NIO = (
     (2.0, "dos córdobas con cero centavos"),
     (8.0, "ocho córdobas con cero centavos"),
     (12.0, "doce córdobas con cero centavos"),
-    (21.0, "veintiun córdobas con cero centavos"),
+    (21.0, "veintiún córdobas con cero centavos"),
     (81.25, "ochenta y un córdobas con veinticinco centavos"),
     (100, "cien córdobas"),
 )

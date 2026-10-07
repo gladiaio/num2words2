@@ -115,7 +115,7 @@ const ORDS: &[(i64, &str)] = &[
 /// * `MAD` is `("dírham", "dirhams")`: the accent survives only in the
 ///   singular.
 /// * `CNY`'s subunits are `("fen", "jiaos")` — two different coins, so
-///   `0.01` renders "uno fen" but `0.34` renders "treinta y cuatro jiaos".
+///   `0.01` renders "un fen" but `0.34` renders "treinta y cuatro jiaos".
 /// * `ZWL` is listed twice in the source; the dict keeps one entry.
 const CURRENCY_FORMS: &[(&str, &[&str], &[&str])] = &[
     ("EUR", &["euro", "euros"], &["céntimo", "céntimos"]),
@@ -415,6 +415,26 @@ pub fn es_str_to_number(s: &str) -> Result<ParsedNumber> {
     python_decimal_parse(t)
 }
 
+/// Feminine unit nouns in the currency table: they take "una"/"veintiuna".
+const FEMININE_UNITS: [&str; 6] = ["peseta", "libra", "corona", "rupia", "lira", "hryvnia"];
+
+/// The cardinal as it stands before a currency noun (#253): a final "uno"
+/// apocopates before a masculine noun ("un euro", "treinta y un dólares",
+/// "veintiún euros") and becomes "una" before a feminine one ("una libra",
+/// "veintiuna libras"). Only the last word changes; "un millón" is already
+/// apocopated by the cardinal.
+fn es_attributive(cardinal: String, feminine: bool) -> String {
+    if let Some(stem) = cardinal.strip_suffix("veintiuno") {
+        return format!("{}{}", stem, if feminine { "veintiuna" } else { "veintiún" });
+    }
+    match cardinal.strip_suffix("uno") {
+        Some(stem) if stem.is_empty() || stem.ends_with(' ') => {
+            format!("{}{}", stem, if feminine { "una" } else { "un" })
+        }
+        _ => cardinal,
+    }
+}
+
 pub struct LangEs {
     cards: Cards,
     maxval: BigInt,
@@ -550,7 +570,7 @@ impl LangEs {
             String::new()
         } else if value <= 10 {
             format!("{}{}", self.ord_stem(value)?, gender_stem)
-        } else if value <= 29 {
+        } else if value <= 29 && value != 20 {
             // RAE: simple forms up to 30. The accent is dropped
             // (sobreesdrújula ortography) and the stem is forced masculine,
             // but the *unit* keeps the caller's gender.
@@ -914,9 +934,10 @@ impl Lang for LangEs {
     // cuts KWD/BHD cheques at two digits ("... AND 56/100 DINARES") instead of
     // three — the 0- and 3-decimal special cases never fire for this language.
     //
-    // `money_verbose` / `cents_verbose` / `cents_terse` / `to_cheque` are not
-    // overridden either: ES inherits `Num2Word_Base`'s, which the trait
-    // defaults already reproduce.
+    // `money_verbose` / `cents_verbose` give the numeral in its attributive
+    // form, apocopated before a masculine noun (#253). `cents_terse` /
+    // `to_cheque` are not overridden: ES inherits `Num2Word_Base`'s, which the
+    // trait defaults already reproduce.
 
     fn lang_name(&self) -> &str {
         "Num2Word_ES"
@@ -928,6 +949,20 @@ impl Lang for LangEs {
 
     fn currency_adjective(&self, code: &str) -> Option<&str> {
         self.currency_adjectives.get(code).copied()
+    }
+
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let feminine = self
+            .currency_forms
+            .get(currency)
+            .and_then(|f| f.unit.first())
+            .is_some_and(|n| FEMININE_UNITS.contains(&n.as_str()));
+        Ok(es_attributive(self.to_cardinal(number)?, feminine))
+    }
+
+    /// Every subunit noun in the table is masculine ("un céntimo").
+    fn cents_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(es_attributive(self.to_cardinal(number)?, false))
     }
 
     /// `Num2Word_EUR.pluralize`: `forms[0]` for exactly 1, `forms[1]` else.
@@ -993,13 +1028,10 @@ impl Lang for LangEs {
             let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
             let abs_val = v.abs();
 
-            // Python computes to_cardinal(abs_val) first and discards it when
-            // abs_val == 1; kept in that order, though it cannot fail for 1.
-            let mut money_str = self.to_cardinal(&abs_val)?;
+            // The attributive numeral: "un euro", "veintiún euros", "una libra"
+            // (#253).
+            let money_str = self.money_verbose(&abs_val, currency)?;
             let currency_str = if abs_val.is_one() {
-                // "uno euro" -> "un euro". Applied to the *unit* name blindly,
-                // which is why GBP 1 comes out as the ungrammatical "un libra".
-                money_str = "un".to_string();
                 forms.unit.first()
             } else {
                 forms.unit.get(1).or_else(|| forms.unit.first())
@@ -1011,21 +1043,13 @@ impl Lang for LangEs {
                 .to_string());
         }
 
-        // ---- float path: base implementation, then patch "uno" -> "un" ----
+        // ---- float path: base implementation ----
+        // Python patched "uno" -> "un" afterwards with six blind string
+        // substitutions keyed on a few nouns ("cero libras con uno penique"
+        // slipped through); the attributive numeral now comes from
+        // `money_verbose`/`cents_verbose` instead (#253).
         let result =
             crate::currency::default_to_currency(self, val, currency, cents, separator, adjective)?;
-
-        // Six blind string substitutions, in Python's exact order. They are
-        // keyed on the currency *word*, not the code, so they fire across
-        // codes that share a noun (CHF/FRF/ESP all say "céntimo") and miss
-        // every other noun: GBP 0.01 stays "cero libras con uno penique" and
-        // CNY 0.01 stays "cero yuanes con uno fen".
-        let result = result.replace("veintiuno euro", "veintiún euro");
-        let result = result.replace("veintiuno céntimo", "veintiún céntimo");
-        let result = result.replace("uno euro", "un euro");
-        let result = result.replace("uno céntimo", "un céntimo");
-        let result = result.replace("uno centavo", "un centavo");
-        let result = result.replace("uno dólar", "un dólar");
         Ok(result)
     }
 }

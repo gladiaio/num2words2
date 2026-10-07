@@ -75,14 +75,14 @@ class Num2WordsCSTest(TestCase):
 
     def test_currency(self):
         self.assertEqual(
-            num2words(10, lang="cs", to="currency", currency="EUR"), "deset euro"
+            num2words(10, lang="cs", to="currency", currency="EUR"), "deset eur"
         )
         self.assertEqual(
             num2words(1, lang="cs", to="currency", currency="CZK"), "jedna koruna"
         )
         self.assertEqual(
             num2words(1234.56, lang="cs", to="currency", currency="EUR"),
-            "tisíc dvě stě třicet čtyři euro, padesát šest centů",
+            "tisíc dvě stě třicet čtyři eura, padesát šest centů",
         )
         self.assertEqual(
             num2words(1234.56, lang="cs", to="currency", currency="CZK"),
@@ -90,7 +90,7 @@ class Num2WordsCSTest(TestCase):
         )
         self.assertEqual(
             num2words(101.11, lang="cs", to="currency", currency="EUR", separator=" a"),
-            "sto jedna euro a jedenáct centů",
+            "sto jedna eur a jedenáct centů",
         )
         self.assertEqual(
             num2words(101.21, lang="cs", to="currency", currency="CZK", separator=" a"),
@@ -98,7 +98,7 @@ class Num2WordsCSTest(TestCase):
         )
         self.assertEqual(
             num2words(-12519.85, lang="cs", to="currency", cents=False),
-            "mínus dvanáct tisíc pět set devatenáct euro, 85 centů",
+            "mínus dvanáct tisíc pět set devatenáct eur, 85 centů",
         )
         self.assertEqual(
             num2words(123.50, lang="cs", to="currency", currency="CZK", separator=" a"),
@@ -106,7 +106,7 @@ class Num2WordsCSTest(TestCase):
         )
         self.assertEqual(
             num2words(19.50, lang="cs", to="currency", cents=False),
-            "devatenáct euro, 50 centů",
+            "devatenáct eur, 50 centů",
         )
 
     def test_negative_decimals(self):
@@ -119,6 +119,36 @@ class Num2WordsCSTest(TestCase):
 def test_cs_string_and_float_decimal_consistency():
     # Regression for num2words2#75 (ports savoirfairelinux/num2words#458).
     from num2words2 import num2words
-    assert num2words("1.50", lang="cs") == num2words(1.50, lang="cs") == "jedna čárka pět"
-    assert num2words("1.00", lang="cs") == num2words(1.00, lang="cs") == "jedna čárka nula"
+
+    assert (
+        num2words("1.50", lang="cs") == num2words(1.50, lang="cs") == "jedna čárka pět"
+    )
+    assert (
+        num2words("1.00", lang="cs") == num2words(1.00, lang="cs") == "jedna čárka nula"
+    )
     assert num2words("1.123", lang="cs") == num2words(1.123, lang="cs")
+
+
+def test_compound_ordinals_issue_216():
+    # gladiaio/num2words2#216: every component of a compound ordinal is an
+    # ordinal; Python glued "ý" onto the cardinal ("dvacet jednaý").
+    from num2words2 import num2words
+
+    cases = {
+        0: "nultý",
+        21: "dvacátý první",
+        23: "dvacátý třetí",
+        31: "třicátý první",
+        101: "stý první",
+        121: "stý dvacátý první",
+        200: "dvoustý",
+        345: "třístý čtyřicátý pátý",
+        999: "devítistý devadesátý devátý",
+        1001: "tisící první",
+        2021: "dvoutisící dvacátý první",
+        5000: "pětitisící",
+        10**6: "miliontý",
+        -1: "mínus první",
+    }
+    for n, want in cases.items():
+        assert num2words(n, lang="cs", to="ordinal") == want, n

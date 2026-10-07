@@ -23,7 +23,6 @@ from num2words2 import num2words
 
 
 class Num2WordsTETTest(TestCase):
-
     def test_cardinal_integer(self):
         self.assertEqual(num2words(1, lang="tet"), "ida")
         self.assertEqual(num2words(2, lang="tet"), "rua")
@@ -248,13 +247,6 @@ haat atus lima neen nulu resin hitu",
             num2words(145000000002, lang="tet", ordinal=True),
             "damiliaun rihun atus ida haat nulu resin lima resin ruak",
         )
-
-
-
-
-
-
-
 
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4

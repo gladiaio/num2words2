@@ -51,6 +51,41 @@ jobs:
         COVERALLS_PARALLEL: true
       continue-on-error: true
 
+  # PyPI ships the SLIM build (--no-default-features: no lingua-rs models,
+  # num2words_sentence(lang=None) disabled). `pip install -e .` above builds
+  # the default (full) feature set, so test the slim one separately.
+  test-slim:
+    name: Test slim build (as shipped on PyPI)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Build the slim extension in place
+      env:
+        # Passed by maturin's PEP 517 backend to `maturin build`.
+        MATURIN_PEP517_ARGS: --no-default-features
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        pip install -e .
+    - name: Check that the build is slim
+      run: |
+        python - <<'PY'
+        from num2words2 import num2words_sentence
+        try:
+            num2words_sentence("I have 5 apples", lang=None)
+        except NotImplementedError as e:
+            assert "without lang-detect" in str(e), e
+        else:
+            raise SystemExit("expected a slim build without lang-detect")
+        PY
+    - name: Run the test suite
+      run: python -m pytest -q tests/
+
   coveralls:
     name: Indicate completion to coveralls.io
     needs: build
@@ -115,3 +150,21 @@ jobs:
         python -c "import importlib.metadata as m, num2words2; assert num2words2.__version__ == m.version('num2words2'), (num2words2.__version__, m.version('num2words2'))"
         python -c "from num2words2 import num2words; print('English 42:', num2words(42, lang='en'))"
         python -c "from num2words2 import num2words; print('Assamese 42:', num2words(42, lang='as'))"
+
+  clippy:
+    name: Clippy (deny-level lints)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
+    # Only the correctness/suspicious groups fail the build; the remaining
+    # style/complexity warnings stay warnings (#246).
+    - name: cargo clippy
+      working-directory: rust
+      run: cargo clippy --all-targets -- -D clippy::correctness -D clippy::suspicious

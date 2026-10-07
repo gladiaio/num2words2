@@ -915,6 +915,43 @@ impl Lang for LangCa {
         Ok(self.title(&format!("{}{}", out, words)))
     }
 
+    /// Catalan fractions (#217): *mig* / *terç* / *quart* for halves, thirds
+    /// and quarters, otherwise the partitive, which is the ordinal in -è
+    /// (*un cinquè*, *dos cinquens*: -è → -ens in the plural). A denominator
+    /// whose ordinal is not an -è form (101 → "cent primer") or that the
+    /// ordinal table cannot spell (30) raises instead of guessing.
+    fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
+        if denominator.is_zero() {
+            return Err(N2WError::ZeroDivision(
+                "denominator must not be zero".into(),
+            ));
+        }
+        if denominator.is_one() || numerator.is_zero() {
+            return self.to_cardinal(numerator);
+        }
+        let is_negative = numerator.is_negative() ^ denominator.is_negative();
+        let abs_n = numerator.abs();
+        let abs_d = denominator.abs();
+        let one = abs_n.is_one();
+        let den_word = match abs_d.to_u32() {
+            Some(2) => (if one { "mig" } else { "mitjos" }).to_string(),
+            Some(3) => (if one { "terç" } else { "terços" }).to_string(),
+            Some(4) => (if one { "quart" } else { "quarts" }).to_string(),
+            _ => match self.to_ordinal(&abs_d) {
+                Ok(w) if w.ends_with('è') && !w.contains(' ') => {
+                    if one {
+                        w
+                    } else {
+                        format!("{}ens", w.trim_end_matches('è'))
+                    }
+                }
+                _ => return Err(crate::base::unsupported_mode("fraction")),
+            },
+        };
+        let sign = if is_negative { format!("{} ", self.negword().trim()) } else { String::new() };
+        Ok(format!("{}{} {}", sign, self.to_cardinal(&abs_n)?, den_word))
+    }
+
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         // Catalan has no ordinal for zero; Python returns "" (bug 5, #160).
         if value.is_zero() {
@@ -1271,6 +1308,7 @@ impl Lang for LangCa {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;

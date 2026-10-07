@@ -181,9 +181,7 @@ class Num2WordsPLTest(TestCase):
         )
         self.assertEqual(num2words(10**15, lang="pl", to="ordinal"), "biliardowy")
         self.assertEqual(num2words(10**18, lang="pl", to="ordinal"), "trylionowy")
-        self.assertEqual(
-            num2words(10**24, lang="pl", to="ordinal"), "kwadrylionowy"
-        )
+        self.assertEqual(num2words(10**24, lang="pl", to="ordinal"), "kwadrylionowy")
         self.assertEqual(num2words(10**63, lang="pl", to="ordinal"), "decyliardowy")
         self.assertEqual(
             num2words(10**12 + 10**9, lang="pl", to="ordinal"), "bilion miliardowy"

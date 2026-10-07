@@ -7,10 +7,12 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`. `base.py`'s
 //! `__init__` only builds `self.cards` / sets `self.MAXVAL` when one of those
 //! three attributes exists, so for Bashkir **neither is ever created**:
-//! `cards`/`maxval`/`merge` stay at their trait defaults here and are never
-//! consulted. There is consequently **no overflow check at all** — `to_cardinal`
-//! is overridden outright and recurses over `_int_to_word`, which is total for
-//! every integer (see "unbounded recursion" below).
+//! `cards`/`merge` stay at their trait defaults here and are never consulted.
+//! Python consequently has **no overflow check at all** — `to_cardinal` is
+//! overridden outright and recurses over `_int_to_word` for every integer (see
+//! bug 1 below). The port adds one (gladiaio/num2words2#203): `maxval` is
+//! 10^12, where "миллиард" would start to stack, and every mode raises
+//! `OverflowError` from there.
 //!
 //! `setup()` overrides two inherited attributes:
 //!   * `negword  = "минус "`  (note the **trailing space**, see below)
@@ -19,7 +21,7 @@
 //! All four in-scope modes are overridden by `Num2Word_BA`; nothing is
 //! inherited from `Num2Word_Base` except the attributes above. In particular
 //! `to_ordinal` does **not** call `verify_ordinal`, so negative ordinals are
-//! accepted rather than raising (`to_ordinal(-1)` == "минус бер-се").
+//! accepted rather than raising (`to_ordinal(-1)` == "минус беренсе").
 //!
 //! # No error paths
 //!
@@ -45,17 +47,21 @@
 //!      * 10^15 → "бер миллион миллиард"
 //!      * 10^18 → "бер миллиард миллиард"
 //!      * 10^21 → "бер мең миллиард миллиард"
-//!    All four are corpus rows. This makes `_int_to_word` **unbounded** — it
-//!    terminates for any BigInt (the quotient shrinks by 10^9 each step) rather
-//!    than raising `OverflowError`, so the value must stay a `BigInt` here.
+//!    All four are corpus rows. This makes Python's `_int_to_word`
+//!    **unbounded**, and on a large enough integer the port's recursion
+//!    overflowed the native stack. Fixed (gladiaio/num2words2#203): the port
+//!    raises `OverflowError` from 10^12, so none of the rows above is
+//!    produced any more.
 //! 2. **`negword` is used raw, not stripped.** Bashkir's `to_cardinal` does
 //!    `ret = self.negword` and concatenates directly, unlike
 //!    `Num2Word_Base.to_cardinal` which does `"%s " % self.negword.strip()`.
 //!    The two happen to agree because `negword` is exactly `"минус "`, but the
 //!    trailing space is load-bearing and is preserved verbatim in [`NEGWORD`].
-//! 3. **`to_ordinal` glues the suffix onto the bare cardinal**, giving the
-//!    invariant suffix "-се" regardless of the final word's phonology —
-//!    "нуль-се", "ун бер-се", "туғыҙ-се". No stem changes, no vowel harmony.
+//! 3. **Fixed (gladiaio/num2words2#148): `to_ordinal` glued "-се" onto the
+//!    bare cardinal** regardless of the final word's phonology — "нуль-се",
+//!    "ун бер-се", "туғыҙ-се". The port harmonises the ending on the last
+//!    word instead: "нуленсе", "ун беренсе", "туғыҙынсы", "өсөнсө"; see
+//!    [`join_ordinal`]. The digit form (`to_ordinal_num`) is unchanged.
 //! 4. **`to_ordinal_num` never validates**, so it emits "0-се" and "-1-се".
 //! 5. **Hundreds are always explicit**: 100 → "бер йөҙ" ("one hundred"), never
 //!    a bare "йөҙ". Likewise 1000 → "бер мең". Same for the recursive scales.
@@ -186,7 +192,7 @@
 //! operands Python's floor-`//`/`%` and Rust's truncating-`/`/`%` coincide, so
 //! plain `/` and `%` are used below.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -195,6 +201,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `_int_to_word`'s early return for 0.
@@ -334,18 +341,59 @@ fn int_to_word(number: &BigInt) -> String {
     out
 }
 
+/// Attach the ordinal ending to the **last word** of a spelled cardinal
+/// (gladiaio/num2words2#148). Upstream glued a fixed "-се" onto the whole
+/// cardinal ("бер-се", "өс-се", "ун-се"). Bashkir ordinals take
+/// *-(ы)нсы/-(е)нсе*, harmonised for backness, and rounded to *-(ө)нсө*
+/// after a stem whose last vowel is ө (Wiktionary,
+/// `Module:number_list/data/ba` and the entry өсөнсө):
+///
+/// * back stem (last vowel а ы о у): *-ынсы* / *-нсы* — унынсы, алтынсы, and
+///   the loan миллионынсы (attested on ba.wikipedia), so о does not round;
+/// * front stem (ә е и ү э): *-енсе* / *-нсе* — беренсе, икенсе, дүртенсе;
+/// * ө: *-өнсө* — өсөнсө, йөҙөнсө;
+/// * a final soft sign is dropped and the stem counts as front: нуль ->
+///   нуленсе ("Нуленсе меридиан", ba.wikipedia).
+///
+/// 123rd is therefore "бер йөҙ егерме өсөнсө". A cardinal that is not a word
+/// at all keeps the old hyphenated "-се".
+fn join_ordinal(cardinal: &str) -> String {
+    const VOWELS: &str = "аыоуяюёәеиөүэ";
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal),
+    };
+    if let Some(soft) = stem.strip_suffix('ь') {
+        return format!("{}{}енсе", head, soft);
+    }
+    let last = match stem.chars().filter(|c| VOWELS.contains(*c)).last() {
+        Some(v) => v,
+        None => return format!("{}-се", cardinal),
+    };
+    let (link, ending) = match last {
+        'а' | 'ы' | 'о' | 'у' | 'я' | 'ю' | 'ё' => ("ы", "нсы"),
+        'ө' => ("ө", "нсө"),
+        _ => ("е", "нсе"),
+    };
+    if stem.ends_with(|c: char| VOWELS.contains(c)) {
+        format!("{}{}{}", head, stem, ending)
+    } else {
+        format!("{}{}{}{}", head, stem, link, ending)
+    }
+}
+
 /// `Num2Word_BA.to_cardinal` restricted to integer input.
 ///
 /// Python stringifies the value, peels a leading "-" off the *string*, and
 /// feeds the rest to `int()`. With an integral input there is no "." in the
 /// string, so the `pointword` branch is dead and this reduces to sign handling
 /// plus `_int_to_word` on the magnitude.
-fn cardinal(value: &BigInt) -> String {
+fn cardinal(value: &BigInt) -> Result<String> {
     if value.is_negative() {
         // ret = self.negword  ->  "минус " (already ends in a space)
-        format!("{}{}", NEGWORD, int_to_word(&value.abs()))
+        Ok(format!("{}{}", NEGWORD, checked_int_to_word(&value.abs())?))
     } else {
-        int_to_word(value)
+        checked_int_to_word(value)
     }
 }
 
@@ -618,7 +666,7 @@ fn cardinal_from_str(n: &str) -> Result<String> {
     // `n.split(".", 1)` — the *first* dot, so "1.5e-05" splits to ("1", "5e-05").
     match n.split_once('.') {
         Some((left, right)) => {
-            ret.push_str(&int_to_word(&py_int(left)?));
+            ret.push_str(&checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
@@ -631,12 +679,12 @@ fn cardinal_from_str(n: &str) -> Result<String> {
                 }
                 // Python's `int(d)` sees a one-character string.
                 let mut buf = [0u8; 4];
-                ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+                ret.push_str(&checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
             }
             Ok(ret)
         }
         None => {
-            ret.push_str(&int_to_word(&py_int(n)?));
+            ret.push_str(&checked_int_to_word(&py_int(n)?)?);
             Ok(ret)
         }
     }
@@ -737,7 +785,29 @@ impl Default for LangBa {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the scale table stops at
+/// миллиард (10^9), so from 10^12 the module would stack "миллиард" on
+/// itself.
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl Lang for LangBa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -772,7 +842,7 @@ impl Lang for LangBa {
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        Ok(cardinal(value))
+        cardinal(value)
     }
 
     /// `Num2Word_BA.to_cardinal` reached with a `float` or a `Decimal`.
@@ -804,9 +874,10 @@ impl Lang for LangBa {
         cardinal_from_str(&n)
     }
 
-    /// `return self.to_cardinal(number) + "-се"`
+    /// `return self.to_cardinal(number) + "-се"` upstream; the ending is now
+    /// harmonised on the last word (bug 3, fixed — see [`join_ordinal`]).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}-се", cardinal(value)))
+        Ok(join_ordinal(&cardinal(value)?))
     }
 
     /// `return str(number) + "-се"` — no validation, so "-1-се" is expected.
@@ -817,7 +888,7 @@ impl Lang for LangBa {
     /// `return self.to_cardinal(val) + " йыл"` — the `longval` parameter is
     /// accepted and then ignored by Python; years get no special casing.
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{} йыл", cardinal(value)))
+        Ok(format!("{} йыл", cardinal(value)?))
     }
 
     // ---- float / Decimal entry routing --------------------------------
@@ -827,11 +898,11 @@ impl Lang for LangBa {
     // does: the ordinal suffix / year word wraps the *full* decimal phrase
     // (or, for `to_ordinal_num`, the raw `str(number)`).
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-се"` —
-    /// "биш өтөр нуль-се" for 5.0; the exponential-form ValueError from the
+    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number)` + the ordinal
+    /// ending — "биш өтөр нуленсе" for 5.0; the exponential-form ValueError from the
     /// cardinal propagates unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}-се", self.cardinal_float_entry(value, None)?))
+        Ok(join_ordinal(&self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "-се"` — no `int()`,
@@ -953,7 +1024,7 @@ impl Lang for LangBa {
         let is_negative = val.is_negative();
         let (left, right) = split_currency(val);
 
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         let mut result = format!("{} {}", left_str, forms.unit[0]);
 
         // `if cents and right` — a zero `right` is falsy, so a float with no
@@ -961,7 +1032,7 @@ impl Lang for LangBa {
         // *not* the terse path: cents=False emits nothing at all.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(&forms.subunit[0]);
         }
@@ -977,6 +1048,7 @@ impl Lang for LangBa {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1031,9 +1103,9 @@ mod tests {
             ("1.10", "бер өтөр бер нуль"),
             ("12.345", "ун ике өтөр өс дүрт биш"),
             (
-                "98746251323029.99",
-                "туҡһан һигеҙ мең ете йөҙ ҡырҡ алты миллиард ике йөҙ илле бер миллион \
-                 өс йөҙ егерме өс мең егерме туғыҙ өтөр туғыҙ туғыҙ",
+                "98746251323.99",
+                "туҡһан һигеҙ миллиард ете йөҙ ҡырҡ алты миллион ике йөҙ илле бер мең \
+                 өс йөҙ егерме өс өтөр туғыҙ туғыҙ",
             ),
             ("0.001", "нуль өтөр нуль нуль бер"),
         ] {
@@ -1113,7 +1185,9 @@ mod tests {
     #[test]
     fn plain_reprs_at_the_exponential_edges_do_not_raise() {
         // decpt == 16: the last fixed-notation decade.
-        assert_eq!(cardinal_f(1e15).unwrap(), "бер миллион миллиард өтөр нуль");
+        assert_eq!(cardinal_f(1e11).unwrap(), "бер йөҙ миллиард өтөр нуль");
+        // 1e15 is past the #203 ceiling (10^12) but still fixed notation.
+        assert!(matches!(cardinal_f(1e15), Err(N2WError::Overflow(_))));
         // decpt == -3: the last fixed-notation decade going down.
         assert_eq!(
             cardinal_f(0.0001).unwrap(),
@@ -1136,8 +1210,9 @@ mod tests {
         assert_eq!(float_str(2050093655521678.25), "2050093655521678.2");
         assert_eq!(float_str(-145360241606786.125), "-145360241606786.12");
         assert_eq!(float_str(106779538212252.625), "106779538212252.62");
-        // The digit reaches the output: "ике", not "өс".
-        assert!(cardinal_f(1962311374373454.25).unwrap().ends_with("ике"));
+        // Every exact 17-digit tie is far past the #203 ceiling (10^12), so
+        // the reading itself now overflows.
+        assert!(matches!(cardinal_f(1962311374373454.25), Err(N2WError::Overflow(_))));
     }
 
     /// [`float_str`] is CPython's `repr`, not Rust's `{}`.
@@ -1227,6 +1302,6 @@ mod tests {
         let l = LangBa::new();
         assert_eq!(l.to_cardinal(&BigInt::from(0)).unwrap(), "нуль");
         assert_eq!(l.to_cardinal(&BigInt::from(-12)).unwrap(), "минус ун ике");
-        assert_eq!(l.to_ordinal(&BigInt::from(11)).unwrap(), "ун бер-се");
+        assert_eq!(l.to_ordinal(&BigInt::from(11)).unwrap(), "ун беренсе");
     }
 }

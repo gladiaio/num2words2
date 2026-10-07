@@ -4,11 +4,14 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python's
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
 //! `MAXVAL`. `to_cardinal` is overridden outright and drives a recursive
-//! `_int_to_word`. Consequently `cards`/`maxval`/`merge` stay at their trait
-//! defaults here, and there is **no overflow check and no ceiling at all** —
-//! the top branch of `_int_to_word` recurses on `number // 10**8`
-//! indefinitely, stacking "དུང་ཕྱུར་" once per 10^8 factor. `to_cardinal(10**21)`
-//! is therefore "གཅིག་འབུམ་དུང་ཕྱུར་དུང་ཕྱུར་", not an `OverflowError`.
+//! `_int_to_word`. Consequently `cards`/`merge` stay at their trait defaults
+//! here, and Python has **no overflow check and no ceiling at all** — the top
+//! branch of `_int_to_word` recurses on `number // 10**8` indefinitely,
+//! stacking "དུང་ཕྱུར་" once per 10^8 factor (`to_cardinal(10**21)` is
+//! "གཅིག་འབུམ་དུང་ཕྱུར་དུང་ཕྱུར་"). On a large enough integer the port's
+//! recursion overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^16, where the multiplier would
+//! itself need "དུང་ཕྱུར་", and every mode raises `OverflowError` from there.
 //!
 //! `setup()` sets `negword = "མེད་ཆ་ "` (note the **trailing ASCII space**, which
 //! is part of the literal) and `pointword = "ཚེག་"`.
@@ -85,8 +88,8 @@
 //! For the four integer modes: none. Every in-scope path is total for integer
 //! input: `_int_to_word` only ever indexes `ones`/`tens` with a value it has
 //! already bounded to 0..=9, and the sign is stripped before recursion begins,
-//! so no `IndexError`, `KeyError` or `ValueError` site exists. There is no
-//! `MAXVAL`, hence no `OverflowError` either.
+//! so no `IndexError`, `KeyError` or `ValueError` site exists. The only
+//! error is the port's `OverflowError` at the 10^16 ceiling (#203).
 //!
 //! The currency surface adds two, both detailed below: `NotImplementedError`
 //! from `to_cheque` on an unknown code, and `ValueError` from `_split_currency`
@@ -143,7 +146,7 @@
 //! the only live path. It is ported as straight-line code with no error plumbing,
 //! because the exception is unconditional and always swallowed.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -151,6 +154,7 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `_int_to_word`'s early return for 0.
 const ZERO_WORD: &str = "ཀླད་ཀོར་";
@@ -688,7 +692,29 @@ impl LangBo {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// དུང་ཕྱུར་ (10^8), so from 10^16 its multiplier would itself need དུང་ཕྱུར་
+/// and the word would stack.
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(16))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl Lang for LangBo {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -738,7 +764,7 @@ impl Lang for LangBo {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", prefix, int_to_word(&magnitude)))
+        Ok(format!("{}{}", prefix, checked_int_to_word(&magnitude)?))
     }
 
     /// Port of `Num2Word_BO.to_ordinal`: `to_cardinal(number) + "པ་"`.
@@ -832,12 +858,12 @@ impl Lang for LangBo {
         // `split(".", 1)` — the first "." only.
         let Some((left, right)) = n.split_once('.') else {
             // else: return ret + self._int_to_word(int(n))
-            ret.push_str(&int_to_word(&int_token(n)?));
+            ret.push_str(&checked_int_to_word(&int_token(n)?)?);
             return Ok(ret);
         };
 
         // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
-        ret.push_str(&int_to_word(&int_token(left)?));
+        ret.push_str(&checked_int_to_word(&int_token(left)?)?);
         ret.push(' ');
         // POINTWORD is `setup()`'s literal, the same string `pointword()`
         // reports; Python reads the attribute this const stands for.
@@ -848,7 +874,7 @@ impl Lang for LangBo {
         let mut fraction = Vec::new();
         for d in right.chars() {
             let mut buf = [0u8; 4];
-            fraction.push(int_to_word(&int_token(d.encode_utf8(&mut buf))?));
+            fraction.push(checked_int_to_word(&int_token(d.encode_utf8(&mut buf))?)?);
         }
         ret.push_str(&fraction.join(" "));
         Ok(ret)
@@ -1016,7 +1042,7 @@ impl Lang for LangBo {
             .or_else(|| self.currency_forms.get(FALLBACK_CURRENCY))
             .expect("CURRENCY_FORMS always carries the CNY fallback entry");
 
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         // `cents and right` — a zero `right` is falsy, so no cents segment.
         // `_int_to_word` is never "" for a non-zero input, so testing the
         // Python string for truthiness is the same as testing this condition.
@@ -1025,7 +1051,7 @@ impl Lang for LangBo {
         let mut result = format!("{} {}", left_str, forms.unit[0]);
         if show_cents {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&checked_int_to_word(&right)?);
             result.push(' ');
             result.push_str(&forms.subunit[0]);
         }

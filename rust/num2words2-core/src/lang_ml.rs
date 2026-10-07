@@ -10,8 +10,7 @@
 //! never sets `MAXVAL`. `to_cardinal` is overridden outright and drives a
 //! recursive `_int_to_word` over the Indian lakh/crore scale. Consequently
 //! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — see bug 4 below for what happens past the top of
-//! the scale.
+//! no overflow check in Python; the port's `maxval` is 10^14 (bug 4).
 //!
 //! ML overrides all four of `to_cardinal`, `to_ordinal`, `to_ordinal_num` and
 //! `to_year`, plus `to_currency`. Inherited from `Num2Word_Base` and left
@@ -62,14 +61,16 @@
 //! 3. **Hundreds/thousands are not idiomatic**: the code always writes the
 //!    multiplier, so 100 is "ഒന്ന് നൂറ്" ("one hundred") and 1000 is
 //!    "ഒന്ന് ആയിരം" ("one thousand") where Malayalam would say "നൂറ്" /
-//!    "ആയിരം" alone. Likewise tens compose as bare juxtaposition — 21 is
-//!    "ഇരുപത് ഒന്ന്", not the fused "ഇരുപത്തിയൊന്ന്".
-//! 4. **Past 10^9 the converter gives up and returns the decimal digits.**
-//!    The final `else` of `_int_to_word` is `return str(number)`, so
-//!    `to_cardinal(10**9)` == "1000000000" and `to_ordinal(10**9)` ==
-//!    "1000000000ാം". This is a silent fallback, not an `OverflowError` — the
-//!    scale only reaches 99 crore even though the crore/lakh system continues
-//!    well past it. Modelled by the final arm of [`LangMl::int_to_word`].
+//!    "ആയിരം" alone. Two parts are fixed (gladiaio/num2words2#247): tens
+//!    composed as bare juxtaposition — 21 was "ഇരുപത് ഒന്ന്", now the fused
+//!    "ഇരുപത്തിയൊന്ന്" ([`BELOW_HUNDRED`]) — and a lakh/crore multiplier of
+//!    one takes the attributive form: "ഒരു ലക്ഷം", not "ഒന്ന് ലക്ഷം".
+//! 4. **Past 10^9 Python returned the decimal digits (fixed,
+//!    gladiaio/num2words2#147).** The final `else` of `_int_to_word` was
+//!    `return str(number)`, so 10^9 was "1000000000". Malayalam has no word
+//!    above കോടി in standard use; the port spells the crore count, as
+//!    "നൂറ് കോടി" (hundred crore) and "ലക്ഷം കോടി" are used, and raises
+//!    `OverflowError` from 10^14, where that count would itself need കോടി.
 //! 5. **`to_year` emits an ASCII "BC " prefix** for negative years
 //!    (`to_year(-44)` == "BC നാല്പത് നാല്") and applies no era word at all
 //!    for positive ones — the `else` arm is a no-op `"" + self.to_cardinal(val)`.
@@ -114,8 +115,14 @@
 //! calling `int()`, so `_int_to_word` only ever receives a non-negative value.
 //! It is reproduced in [`LangMl::int_to_word`] anyway so the function matches
 //! its Python counterpart line for line.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ഡോളർ / യൂറോ with സെന്റ്. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -123,42 +130,29 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
-/// `self.ones`. Index 0 is the empty string, exactly as in Python — it is
-/// never read, because `_int_to_word` returns `self.zero` for 0 before the
-/// `number < 10` branch and the hundreds branch only indexes 1..=9.
-const ONES: [&str; 10] = [
-    "", "ഒന്ന്", "രണ്ട്", "മൂന്ന്", "നാല്", "അഞ്ച്", "ആറ്", "ഏഴ്", "എട്ട്", "ഒൻപത്",
-];
-
-/// `self.tens`, indexed by `number // 10` (2..=9 in practice; index 1 is
-/// shadowed by the teens branch and index 0 is unreachable).
-const TENS: [&str; 10] = [
-    "",
-    "പത്ത്",
-    "ഇരുപത്",
-    "മുപ്പത്",
-    "നാല്പത്",
-    "അമ്പത്",
-    "അറുപത്",
-    "എഴുപത്",
-    "എൺപത്",
-    "തൊണ്ണൂറ്",
-];
-
-/// `self.teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "പത്ത്",
-    "പതിനൊന്ന്",
-    "പന്ത്രണ്ട്",
-    "പതിമൂന്ന്",
-    "പതിനാല്",
-    "പതിനഞ്ച്",
-    "പതിനാറ്",
-    "പതിനേഴ്",
-    "പതിനെട്ട്",
-    "പത്തൊൻപത്",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and juxtaposed a ten and a unit
+/// ("ഇരുപത് ഒന്ന്" for 21). Malayalam composes 21..=99 from the ten's
+/// combining form (ഇരുപത്തി-, മുപ്പത്തി-, ..., തൊണ്ണൂറ്റി-) and the unit,
+/// written as one word, with a glide യ before a vowel: 21 ഇരുപത്തിയൊന്ന്,
+/// 23 ഇരുപത്തിമൂന്ന്, 25 ഇരുപത്തിയഞ്ച് (Omniglot, Wikipedia "Malayalam
+/// numerals", learnentry.com). 1..=20 and the round tens are the module's own
+/// words. Index 0 is never read.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "ഒന്ന്", "രണ്ട്", "മൂന്ന്", "നാല്", "അഞ്ച്", "ആറ്", "ഏഴ്", "എട്ട്", "ഒൻപത്", // 0..9
+    "പത്ത്", "പതിനൊന്ന്", "പന്ത്രണ്ട്", "പതിമൂന്ന്", "പതിനാല്", "പതിനഞ്ച്", "പതിനാറ്", "പതിനേഴ്", "പതിനെട്ട്", "പത്തൊൻപത്", // 10..19
+    "ഇരുപത്", "ഇരുപത്തിയൊന്ന്", "ഇരുപത്തിരണ്ട്", "ഇരുപത്തിമൂന്ന്", "ഇരുപത്തിനാല്", "ഇരുപത്തിയഞ്ച്", "ഇരുപത്തിയാറ്", "ഇരുപത്തിയേഴ്", "ഇരുപത്തിയെട്ട്", "ഇരുപത്തിയൊൻപത്", // 20..29
+    "മുപ്പത്", "മുപ്പത്തിയൊന്ന്", "മുപ്പത്തിരണ്ട്", "മുപ്പത്തിമൂന്ന്", "മുപ്പത്തിനാല്", "മുപ്പത്തിയഞ്ച്", "മുപ്പത്തിയാറ്", "മുപ്പത്തിയേഴ്", "മുപ്പത്തിയെട്ട്", "മുപ്പത്തിയൊൻപത്", // 30..39
+    "നാല്പത്", "നാല്പത്തിയൊന്ന്", "നാല്പത്തിരണ്ട്", "നാല്പത്തിമൂന്ന്", "നാല്പത്തിനാല്", "നാല്പത്തിയഞ്ച്", "നാല്പത്തിയാറ്", "നാല്പത്തിയേഴ്", "നാല്പത്തിയെട്ട്", "നാല്പത്തിയൊൻപത്", // 40..49
+    "അമ്പത്", "അമ്പത്തിയൊന്ന്", "അമ്പത്തിരണ്ട്", "അമ്പത്തിമൂന്ന്", "അമ്പത്തിനാല്", "അമ്പത്തിയഞ്ച്", "അമ്പത്തിയാറ്", "അമ്പത്തിയേഴ്", "അമ്പത്തിയെട്ട്", "അമ്പത്തിയൊൻപത്", // 50..59
+    "അറുപത്", "അറുപത്തിയൊന്ന്", "അറുപത്തിരണ്ട്", "അറുപത്തിമൂന്ന്", "അറുപത്തിനാല്", "അറുപത്തിയഞ്ച്", "അറുപത്തിയാറ്", "അറുപത്തിയേഴ്", "അറുപത്തിയെട്ട്", "അറുപത്തിയൊൻപത്", // 60..69
+    "എഴുപത്", "എഴുപത്തിയൊന്ന്", "എഴുപത്തിരണ്ട്", "എഴുപത്തിമൂന്ന്", "എഴുപത്തിനാല്", "എഴുപത്തിയഞ്ച്", "എഴുപത്തിയാറ്", "എഴുപത്തിയേഴ്", "എഴുപത്തിയെട്ട്", "എഴുപത്തിയൊൻപത്", // 70..79
+    "എൺപത്", "എൺപത്തിയൊന്ന്", "എൺപത്തിരണ്ട്", "എൺപത്തിമൂന്ന്", "എൺപത്തിനാല്", "എൺപത്തിയഞ്ച്", "എൺപത്തിയാറ്", "എൺപത്തിയേഴ്", "എൺപത്തിയെട്ട്", "എൺപത്തിയൊൻപത്", // 80..89
+    "തൊണ്ണൂറ്", "തൊണ്ണൂറ്റിയൊന്ന്", "തൊണ്ണൂറ്റിരണ്ട്", "തൊണ്ണൂറ്റിമൂന്ന്", "തൊണ്ണൂറ്റിനാല്", "തൊണ്ണൂറ്റിയഞ്ച്", "തൊണ്ണൂറ്റിയാറ്", "തൊണ്ണൂറ്റിയേഴ്", "തൊണ്ണൂറ്റിയെട്ട്", "തൊണ്ണൂറ്റിയൊൻപത്", // 90..99
 ];
 
 const NEGWORD: &str = "മൈനസ് ";
@@ -167,6 +161,10 @@ const THOUSAND: &str = "ആയിരം";
 const LAKH: &str = "ലക്ഷം";
 const CRORE: &str = "കോടി";
 const ZERO_WORD: &str = "പൂജ്യം";
+
+/// The attributive "one" before ലക്ഷം/കോടി (#247): ഒരു ലക്ഷം, ഒരു കോടി,
+/// where Python wrote the counting form ("ഒന്ന് ലക്ഷം").
+const ONE_ATTRIBUTIVE: &str = "ഒരു";
 
 /// The generic ordinal suffix: U+0D3E MALAYALAM VOWEL SIGN AA followed by
 /// U+0D02 MALAYALAM SIGN ANUSVARA. Appended raw to the cardinal — see bug 1.
@@ -438,13 +436,31 @@ impl LangMl {
         currency_forms.insert("INR", CurrencyForms::new(&["രൂപ", "രൂപ"], &["പൈസ", "പൈസ"]));
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["ഡോളർ", "ഡോളർ"], &["സെന്റ്", "സെന്റ്"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["യൂറോ", "യൂറോ"], &["സെന്റ്", "സെന്റ്"]),
         );
         LangMl { currency_forms }
+    }
+
+    /// `int_to_word` behind [`maxval_ceiling`], checked before the first
+    /// recursive step. Every entry point that hands over a caller-supplied
+    /// integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
+    /// The multiplier in front of ലക്ഷം/കോടി: [`ONE_ATTRIBUTIVE`] for one,
+    /// the plain cardinal otherwise.
+    fn multiplier(&self, n: &BigInt) -> String {
+        if n.is_one() {
+            ONE_ATTRIBUTIVE.to_string()
+        } else {
+            self.int_to_word(n)
+        }
     }
 
     /// Python's `_int_to_word`.
@@ -467,39 +483,20 @@ impl LangMl {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
         }
 
-        let ten = BigInt::from(10);
-        let twenty = BigInt::from(20);
         let hundred = BigInt::from(100);
         let thousand = BigInt::from(1000);
         let lakh = BigInt::from(100_000);
         let crore = BigInt::from(10_000_000);
-        let billion = BigInt::from(1_000_000_000);
-
-        if number < &ten {
-            // 1..=9: `to_usize` cannot fail.
-            return ONES[number.to_usize().unwrap()].to_string();
-        }
-
-        if number < &twenty {
-            let i = (number - &ten).to_usize().unwrap();
-            return TEENS[i].to_string();
-        }
 
         if number < &hundred {
-            let (div, rem) = number.div_mod_floor(&ten);
-            let mut result = TENS[div.to_usize().unwrap()].to_string();
-            if !rem.is_zero() {
-                result.push(' ');
-                result.push_str(ONES[rem.to_usize().unwrap()]);
-            }
-            return result;
+            return BELOW_HUNDRED[number.to_usize().unwrap()].to_string();
         }
 
         if number < &thousand {
             // Note: Python indexes `self.ones` directly here rather than
             // recursing, so the multiplier is always a bare 1..=9 word.
             let (div, rem) = number.div_mod_floor(&hundred);
-            let mut result = format!("{} {}", ONES[div.to_usize().unwrap()], HUNDRED);
+            let mut result = format!("{} {}", BELOW_HUNDRED[div.to_usize().unwrap()], HUNDRED);
             if !rem.is_zero() {
                 result.push(' ');
                 result.push_str(&self.int_to_word(&rem));
@@ -519,7 +516,7 @@ impl LangMl {
 
         if number < &crore {
             let (div, rem) = number.div_mod_floor(&lakh);
-            let mut result = format!("{} {}", self.int_to_word(&div), LAKH);
+            let mut result = format!("{} {}", self.multiplier(&div), LAKH);
             if !rem.is_zero() {
                 result.push(' ');
                 result.push_str(&self.int_to_word(&rem));
@@ -527,18 +524,17 @@ impl LangMl {
             return result;
         }
 
-        if number < &billion {
+        // Python stopped at 10^9 and returned `str(number)` (bug 4, fixed):
+        // the crore count is spelled out up to the 10^14 ceiling.
+        {
             let (div, rem) = number.div_mod_floor(&crore);
-            let mut result = format!("{} {}", self.int_to_word(&div), CRORE);
+            let mut result = format!("{} {}", self.multiplier(&div), CRORE);
             if !rem.is_zero() {
                 result.push(' ');
                 result.push_str(&self.int_to_word(&rem));
             }
-            return result;
+            result
         }
-
-        // Bug 4: `return str(number)` — the digits, not words, and no raise.
-        number.to_string()
     }
 
     /// Python's
@@ -680,13 +676,13 @@ impl LangMl {
         };
 
         let Some(dot) = n.find('.') else {
-            ret.push_str(&self.int_to_word(&py_int(n)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(n)?)?);
             return Ok(ret);
         };
 
         // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
         let (left, right) = (&n[..dot], &n[dot + 1..]);
-        ret.push_str(&self.int_to_word(&py_int(left)?));
+        ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
         ret.push(' ');
         // Python appends `self.pointword` verbatim — no `title()`, unlike the
         // base `to_cardinal_float`.
@@ -707,7 +703,21 @@ impl LangMl {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147). The scale stops at
+/// കോടി (10^7); above it the crore count is spelled out (the everyday
+/// "hundred crore", "lakh crore") until that count
+/// would itself need കോടി at 10^14. Python returned the digits from
+/// 10^9 up; this raises `OverflowError` from 10^14 instead.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangMl {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -754,7 +764,7 @@ impl Lang for LangMl {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Python's `to_ordinal`: five hardcoded special forms, then the generic
@@ -936,7 +946,7 @@ impl Lang for LangMl {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             if left.is_one() {
                 &forms.unit[0]
             } else {

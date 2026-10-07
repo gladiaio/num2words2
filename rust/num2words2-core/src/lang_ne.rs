@@ -6,13 +6,13 @@
 //! **no** `self.cards` and never sets `self.MAXVAL` (verified:
 //! `hasattr(c, "cards") == False`, `hasattr(c, "MAXVAL") == False`).
 //! `to_cardinal` is overridden outright and drives a private `_int_to_word`
-//! recursion. Consequently `cards`/`maxval`/`merge` stay at their trait
-//! defaults here, and there is **no overflow check at all** — arbitrarily large
-//! input is accepted and silently degrades (see bug 1 below).
+//! recursion. Consequently `cards`/`merge` stay at their trait defaults
+//! here. Python had no overflow check at all; the port's `maxval` is 10^34,
+//! where the multiplier of शंख (10^17) would itself need शंख (see bug 1).
 //!
 //! Numbers use the South Asian scale: `हजार` (thousand, 10^3), `लाख` (lakh,
-//! 10^5), `करोड` (crore, 10^7). So 10^6 is "दस लाख" (ten lakh), not "one
-//! million".
+//! 10^5), `करोड` (crore, 10^7), then अर्ब, खर्ब, नील, पद्म, शंख (10^9 ..
+//! 10^17). So 10^6 is "दस लाख" (ten lakh), not "one million".
 //!
 //! Inherited from `Num2Word_Base` — nothing relevant. NE overrides all four
 //! in-scope methods (`to_cardinal`, `to_ordinal`, `to_ordinal_num`, `to_year`),
@@ -26,20 +26,17 @@
 //! This is a port, not a rewrite. All of the following are wrong-looking but
 //! are exactly what Python emits, verified against the interpreter:
 //!
-//! 1. **The 10^9 cliff.** `_int_to_word`'s final `else` is
-//!    `return str(number)  # Fallback for very large numbers` — so every value
-//!    `>= 1_000_000_000` comes back as **bare ASCII digits**, not words:
-//!    `to_cardinal(10**9) == "1000000000"` and
-//!    `to_cardinal(10**21) == "1000000000000000000000"`. The sign is stripped
-//!    by `to_cardinal` before `_int_to_word` runs, so a negative large value
-//!    mixes scripts: `to_cardinal(-10**9) == "ऋण 1000000000"`. Modelled by the
-//!    early `return number.to_string()` in [`LangNe::int_to_word`].
-//!    Note the ceiling is 10^9 even though the largest scale word is `करोड`
-//!    (10^7), so only 10^7..10^9 ever uses `करोड` — i.e. at most "99 करोड".
-//! 2. **Ordinal suffix on digits.** `to_ordinal` appends "औं" to whatever
-//!    `to_cardinal` returned, with no separator and no re-check, so bug 1
-//!    leaks through: `to_ordinal(10**9) == "1000000000औं"` — a Devanagari
-//!    suffix glued to an ASCII numeral.
+//! 1. **The 10^9 cliff (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` ended in `return str(number)`, so every value
+//!    `>= 1_000_000_000` came back as bare ASCII digits. The port continues
+//!    the Indian ladder with अर्ब (10^9), खर्ब (10^11), नील (10^13), पद्म
+//!    (10^15) and शंख (10^17), and the quotient of शंख recurses:
+//!    `to_cardinal(10**9) == "एक अर्ब"`, `to_cardinal(10**21) ==
+//!    "दस हजार शंख"`. From 10^34 it raises `OverflowError`. See
+//!    [`HIGH_SCALE`].
+//! 2. **Ordinal suffix on the cardinal.** `to_ordinal` appends "औं" to
+//!    whatever `to_cardinal` returned, with no separator and no re-check:
+//!    `to_ordinal(10**9) == "एक अर्बऔं"`.
 //! 3. **Negative ordinals do not raise.** `to_ordinal(-1) == "ऋण एकऔं"`.
 //!    Most languages route through `verify_ordinal` and raise `TypeError` for
 //!    negatives; NE never calls it.
@@ -49,11 +46,12 @@
 //!    style. The positive branch is literally `return "" + self.to_cardinal(val)`;
 //!    the empty-string concat is a no-op, reproduced as a plain delegation.
 //!    Its `longval=True` parameter is accepted and never read.
-//! 5. **No teen/ten compounding.** `tens` are joined to `ones` with a plain
-//!    space rather than the fused Nepali forms, so 21 is "बीस एक"
-//!    (lit. "twenty one") rather than "एक्काइस", and 99 is "नब्बे नौ". This
-//!    propagates everywhere, e.g. 123456789 == "बाह्र करोड तीस चार लाख पचास छ
-//!    हजार सात सय असी नौ". Kept verbatim.
+//! 5. **No teen/ten compounding (fixed, gladiaio/num2words2#247).** Python
+//!    joined `tens` and `ones` with a space, so 21 was "बीस एक" (lit.
+//!    "twenty one") and 99 "नब्बे नौ". Nepali has its own word for every
+//!    number below a hundred; the port reads them from [`BELOW_HUNDRED`]:
+//!    21 is "एक्काइस", 99 "उनान्सय", 123456789 "बाह्र करोड चौंतीस लाख
+//!    छपन्न हजार सात सय उनानब्बे".
 //!
 //! # Float/Decimal routing (the `*_float_entry` hooks)
 //!
@@ -78,9 +76,8 @@
 //!   non-finite floats on the Python side). A dotted e-form like
 //!   `str(1.5e16)` == "1.5e+16" splits at the dot and dies on `int('e')`
 //!   instead. See [`py_int`] and [`LangNe::cardinal_from_str`].
-//! * **The 10^9 cliff (bug 1) leaks into the integer part**:
-//!   `1000000000.0` == "1000000000 दशमलव शून्य" — ASCII digits before the
-//!   point.
+//! * **The integer part uses the full scale (bug 1, fixed)**:
+//!   `1000000000.0` == "एक अर्ब दशमलव शून्य".
 //!
 //! The other modes follow `to_cardinal`'s lead:
 //!
@@ -111,9 +108,9 @@
 //!
 //! # Error variants
 //!
-//! **Integer modes: none reachable.** Every in-scope integer input returns
-//! `Ok`; there is no overflow check, no table lookup that can miss, and no
-//! `int()` of a bad token. All 305 in-scope corpus rows are `ok: true`.
+//! **Integer modes**: only `OverflowError` at or past `maxval` (10^34, bug
+//! 1); there is no table lookup that can miss and no `int()` of a bad
+//! token.
 //!
 //! **Float/Decimal/string modes**: `ValueError` when `str(number)` is not
 //! plain digits — exponent-form repr ("1e+16", "1E+2") and "Infinity" (see
@@ -175,19 +172,26 @@
 //! 11. **`negword` is used raw, not stripped.** `self.negword + result` where
 //!    base does `"%s " % self.negword.strip()`. Both give "ऋण " because the
 //!    literal already ends in exactly one space.
-//! 12. **The 10^9 cliff (bug 1) leaks into money.** `to_currency` renders both
-//!    halves through `_int_to_word`, not `to_cardinal`, so
-//!    `to_currency(10**9, currency="EUR") == "1000000000 euros"` — ASCII
-//!    digits with an English unit (verified).
+//! 12. **Money uses `_int_to_word` directly**, not `to_cardinal`, so it
+//!    shares the scale fix of bug 1: `to_currency(10**9, currency="EUR") ==
+//!    "एक अर्ब युरो"` (Python gave "1000000000 euros").
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use डलर / युरो with सेन्ट. Examples in these docs
+//! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
+use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `setup()`: `self.negword`. Note the **trailing space** — it is load-bearing,
 /// since `to_cardinal` concatenates it directly onto the word with no
@@ -201,24 +205,25 @@ const POINTWORD: &str = "दशमलव";
 /// `setup()`: `self.zero`.
 const ZERO: &str = "शून्य";
 
-/// `setup()`: `self.ones`. Index 0 is `""` in Python and is never reachable —
-/// `_int_to_word` returns `self.zero` for 0 before any `ones` lookup, and the
-/// hundreds branch indexes `number // 100`, which is >= 1 there. Kept verbatim.
-const ONES: [&str; 10] = [
-    "", "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "आठ", "नौ",
-];
-
-/// `setup()`: `self.tens`. Indices 0 and 1 are unreachable — the branch that
-/// reads this table is guarded by `20 <= number < 100`, so `number // 10` is
-/// always 2..=9. (`tens[1]` == "दस" duplicates `teens[0]`; 10 is served by the
-/// teens branch.) Kept verbatim.
-const TENS: [&str; 10] = [
-    "", "दस", "बीस", "तीस", "चालीस", "पचास", "साठी", "सत्तरी", "असी", "नब्बे",
-];
-
-/// `setup()`: `self.teens`, indexed by `number - 10` for `10 <= number < 20`.
-const TEENS: [&str; 10] = [
-    "दस", "एघार", "बाह्र", "तेह्र", "चौध", "पन्ध्र", "सोह्र", "सत्र", "अठार", "उन्नाइस",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and joined tens and units with a space
+/// ("बीस एक" for 21), which is not Nepali: every number below a hundred has
+/// its own word. Index 0 is never read — `int_to_word` returns [`ZERO`]
+/// first. Spellings from Wiktionary's Nepali cardinal-number entries,
+/// cross-checked against Wikipedia "Numbers in Nepali language" and
+/// Omniglot; the short-i forms (एक्काइस, बाइस) match the module's उन्नाइस.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "आठ", "नौ", // 0..9
+    "दस", "एघार", "बाह्र", "तेह्र", "चौध", "पन्ध्र", "सोह्र", "सत्र", "अठार", "उन्नाइस", // 10..19
+    "बीस", "एक्काइस", "बाइस", "तेइस", "चौबीस", "पच्चीस", "छब्बीस", "सत्ताइस", "अट्ठाइस", "उनन्तीस", // 20..29
+    "तीस", "एकतीस", "बत्तीस", "तेत्तीस", "चौंतीस", "पैंतीस", "छत्तीस", "सैंतीस", "अठतीस", "उनन्चालीस", // 30..39
+    "चालीस", "एकचालीस", "बयालीस", "त्रिचालीस", "चवालीस", "पैंतालीस", "छयालीस", "सतचालीस", "अठचालीस", "उनन्चास", // 40..49
+    "पचास", "एकाउन्न", "बाउन्न", "त्रिपन्न", "चउन्न", "पचपन्न", "छपन्न", "सन्ताउन्न", "अन्ठाउन्न", "उनन्साठी", // 50..59
+    "साठी", "एकसट्ठी", "बयसट्ठी", "त्रिसट्ठी", "चौंसट्ठी", "पैंसट्ठी", "छयसट्ठी", "सतसट्ठी", "अठसट्ठी", "उनन्सत्तरी", // 60..69
+    "सत्तरी", "एकहत्तर", "बहत्तर", "त्रिहत्तर", "चौहत्तर", "पचहत्तर", "छयहत्तर", "सतहत्तर", "अठहत्तर", "उनासी", // 70..79
+    "असी", "एकासी", "बयासी", "त्रियासी", "चौरासी", "पचासी", "छयासी", "सतासी", "अठासी", "उनानब्बे", // 80..89
+    "नब्बे", "एकानब्बे", "बयानब्बे", "त्रियानब्बे", "चौरानब्बे", "पन्चानब्बे", "छयानब्बे", "सन्तानब्बे", "अन्ठानब्बे", "उनान्सय", // 90..99
 ];
 
 /// `setup()`: `self.hundred` (10^2).
@@ -230,8 +235,21 @@ const LAKH: &str = "लाख";
 /// `setup()`: `self.crore` (10^7).
 const CRORE: &str = "करोड";
 
-/// The exclusive ceiling of `_int_to_word`'s word-producing range. At or above
-/// this, Python falls through to `str(number)` — see bug 1 in the module docs.
+/// The scale words above the crore, as `(power of ten, word)`, largest first
+/// (gladiaio/num2words2#147). Python stopped at करोड and returned the digits
+/// from 10^9 up. अर्ब and खर्ब are the live words in Nepali news and budgets;
+/// नील, पद्म and शंख continue the same hundredfold ladder (Wikipedia
+/// "Numbers in Nepali language", the same exponents as `lang_hi.rs`). The
+/// quotient of the top word recurses, so 10^19 is "एक सय शंख".
+const HIGH_SCALE: [(u32, &str); 5] = [
+    (17, "शंख"),
+    (15, "पद्म"),
+    (13, "नील"),
+    (11, "खर्ब"),
+    (9, "अर्ब"),
+];
+
+/// The first value [`HIGH_SCALE`] handles; below it the `u64` ladder runs.
 const FALLBACK_LIMIT: u64 = 1_000_000_000;
 
 /// `self.__class__.__name__`, quoted in `to_cheque`'s NotImplementedError.
@@ -455,7 +473,7 @@ fn split_currency(val: &BigDecimal) -> Result<(BigInt, BigInt)> {
         (a.to_string(), b.to_string())
     } else {
         // str() renders a leading "0" for a pure fraction: 0.5 → "0.5".
-        ("0".to_string(), format!("{:0>width$}", s, width = scale))
+        ("0".to_string(), crate::strnum::zero_pad_left(&s, scale))
     };
 
     // `int(parts[0]) if parts[0] else 0` — the guard is unreachable (str() of
@@ -490,8 +508,8 @@ impl LangNe {
             "NPR",
             CurrencyForms::new(&["रुपैयाँ", "रुपैयाँ"], &["पैसा", "पैसा"]),
         );
-        currency_forms.insert("USD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]));
-        currency_forms.insert("EUR", CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]));
+        currency_forms.insert("USD", CurrencyForms::new(&["डलर", "डलर"], &["सेन्ट", "सेन्ट"]));
+        currency_forms.insert("EUR", CurrencyForms::new(&["युरो", "युरो"], &["सेन्ट", "सेन्ट"]));
         LangNe { currency_forms }
     }
 
@@ -502,9 +520,8 @@ impl LangNe {
     /// reach the numeric ladder the value is >= 1 and we can hand off to
     /// [`LangNe::small_to_word`] on a plain `u64`.
     ///
-    /// The `to_u64()` miss and the `>= FALLBACK_LIMIT` hit collapse into the
-    /// same arm: both are Python's `else: return str(number)`. A value too big
-    /// for `u64` is necessarily >= 10^9, so this is exact, not an approximation.
+    /// From 10^9 up (including values too big for `u64`) the [`HIGH_SCALE`]
+    /// words take over where Python returned `str(number)` (#147).
     fn int_to_word(&self, number: &BigInt) -> String {
         if number.is_zero() {
             return ZERO.to_string();
@@ -519,11 +536,31 @@ impl LangNe {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
         }
 
-        // Python: `else: return str(number)` — the "very large numbers" fallback.
-        match number.to_u64() {
-            Some(n) if n < FALLBACK_LIMIT => self.small_to_word(n),
-            _ => number.to_string(),
+        if let Some(n) = number.to_u64().filter(|&n| n < FALLBACK_LIMIT) {
+            return self.small_to_word(n);
         }
+        // 10^9 and up: the largest scale word that fits, its quotient spelled
+        // recursively. Only शंख's quotient can reach a hundred or more.
+        let ten = BigInt::from(10u8);
+        let (power, word) = HIGH_SCALE
+            .iter()
+            .find(|(p, _)| *number >= ten.pow(*p))
+            .expect("number >= 10^9 here, and HIGH_SCALE ends at 10^9");
+        let (quotient, remainder) = number.div_rem(&ten.pow(*power));
+        let mut result = format!("{} {}", self.int_to_word(&quotient), word);
+        if !remainder.is_zero() {
+            result.push(' ');
+            result.push_str(&self.int_to_word(&remainder));
+        }
+        result
+    }
+
+    /// `int_to_word` behind [`maxval_ceiling`], checked before the first
+    /// recursive step. Every entry point that hands over a caller-supplied
+    /// integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
     }
 
     /// The word-producing ladder of `_int_to_word`, on the proven domain
@@ -533,21 +570,12 @@ impl LangNe {
     /// (each is guarded by `if remainder:` in Python / `!= 0` here), so the
     /// invariant holds throughout and no index can go out of range.
     fn small_to_word(&self, n: u64) -> String {
-        if n < 10 {
-            ONES[n as usize].to_string()
-        } else if n < 20 {
-            TEENS[(n - 10) as usize].to_string()
-        } else if n < 100 {
-            let mut result = TENS[(n / 10) as usize].to_string();
-            if n % 10 != 0 {
-                result.push(' ');
-                result.push_str(ONES[(n % 10) as usize]);
-            }
-            result
+        if n < 100 {
+            BELOW_HUNDRED[n as usize].to_string()
         } else if n < 1_000 {
             // Note: the hundreds digit reads `ones` directly rather than
             // recursing, so 100 == "एक सय".
-            let mut result = format!("{} {}", ONES[(n / 100) as usize], HUNDRED);
+            let mut result = format!("{} {}", BELOW_HUNDRED[(n / 100) as usize], HUNDRED);
             let remainder = n % 100;
             if remainder != 0 {
                 result.push(' ');
@@ -616,7 +644,7 @@ impl LangNe {
         if let Some((left, right)) = n.split_once('.') {
             // `n.split(".", 1)` — str() output has at most one dot, so
             // split_once is exact.
-            let left_word = self.int_to_word(&py_int(left)?);
+            let left_word = self.checked_int_to_word(&py_int(left)?)?;
             let mut digit_words: Vec<String> = Vec::with_capacity(right.len());
             for ch in right.chars() {
                 let d = ch.to_digit(10).ok_or_else(|| {
@@ -635,7 +663,7 @@ impl LangNe {
             )
         } else {
             // `(ret + self._int_to_word(int(n))).strip()`.
-            Ok(format!("{}{}", ret, self.int_to_word(&py_int(n)?))
+            Ok(format!("{}{}", ret, self.checked_int_to_word(&py_int(n)?)?)
                 .trim()
                 .to_string())
         }
@@ -648,7 +676,20 @@ impl Default for LangNe {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147, #203): the largest scale word is
+/// शंख (10^17), so from 10^34 its multiplier would itself need शंख.
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(34))
+}
+
 impl Lang for LangNe {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -693,7 +734,7 @@ impl Lang for LangNe {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Python's `to_cardinal`, **float/Decimal arm**.
@@ -922,9 +963,9 @@ impl Lang for LangNe {
         let (cr1, cr2) = (&forms.unit, &forms.subunit);
 
         let one = BigInt::one();
-        // `self._int_to_word(left)`, not `to_cardinal` — so bug 1's 10^9 cliff
-        // surfaces here as ASCII digits (bug 12).
-        let left_str = self.int_to_word(&left);
+        // `self._int_to_word(left)`, not `to_cardinal` (bug 12), behind the
+        // same ceiling.
+        let left_str = self.checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,

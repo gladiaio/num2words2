@@ -42,7 +42,7 @@ The original `num2words` library by Savoir-faire Linux became unmaintained and c
 - 3-decimal currencies (BHD, KWD, OMR, JOD, TND, LYD, IQD)
 - Bank-cheque format (`to='cheque'`)
 - Fractions: `num2words('1/3')` → `'one third'` (idiomatic forms in `en`/`fr`/`es`/`it`/`pt`/`de`)
-- Aviation/ICAO English (`en_Aero_ICAO` and friends), with FAA/USN/US_Army/NATO profiles plus per-context phraseology (altitude, flight level, heading, squawk, runway, frequency)
+- Aviation/ICAO English (`en_Aero_ICAO` and the FAA/USN/US_Army/NATO codes): numbers read digit by digit with the ICAO radiotelephony digits
 - Utility helpers: `maxval(lang)`, `group_digits()`, `num2words_sentence()`
 - Critical bug fixes for decimal handling, negative numbers, float conversions, Decimal/string precision at trillion scale
 - Optimized for modern AI/ML/speech applications
@@ -73,12 +73,14 @@ print(num2words(42, to='ordinal'))  # forty-second
 print(num2words(42, to='ordinal', lang='es'))  # cuadragésimo segundo
 
 # Currency
-print(num2words(42.50, to='currency'))  # forty-two euro, fifty cents
+print(num2words(42.50, to='currency'))  # forty-two euros, fifty cents
 print(num2words(42.50, to='currency', lang='es'))  # cuarenta y dos euros con cincuenta céntimos
 
 # Year
-print(num2words(2024, to='year'))  # two thousand and twenty-four
+print(num2words(2024, to='year'))  # twenty twenty-four
+```
 
+```python
 # Fractions (new in v1.0.13)
 print(num2words('1/3'))                   # one third
 print(num2words('3/4', lang='fr'))        # trois quarts
@@ -91,22 +93,20 @@ print(num2words(1234.56, to='cheque', currency='USD'))
 # 3-decimal currencies (new in v1.0.12)
 print(num2words(5.123, to='currency', currency='BHD'))
 # five dinars, one hundred and twenty-three fils
+```
 
-# Aviation/ICAO digit-by-digit (new in v1.0.14, refined through v1.0.17)
+```python
+# Aviation/ICAO digit-by-digit (new in v1.0.14)
 print(num2words(5739, lang='en_Aero_ICAO'))   # fife seven tree niner
-from num2words2 import CONVERTER_CLASSES
-aero = CONVERTER_CLASSES['en_Aero_ICAO']
-print(aero.to_altitude(12500))   # wun too thousand fife hundred feet
-print(aero.to_squawk(7700))      # squawk seven seven zero zero
-print(aero.to_runway('27R'))     # runway too seven right
+print(num2words(127.5, lang='en_Aero_ICAO'))  # wun too seven decimal fife
 
-# Per-call options
-print(num2words(1234, lang='en', style='us'))    # one thousand, two hundred thirty-four (no 'and')
+# Per-call options (style='us' drops the 'and')
+print(num2words(1234, lang='en', style='us'))    # one thousand, two hundred thirty-four
 print(num2words(1, lang='ru', case='genitive')) # одного
 print(num2words(1, lang='he', gender='f'))       # אחת
 ```
 
-For the full feature reference (every mode, kwarg, language, and aviation method), see [REFERENCE.md](REFERENCE.md).
+For the full feature reference (every mode, kwarg, language, and the aviation codes), see [REFERENCE.md](REFERENCE.md).
 
 ### Command Line Interface
 
@@ -115,15 +115,24 @@ $ num2words2 10001
 ten thousand and one
 
 $ num2words2 24120.10
-twenty-four thousand, one hundred and twenty point one
+twenty-four thousand, one hundred and twenty point one zero
 
 $ num2words2 24120.10 -l es
-veinticuatro mil ciento veinte punto uno
+veinticuatro mil ciento veinte punto uno cero
 
 $ num2words2 2.14 -l es --to currency
 dos euros con catorce céntimos
 
-# List all supported languages
+$ num2words2 2.14 --to currency --currency USD --adjective
+two US dollars, fourteen cents
+
+$ num2words2 -1e3
+minus one thousand
+
+$ num2words2 50% --errors ignore
+50%
+
+# List all supported languages (aliases in parentheses, e.g. "cs (cz)")
 $ num2words2 --list-languages
 
 # List all converters
@@ -134,7 +143,7 @@ $ num2words2 --list-converters
 
 `num2words2` supports **120+ languages** (170+ locale codes including aliases and regional variants). The full list lives in [REFERENCE.md → Locale codes](REFERENCE.md#locale-codes); the highlights below give a sense of breadth.
 
-**European**: `en` English, `fr` French (`fr_BE`, `fr_CH`, `fr_DZ`), `es` Spanish (`es_CO`, `es_CR`, `es_GT`, `es_HN`, `es_NI`, `es_VE`), `de` German, `it` Italian, `pt` Portuguese (`pt_BR`), `nl` Dutch, `ru` Russian, `pl` Polish, `cs` Czech, `sk` Slovak, `sl` Slovenian, `hu` Hungarian, `ro` Romanian, `el` Greek, `bg` Bulgarian, `uk` Ukrainian, `be` Belarusian, `hr` Croatian, `sr` Serbian (`sr_Cyrl`, `sr_Latn`), `bs` Bosnian, `mk` Macedonian, `sq` Albanian, `sv` Swedish, `da` Danish, `no` Norwegian, `nn` Nynorsk, `nb` Bokmål, `fi` Finnish, `et` Estonian, `lv` Latvian, `lt` Lithuanian, `is` Icelandic, `fo` Faroese, `ga` Irish, `cy` Welsh, `eu` Basque, `ca` Catalan, `gl` Galician, `oc` Occitan, `mt` Maltese, `lb` Luxembourgish, `rm` Romansh (`rm_puter`, `rm_surmiran`, `rm_sursilv`, `rm_sutsilv`, `rm_vallader`), `eo` Esperanto, `lij` Ligurian, `br` Breton.
+**European**: `en` English, `fr` French (`fr_BE`, `fr_CH`, `fr_DZ`), `es` Spanish (`es_CO`, `es_CR`, `es_GT`, `es_HN`, `es_NI`, `es_VE`), `de` German, `it` Italian, `pt` Portuguese (`pt_BR`), `nl` Dutch, `ru` Russian, `pl` Polish, `cs` Czech, `sk` Slovak, `sl` Slovenian, `hu` Hungarian, `ro` Romanian, `el` Greek, `bg` Bulgarian, `uk` Ukrainian, `be` Belarusian, `hr` Croatian, `sr` Serbian (`sr_Cyrl`, `sr_Latn`), `bs` Bosnian, `mk` Macedonian, `sq` Albanian, `sv` Swedish, `da` Danish, `no` Norwegian, `nn` Nynorsk, `nb` Bokmål, `fi` Finnish, `et` Estonian, `lv` Latvian, `lt` Lithuanian, `is` Icelandic, `fo` Faroese, `cy` Welsh, `eu` Basque, `ca` Catalan, `gl` Galician, `oc` Occitan, `mt` Maltese, `lb` Luxembourgish, `rm` Romansh (`rm_puter`, `rm_surmiran`, `rm_sursilv`, `rm_sutsilv`, `rm_vallader`), `eo` Esperanto, `lij` Ligurian, `br` Breton.
 
 **Asian**: `zh` Chinese (`zh_CN`, `zh_HK`, `zh_TW`), `ja` Japanese, `ko` Korean, `hi` Hindi, `bn` Bengali, `ta` Tamil, `te` Telugu, `kn` Kannada, `ml` Malayalam, `mr` Marathi, `gu` Gujarati, `pa` Punjabi, `or` Odia, `as` Assamese, `sa` Sanskrit, `ne` Nepali, `si` Sinhala, `ur` Urdu, `fa` Persian, `ps` Pashto, `sd` Sindhi, `dv` Divehi, `bo` Tibetan, `my` Burmese, `th` Thai, `lo` Lao, `km` Khmer, `vi` Vietnamese, `id` Indonesian, `ms` Malay, `tl` Tagalog, `fil` Filipino, `jv` Javanese, `su` Sundanese, `ksw` S'gaw Karen, `cnh` Hakha Chin, `lus` Mizo, `mn` Mongolian.
 
@@ -142,7 +151,7 @@ $ num2words2 --list-converters
 
 **Central Asian**: `kk` Kazakh (`kz`), `ky` Kyrgyz, `uz` Uzbek (`uz_Cyrl`), `tg` Tajik, `tk` Turkmen.
 
-**African**: `am` Amharic, `ti` Tigrinya, `so` Somali, `om` Oromo, `ha` Hausa, `yo` Yoruba, `ig` Igbo, `sw` Swahili, `xh` Xhosa, `zu` Zulu, `sn` Shona, `lg` Luganda, `rw` Kinyarwanda, `ki` Kikuyu, `ln` Lingala, `wo` Wolof, `ff` Fula, `bm` Bambara, `mg` Malagasy.
+**African**: `am` Amharic, `ti` Tigrinya, `so` Somali, `om` Oromo, `ha` Hausa, `yo` Yoruba, `sw` Swahili, `xh` Xhosa, `zu` Zulu, `sn` Shona, `lg` Luganda, `rw` Kinyarwanda, `ki` Kikuyu, `ln` Lingala, `wo` Wolof, `ff` Fula, `bm` Bambara, `mg` Malagasy.
 
 **Pacific**: `mi` Māori, `haw` Hawaiian, `tet` Tetum.
 
@@ -178,7 +187,7 @@ And many regional variations like es_CO (Colombian Spanish), pt_BR (Brazilian Po
 
 ## Migration from num2words
 
-`num2words2` is designed as a drop-in replacement for `num2words` with full backward compatibility.
+`num2words2` is designed as a drop-in replacement for the public `num2words` API (`num2words()` and its keyword arguments). The internal converter classes (`num2words.lang_*`, `CONVERTER_CLASSES`) are not part of `num2words2`; see the [migration guide](MIGRATION_GUIDE.md#scenario-3-converter-classes-num2wordslang_).
 
 ### 🤖 Automated Migration (Recommended)
 
@@ -186,7 +195,7 @@ We provide a migration script to automatically update your codebase:
 
 ```bash
 # Download and run the migration script
-curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migrate_to_num2words2.py
+curl -O https://raw.githubusercontent.com/gladiaio/num2words2/main/migration/migrate_to_num2words2.py
 python migrate_to_num2words2.py /path/to/your/project
 
 # Or just scan current directory
@@ -200,6 +209,7 @@ The script will:
 - 🔍 Find all Python files with `num2words` imports
 - 💾 Create backups of original files
 - 🔄 Update imports to use `num2words2`
+- ⚠️ Warn about `num2words.lang_*` imports, which have no `num2words2` equivalent
 - 📝 Provide a detailed summary of changes
 
 ### 📝 Manual Migration
@@ -230,18 +240,18 @@ Update your dependency files:
 ```bash
 # requirements.txt
 - num2words>=0.5.12
-+ num2words2>=0.5.15
++ num2words2>=1.0
 
 # pyproject.toml
 dependencies = [
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ]
 
 # setup.py
 install_requires=[
 -    "num2words>=0.5.12",
-+    "num2words2>=0.5.15",
++    "num2words2>=1.0",
 ],
 ```
 
@@ -273,7 +283,7 @@ pip uninstall num2words
 
 `num2words2` maintains full backward compatibility. However, if you experience any issues:
 
-1. **Check version compatibility** - Ensure you're using `num2words2>=0.5.15`
+1. **Check version compatibility** - Ensure you're using a current `num2words2` release (`pip install -U num2words2`)
 2. **Report issues** - Create an issue at https://github.com/gladiaio/num2words2/issues
 3. **Rollback if needed** - The migration script creates backups for easy rollback
 
@@ -296,8 +306,10 @@ done
 ### Running Tests
 
 ```bash
-# Install development dependencies
-pip install -r requirements-test.txt
+# Build the Rust extension and install development dependencies
+pip install maturin
+maturin develop --no-default-features
+pip install -r tests/requirements-test.txt
 
 # Run tests
 python -m pytest tests/
@@ -312,7 +324,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ## License
 
-This project is licensed under the GNU Lesser General Public License v2.1 - see the LICENSE file for details.
+This project is licensed under the GNU Lesser General Public License v2.1 - see the COPYING file for details.
 
 ## Credits
 

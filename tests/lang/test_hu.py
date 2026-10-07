@@ -302,292 +302,232 @@ class Num2WordsHUTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="AUD"), "nulla dollars"
+            num2words(0, lang="hu", to="currency", currency="AUD"), "nulla dollár"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="AUD"),
-            "nulla dollars, egy cent",
+            "nulla dollár, egy cent",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="AUD"),
-            "nulla dollars, ötven cents",
+            "nulla dollár, ötven cent",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="AUD"), "egy dollar"
+            num2words(1, lang="hu", to="currency", currency="AUD"), "egy dollár"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="AUD"),
-            "egy dollar, ötven cents",
+            "egy dollár, ötven cent",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="BYN"), "nulla roubles"
+            num2words(0, lang="hu", to="currency", currency="BYN"), "nulla rubel"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="BYN"),
-            "nulla roubles, egy kopek",
+            "nulla rubel, egy kopejka",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="BYN"),
-            "nulla roubles, ötven kopeks",
+            "nulla rubel, ötven kopejka",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="BYN"), "egy rouble"
+            num2words(1, lang="hu", to="currency", currency="BYN"), "egy rubel"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="BYN"),
-            "egy rouble, ötven kopeks",
+            "egy rubel, ötven kopejka",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="CAD"), "nulla dollars"
+            num2words(0, lang="hu", to="currency", currency="CAD"), "nulla dollár"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="CAD"),
-            "nulla dollars, egy cent",
+            "nulla dollár, egy cent",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="CAD"),
-            "nulla dollars, ötven cents",
+            "nulla dollár, ötven cent",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="CAD"), "egy dollar"
+            num2words(1, lang="hu", to="currency", currency="CAD"), "egy dollár"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="CAD"),
-            "egy dollar, ötven cents",
+            "egy dollár, ötven cent",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="EEK")
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="EEK"), "nulla kroons"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="EEK"),
-            "nulla kroons, egy sent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="EEK"),
-            "nulla kroons, ötven senti",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="EEK"), "egy kroon"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="EEK"),
-            "egy kroon, ötven senti",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="EUR"), "nulla euros"
+            num2words(0, lang="hu", to="currency", currency="EUR"), "nulla euró"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="EUR"),
-            "nulla euros, egy cent",
+            "nulla euró, egy cent",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="EUR"),
-            "nulla euros, ötven cents",
+            "nulla euró, ötven cent",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="EUR"), "egy euro"
+            num2words(1, lang="hu", to="currency", currency="EUR"), "egy euró"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="EUR"),
-            "egy euro, ötven cents",
+            "egy euró, ötven cent",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="GBP"), "nulla pounds"
+            num2words(0, lang="hu", to="currency", currency="GBP"), "nulla font"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="GBP"),
-            "nulla pounds, egy penny",
+            "nulla font, egy penny",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="GBP"),
-            "nulla pounds, ötven pence",
+            "nulla font, ötven penny",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="GBP"), "egy pound"
+            num2words(1, lang="hu", to="currency", currency="GBP"), "egy font"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="GBP"),
-            "egy pound, ötven pence",
+            "egy font, ötven penny",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="LTL")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="LVL")
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="LTL"), "nulla litas"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="LTL"),
-            "nulla litas, egy cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="LTL"),
-            "nulla litas, ötven cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="LTL"), "egy litas"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="LTL"),
-            "egy litas, ötven cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="LVL"), "nulla lats"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="LVL"),
-            "nulla lats, egy santim",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="LVL"),
-            "nulla lats, ötven santims",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="LVL"), "egy lat"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="LVL"),
-            "egy lat, ötven santims",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="USD"), "nulla dollars"
+            num2words(0, lang="hu", to="currency", currency="USD"), "nulla dollár"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="USD"),
-            "nulla dollars, egy cent",
+            "nulla dollár, egy cent",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="USD"),
-            "nulla dollars, ötven cents",
+            "nulla dollár, ötven cent",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="USD"), "egy dollar"
+            num2words(1, lang="hu", to="currency", currency="USD"), "egy dollár"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="USD"),
-            "egy dollar, ötven cents",
+            "egy dollár, ötven cent",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="RUB"), "nulla roubles"
+            num2words(0, lang="hu", to="currency", currency="RUB"), "nulla rubel"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="RUB"),
-            "nulla roubles, egy kopek",
+            "nulla rubel, egy kopejka",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="RUB"),
-            "nulla roubles, ötven kopeks",
+            "nulla rubel, ötven kopejka",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="RUB"), "egy rouble"
+            num2words(1, lang="hu", to="currency", currency="RUB"), "egy rubel"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="RUB"),
-            "egy rouble, ötven kopeks",
+            "egy rubel, ötven kopejka",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="SEK"), "nulla kronor"
+            num2words(0, lang="hu", to="currency", currency="SEK"), "nulla korona"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="SEK"),
-            "nulla kronor, egy öre",
+            "nulla korona, egy öre",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="SEK"),
-            "nulla kronor, ötven öre",
+            "nulla korona, ötven öre",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="SEK"), "egy krona"
+            num2words(1, lang="hu", to="currency", currency="SEK"), "egy korona"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="SEK"),
-            "egy krona, ötven öre",
+            "egy korona, ötven öre",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="NOK"), "nulla kroner"
+            num2words(0, lang="hu", to="currency", currency="NOK"), "nulla korona"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="NOK"),
-            "nulla kroner, egy øre",
+            "nulla korona, egy øre",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="NOK"),
-            "nulla kroner, ötven øre",
+            "nulla korona, ötven øre",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="NOK"), "egy krone"
+            num2words(1, lang="hu", to="currency", currency="NOK"), "egy korona"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="NOK"),
-            "egy krone, ötven øre",
+            "egy korona, ötven øre",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="PLN"), "nulla zlotys"
+            num2words(0, lang="hu", to="currency", currency="PLN"), "nulla złoty"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="PLN"),
-            "nulla zlotys, egy grosz",
+            "nulla złoty, egy grosz",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="PLN"),
-            "nulla zlotys, ötven groszy",
+            "nulla złoty, ötven grosz",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="PLN"), "egy zloty"
+            num2words(1, lang="hu", to="currency", currency="PLN"), "egy złoty"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="PLN"),
-            "egy zloty, ötven groszy",
+            "egy złoty, ötven grosz",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="MXN"), "nulla pesos"
+            num2words(0, lang="hu", to="currency", currency="MXN"), "nulla peso"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="MXN"),
-            "nulla pesos, egy cent",
+            "nulla peso, egy centavo",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="MXN"),
-            "nulla pesos, ötven cents",
+            "nulla peso, ötven centavo",
         )
         self.assertEqual(
             num2words(1, lang="hu", to="currency", currency="MXN"), "egy peso"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="MXN"),
-            "egy peso, ötven cents",
+            "egy peso, ötven centavo",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="RON")
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="RON"), "nulla lei"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="RON"),
-            "nulla lei, egy ban",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="RON"),
-            "nulla lei, ötven bani",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="RON"), "egy leu"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="RON"),
-            "egy leu, ötven bani",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="INR"), "nulla rupees"
+            num2words(0, lang="hu", to="currency", currency="INR"), "nulla rúpia"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="INR"),
-            "nulla rupees, egy paisa",
+            "nulla rúpia, egy paisa",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="INR"),
-            "nulla rupees, ötven paise",
+            "nulla rúpia, ötven paisa",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="INR"), "egy rupee"
+            num2words(1, lang="hu", to="currency", currency="INR"), "egy rúpia"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="INR"),
-            "egy rupee, ötven paise",
+            "egy rúpia, ötven paisa",
         )
         self.assertEqual(
             num2words(0, lang="hu", to="currency", currency="HUF"), "nulla forint"
@@ -607,114 +547,54 @@ class Num2WordsHUTest(TestCase):
             num2words(1.5, lang="hu", to="currency", currency="HUF"),
             "egy forint, ötven fillér",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="ISK")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="UZS")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="SAR")
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="ISK"), "nulla krónur"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="ISK"),
-            "nulla krónur, egy aur",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="ISK"),
-            "nulla krónur, ötven aurar",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="ISK"), "egy króna"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="ISK"),
-            "egy króna, ötven aurar",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="UZS"), "nulla sums"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="UZS"),
-            "nulla sums, egy tiyin",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="UZS"),
-            "nulla sums, ötven tiyins",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="UZS"), "egy sum"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="UZS"),
-            "egy sum, ötven tiyins",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="SAR"), "nulla riyals"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="SAR"),
-            "nulla riyals, egy halalah",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="SAR"),
-            "nulla riyals, ötven halalas",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="SAR"), "egy riyal"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="SAR"),
-            "egy riyal, ötven halalas",
-        )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="JPY"), "nulla yen"
+            num2words(0, lang="hu", to="currency", currency="JPY"), "nulla jen"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="JPY"),
-            "nulla yen, egy sen",
+            "nulla jen, egy szen",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="JPY"),
-            "nulla yen, ötven sen",
+            "nulla jen, ötven szen",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="JPY"), "egy yen"
+            num2words(1, lang="hu", to="currency", currency="JPY"), "egy jen"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="JPY"),
-            "egy yen, ötven sen",
+            "egy jen, ötven szen",
         )
         self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="KRW"), "nulla won"
+            num2words(0, lang="hu", to="currency", currency="KRW"), "nulla von"
         )
         self.assertEqual(
             num2words(0.01, lang="hu", to="currency", currency="KRW"),
-            "nulla won, egy jeon",
+            "nulla von, egy jeon",
         )
         self.assertEqual(
             num2words(0.5, lang="hu", to="currency", currency="KRW"),
-            "nulla won, ötven jeon",
+            "nulla von, ötven jeon",
         )
         self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="KRW"), "egy won"
+            num2words(1, lang="hu", to="currency", currency="KRW"), "egy von"
         )
         self.assertEqual(
             num2words(1.5, lang="hu", to="currency", currency="KRW"),
-            "egy won, ötven jeon",
+            "egy von, ötven jeon",
         )
-        self.assertEqual(
-            num2words(0, lang="hu", to="currency", currency="NGN"), "nulla naira"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="hu", to="currency", currency="NGN"),
-            "nulla naira, egy kobo",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="hu", to="currency", currency="NGN"),
-            "nulla naira, ötven kobo",
-        )
-        self.assertEqual(
-            num2words(1, lang="hu", to="currency", currency="NGN"), "egy naira"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="hu", to="currency", currency="NGN"),
-            "egy naira, ötven kobo",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="hu", to="currency", currency="NGN")
 
     def test_year(self):
         """Test year conversion."""
@@ -758,4 +638,3 @@ class Num2WordsHUTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="hu"), num2words("100", lang="hu"))
         self.assertEqual(num2words(1000, lang="hu"), num2words("1000", lang="hu"))
-

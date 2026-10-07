@@ -15,7 +15,6 @@ from num2words2 import num2words
 
 
 class Test603DecimalPrecision(unittest.TestCase):
-
     def test_trillion_scale_string_input(self):
         # The exact float literal can't represent .99 at this magnitude,
         # but a string input goes through Decimal and must round-trip.

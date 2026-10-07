@@ -5,17 +5,20 @@
 //! builds `self.cards` and never sets `MAXVAL`. Every in-scope mode is
 //! overridden outright and driven by `_int_to_word`, a plain recursive
 //! descent over the Indian scale system (हजार / लाख / कोटी / अब्ज / खर्व).
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here.
+//! Consequently `cards`/`merge` stay at their trait defaults here.
 //!
-//! **There is no overflow check and no ceiling.** Because `MAXVAL` is never
+//! **Python has no overflow check and no ceiling.** Because `MAXVAL` is never
 //! set, the `value >= self.MAXVAL` guard in `Num2Word_Base.to_cardinal` is
 //! never reached (the override skips it), and the top `खर्व` branch recurses
 //! on `number // 10**11`, which re-enters the same branch for large enough
-//! inputs. So `10**22` is "एक खर्व खर्व" rather than an `OverflowError`, and
-//! arbitrarily large `BigInt`s terminate by repeated division. None of the
-//! four in-scope modes can raise: every list index is guarded by the range
-//! check that selects the branch, so there is no `IndexError`/`KeyError`
-//! path here.
+//! inputs. So in Python `10**22` is "एक खर्व खर्व" rather than an
+//! `OverflowError`. On a large enough integer the port's recursion
+//! overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^22, where the multiplier would
+//! itself need `खर्व`, and every mode raises `OverflowError` from there.
+//! Below it none of the four in-scope modes can raise: every list index is
+//! guarded by the range check that selects the branch, so there is no
+//! `IndexError`/`KeyError` path here.
 //!
 //! Inherited from `Num2Word_Base`:
 //!   * `setup()` sets only `negword = "ऋण "` (note the **trailing space**)
@@ -29,28 +32,26 @@
 //! exactly what Python emits, and every one is confirmed against the frozen
 //! corpus:
 //!
-//! 1. **Only the 20s compound.** `_int_to_word` glues the unit onto "वीस"
-//!    for 21..29 ("एकवीस", "पाचवीस", "चारवीस"), but every other decade is
-//!    emitted as two space-separated words in the wrong order for Marathi:
-//!    31 is "तीस एक" (lit. "thirty one"), 42 "चाळीस दोन", 99 the hardcoded
-//!    "नव्याण्णव". Real Marathi would be एकतीस / बेचाळीस. Preserved verbatim.
-//! 2. **The 20s compounds are themselves malformed.** 22 → `ones[2] + "वीस"`
-//!    = "दोनवीस" (Marathi: बावीस), 23 → "तीनवीस" (Marathi: तेवीस). Only 21
-//!    ("एकवीस") happens to come out right.
-//! 3. **The `number == 21` special case is dead code.** It produces
-//!    `"एक" + tens[2]`, but `ones[21 % 10]` is *already* "एक", so both arms
-//!    of the conditional agree. Reproduced anyway — see [`int_to_word`].
-//! 4. **`99` is special-cased but `98`/`97`/... are not**, so 99 is
-//!    "नव्याण्णव" while 98 is "नव्वद आठ".
+//! 1. **Tens and units (fixed, gladiaio/num2words2#247).** Python glued the
+//!    unit onto "वीस" for 21..29 only ("एकवीस", "पाचवीस", "चारवीस") and
+//!    emitted every other decade as two space-separated words: 31 was
+//!    "तीस एक" (lit. "thirty one"), 42 "चाळीस दोन", 98 "नव्वद आठ", with 99
+//!    alone hardcoded to "नव्याण्णव". The 20s compounds were malformed too:
+//!    22 "दोनवीस" (Marathi बावीस), 23 "तीनवीस" (तेवीस). The port reads
+//!    [`BELOW_HUNDRED`]: 31 is "एकतीस", 42 "बेचाळीस", 23 "तेवीस".
+//!
+//!    Items 2-4 of the old list (the malformed 20s, Python's dead
+//!    `number == 21` arm and the lone 99 special case) went with it.
 //! 5. **`to_ordinal` suffixes the raw cardinal**, so negatives and zero
 //!    produce nonsense rather than raising: `to_ordinal(0)` == "शून्यवा",
 //!    `to_ordinal(-21)` == "ऋण एकवीसवा", `to_ordinal(-1000)` ==
 //!    "ऋण एक हजारवा". `Num2Word_Base.verify_ordinal` (which would raise
 //!    `TypeError` on a negative) is never called.
-//! 6. **`to_ordinal_num` mixes numeral systems.** 1..4 return Devanagari
-//!    digits ("१ला", "२रा", "३रा", "४था"); everything else falls through to
-//!    `str(number) + "वा"`, which is ASCII — hence "5वा", "10वा", "0वा" and
-//!    even "-1वा". Also 2 and 3 share the suffix "रा".
+//! 6. **`to_ordinal_num` mixed numeral systems (fixed, #224).** Python gave
+//!    Devanagari digits for 1..4 ("१ला", "२रा", "३रा", "४था") and ASCII
+//!    `str(number) + "वा"` for everything else ("5वा", "10वा", "-1वा"). The
+//!    port writes ASCII digits throughout, the script of every other number:
+//!    "1ला", "2रा", "3रा", "4था". 2 and 3 share the suffix "रा".
 //! 7. **`to_year` ignores its `longval` parameter** and just prefixes the
 //!    cardinal, so there is no two-digit-pair year reading: 1905 is
 //!    "सन एक हजार नऊशे पाच", not "nineteen oh five". `to_year(0)` is
@@ -71,7 +72,7 @@
 //! `to_cheque` is *not* overridden, so it comes from `Num2Word_Base` and needs
 //! only `lang_name` + `currency_forms` + the default `money_verbose` (which
 //! routes to MR's `to_cardinal`) to reproduce
-//! "एक हजार दोनशे तीस चार AND 56/100 युरो". `.upper()` is a no-op on
+//! "एक हजार दोनशे चौतीस AND 56/100 युरो". `.upper()` is a no-op on
 //! Devanagari — it is caseless — so only the literal "AND" looks upper-cased.
 //! `pluralize` is never reached from either path and correctly keeps the
 //! trait's raising default (`Num2Word_Base.pluralize` raises
@@ -83,7 +84,7 @@
 //! calling in, and `to_ordinal`/`to_year` both route through `to_cardinal`.
 //! It is reproduced in [`int_to_word`] for fidelity regardless.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -92,6 +93,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`, set by `setup()`. The trailing space is load-bearing:
 /// `to_cardinal` concatenates it directly (`ret + word`) rather than joining
@@ -107,27 +109,28 @@ const POINTWORD: &str = "दशांश";
 
 const ZERO_WORD: &str = "शून्य";
 
-/// `ones`. Index 0 is "" and is only ever selected when the caller has
-/// already established `number % 10 != 0` (or `number != 0`), so the empty
-/// string never reaches the output.
-const ONES: [&str; 10] = [
-    "", "एक", "दोन", "तीन", "चार", "पाच", "सहा", "सात", "आठ", "नऊ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens`, glued a unit onto वीस for the 20s only
+/// ("तीनवीस" for 23, Marathi तेवीस) and joined every other decade with a
+/// space ("तीस एक" for 31), hardcoding only 99. Marathi has its own word for
+/// every number below a hundred. Index 0 is never read (`number == 0`
+/// returns first). 21..=98 follow the majority of four 1-100 lists
+/// (superprof.co.in, yugmarathi.com, mahasarav.com, helpdiva.com; Wiktionary
+/// for सव्वीस); 0..=20, the round tens and 99 नव्याण्णव are the module's own
+/// words (the lists also spell 99 नव्व्याण्णव).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "एक", "दोन", "तीन", "चार", "पाच", "सहा", "सात", "आठ", "नऊ", // 0..9
+    "दहा", "अकरा", "बारा", "तेरा", "चौदा", "पंधरा", "सोळा", "सतरा", "अठरा", "एकोणीस", // 10..19
+    "वीस", "एकवीस", "बावीस", "तेवीस", "चोवीस", "पंचवीस", "सव्वीस", "सत्तावीस", "अठ्ठावीस", "एकोणतीस", // 20..29
+    "तीस", "एकतीस", "बत्तीस", "तेहतीस", "चौतीस", "पस्तीस", "छत्तीस", "सदतीस", "अडतीस", "एकोणचाळीस", // 30..39
+    "चाळीस", "एक्केचाळीस", "बेचाळीस", "त्रेचाळीस", "चव्वेचाळीस", "पंचेचाळीस", "सेहेचाळीस", "सत्तेचाळीस", "अठ्ठेचाळीस", "एकोणपन्नास", // 40..49
+    "पन्नास", "एक्कावन्न", "बावन्न", "त्रेपन्न", "चोपन्न", "पंचावन्न", "छप्पन्न", "सत्तावन्न", "अठ्ठावन्न", "एकोणसाठ", // 50..59
+    "साठ", "एकसष्ट", "बासष्ट", "त्रेसष्ट", "चौसष्ट", "पासष्ट", "सहासष्ट", "सदुसष्ट", "अडुसष्ट", "एकोणसत्तर", // 60..69
+    "सत्तर", "एक्काहत्तर", "बाहत्तर", "त्र्याहत्तर", "चौऱ्याहत्तर", "पंच्याहत्तर", "शहात्तर", "सत्याहत्तर", "अठ्ठ्याहत्तर", "एकोणऐंशी", // 70..79
+    "ऐंशी", "एक्क्याऐंशी", "ब्याऐंशी", "त्र्याऐंशी", "चौऱ्याऐंशी", "पंच्याऐंशी", "शहाऐंशी", "सत्त्याऐंशी", "अठ्ठ्याऐंशी", "एकोणनव्वद", // 80..89
+    "नव्वद", "एक्क्याण्णव", "ब्याण्णव", "त्र्याण्णव", "चौऱ्याण्णव", "पंच्याण्णव", "शहाण्णव", "सत्त्याण्णव", "अठ्ठ्याण्णव", "नव्याण्णव", // 90..99
 ];
-
-/// `tens`. Index 0 is unreachable (`number >= 20` in the only branch that
-/// reads this table) and index 1 is dead too — 10..19 are handled by
-/// [`TEENS`] before the `< 100` branch is ever entered.
-const TENS: [&str; 10] = [
-    "", "दहा", "वीस", "तीस", "चाळीस", "पन्नास", "साठ", "सत्तर", "ऐंशी", "नव्वद",
-];
-
-/// `teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "दहा", "अकरा", "बारा", "तेरा", "चौदा", "पंधरा", "सोळा", "सतरा", "अठरा", "एकोणीस",
-];
-
-/// Hardcoded in the `number // 10 == 9 and number % 10 == 9` arm.
-const NINETY_NINE: &str = "नव्याण्णव";
 
 /// Suffix appended by the `< 1000` branch: `ones[number // 100] + "शे"`.
 const HUNDRED_SUFFIX: &str = "शे";
@@ -176,7 +179,7 @@ const SEPARATOR_DEFAULT: &str = " आणि ";
 /// This is the only reading that matches the oracle: every float row of the
 /// `mr` currency corpus was generated by `num2words(v, lang="mr",
 /// to="currency", currency=c)` with no `separator=`, and each one expects
-/// " आणि " (e.g. `12.34` -> "बारा युरो आणि तीस चार सेंट्स").
+/// " आणि " (e.g. `12.34` -> "बारा युरो आणि चौतीस सेंट्स").
 ///
 /// The cost is narrow and known: a caller who *explicitly* passes
 /// `separator=","` gets " आणि " here where Python would give ",". Fixing that
@@ -234,46 +237,13 @@ fn int_to_word(number: &BigInt) -> String {
         return format!("{}{}", NEGWORD, int_to_word(&number.abs()));
     }
 
-    if number < &bi(10) {
-        return ONES[small(number)].to_string();
-    }
-
-    if number < &bi(20) {
-        return TEENS[small(number) - 10].to_string();
-    }
-
     if number < &bi(100) {
-        let n = small(number);
-        let tens_digit = n / 10;
-        let ones_digit = n % 10;
-        let mut result = TENS[tens_digit].to_string();
-        if ones_digit != 0 {
-            if tens_digit == 2 {
-                // Python: `"एक" + tens[2] if number == 21 else ones[number % 10] + tens[2]`
-                // — the conditional binds looser than `+`, so both arms
-                // concatenate onto tens[2]. The n == 21 arm is dead code:
-                // ONES[1] is already "एक". Kept for fidelity.
-                result = if n == 21 {
-                    format!("एक{}", TENS[2])
-                } else {
-                    format!("{}{}", ONES[ones_digit], TENS[2])
-                };
-            } else if tens_digit == 9 && ones_digit == 9 {
-                result = NINETY_NINE.to_string();
-            } else {
-                // Python: `result += " " + ones[number % 10] if number % 10 else ""`.
-                // The trailing conditional is redundant — we are already
-                // inside `if number % 10:` — so the else-branch never fires.
-                result.push(' ');
-                result.push_str(ONES[ones_digit]);
-            }
-        }
-        return result;
+        return BELOW_HUNDRED[small(number)].to_string();
     }
 
     if number < &bi(1000) {
         let (div, rem) = number.div_mod_floor(&bi(100));
-        let mut result = format!("{}{}", ONES[small(&div)], HUNDRED_SUFFIX);
+        let mut result = format!("{}{}", BELOW_HUNDRED[small(&div)], HUNDRED_SUFFIX);
         if !rem.is_zero() {
             result.push(' ');
             result.push_str(&int_to_word(&rem));
@@ -572,13 +542,13 @@ fn cardinal_from_str(number: &str) -> Result<String> {
     };
 
     let Some(dot) = n.find('.') else {
-        ret.push_str(&int_to_word(&py_int(n)?));
+        ret.push_str(&checked_int_to_word(&py_int(n)?)?);
         return Ok(ret);
     };
 
     // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
     let (left, right) = (&n[..dot], &n[dot + 1..]);
-    ret.push_str(&int_to_word(&py_int(left)?));
+    ret.push_str(&checked_int_to_word(&py_int(left)?)?);
     ret.push(' ');
     ret.push_str(POINTWORD);
     ret.push(' ');
@@ -591,7 +561,7 @@ fn cardinal_from_str(number: &str) -> Result<String> {
         }
         first = false;
         let mut buf = [0u8; 4];
-        ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+        ret.push_str(&checked_int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
     }
     Ok(ret)
 }
@@ -646,7 +616,29 @@ impl Default for LangMr {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// खर्व (10^11), so from 10^22 its multiplier would itself need खर्व and the
+/// word would stack ("एक खर्व खर्व").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(22))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 impl Lang for LangMr {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -687,25 +679,24 @@ impl Lang for LangMr {
     }
 
     /// `to_ordinal_num(float/Decimal)`. Same numeric `==` on 1..=4, so 1.0 →
-    /// "१ला", 2.0 → "२रा", 3.0 → "३रा", `Decimal("4.00")` → "४था"; everything
-    /// else is `str(number) + "वा"` (oddity 6's numeral-system mix, now with
-    /// a decimal point in it). `repr_str` is the binding's Python
+    /// "1ला", 2.0 → "2रा", 3.0 → "3रा", `Decimal("4.00")` → "4था"; everything
+    /// else is `str(number) + "वा"` (oddity 6). `repr_str` is the binding's Python
     /// `str(value)`, exactly the string Python concatenates — `str()` never
     /// raises, so 5.0 keeps its tail ("5.0वा") and exponent forms pass
     /// through unharmed: "1e+16वा", "1E+2वा", "-0.0वा".
     fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
         if let Some(i) = value.as_whole_int() {
             if i == bi(1) {
-                return Ok("१ला".to_string());
+                return Ok("1ला".to_string());
             }
             if i == bi(2) {
-                return Ok("२रा".to_string());
+                return Ok("2रा".to_string());
             }
             if i == bi(3) {
-                return Ok("३रा".to_string());
+                return Ok("3रा".to_string());
             }
             if i == bi(4) {
-                return Ok("४था".to_string());
+                return Ok("4था".to_string());
             }
         }
         Ok(format!("{}{}", repr_str, ORDINAL_SUFFIX))
@@ -846,7 +837,7 @@ impl Lang for LangMr {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_MR.to_ordinal`.
@@ -864,20 +855,21 @@ impl Lang for LangMr {
 
     /// Port of `Num2Word_MR.to_ordinal_num`.
     ///
-    /// Devanagari digits for 1..=4, ASCII `str(number)` for everything else
-    /// (including negatives: `to_ordinal_num(-1)` == "-1वा"). See oddity 6.
+    /// ASCII digits throughout — irregular suffixes for 1..=4, `str(number) +
+    /// "वा"` for everything else (including negatives: `to_ordinal_num(-1)` ==
+    /// "-1वा"). See oddity 6.
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
         if value == &bi(1) {
-            return Ok("१ला".to_string());
+            return Ok("1ला".to_string());
         }
         if value == &bi(2) {
-            return Ok("२रा".to_string());
+            return Ok("2रा".to_string());
         }
         if value == &bi(3) {
-            return Ok("३रा".to_string());
+            return Ok("3रा".to_string());
         }
         if value == &bi(4) {
-            return Ok("४था".to_string());
+            return Ok("4था".to_string());
         }
         Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
@@ -961,7 +953,7 @@ impl Lang for LangMr {
     ///    NotImplementedError rows while the cheque corpus has five.
     /// 2. **Precision is hardcoded to two decimal places** by the `[:2]`
     ///    slice, so the 3-decimal (KWD/BHD) and 0-decimal (JPY) currencies get
-    ///    no special handling: `12.34 KWD` is "बारा रुपये आणि तीस चार पैसे",
+    ///    no special handling: `12.34 KWD` is "बारा रुपये आणि चौतीस पैसे",
     ///    not mils, and `12.34 JPY` still shows a cents segment.
     /// 3. **`adjective` is accepted and then ignored** — MR declares the
     ///    parameter but never reads it, and defines no `CURRENCY_ADJECTIVES`.
@@ -1066,7 +1058,7 @@ impl Lang for LangMr {
         let one = bi(1);
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
-        let left_str = int_to_word(&left);
+        let left_str = checked_int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -1076,7 +1068,7 @@ impl Lang for LangMr {
         // `if cents and right:` — `right` is falsy at 0, which is how a whole
         // float loses its cents segment.
         if cents && !right.is_zero() {
-            let cents_str = int_to_word(&right);
+            let cents_str = checked_int_to_word(&right)?;
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');

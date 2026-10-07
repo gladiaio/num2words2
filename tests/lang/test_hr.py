@@ -124,10 +124,12 @@ class Num2WordsHRTest(TestCase):
     def test_currency_hrd(self):
         # Croatian Kuna (HRK) tests
         self.assertEqual(
-            num2words(1, lang="hr", to="currency", currency="HRK"), "jedan kuna"
+            # kuna/lipa are feminine: jedna, dvije (#196).
+            num2words(1, lang="hr", to="currency", currency="HRK"),
+            "jedna kuna",
         )
         self.assertEqual(
-            num2words(2, lang="hr", to="currency", currency="HRK"), "dva kune"
+            num2words(2, lang="hr", to="currency", currency="HRK"), "dvije kune"
         )
         self.assertEqual(
             num2words(5, lang="hr", to="currency", currency="HRK"), "pet kuna"
@@ -138,7 +140,7 @@ class Num2WordsHRTest(TestCase):
         )
         self.assertEqual(
             num2words(101.21, lang="hr", to="currency", currency="HRK", separator=" i"),
-            "sto jedan kuna i dvadeset jedan lipa",
+            "sto jedna kuna i dvadeset jedna lipa",
         )
 
     def test_currency_eur(self):
@@ -158,6 +160,29 @@ class Num2WordsHRTest(TestCase):
             "sto jedan euro i jedanaest centi",
         )
 
+    def test_currency_gender_agreement(self):
+        # #196: kuna and lipa are feminine, euro and cent masculine.
+        self.assertEqual(
+            num2words(21, lang="hr", to="currency", currency="HRK"),
+            "dvadeset jedna kuna",
+        )
+        self.assertEqual(
+            num2words(2.02, lang="hr", to="currency", currency="HRK"),
+            "dvije kune, dvije lipe",
+        )
+        self.assertEqual(
+            num2words("2.02", lang="hr", to="currency", currency="HRK"),
+            "dvije kune, dvije lipe",
+        )
+        self.assertEqual(
+            num2words(2.02, lang="hr", to="currency", currency="EUR"),
+            "dva eura, dva centa",
+        )
+        self.assertEqual(
+            num2words(21.5, lang="hr", to="cheque", currency="HRK"),
+            "DVADESET JEDNA AND 50/100 KUNA",
+        )
+
     def test_currency_negative(self):
         self.assertEqual(
             num2words(-12519.85, lang="hr", to="currency", cents=False),
@@ -165,7 +190,7 @@ class Num2WordsHRTest(TestCase):
         )
         self.assertEqual(
             num2words(-1.50, lang="hr", to="currency", currency="HRK"),
-            "minus jedan kuna, pedeset lipa",
+            "minus jedna kuna, pedeset lipa",
         )
 
     def test_currency_no_cents(self):
@@ -190,7 +215,7 @@ class Num2WordsHRTest(TestCase):
         self.assertEqual(num2words(5, lang="hr", to="ordinal"), "peti")
         self.assertEqual(num2words(10, lang="hr", to="ordinal"), "deseti")
         self.assertEqual(num2words(100, lang="hr", to="ordinal"), "stoti")
-        self.assertEqual(num2words(21, lang="hr", to="ordinal"), "dvadeset jedani")
+        self.assertEqual(num2words(21, lang="hr", to="ordinal"), "dvadeset prvi")
 
     def test_complex_numbers(self):
         # Test some complex number conversions

@@ -7,9 +7,9 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never sets
 //! `self.MAXVAL`. `to_cardinal` is overridden outright and drives its own
-//! recursive `_int_to_word`. Consequently `cards`/`maxval`/`merge` stay at
-//! their trait defaults here, and there is **no overflow check** at all — see
-//! the "billion cliff" note below for what happens past 10^9 instead.
+//! recursive `_int_to_word`. Consequently `cards`/`merge` stay at their trait
+//! defaults here. Python has **no overflow check** at all — see the "billion
+//! cliff" note below; this port raises `OverflowError` from 10^12 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base` and left unchanged by PAP:
 //!   * `is_title` stays `False`, so `title()` is the identity. `setup()` does
@@ -18,20 +18,19 @@
 //!
 //! # Faithfully reproduced Python behaviour that looks wrong
 //!
-//! 1. **The billion cliff.** `_int_to_word` handles 0..10^9-1 and then simply
-//!    `return str(number)`. There is no `milyard`/`biyon` card and no
-//!    `OverflowError`: `to_cardinal(10**9)` returns the *digits* `"1000000000"`,
-//!    and `to_cardinal(10**21)` returns `"1000000000000000000000"`. Corpus rows
-//!    confirm this for 10^9, 1234567890, 10^10, 10^11, 10^12, 10^15, 10^18 and
-//!    10^21. This is why the value must stay a `BigInt`: the fallback is a
-//!    lossless decimal rendering of an arbitrarily large integer.
+//! 1. **The billion cliff (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` handles 0..10^9-1 and then simply `return str(number)`,
+//!    so `to_cardinal(10**9)` was the digit string `"1000000000"`. This port
+//!    adds biyon (10^9; Aruban usage, matching the module's Aruban "miyon",
+//!    e.g. https://www.noticiacla.com/news/39378), composed exactly like the
+//!    million branch: `to_cardinal(10**9)` == `"un biyon"`. No 10^12 word is
+//!    attested, so 10^12 raises `OverflowError` (`maxval`).
 //! 2. **`to_ordinal` never calls `verify_ordinal`.** Base's guard against
 //!    negative/float ordinals is bypassed, so `to_ordinal(-1)` does not raise —
 //!    it returns `"di menos un"` (corpus-confirmed). Likewise `to_ordinal(0)`
 //!    returns `"di sero"` rather than crashing.
-//! 3. **`to_ordinal` only special-cases 1.** Every other value, including
-//!    those past the billion cliff, is `"di " + to_cardinal(n)` — hence
-//!    `to_ordinal(10**9) == "di 1000000000"`.
+//! 3. **`to_ordinal` only special-cases 1.** Every other value is
+//!    `"di " + to_cardinal(n)` — hence `to_ordinal(10**9) == "di un biyon"`.
 //! 4. **`to_ordinal_num` is `str(number) + "i"`** with no suffix logic and no
 //!    sign handling: `to_ordinal_num(-1) == "-1i"`.
 //! 5. **`tens[1]` is unreachable.** `setup()` sets `tens = ["", "dies", ...]`,
@@ -68,12 +67,11 @@
 //!
 //! # Error variants
 //!
-//! The four integer modes raise nothing: every in-scope corpus row for "pap" is
-//! `"ok": true`, and `to_cardinal`/`to_ordinal`/`to_ordinal_num`/`to_year` are
-//! total over the integers because the billion cliff returns digits instead of
-//! raising. `to_currency` is likewise total (unknown codes fall back rather
-//! than raise — see the currency section). Only the inherited `to_cheque`
-//! raises: `NotImplementedError` for a code outside PAP's own four.
+//! The four integer modes raise only `OverflowError`, for `abs(n) >= 10^12`
+//! (#147; Python's billion cliff returned digits instead). `to_currency`
+//! shares that ceiling and is otherwise total (unknown codes fall back rather
+//! than raise — see the currency section). The inherited `to_cheque` also
+//! raises `NotImplementedError` for a code outside PAP's own four.
 //!
 //! # Sign handling
 //!
@@ -86,7 +84,7 @@
 //! recursive result is non-empty and unpadded. Reproduced as `trim()` for
 //! parity regardless.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -94,6 +92,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `setup(): self.ones`. Index 0 is `""` (the `< 10` branch reaches it only
@@ -127,6 +126,15 @@ const ZERO_WORD: &str = "sero";
 const HUNDRED: &str = "shen";
 const THOUSAND: &str = "mil";
 const MILLION: &str = "miyon";
+/// 10^9, absent from Python (gladiaio/num2words2#147): Aruban "biyon", the
+/// counterpart of [`MILLION`]'s Aruban spelling.
+const BILLION: &str = "biyon";
+
+/// The exclusive ceiling (#147): no attested Papiamentu word for 10^12.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 const NEGWORD: &str = "menos ";
 const POINTWORD: &str = "punto";
 
@@ -198,17 +206,18 @@ impl LangPap {
     /// sign off before calling. (Python would happily negative-index
     /// `self.ones[-3]` here and return "shete" for -3, but no in-scope path
     /// reaches that, so the small-index conversions below cannot fail.)
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
         if *number < BigInt::from(10) {
             // Safe: 0 < number < 10.
-            return ONES[number.to_usize().unwrap()].to_string();
+            return Ok(ONES[number.to_usize().unwrap()].to_string());
         }
         if *number < BigInt::from(20) {
             // Safe: 10 <= number < 20.
-            return TEENS[(number - BigInt::from(10)).to_usize().unwrap()].to_string();
+            return Ok(TEENS[(number - BigInt::from(10)).to_usize().unwrap()].to_string());
         }
         if *number < BigInt::from(100) {
             // Python: t, o = divmod(number, 10)
@@ -221,7 +230,7 @@ impl LangPap {
                 out.push_str(" i ");
                 out.push_str(ONES[o]);
             }
-            return out;
+            return Ok(out);
         }
         if *number < BigInt::from(1000) {
             // Python: h, r = divmod(number, 100)
@@ -237,9 +246,9 @@ impl LangPap {
             // Python: base + (" i " + self._int_to_word(r) if r else "")
             if !r.is_zero() {
                 out.push_str(" i ");
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
         if *number < BigInt::from(1_000_000) {
             // Python: t, r = divmod(number, 1000)
@@ -249,16 +258,16 @@ impl LangPap {
             // Note the `t > 1` guard: 1000 -> "mil", never "un mil".
             let mut out = String::new();
             if t > BigInt::from(1) {
-                out.push_str(&self.int_to_word(&t));
+                out.push_str(&self.int_to_word(&t)?);
                 out.push(' ');
             }
             out.push_str(THOUSAND);
             // Python: base + (" " + self._int_to_word(r) if r else "")
             if !r.is_zero() {
                 out.push(' ');
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
         if *number < BigInt::from(1_000_000_000) {
             // Python: m, r = divmod(number, 1000000)
@@ -266,17 +275,27 @@ impl LangPap {
             // Python: base = self._int_to_word(m) + " " + self.million
             // No `m > 1` guard here, unlike the thousands branch above:
             // 10**6 -> "un miyon".
-            let mut out = self.int_to_word(&m);
+            let mut out = self.int_to_word(&m)?;
             out.push(' ');
             out.push_str(MILLION);
             if !r.is_zero() {
                 out.push(' ');
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
-        // Python: return str(number) — the billion cliff (bug note 1).
-        number.to_string()
+        // Python: return str(number) — the billion cliff (bug note 1). The
+        // biyon branch instead, composed like the million one (#147); the
+        // maxval check above keeps `b` below 1000.
+        let (b, r) = number.div_mod_floor(&BigInt::from(1_000_000_000));
+        let mut out = self.int_to_word(&b)?;
+        out.push(' ');
+        out.push_str(BILLION);
+        if !r.is_zero() {
+            out.push(' ');
+            out.push_str(&self.int_to_word(&r)?);
+        }
+        Ok(out)
     }
 
     /// Port of `Num2Word_PAP.to_cardinal` operating on the Python `str(number)`
@@ -320,15 +339,14 @@ impl LangPap {
         let (left, right) = match n.split_once('.') {
             Some(halves) => halves,
             // return self._int_to_word(int(n))
-            None => return Ok(self.int_to_word(&py_int(n)?)),
+            None => return self.int_to_word(&py_int(n)?),
         };
 
         // ret = self._int_to_word(int(left)) + " " + self.pointword
         //
-        // `int(left)` is the whole integer part, so the billion cliff (bug note
-        // 1) applies: at 1e9 and above it comes back as bare digits
-        // ("98746251323029 punto nuebe nuebe").
-        let mut ret = self.int_to_word(&py_int(left)?);
+        // `int(left)` is the whole integer part, so the scales and the 10^12
+        // ceiling (bug note 1) apply to it.
+        let mut ret = self.int_to_word(&py_int(left)?)?;
         ret.push(' ');
         ret.push_str(POINTWORD);
 
@@ -350,6 +368,10 @@ impl LangPap {
 }
 
 impl Lang for LangPap {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -442,7 +464,7 @@ impl Lang for LangPap {
             let inner = self.to_cardinal(&-value)?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.int_to_word(value)
     }
 
     /// Port of `Num2Word_PAP.to_ordinal`.
@@ -646,7 +668,7 @@ impl Lang for LangPap {
         // survives if the table ever changes.
         let unit = if left.is_one() { cr1.first() } else { cr1.get(1) }
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, unit);
 
         // Python: if cents and right:
         //             result += separator + self._int_to_word(right) + " "
@@ -657,7 +679,7 @@ impl Lang for LangPap {
             let subunit = if right.is_one() { cr2.first() } else { cr2.get(1) }
                 .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(subunit);
         }
@@ -935,8 +957,8 @@ mod tests {
         // A negative that rounds to nothing keeps its negword.
         assert_eq!(cur("-0.001", "EUR"), "menos sero euro");
         assert_eq!(cur("-1", "EUR"), "menos un euro");
-        // The billion cliff reaches to_currency as digits.
-        assert_eq!(cur("1000000000", "EUR"), "1000000000 euro");
+        // The biyon scale reaches to_currency too (#147; was digits).
+        assert_eq!(cur("1000000000", "EUR"), "un biyon euro");
         // AWG is the fallback's twin, and ANG is the fallback itself.
         assert_eq!(cur("1", "AWG"), "un florin");
         assert_eq!(cur("1", "ANG"), "un florin");
@@ -1023,11 +1045,10 @@ mod tests {
         // Trailing zero survives: str(Decimal("1.10")) == "1.10" -> "... un sero".
         assert_eq!(cd("1.10"), "un punto un sero");
         assert_eq!(cd("12.345"), "diesdos punto tres kuater sinku");
-        // Trillion-scale exact value, past the billion cliff: the integer part
-        // renders as bare digits.
+        // Billion-scale exact value (#147; past 10^12 is an OverflowError).
         assert_eq!(
-            cd("98746251323029.99"),
-            "98746251323029 punto nuebe nuebe"
+            cd("2000000005.99"),
+            "dos biyon sinku punto nuebe nuebe"
         );
         assert_eq!(cd("0.001"), "sero punto sero sero un");
     }

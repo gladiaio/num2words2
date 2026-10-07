@@ -11,10 +11,11 @@
 //! so for PS `self.cards` is never built and `self.MAXVAL` is never set
 //! (verified in the interpreter: `hasattr(o, 'cards') == False`,
 //! `hasattr(o, 'MAXVAL') == False`). `to_cardinal` is overridden outright and
-//! drives a recursive `_int_to_word`. Consequently `cards`/`maxval`/`merge`
-//! stay at their trait defaults here, and **there is no overflow check** — PS
-//! never raises. Every in-scope corpus row for "ps" is `ok: true`; there are no
-//! `Index`/`Key`/`Value` crash sites to reproduce.
+//! drives a recursive `_int_to_word`. Consequently `cards`/`merge` stay at
+//! their trait defaults here. Python has **no overflow check** — PS never
+//! raises; this port raises `OverflowError` from 10^12 (`maxval`, bug 4,
+//! gladiaio/num2words2#147). There are no `Index`/`Key`/`Value` crash sites
+//! to reproduce.
 //!
 //! Method map (all four in-scope modes are explicitly defined by PS itself,
 //! nothing in-scope is inherited from `Num2Word_Base`):
@@ -47,15 +48,15 @@
 //!    Unlike most modules, PS concatenates it directly rather than via
 //!    `base.default_to_cardinal` (which would `.trim()` it and re-add one
 //!    space). Same result here, but the mechanism differs — see [`NEGWORD`].
-//! 4. **Digits fall out for anything ≥ 10^9.** The `_int_to_word` cascade stops
-//!    at the millions branch; the `else` arm is a bare `return str(number)`.
-//!    So the "words" for a billion are the *numerals*: corpus `10^9` →
-//!    "1000000000", `1234567890` → "1234567890", `10^21` →
-//!    "1000000000000000000000". `to_ordinal(10^9)` → "1000000000-م" — a
-//!    Pashto ordinal suffix glued onto an Arabic-numeral string. There is no
-//!    ceiling and no `OverflowError`; arbitrarily large BigInts just stringify.
-//!    This is why [`int_to_word`] must take `&BigInt` and only narrow to `u32`
-//!    *after* proving `number < 10^9`.
+//! 4. **Numbers ≥ 10^9 (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` cascade stops at the millions branch and the `else` arm
+//!    is a bare `return str(number)`, so `10^9` was "1000000000". This port
+//!    adds میلیارد (10^9; the most frequent spelling on ps.wikipedia.org, with
+//!    the same Persian yeh as the module's میلیون), composed like the million
+//!    branch: `10^9` → "یو میلیارد". 10^12 has two competing spellings
+//!    (ټریلیون / تریلیون) and no dictionary source, so it raises
+//!    `OverflowError` (`maxval`). [`int_to_word`] checks that ceiling before
+//!    narrowing to `u64`.
 //! 5. **`to_ordinal_num` ignores the language entirely** and appends a Western
 //!    `"."`, so it is really the German/ordinal-dot convention. It also does no
 //!    sign or range handling: corpus `-1` → "-1.", `0` → "0.".
@@ -146,7 +147,7 @@
 //!
 //! | input | `str(value)` | Python | this port |
 //! |---|---|---|---|
-//! | `1e16` (float) | `"1e+16"` | `ValueError` | "10000000000000000 euros" |
+//! | `1e16` (float) | `"1e+16"` | `ValueError` | `OverflowError` (past maxval, #147) |
 //! | `Decimal("1E+2")` | `"1E+2"` | `ValueError` | "یو سل euros" |
 //! | `1e-05` (float) | `"1e-05"` | `ValueError` | "صفر euros" |
 //! | `Decimal("0.00001")` | `"0.00001"` | "صفر euros" | "صفر euros" ✓ |
@@ -162,8 +163,15 @@
 //! `lang_br.rs`, … all carry the identical gap). Left divergent and reported
 //! rather than half-fixed. A 9,834-case differential fuzz against the live
 //! `Num2Word_PS` found no other disagreement.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses ډالر / سنټ; EUR (no reliable Pashto cent) raises
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -172,6 +180,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`. Keeps the trailing space of the Python attribute: PS builds
 /// its output as `self.negword + word` with no separator of its own, so the
@@ -203,15 +212,20 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "سل";
 const THOUSAND: &str = "زره";
 const MILLION: &str = "میلیون";
+/// 10^9, missing from Python (gladiaio/num2words2#147): میلیارد, the usual
+/// spelling on ps.wikipedia.org.
+const BILLION: &str = "میلیارد";
 
 /// The ordinal suffix appended by `to_ordinal`: ASCII hyphen U+002D followed by
 /// ARABIC LETTER MEEM U+0645.
 const ORDINAL_SUFFIX: &str = "-م";
 
-/// First value the `_int_to_word` cascade cannot name: `10**9`. At or above
-/// this, Python's `else` arm returns `str(number)` verbatim (module bug #4).
-fn billion() -> BigInt {
-    BigInt::from(1_000_000_000u32)
+/// The exclusive ceiling (#147). Python's cascade stopped naming at `10**9`
+/// and stringified from there (module bug #4); the میلیارد branch carries it
+/// to 10^12, where no settled word exists.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
 }
 
 /// `Num2Word_PS.to_currency`'s own default separator, `" "`.
@@ -290,13 +304,11 @@ impl LangPs {
 
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             (FALLBACK_CURRENCY, afn.clone()),
+            // Native nouns (#222). EUR has no reliable Pashto cent, so it
+            // raises NotImplementedError.
             (
                 "USD",
-                CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-            ),
-            (
-                "EUR",
-                CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+                CurrencyForms::new(&["ډالر", "ډالر"], &["سنټ", "سنټ"]),
             ),
         ]
         .into_iter()
@@ -384,11 +396,13 @@ impl LangPs {
 
     /// Python's `_int_to_word`, branch for branch and in the original order:
     /// zero, then negative, then the `< 10 / 100 / 1000 / 10**6 / 10**9`
-    /// cascade, then the bare `str(number)` fallback.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    /// cascade, then — instead of the bare `str(number)` fallback — the
+    /// میلیارد branch and the `OverflowError` ceiling (#147).
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // `if number == 0: return self.ones[0] if self.ones[0] else "zero"`
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
 
         // `if number < 0: return self.negword + self._int_to_word(abs(number))`
@@ -401,25 +415,18 @@ impl LangPs {
         // it would yield a doubled "منفي " if it ever were reached through
         // `to_cardinal`.
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
-        // The `else` arm: everything the cascade cannot name stringifies.
-        // Checked before narrowing precisely because BigInt has no ceiling here.
-        if number >= &billion() {
-            return number.to_string();
-        }
-
-        // Proven above: 0 < number < 10**9, so the value fits u32 (max
-        // 999_999_999 < 2**32). This is the only point where narrowing is
-        // sound; `to_string()` on the wide value already happened.
+        // Proven by the maxval check: 0 < number < 10**12, so the value fits
+        // u64. This is the only point where narrowing is sound.
         let n = number
-            .to_u32()
-            .expect("0 < number < 10^9 was proven above, so u32 conversion cannot fail");
-        self.pos_to_word(n)
+            .to_u64()
+            .expect("0 < number < 10^12 was proven above, so u64 conversion cannot fail");
+        Ok(self.pos_to_word(n))
     }
 
-    /// The naming cascade for `0 < n < 10**9`.
+    /// The naming cascade for `0 < n < 10**12`.
     ///
     /// Invariant `n > 0` is upheld by every caller: [`int_to_word`] handles 0
     /// first, the `if remainder:` guards suppress zero remainders, and the
@@ -427,7 +434,7 @@ impl LangPs {
     /// `n >= 10**6`. Were `n == 0` ever to arrive it would return `ONES[0]`
     /// (`""`) rather than "zero" — the divergence is unreachable, matching
     /// Python's own reachability.
-    fn pos_to_word(&self, n: u32) -> String {
+    fn pos_to_word(&self, n: u64) -> String {
         if n < 10 {
             // `return self.ones[number]`
             ONES[n as usize].to_string()
@@ -459,11 +466,21 @@ impl LangPs {
                 result.push_str(&self.pos_to_word(remainder));
             }
             result
-        } else {
-            // n < 10**9, guaranteed by the caller.
+        } else if n < 1_000_000_000 {
             let millions_val = n / 1_000_000;
             let remainder = n % 1_000_000;
             let mut result = format!("{} {}", self.pos_to_word(millions_val), MILLION);
+            if remainder != 0 {
+                result.push(' ');
+                result.push_str(&self.pos_to_word(remainder));
+            }
+            result
+        } else {
+            // n < 10**12, guaranteed by the caller. Python's `else` arm
+            // stringified here (bug 4); composed like millions since #147.
+            let billions_val = n / 1_000_000_000;
+            let remainder = n % 1_000_000_000;
+            let mut result = format!("{} {}", self.pos_to_word(billions_val), BILLION);
             if remainder != 0 {
                 result.push(' ');
                 result.push_str(&self.pos_to_word(remainder));
@@ -589,6 +606,10 @@ fn py_int(s: &str) -> Result<BigInt> {
 }
 
 impl Lang for LangPs {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -632,7 +653,7 @@ impl Lang for LangPs {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.int_to_word(&n)?).trim().to_string())
     }
 
     /// `return cardinal + "-م"`. No sign, zero or range handling whatsoever, so
@@ -680,8 +701,8 @@ impl Lang for LangPs {
     /// dropped on the floor exactly as Python does (confirmed: `precision=`
     /// leaves PS's cardinal output unchanged). Every digit — integer part and
     /// each fractional character alike — is named by the same `_int_to_word`
-    /// the integer path uses, so the "no teens" and `>= 10**9` stringify bugs
-    /// (module bugs 1 and 4) leak into the float output too.
+    /// the integer path uses, so the "no teens" bug and the 10^12 ceiling
+    /// (module bugs 1 and 4) apply to the float output too.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -711,9 +732,8 @@ impl Lang for LangPs {
 
         if let Some((left, right)) = n.split_once('.') {
             // `ret += self._int_to_word(int(left)) + " " + pointword + " "` —
-            // `int_to_word`, so `left >= 10**9` stringifies to its numerals
-            // (bug 4), e.g. 98746251323029.
-            ret.push_str(&self.int_to_word(&py_int(left)?));
+            // `int_to_word`, so the 10^12 ceiling (bug 4) applies to `left`.
+            ret.push_str(&self.int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
@@ -722,7 +742,7 @@ impl Lang for LangPs {
             for ch in right.chars() {
                 let mut buf = [0u8; 4];
                 let d = py_int(ch.encode_utf8(&mut buf))?;
-                ret.push_str(&self.int_to_word(&d));
+                ret.push_str(&self.int_to_word(&d)?);
                 ret.push(' ');
             }
             // `.strip()` — trims the trailing space left by the digit loop.
@@ -730,7 +750,7 @@ impl Lang for LangPs {
         } else {
             // No "." → Python's else branch: `(ret + _int_to_word(int(n)))
             // .strip()` — exponent forms ("1e+16", "1E+3") raise here.
-            ret.push_str(&self.int_to_word(&py_int(n)?));
+            ret.push_str(&self.int_to_word(&py_int(n)?)?);
             Ok(ret.trim().to_string())
         }
     }
@@ -910,9 +930,9 @@ impl Lang for LangPs {
         let forms = self.currency_forms.get(currency).unwrap_or(&self.afn);
 
         // `left_str = self._int_to_word(left)` — note `_int_to_word`, not
-        // `to_cardinal`: identical for a non-negative int, but it means the
-        // >= 10^9 digit fallback (bug 4) applies to money too.
-        let left_str = self.int_to_word(&left);
+        // `to_cardinal`: identical for a non-negative int, and it means the
+        // scales and the 10^12 ceiling (bug 4) apply to money too.
+        let left_str = self.int_to_word(&left)?;
         let currency_word = Self::select_form(&left, &forms.unit);
         let mut result = format!("{} {}", left_str, currency_word);
 
@@ -921,7 +941,7 @@ impl Lang for LangPs {
         // 0.001 renders as "صفر euros" (bug 8).
         if cents && right != 0 {
             let right_big = BigInt::from(right);
-            let cents_str = self.int_to_word(&right_big);
+            let cents_str = self.int_to_word(&right_big)?;
             let cents_word = Self::select_form(&right_big, &forms.subunit);
             result.push_str(separator);
             result.push_str(&cents_str);
@@ -942,6 +962,7 @@ impl Lang for LangPs {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -995,10 +1016,15 @@ mod float_tests {
         // Trailing zero survives: `str(Decimal("1.10")) == "1.10"`, fraction "10".
         assert_eq!(d("1.10"), "یو اعشاریه یو صفر");
         assert_eq!(d("12.345"), "لس دوه اعشاریه درې څلور پنځه");
-        // Left part >= 10**9 stringifies to its numerals (bug 4).
+        // Left part >= 10**12 is past maxval (bug 4, #147; was digits).
+        let value = BigDecimal::from_str("98746251323029.99").unwrap();
+        assert!(matches!(
+            LangPs::new().to_cardinal_float(&FloatValue::Decimal { value, precision: 2 }, None),
+            Err(N2WError::Overflow(_))
+        ));
         assert_eq!(
-            d("98746251323029.99"),
-            "98746251323029 اعشاریه نهه نهه"
+            d("987462513.99"),
+            "نهه سل اتیا اووه میلیون څلور سل شپېته دوه زره پنځه سل لس درې اعشاریه نهه نهه"
         );
         assert_eq!(d("0.001"), "صفر اعشاریه صفر صفر یو");
     }

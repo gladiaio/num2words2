@@ -13,10 +13,10 @@ num2words2 10001
 # ten thousand and one
 
 num2words2 24120.10
-# twenty-four thousand, one hundred and twenty point one
+# twenty-four thousand, one hundred and twenty point one zero
 
 num2words2 24120.10 --lang es
-# veinticuatro mil ciento veinte punto uno
+# veinticuatro mil ciento veinte punto uno cero
 
 num2words2 2.14 --lang es --to currency
 # dos euros con catorce céntimos

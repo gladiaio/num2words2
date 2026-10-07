@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -221,11 +223,27 @@ class Num2WordsLBTest(TestCase):
             num2words(999999999, lang="lb"),
             "néng honnert nongzeg néng Millioun néng honnert nongzeg néng dausend néng honnert nongzeg néng",
         )
-        self.assertEqual(num2words(1000000000, lang="lb"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="lb"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="lb"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="lb"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="lb"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="lb"),
+            "eent Milliard",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="lb"),
+            "eent Milliard zwou honnert drësseg véier Millioun fënnef honnert sechzeg siwen dausend aacht honnert nongzeg",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="lb"),
+            "néng Milliard néng honnert nongzeg néng Millioun néng honnert nongzeg néng dausend néng honnert nongzeg néng",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="lb"),
+            "zéng Milliard",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="lb"),
+            "nongzeg néng Milliard néng honnert nongzeg néng Millioun néng honnert nongzeg néng dausend néng honnert nongzeg néng",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -322,40 +340,40 @@ class Num2WordsLBTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="lb", to="currency", currency="EUR"), "null euro"
+            num2words(0, lang="lb", to="currency", currency="EUR"), "null Euro"
         )
         self.assertEqual(
             num2words(0.01, lang="lb", to="currency", currency="EUR"),
-            "null euro eent cent",
+            "null Euro een Cent",
         )
         self.assertEqual(
             num2words(0.5, lang="lb", to="currency", currency="EUR"),
-            "null euro fofzeg cents",
+            "null Euro fofzeg Cent",
         )
         self.assertEqual(
-            num2words(1, lang="lb", to="currency", currency="EUR"), "eent euro"
+            num2words(1, lang="lb", to="currency", currency="EUR"), "een Euro"
         )
         self.assertEqual(
             num2words(1.5, lang="lb", to="currency", currency="EUR"),
-            "eent euro fofzeg cents",
+            "een Euro fofzeg Cent",
         )
         self.assertEqual(
-            num2words(0, lang="lb", to="currency", currency="USD"), "null dollars"
+            num2words(0, lang="lb", to="currency", currency="USD"), "null Dollar"
         )
         self.assertEqual(
             num2words(0.01, lang="lb", to="currency", currency="USD"),
-            "null dollars eent cent",
+            "null Dollar een Cent",
         )
         self.assertEqual(
             num2words(0.5, lang="lb", to="currency", currency="USD"),
-            "null dollars fofzeg cents",
+            "null Dollar fofzeg Cent",
         )
         self.assertEqual(
-            num2words(1, lang="lb", to="currency", currency="USD"), "eent dollar"
+            num2words(1, lang="lb", to="currency", currency="USD"), "een Dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="lb", to="currency", currency="USD"),
-            "eent dollar fofzeg cents",
+            "een Dollar fofzeg Cent",
         )
 
     def test_year(self):
@@ -417,3 +435,9 @@ class Num2WordsLBTest(TestCase):
         self.assertEqual(num2words(100, lang="lb"), num2words("100", lang="lb"))
         self.assertEqual(num2words(1000, lang="lb"), num2words("1000", lang="lb"))
 
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="lb") == "eent Billioun"
+    with pytest.raises(OverflowError):
+        num2words(10**15, lang="lb")

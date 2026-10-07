@@ -25,7 +25,7 @@ class Num2WordsLNTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="ln"), "zero")
+        self.assertEqual(num2words(0, lang="ln"), "libúngútulú")
         self.assertEqual(num2words(1, lang="ln"), "moko")
         self.assertEqual(num2words(2, lang="ln"), "míbalé")
         self.assertEqual(num2words(3, lang="ln"), "mísáto")
@@ -219,64 +219,77 @@ class Num2WordsLNTest(TestCase):
             num2words(999999999, lang="ln"),
             "libwá nkama ntuku libwá libwá milio libwá nkama ntuku libwá libwá nkóto libwá nkama ntuku libwá libwá",
         )
-        self.assertEqual(num2words(1000000000, lang="ln"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="ln"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="ln"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="ln"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="ln"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="ln"), "moko miliale")
+        self.assertEqual(
+            num2words(1234567890, lang="ln"),
+            "moko miliale míbalé nkama ntuku mísáto mínei milio mítáno nkama ntuku motóbá sambo nkóto mwambe nkama ntuku libwá",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="ln"),
+            "libwá miliale libwá nkama ntuku libwá libwá milio libwá nkama ntuku libwá libwá nkóto libwá nkama ntuku libwá libwá",
+        )
+        self.assertEqual(num2words(10000000000, lang="ln"), "zómi miliale")
+        self.assertEqual(
+            num2words(99999999999, lang="ln"),
+            "ntuku libwá libwá miliale libwá nkama ntuku libwá libwá milio libwá nkama ntuku libwá libwá nkóto libwá nkama ntuku libwá libwá",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="ln"), "minus moko")
-        self.assertEqual(num2words(-2, lang="ln"), "minus míbalé")
-        self.assertEqual(num2words(-5, lang="ln"), "minus mítáno")
-        self.assertEqual(num2words(-10, lang="ln"), "minus zómi")
-        self.assertEqual(num2words(-11, lang="ln"), "minus zómi moko")
-        self.assertEqual(num2words(-20, lang="ln"), "minus ntuku míbalé")
-        self.assertEqual(num2words(-50, lang="ln"), "minus ntuku mítáno")
-        self.assertEqual(num2words(-99, lang="ln"), "minus ntuku libwá libwá")
-        self.assertEqual(num2words(-100, lang="ln"), "minus moko nkama")
-        self.assertEqual(num2words(-101, lang="ln"), "minus moko nkama moko")
-        self.assertEqual(num2words(-200, lang="ln"), "minus míbalé nkama")
+        self.assertEqual(num2words(-1, lang="ln"), "moins moko")
+        self.assertEqual(num2words(-2, lang="ln"), "moins míbalé")
+        self.assertEqual(num2words(-5, lang="ln"), "moins mítáno")
+        self.assertEqual(num2words(-10, lang="ln"), "moins zómi")
+        self.assertEqual(num2words(-11, lang="ln"), "moins zómi moko")
+        self.assertEqual(num2words(-20, lang="ln"), "moins ntuku míbalé")
+        self.assertEqual(num2words(-50, lang="ln"), "moins ntuku mítáno")
+        self.assertEqual(num2words(-99, lang="ln"), "moins ntuku libwá libwá")
+        self.assertEqual(num2words(-100, lang="ln"), "moins moko nkama")
+        self.assertEqual(num2words(-101, lang="ln"), "moins moko nkama moko")
+        self.assertEqual(num2words(-200, lang="ln"), "moins míbalé nkama")
         self.assertEqual(
-            num2words(-999, lang="ln"), "minus libwá nkama ntuku libwá libwá"
+            num2words(-999, lang="ln"), "moins libwá nkama ntuku libwá libwá"
         )
-        self.assertEqual(num2words(-1000, lang="ln"), "minus moko nkóto")
-        self.assertEqual(num2words(-1001, lang="ln"), "minus moko nkóto moko")
-        self.assertEqual(num2words(-10000, lang="ln"), "minus zómi nkóto")
-        self.assertEqual(num2words(-100000, lang="ln"), "minus moko nkama nkóto")
-        self.assertEqual(num2words(-1000000, lang="ln"), "minus moko milio")
+        self.assertEqual(num2words(-1000, lang="ln"), "moins moko nkóto")
+        self.assertEqual(num2words(-1001, lang="ln"), "moins moko nkóto moko")
+        self.assertEqual(num2words(-10000, lang="ln"), "moins zómi nkóto")
+        self.assertEqual(num2words(-100000, lang="ln"), "moins moko nkama nkóto")
+        self.assertEqual(num2words(-1000000, lang="ln"), "moins moko milio")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="ln"), "zero point moko")
-        self.assertEqual(num2words(0.5, lang="ln"), "zero point mítáno")
-        self.assertEqual(num2words(0.9, lang="ln"), "zero point libwá")
-        self.assertEqual(num2words(1.1, lang="ln"), "moko point moko")
-        self.assertEqual(num2words(1.5, lang="ln"), "moko point mítáno")
-        self.assertEqual(num2words(2.5, lang="ln"), "míbalé point mítáno")
-        self.assertEqual(num2words(3.14, lang="ln"), "mísáto point moko mínei")
-        self.assertEqual(num2words(10.5, lang="ln"), "zómi point mítáno")
-        self.assertEqual(num2words(11.11, lang="ln"), "zómi moko point moko moko")
-        self.assertEqual(num2words(20.2, lang="ln"), "ntuku míbalé point míbalé")
+        self.assertEqual(num2words(0.1, lang="ln"), "libúngútulú virgule moko")
+        self.assertEqual(num2words(0.5, lang="ln"), "libúngútulú virgule mítáno")
+        self.assertEqual(num2words(0.9, lang="ln"), "libúngútulú virgule libwá")
+        self.assertEqual(num2words(1.1, lang="ln"), "moko virgule moko")
+        self.assertEqual(num2words(1.5, lang="ln"), "moko virgule mítáno")
+        self.assertEqual(num2words(2.5, lang="ln"), "míbalé virgule mítáno")
+        self.assertEqual(num2words(3.14, lang="ln"), "mísáto virgule moko mínei")
+        self.assertEqual(num2words(10.5, lang="ln"), "zómi virgule mítáno")
+        self.assertEqual(num2words(11.11, lang="ln"), "zómi moko virgule moko moko")
+        self.assertEqual(num2words(20.2, lang="ln"), "ntuku míbalé virgule míbalé")
         self.assertEqual(
-            num2words(99.99, lang="ln"), "ntuku libwá libwá point libwá libwá"
+            num2words(99.99, lang="ln"), "ntuku libwá libwá virgule libwá libwá"
         )
-        self.assertEqual(num2words(100.01, lang="ln"), "moko nkama point zero moko")
-        self.assertEqual(num2words(100.5, lang="ln"), "moko nkama point mítáno")
+        self.assertEqual(
+            num2words(100.01, lang="ln"), "moko nkama virgule libúngútulú moko"
+        )
+        self.assertEqual(num2words(100.5, lang="ln"), "moko nkama virgule mítáno")
         self.assertEqual(
             num2words(123.45, lang="ln"),
-            "moko nkama ntuku míbalé mísáto point mínei mítáno",
+            "moko nkama ntuku míbalé mísáto virgule mínei mítáno",
         )
-        self.assertEqual(num2words(1000.5, lang="ln"), "moko nkóto point mítáno")
+        self.assertEqual(num2words(1000.5, lang="ln"), "moko nkóto virgule mítáno")
         self.assertEqual(
             num2words(1234.56, lang="ln"),
-            "moko nkóto míbalé nkama ntuku mísáto mínei point mítáno motóbá",
+            "moko nkóto míbalé nkama ntuku mísáto mínei virgule mítáno motóbá",
         )
-        self.assertEqual(num2words(10000.01, lang="ln"), "zómi nkóto point zero moko")
-        self.assertEqual(num2words(-0.5, lang="ln"), "minus zero point mítáno")
-        self.assertEqual(num2words(-1.5, lang="ln"), "minus moko point mítáno")
-        self.assertEqual(num2words(-10.5, lang="ln"), "minus zómi point mítáno")
+        self.assertEqual(
+            num2words(10000.01, lang="ln"), "zómi nkóto virgule libúngútulú moko"
+        )
+        self.assertEqual(num2words(-0.5, lang="ln"), "moins libúngútulú virgule mítáno")
+        self.assertEqual(num2words(-1.5, lang="ln"), "moins moko virgule mítáno")
+        self.assertEqual(num2words(-10.5, lang="ln"), "moins zómi virgule mítáno")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -325,15 +338,16 @@ class Num2WordsLNTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="ln", to="currency", currency="CDF"), "zero faranga"
+            num2words(0, lang="ln", to="currency", currency="CDF"),
+            "libúngútulú faranga",
         )
         self.assertEqual(
             num2words(0.01, lang="ln", to="currency", currency="CDF"),
-            "zero faranga moko santimi",
+            "libúngútulú faranga moko santimi",
         )
         self.assertEqual(
             num2words(0.5, lang="ln", to="currency", currency="CDF"),
-            "zero faranga ntuku mítáno santimi",
+            "libúngútulú faranga ntuku mítáno santimi",
         )
         self.assertEqual(
             num2words(1, lang="ln", to="currency", currency="CDF"), "moko faranga"
@@ -342,42 +356,12 @@ class Num2WordsLNTest(TestCase):
             num2words(1.5, lang="ln", to="currency", currency="CDF"),
             "moko faranga ntuku mítáno santimi",
         )
-        self.assertEqual(
-            num2words(0, lang="ln", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="ln", to="currency", currency="USD"),
-            "zero dollars moko cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="ln", to="currency", currency="USD"),
-            "zero dollars ntuku mítáno cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="ln", to="currency", currency="USD"), "moko dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="ln", to="currency", currency="USD"),
-            "moko dollar ntuku mítáno cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="ln", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="ln", to="currency", currency="EUR"),
-            "zero euros moko cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="ln", to="currency", currency="EUR"),
-            "zero euros ntuku mítáno cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="ln", to="currency", currency="EUR"), "moko euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="ln", to="currency", currency="EUR"),
-            "moko euro ntuku mítáno cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="ln", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="ln", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -422,7 +406,7 @@ class Num2WordsLNTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="ln"), "zero")
+        self.assertEqual(num2words("0", lang="ln"), "libúngútulú")
         self.assertEqual(num2words("1", lang="ln"), "moko")
         self.assertEqual(num2words("10", lang="ln"), "zómi")
         self.assertEqual(num2words("100", lang="ln"), "moko nkama")
@@ -434,9 +418,8 @@ class Num2WordsLNTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="ln"), "zero")
+        self.assertEqual(num2words(0, lang="ln"), "libúngútulú")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ln"), num2words("100", lang="ln"))
         self.assertEqual(num2words(1000, lang="ln"), num2words("1000", lang="ln"))
-

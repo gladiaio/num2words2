@@ -407,14 +407,21 @@ pub trait Lang {
         "EUR"
     }
 
+    /// Another spelling of the same currency (ar takes "SR" and the ISO code
+    /// "SAR" for the riyal), so `currency=` is not taken as ignored (#219).
+    fn same_currency(&self, _a: &str, _b: &str) -> bool {
+        false
+    }
+
     fn to_cheque(&self, val: &BigDecimal, currency: &str) -> Result<String> {
         crate::currency::default_to_cheque(self, val, currency)
     }
 
     // ---- fractions -----------------------------------------------------
 
-    /// `Num2Word_Base.to_fraction` (issue #584). EN/DE/ES/FR/IT/PT and the
-    /// aero profiles override with idiomatic forms (half/quarter/Drittel).
+    /// `to='fraction'` (issue #584). EN/DE/ES/FR/IT/PT/CA and the aero
+    /// profiles override with idiomatic forms (half/quarter/Drittel); every
+    /// other language raises NotImplementedError (#217).
     fn to_fraction(&self, numerator: &BigInt, denominator: &BigInt) -> Result<String> {
         default_to_fraction(self, numerator, denominator)
     }
@@ -427,6 +434,11 @@ pub trait Lang {
     // path ("one"); fails -> to_cardinal_float. Languages overriding
     // Python's to_cardinal (ru "пять целых ноль десятых", cs, be, ...) make
     // their own call and override these hooks.
+    //
+    // The ordinal / ordinal_num / year hooks below are no longer reached
+    // from the dispatcher (gladiaio/num2words2#213/#214): it sends an
+    // integral value to the integer modes and raises TypeError for any
+    // other, before the language is called.
 
     /// `to_cardinal(float/Decimal)` — the full entry, whole values included.
     fn cardinal_float_entry(
@@ -562,6 +574,10 @@ pub trait Lang {
         false
     }
 
+    /// No longer called: the dispatcher reads every negative zero as zero,
+    /// without "minus" (gladiaio/num2words2#237). Kept so the existing
+    /// overrides still compile.
+    ///
     /// Render `Decimal('-0.0')` for mode `to`, which BigDecimal cannot
     /// represent (it has no signed zero). `None` — the default — means the
     /// value coincides with float `-0.0`, so the binding's `Float{-0.0}`
@@ -669,10 +685,24 @@ pub fn year_float_error(value: &FloatValue) -> N2WError {
     ))
 }
 
-/// Python's `Num2Word_Base.to_fraction`.
+/// `NotImplementedError` for a `to=` mode a language has no rules for. The
+/// binder prefixes `lang='xx' ` (the core does not know the language key),
+/// giving `lang='ru' does not support to='fraction'`.
+pub fn unsupported_mode(to: &str) -> N2WError {
+    N2WError::NotImplemented(format!("does not support to='{}'", to))
+}
+
+/// `to_fraction` for a language without its own fraction rules.
+///
+/// Python's `Num2Word_Base.to_fraction` read "n ordinal" and pluralised with
+/// an English "s" in every language ("два третийs", "三 第四s"; #217). A
+/// fraction reading is language grammar (Russian "две третьих", Dutch "twee
+/// derde"), not something a generic rule can build from the ordinal, so a
+/// language without rules raises — as rm already did — rather than invent a
+/// plural. A zero denominator still raises ZeroDivisionError first.
 pub fn default_to_fraction<L: Lang + ?Sized>(
-    lang: &L,
-    numerator: &BigInt,
+    _lang: &L,
+    _numerator: &BigInt,
     denominator: &BigInt,
 ) -> Result<String> {
     if denominator.is_zero() {
@@ -680,28 +710,12 @@ pub fn default_to_fraction<L: Lang + ?Sized>(
             "denominator must not be zero".into(),
         ));
     }
-    if denominator.is_one() || numerator.is_zero() {
-        return lang.to_cardinal(numerator);
-    }
-    let is_negative = numerator.is_negative() ^ denominator.is_negative();
-    let abs_n = numerator.abs();
-    let abs_d = denominator.abs();
-    let sign = if is_negative {
-        format!("{} ", lang.negword().trim())
-    } else {
-        String::new()
-    };
-    let num_word = lang.to_cardinal(&abs_n)?;
-    let mut den_word = lang.to_ordinal(&abs_d)?;
-    if !abs_n.is_one() {
-        // Python appends a bare "s"; languages override for real plurals.
-        den_word.push('s');
-    }
-    Ok(format!("{}{} {}", sign, num_word, den_word))
+    Err(unsupported_mode("fraction"))
 }
 
 /// Python's `splitnum`. Returns `None` where Python falls off the loop and
 /// implicitly returns `None` (value larger than every card).
+#[allow(clippy::never_loop)] // mirrors Python's `for ...: return` (first card <= value)
 pub fn splitnum<L: Lang + ?Sized>(lang: &L, value: &BigInt) -> Option<Vec<Node>> {
     let cards = lang.cards();
     for (elem, word) in cards.iter_from(value) {

@@ -8,9 +8,9 @@
 //! and drives `_int_to_word`, a plain recursive descent over the
 //! ones/tens/hundred/thousand/million scale.
 //!
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here, and
-//! there is **no overflow check at all** — see bug 5 below for what happens
-//! instead of an `OverflowError`.
+//! Consequently `cards`/`merge` stay at their trait defaults here. Python has
+//! **no overflow check at all** — see bug 5 below for what it did instead;
+//! this port raises `OverflowError` from 10^15 (`maxval`).
 //!
 //! `setup()` only assigns `negword`/`pointword`/`ones`/`tens`/`hundred`/
 //! `thousand`/`million`; those are the whole of the language data.
@@ -57,15 +57,14 @@
 //!    ("zwou honnert") and 2000 ("zwou dausend") all take the feminine, and the
 //!    masculine "zwee" never appears. Likewise "eent" is the neuter/counting
 //!    form used even attributively ("eent honnert").
-//! 5. **Values >= 10^9 silently degrade to digits** instead of raising.
-//!    `_int_to_word`'s final `else` is `return str(number)  # Fallback for very
-//!    large numbers`. So `to_cardinal(10**9)` == "1000000000" and
-//!    `to_cardinal(10**21)` == "1000000000000000000000" — a *successful* call
-//!    returning an unconverted numeral, not an `OverflowError`. "Milliard" and
-//!    everything above it are simply absent from the language data. The scale
-//!    words stop at `million` = "Millioun", so 999999999 is the largest value
-//!    that produces words. This also means the fallback composes with the sign:
-//!    `to_cardinal(-10**12)` == "minus 1000000000000".
+//! 5. **Values >= 10^9 (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` ends with `return str(number)  # Fallback for very large
+//!    numbers`, so `to_cardinal(10**9)` was the digit string "1000000000":
+//!    "Milliard" and everything above it are absent from the Python data.
+//!    This port continues the `Millioun` composition with Milliard (10^9,
+//!    lod.lu) and Billioun (10^12, lb.wikipedia / Omniglot), so
+//!    `to_cardinal(10**9)` == "eent Milliard", and raises `OverflowError`
+//!    from 10^15 (`maxval`), where no reliable word was found.
 //! 6. **`to_ordinal` is a blind suffix append**, `to_cardinal(n) + "-ten"`,
 //!    with no stem change, no agreement and no special-casing whatsoever. It
 //!    inherits every quirk above and adds its own:
@@ -73,8 +72,8 @@
 //!      * `to_ordinal(-1)` == "minus eent-ten" — negatives are cheerfully
 //!        ordinalised, where most modules raise
 //!        "Cannot treat negative num %s as ordinal".
-//!      * `to_ordinal(10**12)` == "1000000000000-ten" — bug 5 leaks through,
-//!        yielding digits with a Luxembourgish suffix glued on.
+//!      * `to_ordinal(10**12)` == "eent Billioun-ten" (Python: digits plus
+//!        the suffix, bug 5).
 //!      * The suffix attaches to the *last word only* with no separator, so
 //!        `to_ordinal(999)` == "néng honnert nongzeg néng-ten".
 //!    Real Luxembourgish ordinals are "éischten", "zweeten", "drëtten", …;
@@ -190,17 +189,46 @@
 //!
 //! # Error variants
 //!
-//! For *integer* input the module cannot raise: there is no overflow check
-//! (bug 5 replaces it with a digit fallback), no dict lookup and no `int()`
-//! of a hostile token. `to_currency` cannot raise either, because bug 8 turns
-//! every missing code into EUR. The errors that do exist:
+//! For *integer* input the module raises only `OverflowError`, from 10^15
+//! (bug 5, #147): no dict lookup and no `int()` of a hostile token.
+//! `to_currency` shares that ceiling and otherwise cannot raise, because
+//! bug 8 turns every missing code into EUR. The errors that do exist:
 //!
 //! * The `NotImplementedError` that the *inherited* `to_cheque` raises for a
 //!   code outside `{EUR, USD}` — `currency.rs`'s `default_to_cheque` already
 //!   produces it from [`Lang::currency_forms`] returning `None`.
 //! * The `ValueError` of quirk 18 above, on the float/Decimal entries only.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use Dollar / Euro with Cent (capitalised, singular
+//! after a numeral). All three are masculine, so the numeral before them is
+//! "een"/"zwee", not the standalone "eent"/"zwou" (#260): "een Euro", "zwee
+//! Euro", "zwee Cent". Examples in these docs that quote English nouns
+//! record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+/// The cardinal's last word as the attributive masculine numeral (#260):
+/// every LB currency noun (Euro, Dollar, Cent) is masculine, which takes
+/// "een" and "zwee" where the module's standalone forms are "eent" and
+/// "zwou".
+fn masculine(words: String) -> String {
+    let (head, last) = match words.rsplit_once(' ') {
+        Some((h, l)) => (Some(h), l),
+        None => (None, words.as_str()),
+    };
+    let form = match last {
+        "eent" => "een",
+        "zwou" => "zwee",
+        _ => return words,
+    };
+    match head {
+        Some(h) => format!("{} {}", h, form),
+        None => form.to_string(),
+    }
+}
+
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -208,6 +236,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `_int_to_word`'s zero case. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`, but `ones[0]` is `""` (falsy),
@@ -254,6 +283,21 @@ const THOUSAND: &str = "dausend";
 /// `self.million`. Capitalised in the Python source (German-style noun
 /// capitalisation) and emitted mid-sentence as-is: "eent Millioun".
 const MILLION: &str = "Millioun";
+
+/// The scales above `Millioun` that Python lacks (gladiaio/num2words2#147),
+/// largest first, as `(power of ten, word)`: Milliard 10^9 (lod.lu,
+/// MILLIARD1) and Billioun 10^12 (lb.wikipedia, Omniglot "Numbers in
+/// Luxembourgish"). Capitalised nouns like `Millioun`, never pluralised.
+const HIGH_SCALES: [(u32, &str); 2] = [
+    (12, "Billioun"),
+    (9, "Milliard"),
+];
+
+/// The exclusive ceiling: no reliable Luxembourgish word for 10^15 (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
 
 /// The ordinal suffix appended by `to_ordinal`. See module bug 6.
 const ORDINAL_SUFFIX: &str = "-ten";
@@ -483,11 +527,11 @@ impl LangLb {
         let mut currency_forms = HashMap::with_capacity(2);
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euro"], &["cent", "cents"]),
+            CurrencyForms::new(&["Euro", "Euro"], &["Cent", "Cent"]),
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["Dollar", "Dollar"], &["Cent", "Cent"]),
         );
 
         let fallback_forms = currency_forms
@@ -503,13 +547,15 @@ impl LangLb {
 
     /// Python's `_int_to_word`.
     ///
-    /// Infallible: the `else` arm swallows everything at or above 10^9 by
-    /// returning `str(number)` (module bug 5), so there is no error path.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    /// Python's `else` arm returned `str(number)` for everything at or above
+    /// 10^9 (module bug 5); here the [`HIGH_SCALES`] take over and the only
+    /// error is the `maxval` OverflowError (#147).
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // Python: `if number == 0: return self.ones[0] if self.ones[0] else "zero"`.
         // `ones[0]` is "" (falsy) so the ternary is constant — see bug 1.
         if number.is_zero() {
-            return ZERO.to_string();
+            return Ok(ZERO.to_string());
         }
 
         // Python: `if number < 0: return self.negword + self._int_to_word(abs(number))`.
@@ -518,7 +564,7 @@ impl LangLb {
         // sign from the *string* before parsing, so `_int_to_word` only ever
         // sees a non-negative value. Reproduced for fidelity with the source.
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
         let ten = BigInt::from(10);
@@ -528,7 +574,7 @@ impl LangLb {
         let billion = BigInt::from(1_000_000_000);
 
         if number < &ten {
-            return ONES[idx(number)].to_string();
+            return Ok(ONES[idx(number)].to_string());
         }
 
         if number < &hundred {
@@ -536,9 +582,9 @@ impl LangLb {
             // matches Python's `//` and `%` exactly.
             let (tens_val, ones_val) = number.div_mod_floor(&ten);
             if ones_val.is_zero() {
-                return TENS[idx(&tens_val)].to_string();
+                return Ok(TENS[idx(&tens_val)].to_string());
             }
-            return format!("{} {}", TENS[idx(&tens_val)], ONES[idx(&ones_val)]);
+            return Ok(format!("{} {}", TENS[idx(&tens_val)], ONES[idx(&ones_val)]));
         }
 
         if number < &thousand {
@@ -548,41 +594,58 @@ impl LangLb {
             let mut result = format!("{} {}", ONES[idx(&hundreds_val)], HUNDRED);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         if number < &million {
             let (thousands_val, remainder) = number.div_mod_floor(&thousand);
             // `thousands_val` < 1000 here, so this recursion lands in one of
             // the arms above and never re-enters the digit fallback.
-            let mut result = format!("{} {}", self.int_to_word(&thousands_val), THOUSAND);
+            let mut result = format!("{} {}", self.int_to_word(&thousands_val)?, THOUSAND);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         if number < &billion {
             let (millions_val, remainder) = number.div_mod_floor(&million);
             // `millions_val` < 1000 here — same reasoning as above.
-            let mut result = format!("{} {}", self.int_to_word(&millions_val), MILLION);
+            let mut result = format!("{} {}", self.int_to_word(&millions_val)?, MILLION);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            return Ok(result);
         }
 
         // Python: `return str(number)  # Fallback for very large numbers`.
-        // A successful call returning bare digits — see bug 5.
-        number.to_string()
+        // The scales above million instead, same composition (#147); the
+        // maxval check keeps the multiplier below 1000.
+        for &(exp, word) in HIGH_SCALES.iter() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let (scale_val, remainder) = number.div_mod_floor(&scale);
+                let mut result = format!("{} {}", self.int_to_word(&scale_val)?, word);
+                if !remainder.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&remainder)?);
+                }
+                return Ok(result);
+            }
+        }
+        unreachable!("every value >= 10^9 and below maxval has a HIGH_SCALES entry")
     }
 }
 
 impl Lang for LangLb {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -625,7 +688,7 @@ impl Lang for LangLb {
         // Python's trailing `.strip()`. A no-op in practice — `_int_to_word`
         // never returns "" (0 yields "null") nor pads its output — but kept so
         // the port has no behaviour of its own.
-        Ok(format!("{}{}", ret, self.int_to_word(&value.abs()))
+        Ok(format!("{}{}", ret, self.int_to_word(&value.abs())?)
             .trim()
             .to_string())
     }
@@ -763,7 +826,7 @@ impl Lang for LangLb {
             ret.push_str(NEGWORD);
         }
         // `self._int_to_word(int(left))` — the integer part, unsigned.
-        ret.push_str(&self.int_to_word(&left));
+        ret.push_str(&self.int_to_word(&left)?);
 
         // Python's `"." in n` branch. For a normal (non-scientific) float this
         // is precision >= 1, and for a canonical Decimal it is scale >= 1; the
@@ -783,7 +846,7 @@ impl Lang for LangLb {
                     // construction. Error, not panic, for boundary safety.
                     N2WError::Value(format!("non-digit {:?} in fractional part", ch))
                 })?;
-                ret.push_str(&self.int_to_word(&BigInt::from(d)));
+                ret.push_str(&self.int_to_word(&BigInt::from(d))?);
                 ret.push(' ');
             }
         }
@@ -814,7 +877,7 @@ impl Lang for LangLb {
                 // Python: `return (ret + self._int_to_word(int(n))).strip()`,
                 // where `ret` is negword iff the string carried a "-".
                 let ret = if value.is_negative() { NEGWORD } else { "" };
-                Ok(format!("{}{}", ret, self.int_to_word(&abs_int))
+                Ok(format!("{}{}", ret, self.int_to_word(&abs_int)?)
                     .trim()
                     .to_string())
             }
@@ -900,6 +963,12 @@ impl Lang for LangLb {
         self.currency_forms.get(code)
     }
 
+    /// The cheque's amount agrees with the masculine unit noun like
+    /// `to_currency`'s (#260): "ZWEE AND 00/100 EURO".
+    fn money_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(masculine(self.to_cardinal(number)?))
+    }
+
     /// Python's `Num2Word_LB.to_currency`:
     ///
     /// ```python
@@ -978,7 +1047,7 @@ impl Lang for LangLb {
             &forms.unit[0]
         };
 
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", masculine(self.int_to_word(&left)?), unit);
 
         // `cents and right`: `right == 0` is falsy in Python, so zero cents
         // suppress the clause even for a float (bug 14), and `cents=False`
@@ -991,7 +1060,7 @@ impl Lang for LangLb {
                 &forms.subunit[0]
             };
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&masculine(self.int_to_word(&right)?));
             result.push(' ');
             result.push_str(subunit);
         }
@@ -1046,10 +1115,10 @@ mod entry_routing_tests {
             lb.cardinal_float_entry(&fv(-0.0, 1), None).unwrap(),
             "minus null Komma null"
         );
-        // The >= 10^9 digit fallback composes with the ".0" tail (bug 5).
+        // >= 10^9 is worded since #147 (Python: digits, bug 5).
         assert_eq!(
             lb.cardinal_float_entry(&fv(1e9, 1), None).unwrap(),
-            "1000000000 Komma null"
+            "eent Milliard Komma null"
         );
         // Decimals: trailing zeros of the literal are all spelled "null".
         assert_eq!(
@@ -1088,15 +1157,19 @@ mod entry_routing_tests {
             }
             other => panic!("expected ValueError, got {:?}", other),
         }
-        for (s, repr) in [("1E+2", "1E+2"), ("1E+20", "1E+20"), ("1E+3", "1E+3")] {
-            match lb.cardinal_float_entry(&dv(s), None) {
-                Err(N2WError::Value(m)) => assert_eq!(
-                    m,
-                    format!("invalid literal for int() with base 10: '{}'", repr)
-                ),
-                other => panic!("{} expected ValueError, got {:?}", s, other),
-            }
+        // #211: str(Decimal) is written out ("100"), so these read.
+        for (s, n) in [("1E+2", 2u32), ("1E+12", 12), ("1E+3", 3)] {
+            assert_eq!(
+                lb.cardinal_float_entry(&dv(s), None).unwrap(),
+                lb.to_cardinal(&BigInt::from(10).pow(n)).unwrap(),
+                "{}", s
+            );
         }
+        // Past maxval (#147) the written-out value is an OverflowError.
+        assert!(matches!(
+            lb.cardinal_float_entry(&dv("1E+20"), None),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// `to_ordinal(float)` = cardinal + "-ten"; errors propagate unchanged.

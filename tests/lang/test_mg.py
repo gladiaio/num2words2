@@ -25,7 +25,7 @@ class Num2WordsMGTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="mg"), "zero")
+        self.assertEqual(num2words(0, lang="mg"), "aotra")
         self.assertEqual(num2words(1, lang="mg"), "iray")
         self.assertEqual(num2words(2, lang="mg"), "roa")
         self.assertEqual(num2words(3, lang="mg"), "telo")
@@ -215,59 +215,68 @@ class Num2WordsMGTest(TestCase):
             num2words(999999999, lang="mg"),
             "sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
         )
-        self.assertEqual(num2words(1000000000, lang="mg"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="mg"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="mg"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="mg"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="mg"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="mg"), "iray lavitrisa")
+        self.assertEqual(
+            num2words(1234567890, lang="mg"),
+            "iray lavitrisa roa zato telopolo efatra tapitrisa dimy zato enimpolo fito arivo valo zato sivifolo",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="mg"),
+            "sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
+        )
+        self.assertEqual(num2words(10000000000, lang="mg"), "folo lavitrisa")
+        self.assertEqual(
+            num2words(99999999999, lang="mg"),
+            "sivifolo sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="mg"), "minus iray")
-        self.assertEqual(num2words(-2, lang="mg"), "minus roa")
-        self.assertEqual(num2words(-5, lang="mg"), "minus dimy")
-        self.assertEqual(num2words(-10, lang="mg"), "minus folo")
-        self.assertEqual(num2words(-11, lang="mg"), "minus folo iray")
-        self.assertEqual(num2words(-20, lang="mg"), "minus roapolo")
-        self.assertEqual(num2words(-50, lang="mg"), "minus dimampolo")
-        self.assertEqual(num2words(-99, lang="mg"), "minus sivifolo sivy")
-        self.assertEqual(num2words(-100, lang="mg"), "minus iray zato")
-        self.assertEqual(num2words(-101, lang="mg"), "minus iray zato iray")
-        self.assertEqual(num2words(-200, lang="mg"), "minus roa zato")
-        self.assertEqual(num2words(-999, lang="mg"), "minus sivy zato sivifolo sivy")
-        self.assertEqual(num2words(-1000, lang="mg"), "minus iray arivo")
-        self.assertEqual(num2words(-1001, lang="mg"), "minus iray arivo iray")
-        self.assertEqual(num2words(-10000, lang="mg"), "minus folo arivo")
-        self.assertEqual(num2words(-100000, lang="mg"), "minus iray zato arivo")
-        self.assertEqual(num2words(-1000000, lang="mg"), "minus iray tapitrisa")
+        self.assertEqual(num2words(-1, lang="mg"), "miiba iray")
+        self.assertEqual(num2words(-2, lang="mg"), "miiba roa")
+        self.assertEqual(num2words(-5, lang="mg"), "miiba dimy")
+        self.assertEqual(num2words(-10, lang="mg"), "miiba folo")
+        self.assertEqual(num2words(-11, lang="mg"), "miiba folo iray")
+        self.assertEqual(num2words(-20, lang="mg"), "miiba roapolo")
+        self.assertEqual(num2words(-50, lang="mg"), "miiba dimampolo")
+        self.assertEqual(num2words(-99, lang="mg"), "miiba sivifolo sivy")
+        self.assertEqual(num2words(-100, lang="mg"), "miiba iray zato")
+        self.assertEqual(num2words(-101, lang="mg"), "miiba iray zato iray")
+        self.assertEqual(num2words(-200, lang="mg"), "miiba roa zato")
+        self.assertEqual(num2words(-999, lang="mg"), "miiba sivy zato sivifolo sivy")
+        self.assertEqual(num2words(-1000, lang="mg"), "miiba iray arivo")
+        self.assertEqual(num2words(-1001, lang="mg"), "miiba iray arivo iray")
+        self.assertEqual(num2words(-10000, lang="mg"), "miiba folo arivo")
+        self.assertEqual(num2words(-100000, lang="mg"), "miiba iray zato arivo")
+        self.assertEqual(num2words(-1000000, lang="mg"), "miiba iray tapitrisa")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="mg"), "zero point iray")
-        self.assertEqual(num2words(0.5, lang="mg"), "zero point dimy")
-        self.assertEqual(num2words(0.9, lang="mg"), "zero point sivy")
-        self.assertEqual(num2words(1.1, lang="mg"), "iray point iray")
-        self.assertEqual(num2words(1.5, lang="mg"), "iray point dimy")
-        self.assertEqual(num2words(2.5, lang="mg"), "roa point dimy")
-        self.assertEqual(num2words(3.14, lang="mg"), "telo point iray efatra")
-        self.assertEqual(num2words(10.5, lang="mg"), "folo point dimy")
-        self.assertEqual(num2words(11.11, lang="mg"), "folo iray point iray iray")
-        self.assertEqual(num2words(20.2, lang="mg"), "roapolo point roa")
-        self.assertEqual(num2words(99.99, lang="mg"), "sivifolo sivy point sivy sivy")
-        self.assertEqual(num2words(100.01, lang="mg"), "iray zato point zero iray")
-        self.assertEqual(num2words(100.5, lang="mg"), "iray zato point dimy")
+        self.assertEqual(num2words(0.1, lang="mg"), "aotra faingo iray")
+        self.assertEqual(num2words(0.5, lang="mg"), "aotra faingo dimy")
+        self.assertEqual(num2words(0.9, lang="mg"), "aotra faingo sivy")
+        self.assertEqual(num2words(1.1, lang="mg"), "iray faingo iray")
+        self.assertEqual(num2words(1.5, lang="mg"), "iray faingo dimy")
+        self.assertEqual(num2words(2.5, lang="mg"), "roa faingo dimy")
+        self.assertEqual(num2words(3.14, lang="mg"), "telo faingo iray efatra")
+        self.assertEqual(num2words(10.5, lang="mg"), "folo faingo dimy")
+        self.assertEqual(num2words(11.11, lang="mg"), "folo iray faingo iray iray")
+        self.assertEqual(num2words(20.2, lang="mg"), "roapolo faingo roa")
+        self.assertEqual(num2words(99.99, lang="mg"), "sivifolo sivy faingo sivy sivy")
+        self.assertEqual(num2words(100.01, lang="mg"), "iray zato faingo aotra iray")
+        self.assertEqual(num2words(100.5, lang="mg"), "iray zato faingo dimy")
         self.assertEqual(
-            num2words(123.45, lang="mg"), "iray zato roapolo telo point efatra dimy"
+            num2words(123.45, lang="mg"), "iray zato roapolo telo faingo efatra dimy"
         )
-        self.assertEqual(num2words(1000.5, lang="mg"), "iray arivo point dimy")
+        self.assertEqual(num2words(1000.5, lang="mg"), "iray arivo faingo dimy")
         self.assertEqual(
             num2words(1234.56, lang="mg"),
-            "iray arivo roa zato telopolo efatra point dimy enina",
+            "iray arivo roa zato telopolo efatra faingo dimy enina",
         )
-        self.assertEqual(num2words(10000.01, lang="mg"), "folo arivo point zero iray")
-        self.assertEqual(num2words(-0.5, lang="mg"), "minus zero point dimy")
-        self.assertEqual(num2words(-1.5, lang="mg"), "minus iray point dimy")
-        self.assertEqual(num2words(-10.5, lang="mg"), "minus folo point dimy")
+        self.assertEqual(num2words(10000.01, lang="mg"), "folo arivo faingo aotra iray")
+        self.assertEqual(num2words(-0.5, lang="mg"), "miiba aotra faingo dimy")
+        self.assertEqual(num2words(-1.5, lang="mg"), "miiba iray faingo dimy")
+        self.assertEqual(num2words(-10.5, lang="mg"), "miiba folo faingo dimy")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -314,15 +323,15 @@ class Num2WordsMGTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="mg", to="currency", currency="MGA"), "zero ariary"
+            num2words(0, lang="mg", to="currency", currency="MGA"), "aotra ariary"
         )
         self.assertEqual(
             num2words(0.01, lang="mg", to="currency", currency="MGA"),
-            "zero ariary iray iraimbilanja",
+            "aotra ariary iray iraimbilanja",
         )
         self.assertEqual(
             num2words(0.5, lang="mg", to="currency", currency="MGA"),
-            "zero ariary dimampolo iraimbilanja",
+            "aotra ariary dimampolo iraimbilanja",
         )
         self.assertEqual(
             num2words(1, lang="mg", to="currency", currency="MGA"), "iray ariary"
@@ -331,42 +340,12 @@ class Num2WordsMGTest(TestCase):
             num2words(1.5, lang="mg", to="currency", currency="MGA"),
             "iray ariary dimampolo iraimbilanja",
         )
-        self.assertEqual(
-            num2words(0, lang="mg", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mg", to="currency", currency="USD"),
-            "zero dollars iray cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mg", to="currency", currency="USD"),
-            "zero dollars dimampolo cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mg", to="currency", currency="USD"), "iray dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mg", to="currency", currency="USD"),
-            "iray dollar dimampolo cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="mg", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mg", to="currency", currency="EUR"),
-            "zero euros iray cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mg", to="currency", currency="EUR"),
-            "zero euros dimampolo cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mg", to="currency", currency="EUR"), "iray euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mg", to="currency", currency="EUR"),
-            "iray euro dimampolo cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mg", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mg", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""
@@ -400,7 +379,7 @@ class Num2WordsMGTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="mg"), "zero")
+        self.assertEqual(num2words("0", lang="mg"), "aotra")
         self.assertEqual(num2words("1", lang="mg"), "iray")
         self.assertEqual(num2words("10", lang="mg"), "folo")
         self.assertEqual(num2words("100", lang="mg"), "iray zato")
@@ -412,9 +391,8 @@ class Num2WordsMGTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="mg"), "zero")
+        self.assertEqual(num2words(0, lang="mg"), "aotra")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mg"), num2words("100", lang="mg"))
         self.assertEqual(num2words(1000, lang="mg"), num2words("1000", lang="mg"))
-

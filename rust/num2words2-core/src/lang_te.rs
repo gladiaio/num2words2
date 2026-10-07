@@ -42,7 +42,7 @@
 //! is `10**7 -> కోట్ల` (crore), `10**5 -> లక్ష` (lakh), `10**3 -> వేయి`
 //! (thousand), `100 -> వంద`, plus every value `0..=99` spelled out
 //! individually. There is deliberately **no card for 10**6**, so a million is
-//! "పది లక్ష" (ten lakh) and a billion is "ఒకటి వంద కోట్ల" (one hundred
+//! "పది లక్ష" (ten lakh) and a billion is "ఒక వంద కోట్ల" (one hundred
 //! crore).
 //!
 //! `MAXVAL = 1000 * highest card = 1000 * 10**7 = 10**10`, so `to_cardinal`
@@ -90,12 +90,11 @@
 //!    remainder has already accumulated `lnum >= elem >= 100`. No TE output
 //!    ever contains a hyphen. Ported anyway for structural fidelity.
 //!
-//! 5. **`to_cardinal(100)` == `"ఒకటి వంద"`** ("one hundred", via the
-//!    `rnum > lnum` multiply branch) whereas `to_cardinal(101)` ==
-//!    `"ఒకటి వందల ఒకటి"` — the `ల` infix appears only when a remainder
-//!    follows. Likewise `1000` -> `"ఒకటి వేయి"` but `1001` ->
-//!    `"ఒకటి వేయిల ఒకటి"`, and `1100` -> `"ఒకటి వేయి ఒకటి వంద"` (no infix,
-//!    since `rnum == 100` fails the strict `100 > rnum`).
+//! 5. **One before a scale word (fixed, gladiaio/num2words2#247).** Python
+//!    wrote the counting form: `to_cardinal(100)` was `"ఒకటి వంద"` and
+//!    10^5 `"ఒకటి లక్ష"`. The port uses the attributive ఒక: "ఒక వంద",
+//!    "ఒక లక్ష". The `ల` infix still appears only when a remainder follows:
+//!    101 is `"ఒక వందల ఒకటి"`, 1100 `"ఒక వేయి ఒక వంద"`.
 //!
 //! # Error variants
 //!
@@ -131,7 +130,8 @@
 //! Resolution through the MRO (`Num2Word_TE` -> `Num2Word_EUR` ->
 //! `Num2Word_Base`):
 //!   * `CURRENCY_FORMS` -> `Num2Word_EUR.CURRENCY_FORMS`, **as mutated by
-//!     `Num2Word_EN.__init__`** (see below).
+//!     `Num2Word_EN.__init__`** — English; the port uses Telugu nouns
+//!     instead (#222, see below).
 //!   * `CURRENCY_ADJECTIVES` -> `Num2Word_EUR.CURRENCY_ADJECTIVES`, unmutated
 //!     — nothing in the library writes into it, only reads.
 //!   * `CURRENCY_PRECISION` -> `Num2Word_Base.CURRENCY_PRECISION`, which is
@@ -188,91 +188,24 @@ const MODIFIERS: [&str; 17] = [
 /// `set_high_numwords` to `cards[10**n] = word`.
 const HIGH: [(u32, &str); 3] = [(7, "కోట్ల"), (5, "లక్ష"), (3, "వేయి")];
 
-/// The effective `CURRENCY_FORMS` for `Num2Word_TE`: `(code, unit, subunit)`.
+/// "One" in front of a scale word (gladiaio/num2words2#247): the adjective ఒక
+/// ("of or pertaining to one", Wiktionary ఒక), not the counting form ఒకటి.
+/// Python wrote "ఒకటి లక్ష"; now "ఒక లక్ష", "ఒక వంద", "ఒక వేయి".
+const ONE_ATTRIBUTIVE: &str = "ఒక";
+
+/// `CURRENCY_FORMS` for `Num2Word_TE`, in Telugu (#222): `(code, unit,
+/// subunit)`, singular after 1 and the -లు plural otherwise.
 ///
-/// # This table is NOT what `lang_EUR.py` says. Read this before "fixing" it.
-///
-/// `Num2Word_TE` inherits `CURRENCY_FORMS` from `Num2Word_EUR`, and
-/// `lang_EUR.py`'s class body lists 22 codes with e.g.
-/// `"EUR": (("euro", "euro"), ...)` and `"GBP": (("pound sterling",
-/// "pounds sterling"), ...)`. **That literal is not what TE sees at runtime.**
-/// TE sees 39 codes, `EUR` pluralises to `"euros"`, and `GBP` is plain
-/// `"pound"/"pounds"`.
-///
-/// The reason is a shared-mutable-class-attribute side effect in
-/// `lang_EN.py`. `Num2Word_EN(Num2Word_EUR)` declares no `CURRENCY_FORMS` of
-/// its own, so in its `__init__` the statement
-///
-/// ```python
-/// self.CURRENCY_FORMS["EUR"] = (("euro", "euros"), ("cent", "cents"))
-/// ```
-///
-/// is an **item assignment**, not a rebind: attribute lookup walks the MRO to
-/// `Num2Word_EUR.CURRENCY_FORMS` and mutates *that dict in place*. There is one
-/// dict object for the whole `Num2Word_EUR` subtree, so every one of EN's ~27
-/// writes is visible to every EUR subclass — `hu`, `kn`, `sv` and `te`
-/// included. `num2words2/__init__.py` instantiates every converter eagerly in
-/// the `CONVERTER_CLASSES` literal, so all of this has already happened before
-/// any caller can observe it, and the merged result is deterministic.
-/// `Num2Word_EN_IN.__init__` writes `INR` too, with the identical value.
-///
-/// Verified at runtime rather than reasoned about:
-/// `CONVERTER_CLASSES["te"].CURRENCY_FORMS is lang_EUR.Num2Word_EUR
-/// .CURRENCY_FORMS` is `True`, and this table is a mechanical dump of that
-/// dict after a full `import num2words2`. The whole thing was code-generated
-/// from the live object — `fillér`, `króna`/`krónur`, `øre`, `öre` are easy to
-/// corrupt by hand. Regenerate rather than retype.
-///
-/// Consequences worth stating out loud, all corpus-confirmed:
-///   * `EUR` is `("euro", "euros")` — EN's value, not EUR's `("euro", "euro")`.
-///   * `GBP` is `("pound", "pounds")`, not `("pound sterling", ...)`.
-///   * `SAR` is `("riyal", "riyals")`, not EUR's `("saudi riyal", ...)`.
-///   * 17 codes exist *only* because EN added them: AED, BRL, CHF, HKD, IQD,
-///     JOD, KWD, LYD, NGN, NZD, OMR, QAR, SGD, TND, ZAR (plus BHD, CNY).
-///   * `PLN` and `RON` keep **three** unit forms. `pluralize` only ever indexes
-///     0 or 1, so the third is unreachable, but the arity is preserved because
-///     dropping it would be a silent behaviour change if `pluralize` ever
-///     grew a third branch.
-const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 39] = [
-    ("AED", &["dirham", "dirhams"], &["fils", "fils"]),
-    ("AUD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("BHD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("BRL", &["real", "reais"], &["cent", "cents"]),
-    ("BYN", &["rouble", "roubles"], &["kopek", "kopeks"]),
-    ("CAD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("CHF", &["franc", "francs"], &["rappen", "rappen"]),
-    ("CNY", &["yuan", "yuan"], &["fen", "fen"]),
-    ("EEK", &["kroon", "kroons"], &["sent", "senti"]),
-    ("EUR", &["euro", "euros"], &["cent", "cents"]),
-    ("GBP", &["pound", "pounds"], &["penny", "pence"]),
-    ("HKD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("HUF", &["forint", "forint"], &["fillér", "fillér"]),
-    ("INR", &["rupee", "rupees"], &["paisa", "paise"]),
-    ("IQD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("ISK", &["króna", "krónur"], &["aur", "aurar"]),
-    ("JOD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("JPY", &["yen", "yen"], &["sen", "sen"]),
-    ("KRW", &["won", "won"], &["jeon", "jeon"]),
-    ("KWD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("LTL", &["litas", "litas"], &["cent", "cents"]),
-    ("LVL", &["lat", "lats"], &["santim", "santims"]),
-    ("LYD", &["dinar", "dinars"], &["dirham", "dirhams"]),
-    ("MXN", &["peso", "pesos"], &["cent", "cents"]),
-    ("NGN", &["naira", "naira"], &["kobo", "kobo"]),
-    ("NOK", &["krone", "kroner"], &["øre", "øre"]),
-    ("NZD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("OMR", &["rial", "rials"], &["baisa", "baisa"]),
-    ("PLN", &["zloty", "zlotys", "zlotu"], &["grosz", "groszy"]),
-    ("QAR", &["riyal", "riyals"], &["dirham", "dirhams"]),
-    ("RON", &["leu", "lei", "de lei"], &["ban", "bani", "de bani"]),
-    ("RUB", &["rouble", "roubles"], &["kopek", "kopeks"]),
-    ("SAR", &["riyal", "riyals"], &["halalah", "halalas"]),
-    ("SEK", &["krona", "kronor"], &["öre", "öre"]),
-    ("SGD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("TND", &["dinar", "dinars"], &["millime", "millimes"]),
-    ("USD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("UZS", &["sum", "sums"], &["tiyin", "tiyins"]),
-    ("ZAR", &["rand", "rand"], &["cent", "cents"]),
+/// Python inherited `Num2Word_EUR.CURRENCY_FORMS` as mutated in place by
+/// `Num2Word_EN.__init__` — 39 English entries ("రెండు euros", even INR
+/// "rupees"/"paise"). Only the codes with a sourced Telugu unit and subunit
+/// are kept (EUR, INR, JPY, USD); every other code raises
+/// NotImplementedError.
+const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 4] = [
+    ("EUR", &["\u{0c2f}\u{0c42}\u{0c30}\u{0c4b}", "\u{0c2f}\u{0c42}\u{0c30}\u{0c4b}\u{0c32}\u{0c41}"], &["\u{0c38}\u{0c46}\u{0c02}\u{0c1f}\u{0c4d}", "\u{0c38}\u{0c46}\u{0c02}\u{0c1f}\u{0c4d}\u{0c32}\u{0c41}"]),
+    ("INR", &["\u{0c30}\u{0c42}\u{0c2a}\u{0c3e}\u{0c2f}\u{0c3f}", "\u{0c30}\u{0c42}\u{0c2a}\u{0c3e}\u{0c2f}\u{0c32}\u{0c41}"], &["\u{0c2a}\u{0c48}\u{0c38}\u{0c3e}", "\u{0c2a}\u{0c48}\u{0c38}\u{0c32}\u{0c41}"]),
+    ("JPY", &["\u{0c2f}\u{0c46}\u{0c28}\u{0c4d}", "\u{0c2f}\u{0c46}\u{0c28}\u{0c4d}\u{200c}\u{0c32}\u{0c41}"], &["\u{0c38}\u{0c46}\u{0c28}\u{0c4d}", "\u{0c38}\u{0c46}\u{0c28}\u{0c4d}\u{200c}\u{0c32}\u{0c41}"]),
+    ("USD", &["\u{0c21}\u{0c3e}\u{0c32}\u{0c30}\u{0c4d}", "\u{0c21}\u{0c3e}\u{0c32}\u{0c30}\u{0c4d}\u{0c32}\u{0c41}"], &["\u{0c38}\u{0c46}\u{0c02}\u{0c1f}\u{0c4d}", "\u{0c38}\u{0c46}\u{0c02}\u{0c1f}\u{0c4d}\u{0c32}\u{0c41}"]),
 ];
 
 /// `self.low_numwords`, in Python source order.
@@ -554,7 +487,9 @@ impl Lang for LangTe {
                 (format!("{}{} {}", ltext, LA, rtext), lnum + rnum)
             }
         } else if rnum > lnum {
-            // elif rnum > lnum: "%s %s", lnum * rnum
+            // elif rnum > lnum: "%s %s", lnum * rnum. One multiplying a scale
+            // word takes the attributive ఒక, not the counting ఒకటి (#247).
+            let ltext = if lnum.is_one() { ONE_ATTRIBUTIVE } else { ltext };
             (format!("{} {}", ltext, rtext), lnum * rnum)
         } else {
             // return "%s %s", lnum + rnum
@@ -688,11 +623,9 @@ impl Lang for LangTe {
 
     /// `Num2Word_EUR.pluralize`: `forms[0 if n == 1 else 1]`.
     ///
-    /// Not a Telugu rule — TE inherits EUR's English-style binary plural and
-    /// applies it to the (English) currency names in `CURRENCY_FORMS`. The
-    /// Telugu words in the output come from `to_cardinal`; the unit names never
-    /// get translated. That is what the corpus fixes:
-    /// `to_currency(2, "EUR", lang="te")` == `"రెండు euros"`.
+    /// Telugu marks the plural after any count but 1, so EUR's binary rule
+    /// fits the Telugu nouns: `to_currency(2, "EUR", lang="te")` ==
+    /// `"రెండు యూరోలు"` (Python: `"రెండు euros"`, #222).
     ///
     /// `n` here is always non-negative — `to_currency` passes `abs(val)` on the
     /// int path and `parse_currency_parts` returns magnitudes on the float

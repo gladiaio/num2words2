@@ -7,9 +7,16 @@
 //! defines none of `high_numwords`/`mid_numwords`/`low_numwords`, so
 //! `Num2Word_Base.__init__` never builds `self.cards` and never assigns
 //! `self.MAXVAL`. `to_cardinal` is overridden outright and drives the private
-//! `_int_to_hausa` recursion. Therefore `cards`/`maxval`/`merge` stay at their
-//! trait defaults here and **there is no overflow check at all** — Hausa
-//! happily words 10**606 by recursing through "tiriliyan".
+//! `_int_to_hausa` recursion. Therefore `cards`/`merge` stay at their trait
+//! defaults here, and Python has **no overflow check at all** — it happily
+//! words 10**606 by recursing through "tiriliyan". On a large enough integer
+//! the port's recursion overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^15, where "tiriliyan" would
+//! stack, and every mode raises `OverflowError` from there.
+//! The stack-depth guard from #204 (`MAX_BITS`, ≈ 10**12000, where Python's
+//! own recursion limit stops `_int_to_hausa`) stays behind the ceiling as a
+//! backstop, so the native recursion can never overflow the stack even if
+//! `maxval` is raised.
 //!
 //! Inherited from `Num2Word_Base`, then immediately overridden by HA, so the
 //! base versions are never reached: `to_ordinal`, `to_ordinal_num`, `to_year`.
@@ -35,16 +42,12 @@
 //! 3. **`to_ordinal` never calls `verify_ordinal`**, so negatives sail
 //!    through and stack the two prefixes: `to_ordinal(-1)` == "na ban ɗaya".
 //!    `to_ordinal(0)` == "na sifiri" (no crash, unlike Polish).
-//! 4. **`to_ordinal_num` uses English suffixes on floored Python modulo.**
-//!    The comment in the Python says this is deliberate ("English-style
-//!    ordinal suffixes as commonly used in Hausa contexts"), but the
-//!    interaction with Python's floored `%` on negatives is not: `-7 % 10`
-//!    is `3` in Python (not `-7`), so `to_ordinal_num(-7)` == "-7rd", and
-//!    `-999 % 10 == 1` gives "-999st". See [`ordinal_suffix`].
-//! 5. **The teen guard is `10 <= value % 100 <= 20`**, one wider on each end
-//!    than the usual `11..=13`. Benign for positives (10/14..20 all end in a
-//!    digit that would take "th" anyway) but it re-shuffles negatives:
-//!    `-88 % 100 == 12` → "-88th" rather than "-88nd".
+//! 4. **`to_ordinal_num` used English suffixes ("2nd") (fixed, #224).** The
+//!    Python called them "English-style ordinal suffixes as commonly used in
+//!    Hausa contexts", while `to_ordinal` reads "na biyu". Without a settled
+//!    Hausa numeric form the port raises NotImplementedError ("does not
+//!    support to='ordinal_num'") rather than print English.
+//! 5. (Former quirk on the English suffixes' teen guard, gone with them.)
 //! 6. **Dead code kept for fidelity.** Inside the `>= 1000` loop the
 //!    `scale_value == 100` arm is unreachable (anything under 1000 already
 //!    returned above, and 1000 is itself a `SCALE` key so the loop always
@@ -97,15 +100,14 @@
 //! below reproduces both arms.
 //!
 //! **The float arm ([`LangHa::float_to_words`]).** Python takes
-//! `str(value - int(value))[2:]` — the shortest-round-trip repr of the *binary*
-//! fractional remainder, minus its `"0."` prefix — and feeds `int(...)` of that
-//! whole string to `to_cardinal`. It is emphatically **not** the `precision`
-//! the harness derives: `3.14 - 3 == 0.14000000000000012`, so `3.14` says
-//! "uku wajen «14000000000000012 in words»", not "... one four". The f64
-//! artefacts are load-bearing and Rust's `f64` `Display` is the same
-//! shortest-round-trip contract as Python's `repr`, so `format!("{}", frac)`
-//! reproduces the digit string byte for byte (verified for every corpus row).
-//! No rounding, no `precision`, no banker's tie — HA's arm never rounds.
+//! `str(value - int(value))[2:]` — the repr of the *binary* fractional
+//! remainder — and feeds `int(...)` of that whole string to `to_cardinal`.
+//! `3.14 - 3 == 0.14000000000000012`, so in Python `3.14` said "uku wajen
+//! «14000000000000012 in words»" and `1.05` "ɗaya wajen tiriliyan dubu
+//! hamsin …". Fixed (gladiaio/num2words2#207): the digits come from the
+//! shortest repr of the value itself, as `floatpath` does for other
+//! languages, so `1.05` reads like `Decimal("1.05")`: "ɗaya wajen sifiri
+//! biyar".
 //!
 //! **The Decimal arm.** `_int_to_hausa(Decimal)` walks the same `divmod`
 //! recursion as the integer path, but the leaf lookups `ONES`/`TEENS`/`TENS`
@@ -118,6 +120,11 @@
 //! ("ɗaya wajen biyar"), taken exactly from the Decimal with trailing zeros
 //! dropped so `Decimal("1.50")` agrees with `1.5`.
 //!
+//! **Leading zeros.** Both arms word the fractional digits as one integer, and
+//! Python's `int()` dropped their leading zeros, so `0.05` read exactly like
+//! `0.5` ("sifiri wajen biyar"). Each leading zero is now read as "sifiri"
+//! first (gladiaio/num2words2#205): `0.05` is "sifiri wajen sifiri biyar".
+//!
 //! **Currency fractional cents.** HA's `to_currency` builds a `Decimal` minor
 //! unit and calls `to_cardinal(float(minor_units))` → `float_to_words`. The
 //! Rust currency code delegates that to `cardinal_from_decimal`, which is
@@ -127,7 +134,7 @@
 //!
 //! Fraction remains a later phase.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -135,6 +142,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `Num2Word_HA.ONES`, keys 0..=9.
 const ONES: [&str; 10] = [
@@ -191,6 +199,10 @@ const SCALE: [(u32, &str); 5] = [
     (2, "ɗari"),
 ];
 
+/// `checked_int_to_hausa` refuses values of this many bits or more
+/// (≈ 10**12000), a backstop behind `maxval`. See the module docs (#204).
+const MAX_BITS: u64 = 39_864;
+
 fn pow10(exp: u32) -> BigInt {
     BigInt::from(10u8).pow(exp)
 }
@@ -244,6 +256,19 @@ impl LangHa {
             scale: SCALE.iter().map(|(e, w)| (pow10(*e), *w)).collect(),
             currency_forms,
         }
+    }
+
+    /// `int_to_hausa` behind [`maxval_ceiling`], checked before the first
+    /// recursive step (gladiaio/num2words2#203).
+    fn checked_int_to_hausa(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        if number.bits() >= MAX_BITS {
+            // Stack-depth backstop (#204), see the module docs.
+            return Err(N2WError::Overflow(
+                "number too large to convert to Hausa words (more than 10**12000)".into(),
+            ));
+        }
+        Ok(self.int_to_hausa(number))
     }
 
     /// Port of `Num2Word_HA._int_to_hausa`.
@@ -376,9 +401,9 @@ impl LangHa {
     /// Port of `Num2Word_HA.float_to_words`. Only reached for a positive,
     /// non-zero `value` (the caller strips zero and the sign first).
     ///
-    /// The whole fractional remainder is worded as a **single integer**, not
-    /// digit by digit, and it comes from the *binary* subtraction — see the
-    /// module docs. `precision` is deliberately never consulted.
+    /// The fractional digits are worded as a **single integer**, not digit by
+    /// digit, taken from the value's shortest repr (#207) — see the module
+    /// docs. `precision` is deliberately never consulted.
     fn float_to_words(&self, value: f64) -> Result<String> {
         // `if value == int(value): return self.to_cardinal(int(value))`.
         let trunc = value.trunc();
@@ -386,15 +411,14 @@ impl LangHa {
             return self.to_cardinal(&BigInt::from(trunc as i128));
         }
 
-        // integer_part = int(value); decimal_part = value - integer_part.
-        // int() truncates toward zero; `value > 0` here, so `trunc` == floor.
-        let decimal_part = value - trunc;
-
-        // decimal_str = str(decimal_part)[2:] — drop the leading "0.". Rust's
-        // f64 Display is the same shortest-round-trip contract as Python repr,
-        // so the digit string matches; skipping two `chars()` mirrors `[2:]`.
-        let s = format!("{}", decimal_part);
-        let decimal_str: String = s.chars().skip(2).collect();
+        // Python: decimal_str = str(value - int(value))[2:]. The subtraction
+        // is binary, so 1.05 - 1 == 0.050000000000000044 and its noise digits
+        // were worded as one huge number (#207). The digits after the point
+        // of the value's own shortest repr are the ones the caller wrote.
+        // Rust's f64 Display is that shortest round-trip, always positional,
+        // and a non-integral value always prints a ".".
+        let s = format!("{}", value);
+        let decimal_str: String = s.split_once('.').map(|(_, f)| f.to_string()).unwrap_or_default();
 
         // result = to_cardinal(integer_part) + " " + pointword + " ".
         let mut result = self.to_cardinal(&BigInt::from(trunc as i128))?;
@@ -402,17 +426,33 @@ impl LangHa {
         result.push_str(self.pointword());
         result.push(' ');
 
-        // decimal_num = int(decimal_str); result += to_cardinal(decimal_num).
-        // A non-numeric `decimal_str` (e.g. an exponent form for a sub-1e-4
-        // remainder) is Python's `int(...)` ValueError; unreached by the corpus.
-        let decimal_num: BigInt = decimal_str.parse().map_err(|_| {
-            N2WError::Value(format!(
-                "invalid literal for int() with base 10: {:?}",
-                decimal_str
-            ))
-        })?;
-        result.push_str(&self.to_cardinal(&decimal_num)?);
+        // result += to_cardinal(int(decimal_str)).
+        result.push_str(&self.fraction_words(&decimal_str));
         Ok(result)
+    }
+
+    /// The fractional digit run after "wajen", worded as one integer as
+    /// Python's `to_cardinal(int(digits))` does. `int()` dropped the leading
+    /// zeros, so 0.05 read exactly like 0.5; each one is now "sifiri" first
+    /// (gladiaio/num2words2#205). A run too long for the integer reading
+    /// (15+ significant digits, e.g. the repr of 0.1 + 0.2) would stack
+    /// "tiriliyan" past the #203 ceiling, so it is read digit by digit
+    /// instead. `digits` is all ASCII digits.
+    fn fraction_words(&self, digits: &str) -> String {
+        let zeros = digits.len() - digits.trim_start_matches('0').len();
+        let rest = digits[zeros..].trim_end_matches('0');
+        let mut words: Vec<String> = vec![ONES[0].to_string(); zeros];
+        if rest.len() < 16 {
+            if let Ok(n) = rest.parse::<BigInt>() {
+                words.push(self.int_to_hausa(&n));
+            }
+        } else {
+            for ch in rest.chars() {
+                let d = ch.to_digit(10).unwrap_or(0) as usize;
+                words.push(ONES[d].to_string());
+            }
+        }
+        words.join(" ")
     }
 
     /// Port of `Num2Word_HA.to_cardinal` for a `Decimal` argument.
@@ -440,23 +480,22 @@ impl LangHa {
         // recursion would `KeyError` on a fractional dict key.
         let truncated = value.with_scale(0);
         if (value - truncated.clone()).is_zero() {
-            Ok(self.int_to_hausa(&truncated.as_bigint_and_exponent().0))
+            Ok(self.checked_int_to_hausa(&truncated.as_bigint_and_exponent().0)?)
         } else {
             // `float_to_words`' shape: the fractional digits as one integer.
             let precision = value.as_bigint_and_exponent().1.max(0) as u32;
-            let (pre, mut post) = float2tuple(&FloatValue::Decimal {
+            let (pre, post) = float2tuple(&FloatValue::Decimal {
                 value: value.clone(),
                 precision,
             });
-            let ten = BigInt::from(10);
-            while !post.is_zero() && (&post % &ten).is_zero() {
-                post /= &ten;
-            }
+            // `post` padded back to `precision` digits keeps its leading
+            // zeros (#205); `fraction_words` drops the trailing ones.
+            let digits = crate::strnum::zero_pad_left(&post.to_string(), precision as usize);
             Ok(format!(
                 "{} {} {}",
                 self.to_cardinal(&pre)?,
                 self.pointword(),
-                self.to_cardinal(&post)?
+                self.fraction_words(&digits)
             ))
         }
     }
@@ -468,92 +507,21 @@ impl Default for LangHa {
     }
 }
 
-/// The suffix half of `Num2Word_HA.to_ordinal_num`.
-///
-/// Both `%` operations are Python's **floored** modulo, which is why this uses
-/// `mod_floor` and not Rust's truncating `%`. For `value = -7` Python computes
-/// `-7 % 100 == 93` and `-7 % 10 == 3`, yielding "rd" — Rust's `%` would give
-/// `-7` and fall through to "th". The corpus pins "-7rd", so floored it is.
-fn ordinal_suffix(value: &BigInt) -> &'static str {
-    let hundred = BigInt::from(100u8);
-    let ten = BigInt::from(10u8);
-
-    let mod100 = value.mod_floor(&hundred);
-    // Python: `if 10 <= value % 100 <= 20` — inclusive on 20 (see module docs).
-    if mod100 >= BigInt::from(10u8) && mod100 <= BigInt::from(20u8) {
-        return "th";
-    }
-
-    let last_digit = value.mod_floor(&ten);
-    if last_digit == BigInt::one() {
-        "st"
-    } else if last_digit == BigInt::from(2u8) {
-        "nd"
-    } else if last_digit == BigInt::from(3u8) {
-        "rd"
-    } else {
-        "th"
-    }
-}
-
-/// Python's `Decimal % int` — remainder truncated toward zero, sign of the
-/// dividend (`Decimal('-17') % 10 == Decimal('-7')`), unlike int/float `%`
-/// which floor (sign of the divisor). `to_ordinal_num` computes its suffix
-/// off these semantics when the dispatcher hands it a Decimal.
-fn decimal_trunc_mod(value: &BigDecimal, modulus: i64) -> BigDecimal {
-    let m = BigDecimal::from(modulus);
-    let q = (value / &m).with_scale(0); // truncation toward zero
-    value - q * m
-}
-
-/// Python's `float % int` — floored, sign of the (positive) divisor:
-/// `-1.0 % 10 == 9.0`. `rem_euclid` agrees for a positive modulus.
-fn float_floor_mod(value: f64, modulus: f64) -> f64 {
-    value.rem_euclid(modulus)
-}
-
-/// `Num2Word_HA.to_ordinal_num`'s suffix chain, evaluated on the numeric
-/// value exactly as Python does (`10 <= value % 100 <= 20`, then
-/// `value % 10 == 1/2/3`). Fractional values simply fail the equality
-/// tests and fall through to "th" ("1.5th"), as in the original.
-fn ordinal_suffix_float(v: &FloatValue) -> &'static str {
-    match v {
-        FloatValue::Float { value, .. } => {
-            let mod100 = float_floor_mod(*value, 100.0);
-            if (10.0..=20.0).contains(&mod100) {
-                return "th";
-            }
-            let last = float_floor_mod(*value, 10.0);
-            if last == 1.0 {
-                "st"
-            } else if last == 2.0 {
-                "nd"
-            } else if last == 3.0 {
-                "rd"
-            } else {
-                "th"
-            }
-        }
-        FloatValue::Decimal { value, .. } => {
-            let mod100 = decimal_trunc_mod(value, 100);
-            if mod100 >= BigDecimal::from(10) && mod100 <= BigDecimal::from(20) {
-                return "th";
-            }
-            let last = decimal_trunc_mod(value, 10);
-            if last == BigDecimal::from(1) {
-                "st"
-            } else if last == BigDecimal::from(2) {
-                "nd"
-            } else if last == BigDecimal::from(3) {
-                "rd"
-            } else {
-                "th"
-            }
-        }
-    }
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// tiriliyan (10^12), so from 10^15 the module would stack it ("tiriliyan
+/// tiriliyan").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
 }
 
 impl Lang for LangHa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -584,7 +552,7 @@ impl Lang for LangHa {
             return Ok(format!("{}{}", NEGWORD, self.to_cardinal(&value.abs())?));
         }
 
-        Ok(self.int_to_hausa(value))
+        Ok(self.checked_int_to_hausa(value)?)
     }
 
     /// Port of `Num2Word_HA.to_ordinal`. No `verify_ordinal` call, so
@@ -596,9 +564,11 @@ impl Lang for LangHa {
         Ok(format!("na {}", self.to_cardinal(value)?))
     }
 
-    /// Port of `Num2Word_HA.to_ordinal_num`: `str(value) + suffix`.
-    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}{}", value, ordinal_suffix(value)))
+    /// `to_ordinal_num`: Python appended English suffixes ("2nd") although
+    /// the ordinal is "na biyu". Hausa's written numeric ordinal is not
+    /// settled here, so it raises rather than guess (quirk 4, #224).
+    fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
+        Err(crate::lang_rm::unsupported("ha", "to='ordinal_num'"))
     }
 
     /// Port of `Num2Word_HA.to_year`, a bare delegation to `to_cardinal`.
@@ -619,12 +589,9 @@ impl Lang for LangHa {
         Ok(format!("na {}", self.cardinal_float_entry(value, None)?))
     }
 
-    /// `to_ordinal_num(float/Decimal)`: English-style suffix computed on the
-    /// numeric value (Decimal `%` truncates, float `%` floors — see the
-    /// helpers), appended to Python's `str(value)`: "42.0nd", "-17th",
-    /// "1.5th", "1E+2th".
-    fn ordinal_num_float_entry(&self, value: &FloatValue, repr_str: &str) -> Result<String> {
-        Ok(format!("{}{}", repr_str, ordinal_suffix_float(value)))
+    /// `to_ordinal_num(float/Decimal)`: unsupported, like the integer path.
+    fn ordinal_num_float_entry(&self, _value: &FloatValue, _repr_str: &str) -> Result<String> {
+        Err(crate::lang_rm::unsupported("ha", "to='ordinal_num'"))
     }
 
     /// `str_to_number` stays Base's `Decimal(value)`, but HA's `to_cardinal`
@@ -834,10 +801,10 @@ impl Lang for LangHa {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
-    use crate::base::N2WError;
     use crate::floatpath::FloatValue;
     use std::str::FromStr;
 
@@ -870,24 +837,24 @@ mod float_tests {
             (0.5, 1, "sifiri wajen biyar"),
             (1.5, 1, "ɗaya wajen biyar"),
             (2.25, 2, "biyu wajen ashirin da biyar"),
-            (3.14, 2, "uku wajen tiriliyan dubu sha huɗu sha biyu"),
-            (0.01, 2, "sifiri wajen ɗaya"),
+            (3.14, 2, "uku wajen sha huɗu"),
+            (0.01, 2, "sifiri wajen sifiri ɗaya"),
             (0.1, 1, "sifiri wajen ɗaya"),
             (0.99, 2, "sifiri wajen casa'in da tara"),
-            (1.01, 2, "ɗaya wajen tiriliyan dubu goma da tara"),
-            (12.34, 2, "sha biyu wajen tiriliyan dubu talatin da uku ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara tamanin da shida"),
-            (99.99, 2, "casa'in da tara wajen tiriliyan dubu tara ɗari takwas casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara arba'in da tara"),
+            (1.01, 2, "ɗaya wajen sifiri ɗaya"),
+            (12.34, 2, "sha biyu wajen talatin da huɗu"),
+            (99.99, 2, "casa'in da tara wajen casa'in da tara"),
             (100.5, 1, "ɗari wajen biyar"),
-            (1234.56, 2, "dubu ɗari biyu talatin da huɗu wajen tiriliyan dubu biyar ɗari biyar casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari huɗu hamsin da huɗu"),
+            (1234.56, 2, "dubu ɗari biyu talatin da huɗu wajen hamsin da shida"),
             // pre == 0 → the sign is prepended by cardinal_float, since
             // int(-0.5) == 0 carries no minus.
             (-0.5, 1, "ban sifiri wajen biyar"),
             (-1.5, 1, "ban ɗaya wajen biyar"),
-            (-12.34, 2, "ban sha biyu wajen tiriliyan dubu talatin da uku ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara tamanin da shida"),
-            // The f64-artefact pair: 1.005 - 1 == 0.004999999999999893 and
-            // 2.675 - 2 == 0.6749999999999998, worded whole.
-            (1.005, 3, "ɗaya wajen tiriliyan dubu huɗu ɗari tara casa'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari takwas casa'in da uku"),
-            (2.675, 3, "biyu wajen tiriliyan dubu shida ɗari bakwai arba'in da tara biliyan ɗari tara casa'in da tara miliyan ɗari tara casa'in da tara dubu ɗari tara casa'in da tara ɗari tara casa'in da takwas"),
+            (-12.34, 2, "ban sha biyu wajen talatin da huɗu"),
+            // Python's f64-artefact pair (1.005 - 1 == 0.004999999999999893,
+            // 2.675 - 2 == 0.6749999999999998) now reads the repr digits (#207).
+            (1.005, 3, "ɗaya wajen sifiri sifiri biyar"),
+            (2.675, 3, "biyu wajen ɗari shida saba'in da biyar"),
         ];
         for &(v, p, want) in rows {
             assert_eq!(f(v, p), want, "float {}", v);
@@ -905,14 +872,14 @@ mod float_tests {
     /// Every `"to": "cardinal_dec"` corpus row for `ha` — Decimal input.
     /// Python raised `KeyError` for all five (fractional Decimal into the
     /// integer-keyed dicts); since #156 they read like a float, from the exact
-    /// digits (so without the f64 artefacts of the float arm).
+    /// digits.
     #[test]
     fn corpus_cardinal_dec() {
         let rows = [
-            ("0.01", "sifiri wajen ɗaya"),
+            ("0.01", "sifiri wajen sifiri ɗaya"),
             ("1.10", "ɗaya wajen ɗaya"),
             ("12.345", "sha biyu wajen ɗari uku arba'in da biyar"),
-            ("0.001", "sifiri wajen ɗaya"),
+            ("0.001", "sifiri wajen sifiri sifiri ɗaya"),
         ];
         for (s, want) in rows {
             let prec = s.split_once('.').map_or(0, |(_, frac)| frac.len() as u32);

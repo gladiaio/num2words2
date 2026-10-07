@@ -222,6 +222,12 @@ class Num2WordsKATest(TestCase):
             num2words(99999999999, lang="ka"),
             "ოთხმოცდაათი ცხრა მილიარდი ცხრა ასი ოთხმოცდაათი ცხრა მილიონი ცხრა ასი ოთხმოცდაათი ცხრა ათასი ცხრა ასი ოთხმოცდაათი ცხრა",
         )
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(num2words(10**12, lang="ka"), "ერთი ტრილიონი")
+        self.assertEqual(num2words(2 * 10**12 + 5, lang="ka"), "ორი ტრილიონი ხუთი")
+        self.assertEqual(num2words(10**15, lang="ka"), "ერთი კვადრილიონი")
+        with self.assertRaises(OverflowError):
+            num2words(10**18, lang="ka")
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -334,40 +340,40 @@ class Num2WordsKATest(TestCase):
             "ერთი ლარი ორმოცდაათი თეთრი",
         )
         self.assertEqual(
-            num2words(0, lang="ka", to="currency", currency="USD"), "ნული dollars"
+            num2words(0, lang="ka", to="currency", currency="USD"), "ნული დოლარი"
         )
         self.assertEqual(
             num2words(0.01, lang="ka", to="currency", currency="USD"),
-            "ნული dollars ერთი cent",
+            "ნული დოლარი ერთი ცენტი",
         )
         self.assertEqual(
             num2words(0.5, lang="ka", to="currency", currency="USD"),
-            "ნული dollars ორმოცდაათი cents",
+            "ნული დოლარი ორმოცდაათი ცენტი",
         )
         self.assertEqual(
-            num2words(1, lang="ka", to="currency", currency="USD"), "ერთი dollar"
+            num2words(1, lang="ka", to="currency", currency="USD"), "ერთი დოლარი"
         )
         self.assertEqual(
             num2words(1.5, lang="ka", to="currency", currency="USD"),
-            "ერთი dollar ორმოცდაათი cents",
+            "ერთი დოლარი ორმოცდაათი ცენტი",
         )
         self.assertEqual(
-            num2words(0, lang="ka", to="currency", currency="EUR"), "ნული euros"
+            num2words(0, lang="ka", to="currency", currency="EUR"), "ნული ევრო"
         )
         self.assertEqual(
             num2words(0.01, lang="ka", to="currency", currency="EUR"),
-            "ნული euros ერთი cent",
+            "ნული ევრო ერთი ცენტი",
         )
         self.assertEqual(
             num2words(0.5, lang="ka", to="currency", currency="EUR"),
-            "ნული euros ორმოცდაათი cents",
+            "ნული ევრო ორმოცდაათი ცენტი",
         )
         self.assertEqual(
-            num2words(1, lang="ka", to="currency", currency="EUR"), "ერთი euro"
+            num2words(1, lang="ka", to="currency", currency="EUR"), "ერთი ევრო"
         )
         self.assertEqual(
             num2words(1.5, lang="ka", to="currency", currency="EUR"),
-            "ერთი euro ორმოცდაათი cents",
+            "ერთი ევრო ორმოცდაათი ცენტი",
         )
 
     def test_year(self):
@@ -418,4 +424,3 @@ class Num2WordsKATest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ka"), num2words("100", lang="ka"))
         self.assertEqual(num2words(1000, lang="ka"), num2words("1000", lang="ka"))
-

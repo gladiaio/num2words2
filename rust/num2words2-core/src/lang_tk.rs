@@ -1,5 +1,23 @@
 //! Port of `lang_TK.py` (Turkmen).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "otur" (decimal) — best candidate: the name of the
+//!   comma, which Turkmen writes as decimal separator (enedilim.com); the
+//!   standard reading is a fraction ("bitin ... -dan"), which the digit-by-digit
+//!   path cannot produce.
+//! UNVERIFIED (#154): "minus" is kept: it is Turkmen usage ("minus san",
+//!   negative number).
+//!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "milliard" (10^9) and "trillion" (10^12) (Wiktionary;
+//! business.com.tm, ashgabat.in), composed like the million arm, and raises
+//! `OverflowError` from 10^15, which `maxval()` reports. Where the notes below
+//! describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_TK` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
 //! `set_high_numwords`/`merge`, so Python never builds `self.cards` and never
@@ -11,7 +29,8 @@
 //! All four in-scope methods are overridden by the Python class, so nothing is
 //! inherited from `Num2Word_Base` on the integer path:
 //!   * `to_cardinal(number)`   → sign-strip, then `_int_to_word`
-//!   * `to_ordinal(number)`    → `to_cardinal(number) + "-nji"`
+//!   * `to_ordinal(number)`    → `to_cardinal(number)` + a harmonised ending
+//!     (upstream glued a fixed "-nji"; fixed, see quirk 4)
 //!   * `to_ordinal_num(number)`→ `str(number) + "."`  (base returns `value`
 //!     *unchanged*; TK's override appends a period, hence "0." not "0")
 //!   * `to_year(val, longval=True)` → `self.to_cardinal(val)`, discarding
@@ -37,18 +56,20 @@
 //!    `to_ordinal(10**9)` == "1000000000-nji". Corpus confirms this all the way
 //!    up to 10^21. There is no `milliard`/`billion` word in `setup()` to reach
 //!    for, and no OverflowError is raised. See [`int_to_word`].
-//! 2. **`ones[0]` is the empty string**, so `_int_to_word(0)` hits
-//!    `return self.ones[0] if self.ones[0] else "zero"` — the guard always
-//!    fails, and zero is the untranslated English "zero", not a Turkmen word.
-//!    Hence `to_cardinal(0)` == "zero" and `to_ordinal(0)` == "zero-nji".
+//! 2. **Zero (fixed, gladiaio/num2words2#154).** `ones[0]` is the empty
+//!    string, so Python's `return self.ones[0] if self.ones[0] else "zero"`
+//!    always said the English "zero". The port says "nol": `to_cardinal(0)`
+//!    == "nol", `to_ordinal(0)` == "nolunjy". The decimal word is the best
+//!    candidate "otur" (see UNVERIFIED above).
 //! 3. **Hundreds always carry an explicit "bir"**: `_int_to_word` builds
 //!    `self.ones[hundreds_val] + " " + self.hundred` with no `> 1` guard, so
 //!    100 → "bir ýüz", never the idiomatic bare "ýüz".
-//! 4. **`to_ordinal` is suffix-only** — it appends "-nji" to the *cardinal*
-//!    with no stem change and no vowel harmony, so every ordinal ends "-nji"
-//!    regardless of the preceding vowel (real Turkmen alternates -njy/-nji).
-//!    It also happily ordinalises negatives ("minus bir-nji") and the 10^9
-//!    numeral fallback, where most ports raise. Unlike `lang_PL`, **nothing on
+//! 4. **Fixed (gladiaio/num2words2#148): `to_ordinal` was suffix-only** — it
+//!    appended "-nji" to the cardinal with no harmony ("bir-nji", "on-nji").
+//!    The ending is now harmonised on the last word ("birinji", "onunjy",
+//!    "altynjy", "dördünji", "bir ýüz ýigrimi üçünji"); see [`join_ordinal`].
+//!    It still ordinalises negatives ("minus birinji") and the 10^9 numeral
+//!    fallback ("1000000000-nji"), where most ports raise. Unlike `lang_PL`, **nothing on
 //!    TK's integer surface raises** — no Index/Key/Value crash sites exist
 //!    there. (The currency surface does raise; see quirk 6 and `to_currency`'s
 //!    Errors section.)
@@ -76,7 +97,7 @@
 //! This reads the fractional **digits straight out of the decimal repr** rather
 //! than reconstructing them from `base.float2tuple`'s binary arithmetic, and it
 //! runs for *every* float/Decimal, whole values included: `str(5.0)` is
-//! `"5.0"`, so `to_cardinal(5.0)` == "bäş point zero", never the integer
+//! `"5.0"`, so `to_cardinal(5.0)` == "bäş otur nol", never the integer
 //! path's bare "bäş" — the base's whole-value routing is therefore overridden
 //! at [`Lang::cardinal_float_entry`]. `str(number)` is reconstructed exactly:
 //!   * float: [`python_float_repr`] — CPython's shortest-round-trip repr,
@@ -93,7 +114,7 @@
 //! — exactly as the wholefloat corpus pins (`cardinal 1e+16` → ValueError,
 //! `Decimal("1E+20")` → ValueError, string `"1e3"` → ValueError). The other
 //! three modes follow `to_cardinal`: `to_ordinal(float)` is the cardinal plus
-//! "-nji" ("bäş point zero-nji"), `to_year(float)` is the cardinal, and both
+//! the harmonised ending ("bäş otur nolunjy"), `to_year(float)` is the cardinal, and both
 //! propagate the ValueError; `to_ordinal_num(float)` is `str(number) + "."`
 //! and never raises ("1e+16.").
 //!
@@ -158,8 +179,15 @@
 //! `Num2Word_Base` (raises NotImplementedError), and neither TK's `to_currency`
 //! nor the inherited `to_cheque` ever calls it — TK picks its forms with an
 //! inline `cr1[1] if left != 1 else cr1[0]`.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Turkmen cent noun was found, so USD and EUR raise
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -167,6 +195,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is the empty string, exactly as in Python — the
 /// `_int_to_word(0)` guard depends on its falsiness (see quirk 2).
@@ -187,6 +216,49 @@ const MILLION: &str = "million";
 /// `self.negword` — note the trailing space, which Python relies on for
 /// "minus bir" and then trims off any dangling remainder with `.strip()`.
 const NEGWORD: &str = "minus ";
+
+/// Attach the ordinal ending to the **last word** of a spelled cardinal
+/// (gladiaio/num2words2#148). Upstream glued a fixed "-nji" onto the whole
+/// cardinal ("bir-nji", "on-nji"). Turkmen ordinals take *-(V)njy/-(V)nji*
+/// (enedilim.com, "Sanlar"; Wiktionary's Turkmen number table):
+///
+/// * the suffix vowel follows backness — *-njy* after a back stem (a o u y),
+///   *-nji* after a front one (ä e i ö ü): altynjy, ýedinji;
+/// * after a consonant a linking vowel is inserted — *y*/*i*, rounded to
+///   *u*/*ü* only in a **one-syllable** stem whose vowel is rounded: onunjy,
+///   üçünji, ýüzünji, but dokuzynjy, otuzynjy, millionynjy;
+/// * dört voices its final t: dördünji.
+///
+/// 123rd is therefore "bir ýüz ýigrimi üçünji". A cardinal that is not a word
+/// at all — the digit fallback above 10^9 — keeps a hyphen ("1000000000-nji").
+fn join_ordinal(cardinal: &str) -> String {
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal),
+    };
+    let vowels: Vec<char> = stem
+        .chars()
+        .filter(|c| "aouyäeiöü".contains(*c))
+        .collect();
+    let last = match vowels.last() {
+        Some(v) => *v,
+        None => return format!("{}-nji", cardinal),
+    };
+    let back = "aouy".contains(last);
+    let ending = if back { "njy" } else { "nji" };
+    if stem.ends_with(|c: char| "aouyäeiöü".contains(c)) {
+        return format!("{}{}{}", head, stem, ending);
+    }
+    let rounded = vowels.len() == 1 && "ouöü".contains(last);
+    let link = match (back, rounded) {
+        (true, true) => 'u',
+        (true, false) => 'y',
+        (false, true) => 'ü',
+        (false, false) => 'i',
+    };
+    let stem = if stem == "dört" { "dörd" } else { stem };
+    format!("{}{}{}{}", head, stem, link, ending)
+}
 
 /// The ceiling of `_int_to_word`'s word-producing branches. At or above this,
 /// Python falls through to `str(number)` (quirk 1).
@@ -267,11 +339,27 @@ fn int_to_word_small(n: u64) -> String {
 fn int_to_word(n: &BigInt) -> String {
     if n.is_zero() {
         // `self.ones[0] if self.ones[0] else "zero"` — ONES[0] is "", falsy.
-        return "zero".to_string();
+        return "nol".to_string();
     }
 
     if n.is_negative() {
         return format!("{}{}", NEGWORD, int_to_word(&n.abs()));
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if n >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(n / &scale)), word);
+            let rest = n % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // Below 10^9 the value fits a u64 comfortably; at or above it, Python
@@ -304,7 +392,7 @@ fn int_to_word(n: &BigInt) -> String {
 /// and appends `.0` to anything that would otherwise look like an integer.
 /// Rust's `{}` does none of this, so both `1e16` and `1.0` would come out
 /// wrong in opposite directions. Both matter to TK: `str(1.0)` is `"1.0"` →
-/// "bir point zero", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
+/// "bir otur nol", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
 /// `ValueError`.
 ///
 /// The `precision` that `FloatValue::Float` carries is deliberately *not* used
@@ -322,7 +410,7 @@ fn python_float_repr(v: f64) -> String {
         return (if v.is_sign_negative() { "-inf" } else { "inf" }).to_string();
     }
     // The sign bit, not `v < 0.0`: repr(-0.0) is "-0.0", and TK renders that
-    // "minus zero point zero".
+    // "minus nol otur nol".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let a = v.abs();
 
@@ -420,7 +508,7 @@ fn tk_cardinal_from_str(n: &str, negword: &str, pointword: &str) -> Result<Strin
                 field
             ))
         })?;
-        Ok(int_to_word(&val))
+        Ok(checked_int_to_word(&val)?)
     };
 
     // Python: `if "." in n:` — split on the *first* dot only (`split(".", 1)`).
@@ -479,6 +567,23 @@ const SEPARATOR_UNSET: &str = ",";
 /// TK's own `to_currency` default, restored when [`SEPARATOR_UNSET`] arrives.
 const SEPARATOR_DEFAULT: &str = " ";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "milliard"), (12, "trillion")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangTk {
     /// `CURRENCY_FORMS`, built once. Every entry carries exactly two unit forms
     /// and two subunit forms, matching Python's tuple arity — `to_currency`
@@ -499,14 +604,8 @@ impl LangTk {
             "TMT",
             CurrencyForms::new(&["manat", "manat"], &["teňňe", "teňňe"]),
         );
-        forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"); no reliable Turkmen cent noun was found, so
+        // they raise NotImplementedError (#222).
         LangTk { forms }
     }
 }
@@ -518,6 +617,10 @@ impl Default for LangTk {
 }
 
 impl Lang for LangTk {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -537,7 +640,7 @@ impl Lang for LangTk {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "otur"
     }
 
     /// Python's `to_cardinal`.
@@ -558,12 +661,13 @@ impl Lang for LangTk {
         // matters if the word part were empty; it never is, but `trim()`
         // matches Python's `str.strip()` (both strip Unicode whitespace) and
         // the word tables contain no leading/trailing spaces.
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
     }
 
-    /// Python's `to_ordinal`: cardinal + a fixed "-nji" suffix (quirk 4).
+    /// Python's `to_ordinal`: the cardinal with the harmonised ending on its
+    /// last word (quirk 4, fixed — see [`join_ordinal`]).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}-nji", self.to_cardinal(value)?))
+        Ok(join_ordinal(&self.to_cardinal(value)?))
     }
 
     /// Python's `to_ordinal_num`: `str(number) + "."` — note this overrides
@@ -582,7 +686,7 @@ impl Lang for LangTk {
 
     /// `to_cardinal(float/Decimal)` — the **full** routing, whole values
     /// included. TK's `to_cardinal` reads `str(number)`, so a whole-valued
-    /// float keeps its ".0" tail ("bäş point zero") and an exponent-form repr
+    /// float keeps its ".0" tail ("bäş otur nol") and an exponent-form repr
     /// raises ValueError; the base default's whole → integer-path route would
     /// get both wrong. See the module docs' float section.
     fn cardinal_float_entry(
@@ -613,12 +717,12 @@ impl Lang for LangTk {
     }
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
-    /// `self.to_cardinal(number) + "-nji"` with no type check, so floats get
-    /// the full decimal grammar plus the suffix ("bäş point zero-nji") and the
+    /// `self.to_cardinal(number)` + the ordinal ending with no type check, so
+    /// floats get the full decimal grammar plus the ending and the
     /// cardinal's ValueError on exponent-form reprs propagates before the
     /// suffix is appended (`to_ordinal(1e16)` → ValueError).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}-nji", self.cardinal_float_entry(value, None)?))
+        Ok(join_ordinal(&self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "."`, same as the
@@ -770,7 +874,7 @@ impl Lang for LangTk {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -781,7 +885,7 @@ impl Lang for LangTk {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }
@@ -795,6 +899,7 @@ impl Lang for LangTk {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -823,25 +928,25 @@ mod float_tests {
         // Every "cardinal" row with a float arg from bench/corpus.jsonl, with
         // the precision the binding derives from Python's repr.
         let cases: &[(f64, u32, &str)] = &[
-            (0.0, 1, "zero point zero"),
-            (0.5, 1, "zero point bäş"),
-            (1.0, 1, "bir point zero"),
-            (1.5, 1, "bir point bäş"),
-            (2.25, 2, "iki point iki bäş"),
-            (3.14, 2, "üç point bir dört"),
-            (0.01, 2, "zero point zero bir"),
-            (0.1, 1, "zero point bir"),
-            (0.99, 2, "zero point dokuz dokuz"),
-            (1.01, 2, "bir point zero bir"),
-            (12.34, 2, "on iki point üç dört"),
-            (99.99, 2, "togsan dokuz point dokuz dokuz"),
-            (100.5, 1, "bir ýüz point bäş"),
-            (1234.56, 2, "bir müň iki ýüz otuz dört point bäş alty"),
-            (-0.5, 1, "minus zero point bäş"),
-            (-1.5, 1, "minus bir point bäş"),
-            (-12.34, 2, "minus on iki point üç dört"),
-            (1.005, 3, "bir point zero zero bäş"),
-            (2.675, 3, "iki point alty ýedi bäş"),
+            (0.0, 1, "nol otur nol"),
+            (0.5, 1, "nol otur bäş"),
+            (1.0, 1, "bir otur nol"),
+            (1.5, 1, "bir otur bäş"),
+            (2.25, 2, "iki otur iki bäş"),
+            (3.14, 2, "üç otur bir dört"),
+            (0.01, 2, "nol otur nol bir"),
+            (0.1, 1, "nol otur bir"),
+            (0.99, 2, "nol otur dokuz dokuz"),
+            (1.01, 2, "bir otur nol bir"),
+            (12.34, 2, "on iki otur üç dört"),
+            (99.99, 2, "togsan dokuz otur dokuz dokuz"),
+            (100.5, 1, "bir ýüz otur bäş"),
+            (1234.56, 2, "bir müň iki ýüz otuz dört otur bäş alty"),
+            (-0.5, 1, "minus nol otur bäş"),
+            (-1.5, 1, "minus bir otur bäş"),
+            (-12.34, 2, "minus on iki otur üç dört"),
+            (1.005, 3, "bir otur nol nol bäş"),
+            (2.675, 3, "iki otur alty ýedi bäş"),
         ];
         for (v, p, want) in cases {
             assert_eq!(&card_float(*v, *p), want, "float {}", v);
@@ -852,11 +957,11 @@ mod float_tests {
     fn corpus_decimals() {
         // Every "cardinal_dec" row from bench/corpus.jsonl.
         let cases: &[(&str, &str)] = &[
-            ("0.01", "zero point zero bir"),
-            ("1.10", "bir point bir zero"),
-            ("12.345", "on iki point üç dört bäş"),
-            ("98746251323029.99", "98746251323029 point dokuz dokuz"),
-            ("0.001", "zero point zero zero bir"),
+            ("0.01", "nol otur nol bir"),
+            ("1.10", "bir otur bir nol"),
+            ("12.345", "on iki otur üç dört bäş"),
+            ("98746251323029.99", "togsan sekiz trillion ýedi ýüz kyrk alty milliard iki ýüz elli bir million üç ýüz ýigrimi üç müň ýigrimi dokuz otur dokuz dokuz"),
+            ("0.001", "nol otur nol nol bir"),
         ];
         for (s, want) in cases {
             assert_eq!(&card_dec(s), want, "decimal {}", s);
@@ -872,7 +977,7 @@ mod float_tests {
                 Some(1),
             )
             .unwrap();
-        assert_eq!(got, "iki point alty ýedi bäş");
+        assert_eq!(got, "iki otur alty ýedi bäş");
     }
 
     fn fv_f(value: f64, precision: u32) -> FloatValue {
@@ -895,46 +1000,49 @@ mod float_tests {
         // Whole floats keep their ".0" (str(5.0) == "5.0").
         assert_eq!(
             l.cardinal_float_entry(&fv_f(5.0, 1), None).unwrap(),
-            "bäş point zero"
+            "bäş otur nol"
         );
         // str(-0.0) == "-0.0": the sign bit alone earns the negword.
         assert_eq!(
             l.cardinal_float_entry(&fv_f(-0.0, 1), None).unwrap(),
-            "minus zero point zero"
+            "minus nol otur nol"
         );
         assert_eq!(
             l.cardinal_float_entry(&fv_f(1234.0, 1), None).unwrap(),
-            "bir müň iki ýüz otuz dört point zero"
+            "bir müň iki ýüz otuz dört otur nol"
         );
         // Above 10^9 the integer field degrades to bare digits (quirk 1).
         assert_eq!(
             l.cardinal_float_entry(&fv_f(1e9, 1), None).unwrap(),
-            "1000000000 point zero"
+            "bir milliard otur nol"
         );
         // Decimal without a visible point takes the integer words...
         assert_eq!(l.cardinal_float_entry(&fv_d("5", 0), None).unwrap(), "bäş");
         // ...while trailing zeros survive str(Decimal).
         assert_eq!(
             l.cardinal_float_entry(&fv_d("5.00", 2), None).unwrap(),
-            "bäş point zero zero"
+            "bäş otur nol nol"
         );
         assert_eq!(
             l.cardinal_float_entry(&fv_d("12345.000", 3), None).unwrap(),
-            "on iki müň üç ýüz kyrk bäş point zero zero zero"
+            "on iki müň üç ýüz kyrk bäş otur nol nol nol"
         );
-        // Exponent-form reprs: str(1e16) == "1e+16", str(Decimal("1E+2")) ==
-        // "1E+2" — no ".", so int() raises ValueError.
+        // Exponent-form float reprs: str(1e16) == "1e+16" — no ".", so
+        // int() raises ValueError (the dispatcher never sends these here,
+        // #211). str(Decimal) is written out ("100"), so Decimals read.
         for v in [
             l.cardinal_float_entry(&fv_f(1e16, 16), None),
             l.cardinal_float_entry(&fv_f(1e20, 20), None),
-            l.cardinal_float_entry(&fv_d("1E+2", 0), None),
-            l.cardinal_float_entry(&fv_d("1E+20", 0), None),
         ] {
             assert!(matches!(v, Err(N2WError::Value(_))), "{v:?}");
         }
+        assert_eq!(
+            l.cardinal_float_entry(&fv_d("1E+2", 0), None).unwrap(),
+            l.to_cardinal(&BigInt::from(100)).unwrap()
+        );
     }
 
-    /// `to_ordinal` on floats: cardinal + "-nji", ValueErrors propagating;
+    /// `to_ordinal` on floats: cardinal + ending, ValueErrors propagating;
     /// `to_ordinal_num` is repr + "." and never raises; `to_year` follows the
     /// cardinal.
     #[test]
@@ -942,21 +1050,21 @@ mod float_tests {
         let l = LangTk::new();
         assert_eq!(
             l.ordinal_float_entry(&fv_f(1.0, 1)).unwrap(),
-            "bir point zero-nji"
+            "bir otur nolunjy"
         );
         assert_eq!(
             l.ordinal_float_entry(&fv_f(-0.0, 1)).unwrap(),
-            "minus zero point zero-nji"
+            "minus nol otur nolunjy"
         );
-        assert_eq!(l.ordinal_float_entry(&fv_d("0", 0)).unwrap(), "zero-nji");
-        assert_eq!(l.ordinal_float_entry(&fv_d("5", 0)).unwrap(), "bäş-nji");
+        assert_eq!(l.ordinal_float_entry(&fv_d("0", 0)).unwrap(), "nolunjy");
+        assert_eq!(l.ordinal_float_entry(&fv_d("5", 0)).unwrap(), "bäşinji");
         assert_eq!(
             l.ordinal_float_entry(&fv_d("100", 0)).unwrap(),
-            "bir ýüz-nji"
+            "bir ýüzünji"
         );
         assert_eq!(
             l.ordinal_float_entry(&fv_f(3.25, 2)).unwrap(),
-            "üç point iki bäş-nji"
+            "üç otur iki bäşinji"
         );
         assert!(matches!(
             l.ordinal_float_entry(&fv_f(1e16, 16)),
@@ -972,16 +1080,15 @@ mod float_tests {
         );
         assert_eq!(
             l.year_float_entry(&fv_f(5.0, 1)).unwrap(),
-            "bäş point zero"
+            "bäş otur nol"
         );
-        assert!(matches!(
-            l.year_float_entry(&fv_d("1E+2", 0)),
-            Err(N2WError::Value(_))
-        ));
+        assert_eq!(
+            l.year_float_entry(&fv_d("1E+2", 0)).unwrap(),
+            l.to_year(&BigInt::from(100)).unwrap()
+        );
     }
 
-    /// String inputs: "1e3" parses to Decimal('1E+3') whose str keeps the
-    /// exponent, so int() raises; "Infinity" is intercepted in str_to_number
+    /// String inputs: "1e3" parses to Decimal('1E+3'), read as 1000 (#211); "Infinity" is intercepted in str_to_number
     /// (the dispatcher would otherwise report the base class's OverflowError).
     #[test]
     fn corpus_string_rows() {
@@ -989,11 +1096,12 @@ mod float_tests {
         let parsed = l.str_to_number("1e3").unwrap();
         match parsed {
             ParsedNumber::Dec(d) => {
+                // #211: str(Decimal('1E+3')) is written out as "1000".
                 let fv = FloatValue::Decimal { value: d, precision: 0 };
-                assert!(matches!(
-                    l.cardinal_float_entry(&fv, None),
-                    Err(N2WError::Value(_))
-                ));
+                assert_eq!(
+                    l.cardinal_float_entry(&fv, None).unwrap(),
+                    l.to_cardinal(&BigInt::from(1000)).unwrap()
+                );
             }
             other => panic!("expected Dec, got {other:?}"),
         }

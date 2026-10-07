@@ -115,9 +115,9 @@ class TestAF(LangTest, TestCase):  # Inherit from LangTest and TestCase
         (80, "tagtigste"),
         (90, "negentigste"),
         # test_ordinal_hundreds_and_larger
-        (100, "een honderdste"),
-        (1000, "een duisendste"),
-        (1000000, "een miljoenste"),
+        (100, "honderdste"),  # not "een honderdste" (#259)
+        (1000, "duisendste"),
+        (1000000, "miljoenste"),
         # test_ordinal_compound_numbers
         (21, "een-en-twintigste"),
         (34, "vier-en-dertigste"),
@@ -228,4 +228,3 @@ class TestAF(LangTest, TestCase):  # Inherit from LangTest and TestCase
     def test_ordinal_float_numbers_raise_error(self):
         self.assertRaises(TypeError, num2words, 3.14, ordinal=True, lang=self.lang)
         self.assertRaises(TypeError, num2words, 0.5, ordinal=True, lang=self.lang)
-

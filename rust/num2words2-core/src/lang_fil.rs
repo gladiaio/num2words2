@@ -9,7 +9,8 @@
 //! is never built and `self.MAXVAL` is never set. All four in-scope methods
 //! (`to_cardinal`, `to_ordinal`, `to_ordinal_num`, `to_year`) are overridden
 //! outright, so nothing inherited is reachable and `cards`/`maxval`/`merge`
-//! stay at their trait defaults. There is **no overflow check** — see bug 1.
+//! stay at their trait defaults. Python has **no overflow check** — see bug
+//! 1; this port raises `OverflowError` from 10^15 (`maxval`).
 //!
 //! `setup()` sets `exclude_title = ["at", "menos", "punto"]`, but `is_title`
 //! is left at the `False` that `Num2Word_Base.__init__` assigns *before*
@@ -21,14 +22,14 @@
 //! This is a port, not a rewrite. Everything below looks wrong and is exactly
 //! what Python emits — all of it is pinned by rows in `bench/corpus.jsonl`.
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the digits.** The final
+//! 1. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's final
 //!    `return str(number)` is a fallthrough, not a raise: FIL has no numword
-//!    above `milyon`. So `to_cardinal(10**9) == "1000000000"` and
-//!    `to_cardinal(10**21) == "1000000000000000000000"` — the bare decimal
-//!    string, no words at all. This propagates: `to_ordinal(10**9)` is
-//!    `"ika-1000000000"`, and negatives compose to e.g.
-//!    `"menos 1000000000"`. Because the value is stringified rather than
-//!    decomposed, the input is unbounded and must stay `BigInt`.
+//!    above `milyon`, so `to_cardinal(10**9)` was `"1000000000"` (and
+//!    `to_ordinal(10**9)` `"ika-1000000000"`). This port continues the
+//!    million branch's composition with bilyon (10^9) and trilyon (10^12) —
+//!    en.wiktionary.org/wiki/bilyon, /wiki/trilyon (Tagalog, short scale) —
+//!    so `to_cardinal(10**9) == "isa bilyon"`, and raises `OverflowError` at
+//!    10^15 (`maxval`).
 //! 2. **`" at "` is used as a flat conjunction at every level**, so hundreds
 //!    and tens are both joined with it: `999` is
 //!    `"siyam daan at siyamnapu at siyam"` (two "at"s). Idiomatic Filipino
@@ -96,7 +97,7 @@
 //! `NotImplemented` is constructed by `currency::default_to_cheque` — so this
 //! module still never names an `N2WError` itself.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -105,6 +106,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword` — note the **trailing space**, which Python relies on when
 /// it does `self.negword + self.to_cardinal(...)` (no separator of its own).
@@ -151,6 +153,16 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "daan";
 const THOUSAND: &str = "libo";
 const MILLION: &str = "milyon";
+/// 10^9 and 10^12, absent from Python (gladiaio/num2words2#147):
+/// en.wiktionary.org/wiki/bilyon and /wiki/trilyon (Tagalog, short scale).
+const BILLION: &str = "bilyon";
+const TRILLION: &str = "trilyon";
+
+/// The exclusive ceiling (#147): no attested Filipino word for 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
 
 /// The key `list(self.CURRENCY_FORMS.values())[0]` resolves to.
 ///
@@ -190,8 +202,7 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
 /// Every call site sits behind a `number < 10` / `< 100` / `< 1000` guard and
 /// operates on a value `to_cardinal` has already made non-negative, so the
 /// operand is provably in `0..=999` and the conversion cannot fail. This is
-/// the only place a `BigInt` is narrowed; the value itself is never cast (see
-/// bug 1 — inputs are unbounded).
+/// the only place a `BigInt` is narrowed; the value itself is never cast.
 fn idx(n: &BigInt) -> usize {
     debug_assert!(!n.is_negative() && n < &BigInt::from(1000));
     n.to_usize()
@@ -284,15 +295,16 @@ impl LangFil {
     /// `div_mod_floor` rather than `%` keeps Python's divmod semantics; for
     /// the non-negative operands here the two agree, but the floor form is
     /// what `divmod` means.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return "sero".to_string();
+            return Ok("sero".to_string());
         }
         if number < &BigInt::from(10) {
-            return ONES[idx(number)].to_string();
+            return Ok(ONES[idx(number)].to_string());
         }
         if number < &BigInt::from(20) {
-            return TEENS[idx(&(number - BigInt::from(10)))].to_string();
+            return Ok(TEENS[idx(&(number - BigInt::from(10)))].to_string());
         }
         if number < &BigInt::from(100) {
             // t, o = divmod(number, 10)
@@ -302,7 +314,7 @@ impl LangFil {
                 s.push_str(" at ");
                 s.push_str(ONES[idx(&o)]);
             }
-            return s;
+            return Ok(s);
         }
         if number < &BigInt::from(1000) {
             // h, r = divmod(number, 100); base = ones[h] + " " + hundred
@@ -311,32 +323,45 @@ impl LangFil {
             if !r.is_zero() {
                 // "at" here, but a bare space in the two arms below — bug 4.
                 s.push_str(" at ");
-                s.push_str(&self.int_to_word(&r));
+                s.push_str(&self.int_to_word(&r)?);
             }
-            return s;
+            return Ok(s);
         }
         if number < &BigInt::from(1_000_000) {
             // t, r = divmod(number, 1000)
             let (t, r) = number.div_mod_floor(&BigInt::from(1000));
-            let mut s = format!("{} {}", self.int_to_word(&t), THOUSAND);
+            let mut s = format!("{} {}", self.int_to_word(&t)?, THOUSAND);
             if !r.is_zero() {
                 s.push(' ');
-                s.push_str(&self.int_to_word(&r));
+                s.push_str(&self.int_to_word(&r)?);
             }
-            return s;
+            return Ok(s);
         }
         if number < &BigInt::from(1_000_000_000) {
             // m, r = divmod(number, 1000000)
             let (m, r) = number.div_mod_floor(&BigInt::from(1_000_000));
-            let mut s = format!("{} {}", self.int_to_word(&m), MILLION);
+            let mut s = format!("{} {}", self.int_to_word(&m)?, MILLION);
             if !r.is_zero() {
                 s.push(' ');
-                s.push_str(&self.int_to_word(&r));
+                s.push_str(&self.int_to_word(&r)?);
             }
-            return s;
+            return Ok(s);
         }
-        // `return str(number)` — bug 1. Not an error: the digits are the output.
-        number.to_string()
+        // Python: `return str(number)` — bug 1. bilyon / trilyon instead,
+        // composed like `milyon` (#147); the maxval check above keeps the
+        // trilyon multiplier below 1000.
+        let unit = if number < &BigInt::from(1_000_000_000_000u64) {
+            (BigInt::from(1_000_000_000), BILLION)
+        } else {
+            (BigInt::from(1_000_000_000_000u64), TRILLION)
+        };
+        let (m, r) = number.div_mod_floor(&unit.0);
+        let mut s = format!("{} {}", self.int_to_word(&m)?, unit.1);
+        if !r.is_zero() {
+            s.push(' ');
+            s.push_str(&self.int_to_word(&r)?);
+        }
+        Ok(s)
     }
 }
 
@@ -386,6 +411,10 @@ fn int_value_error(lit: &str) -> N2WError {
 }
 
 impl Lang for LangFil {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -425,10 +454,10 @@ impl Lang for LangFil {
     /// consumed by the concatenation.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let inner = self.int_to_word(&value.abs());
+            let inner = self.int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.int_to_word(value)
     }
 
     /// Port of `Num2Word_FIL.to_ordinal`.
@@ -515,7 +544,7 @@ impl Lang for LangFil {
         // (precision 0) — takes Python's `return self._int_to_word(int(n))`
         // arm: the bare integer word, no "punto".
         if precision == 0 {
-            let mut ret = self.int_to_word(&left);
+            let mut ret = self.int_to_word(&left)?;
             if is_negative {
                 ret = format!("{}{}", NEGWORD, ret);
             }
@@ -531,7 +560,7 @@ impl Lang for LangFil {
         );
 
         // ret = _int_to_word(int(left)) + " " + pointword
-        let mut ret = format!("{} {}", self.int_to_word(&left), POINTWORD);
+        let mut ret = format!("{} {}", self.int_to_word(&left)?, POINTWORD);
         // for digit in right: ret += " " + (ones[int(digit)] or "sero")
         for ch in post_str.chars().take(precision as usize) {
             let d = ch.to_digit(10).ok_or_else(|| {
@@ -601,11 +630,11 @@ impl Lang for LangFil {
                 let magnitude: BigInt = n.parse().expect("all-ASCII-digit string parses");
                 if value.is_negative() {
                     // (self.negword + self.to_cardinal(n[1:])).strip()
-                    return Ok(format!("{}{}", NEGWORD, self.int_to_word(&magnitude))
+                    return Ok(format!("{}{}", NEGWORD, self.int_to_word(&magnitude)?)
                         .trim()
                         .to_string());
                 }
-                Ok(self.int_to_word(&magnitude))
+                self.int_to_word(&magnitude)
             }
         }
     }
@@ -761,7 +790,7 @@ impl Lang for LangFil {
         // so this cannot be the IndexError Python would raise on a 1-tuple.
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.int_to_word(&left)?,
             if left.is_one() { &cr1[0] } else { &cr1[1] }
         );
 
@@ -770,7 +799,7 @@ impl Lang for LangFil {
         // any true int.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }

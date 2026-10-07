@@ -37,36 +37,25 @@ class Num2WordsRMSUTSILVTest(TestCase):
 
     def test_float_to_cardinal(self):
         self.assertEqual(
-            num2words(3.1415, lang="rm_sutsilv"),
-            "tres coma egn quater egn tschentg"
+            num2words(3.1415, lang="rm_sutsilv"), "tres coma egn quater egn tschentg"
         )
         self.assertEqual(
-            num2words(-5.15, lang="rm_sutsilv"),
-            "minus tschentg coma egn tschentg"
+            num2words(-5.15, lang="rm_sutsilv"), "minus tschentg coma egn tschentg"
         )
         self.assertEqual(
-            num2words(-0.15, lang="rm_sutsilv"),
-            "minus nola coma egn tschentg"
+            num2words(-0.15, lang="rm_sutsilv"), "minus nola coma egn tschentg"
         )
 
     def test_float_to_ordinal(self):
-        self.assertEqual(
-            num2words(3.1415, lang="rm_sutsilv", ordinal=True),
-            "tearz coma egn quater egn tschentg"
-        )
-        self.assertEqual(
-            num2words(-5.15, lang="rm_sutsilv", ordinal=True),
-            "minus tschentgavel coma egn tschentg"
-        )
-        self.assertEqual(
-            num2words(-0.15, lang="rm_sutsilv", ordinal=True),
-            "minus nola coma egn tschentg"
-        )
+        # gladiaio/num2words2#214: a fractional ordinal is a TypeError in
+        # every language (it read "<ordinal> comma <digits>" here).
+        for x in (3.1415, -5.15, -0.15):
+            with self.assertRaises(TypeError):
+                num2words(x, lang="rm_sutsilv", ordinal=True)
 
     def test_0(self):
         self.assertEqual(num2words(0, lang="rm_sutsilv"), "nola")
-        self.assertEqual(num2words(0, lang="rm_sutsilv", ordinal=True),
-                         "nola")
+        self.assertEqual(num2words(0, lang="rm_sutsilv", ordinal=True), "nola")
 
     def test_1_to_10(self):
         self.assertEqual(num2words(1, lang="rm_sutsilv"), "egn")
@@ -105,217 +94,147 @@ class Num2WordsRMSUTSILVTest(TestCase):
         self.assertEqual(num2words(92, lang="rm_sutsilv"), "novàntadus")
 
     def test_100_to_999(self):
-        self.assertEqual(num2words(100, lang="rm_sutsilv"),
-                         "tschient")
-        self.assertEqual(num2words(101, lang="rm_sutsilv"),
-                         "tschientadegn")
-        self.assertEqual(num2words(102, lang="rm_sutsilv"),
-                         "tschientadus")
-        self.assertEqual(num2words(103, lang="rm_sutsilv"),
-                         "tschientatres")
-        self.assertEqual(num2words(104, lang="rm_sutsilv"),
-                         "tschientaquater")
-        self.assertEqual(num2words(105, lang="rm_sutsilv"),
-                         "tschientatschentg")
-        self.assertEqual(num2words(106, lang="rm_sutsilv"),
-                         "tschientasis")
-        self.assertEqual(num2words(107, lang="rm_sutsilv"),
-                         "tschientaseat")
-        self.assertEqual(num2words(108, lang="rm_sutsilv"),
-                         "tschientadotg")
-        self.assertEqual(num2words(109, lang="rm_sutsilv"),
-                         "tschientanov")
-        self.assertEqual(num2words(110, lang="rm_sutsilv"),
-                         "tschientadiesch")
-        self.assertEqual(num2words(111, lang="rm_sutsilv"),
-                         "tschientadendesch")
-        self.assertEqual(num2words(112, lang="rm_sutsilv"),
-                         "tschientadudesch")
-        self.assertEqual(num2words(113, lang="rm_sutsilv"),
-                         "tschientatredesch")
-        self.assertEqual(num2words(114, lang="rm_sutsilv"),
-                         "tschientquitordesch")
-        self.assertEqual(num2words(115, lang="rm_sutsilv"),
-                         "tschientaquendesch")
-        self.assertEqual(num2words(116, lang="rm_sutsilv"),
-                         "tschientasedesch")
-        self.assertEqual(num2words(117, lang="rm_sutsilv"),
-                         "tschientgisseat")
-        self.assertEqual(num2words(118, lang="rm_sutsilv"),
-                         "tschientschotg")
-        self.assertEqual(num2words(119, lang="rm_sutsilv"),
-                         "tschientschenev")
-        self.assertEqual(num2words(120, lang="rm_sutsilv"),
-                         "tschientaveintg")
-        self.assertEqual(num2words(121, lang="rm_sutsilv"),
-                         "tschientveintgegn")
-        self.assertEqual(num2words(122, lang="rm_sutsilv"),
-                         "tschientveintgadus")
-        self.assertEqual(num2words(123, lang="rm_sutsilv"),
-                         "tschientveintgatres")
-        self.assertEqual(num2words(124, lang="rm_sutsilv"),
-                         "tschientveintgaquater")
-        self.assertEqual(num2words(125, lang="rm_sutsilv"),
-                         "tschientveintgatschentg")
-        self.assertEqual(num2words(126, lang="rm_sutsilv"),
-                         "tschientveintgasis")
-        self.assertEqual(num2words(127, lang="rm_sutsilv"),
-                         "tschientveintgaseat")
-        self.assertEqual(num2words(128, lang="rm_sutsilv"),
-                         "tschientveintgotg")
-        self.assertEqual(num2words(129, lang="rm_sutsilv"),
-                         "tschientveintganov")
-        self.assertEqual(num2words(130, lang="rm_sutsilv"),
-                         "tschientatrainta")
-        self.assertEqual(num2words(131, lang="rm_sutsilv"),
-                         "tschienttraintegn")
-        self.assertEqual(num2words(150, lang="rm_sutsilv"),
-                         "tschienttschuncànta")
-        self.assertEqual(num2words(196, lang="rm_sutsilv"),
-                         "tschientnovàntasis")
-        self.assertEqual(num2words(200, lang="rm_sutsilv"),
-                         "dutschient")
-        self.assertEqual(num2words(208, lang="rm_sutsilv"),
-                         "dutschientadotg")
-        self.assertEqual(num2words(210, lang="rm_sutsilv"),
-                         "dutschientadiesch")
-        self.assertEqual(num2words(271, lang="rm_sutsilv"),
-                         "dutschientsatàntegn")
-        self.assertEqual(num2words(300, lang="rm_sutsilv"),
-                         "tretschient")
-        self.assertEqual(num2words(308, lang="rm_sutsilv"),
-                         "tretschientadotg")
-        self.assertEqual(num2words(311, lang="rm_sutsilv"),
-                         "tretschientadendesch")
+        self.assertEqual(num2words(100, lang="rm_sutsilv"), "tschient")
+        self.assertEqual(num2words(101, lang="rm_sutsilv"), "tschientadegn")
+        self.assertEqual(num2words(102, lang="rm_sutsilv"), "tschientadus")
+        self.assertEqual(num2words(103, lang="rm_sutsilv"), "tschientatres")
+        self.assertEqual(num2words(104, lang="rm_sutsilv"), "tschientaquater")
+        self.assertEqual(num2words(105, lang="rm_sutsilv"), "tschientatschentg")
+        self.assertEqual(num2words(106, lang="rm_sutsilv"), "tschientasis")
+        self.assertEqual(num2words(107, lang="rm_sutsilv"), "tschientaseat")
+        self.assertEqual(num2words(108, lang="rm_sutsilv"), "tschientadotg")
+        self.assertEqual(num2words(109, lang="rm_sutsilv"), "tschientanov")
+        self.assertEqual(num2words(110, lang="rm_sutsilv"), "tschientadiesch")
+        self.assertEqual(num2words(111, lang="rm_sutsilv"), "tschientadendesch")
+        self.assertEqual(num2words(112, lang="rm_sutsilv"), "tschientadudesch")
+        self.assertEqual(num2words(113, lang="rm_sutsilv"), "tschientatredesch")
+        self.assertEqual(num2words(114, lang="rm_sutsilv"), "tschientquitordesch")
+        self.assertEqual(num2words(115, lang="rm_sutsilv"), "tschientaquendesch")
+        self.assertEqual(num2words(116, lang="rm_sutsilv"), "tschientasedesch")
+        self.assertEqual(num2words(117, lang="rm_sutsilv"), "tschientgisseat")
+        self.assertEqual(num2words(118, lang="rm_sutsilv"), "tschientschotg")
+        self.assertEqual(num2words(119, lang="rm_sutsilv"), "tschientschenev")
+        self.assertEqual(num2words(120, lang="rm_sutsilv"), "tschientaveintg")
+        self.assertEqual(num2words(121, lang="rm_sutsilv"), "tschientveintgegn")
+        self.assertEqual(num2words(122, lang="rm_sutsilv"), "tschientveintgadus")
+        self.assertEqual(num2words(123, lang="rm_sutsilv"), "tschientveintgatres")
+        self.assertEqual(num2words(124, lang="rm_sutsilv"), "tschientveintgaquater")
+        self.assertEqual(num2words(125, lang="rm_sutsilv"), "tschientveintgatschentg")
+        self.assertEqual(num2words(126, lang="rm_sutsilv"), "tschientveintgasis")
+        self.assertEqual(num2words(127, lang="rm_sutsilv"), "tschientveintgaseat")
+        self.assertEqual(num2words(128, lang="rm_sutsilv"), "tschientveintgotg")
+        self.assertEqual(num2words(129, lang="rm_sutsilv"), "tschientveintganov")
+        self.assertEqual(num2words(130, lang="rm_sutsilv"), "tschientatrainta")
+        self.assertEqual(num2words(131, lang="rm_sutsilv"), "tschienttraintegn")
+        self.assertEqual(num2words(150, lang="rm_sutsilv"), "tschienttschuncànta")
+        self.assertEqual(num2words(196, lang="rm_sutsilv"), "tschientnovàntasis")
+        self.assertEqual(num2words(200, lang="rm_sutsilv"), "dutschient")
+        self.assertEqual(num2words(208, lang="rm_sutsilv"), "dutschientadotg")
+        self.assertEqual(num2words(210, lang="rm_sutsilv"), "dutschientadiesch")
+        self.assertEqual(num2words(271, lang="rm_sutsilv"), "dutschientsatàntegn")
+        self.assertEqual(num2words(300, lang="rm_sutsilv"), "tretschient")
+        self.assertEqual(num2words(308, lang="rm_sutsilv"), "tretschientadotg")
+        self.assertEqual(num2words(311, lang="rm_sutsilv"), "tretschientadendesch")
         self.assertEqual(
-            num2words(375, lang="rm_sutsilv"),
-            "tretschientsatàntatschentg"
+            num2words(375, lang="rm_sutsilv"), "tretschientsatàntatschentg"
         )
-        self.assertEqual(num2words(400, lang="rm_sutsilv"),
-                         "quatertschient")
-        self.assertEqual(num2words(409, lang="rm_sutsilv"),
-                         "quatertschientanov")
-        self.assertEqual(num2words(410, lang="rm_sutsilv"),
-                         "quatertschientadiesch")
-        self.assertEqual(num2words(472, lang="rm_sutsilv"),
-                         "quatertschientsatàntadus")
-        self.assertEqual(num2words(701, lang="rm_sutsilv"),
-                         "seattschientadegn")
+        self.assertEqual(num2words(400, lang="rm_sutsilv"), "quatertschient")
+        self.assertEqual(num2words(409, lang="rm_sutsilv"), "quatertschientanov")
+        self.assertEqual(num2words(410, lang="rm_sutsilv"), "quatertschientadiesch")
+        self.assertEqual(num2words(472, lang="rm_sutsilv"), "quatertschientsatàntadus")
+        self.assertEqual(num2words(701, lang="rm_sutsilv"), "seattschientadegn")
 
     def test_1000_to_9999(self):
-        self.assertEqual(num2words(1000, lang="rm_sutsilv"),
-                         "meli")
-        self.assertEqual(num2words(1001, lang="rm_sutsilv"),
-                         "meliadegn")
-        self.assertEqual(num2words(1010, lang="rm_sutsilv"),
-                         "meliadiesch")
-        self.assertEqual(num2words(1100, lang="rm_sutsilv"),
-                         "meliatschient")
-        self.assertEqual(num2words(1101, lang="rm_sutsilv"),
-                         "melitschientadegn")
-        self.assertEqual(num2words(1132, lang="rm_sutsilv"),
-                         "melitschienttraintadus")
-        self.assertEqual(num2words(1500, lang="rm_sutsilv"),
-                         "melitschentgtschient")
+        self.assertEqual(num2words(1000, lang="rm_sutsilv"), "meli")
+        self.assertEqual(num2words(1001, lang="rm_sutsilv"), "meliadegn")
+        self.assertEqual(num2words(1010, lang="rm_sutsilv"), "meliadiesch")
+        self.assertEqual(num2words(1100, lang="rm_sutsilv"), "meliatschient")
+        self.assertEqual(num2words(1101, lang="rm_sutsilv"), "melitschientadegn")
+        self.assertEqual(num2words(1132, lang="rm_sutsilv"), "melitschienttraintadus")
+        self.assertEqual(num2words(1500, lang="rm_sutsilv"), "melitschentgtschient")
         self.assertEqual(
-            num2words(7378, lang="rm_sutsilv"),
-            "seatmelitretschientsatàntotg"
+            num2words(7378, lang="rm_sutsilv"), "seatmelitretschientsatàntotg"
         )
-        self.assertEqual(num2words(2000, lang="rm_sutsilv"),
-                         "dumeli")
-        self.assertEqual(num2words(2001, lang="rm_sutsilv"),
-                         "dumeliadegn")
-        self.assertEqual(num2words(2020, lang="rm_sutsilv"),
-                         "dumeliaveintg")
-        self.assertEqual(num2words(2100, lang="rm_sutsilv"),
-                         "dumeliatschient")
-        self.assertEqual(num2words(2101, lang="rm_sutsilv"),
-                         "dumelitschientadegn")
-        self.assertEqual(num2words(3000, lang="rm_sutsilv"),
-                         "tremeli")
-        self.assertEqual(num2words(3012, lang="rm_sutsilv"),
-                         "tremeliadudesch")
+        self.assertEqual(num2words(2000, lang="rm_sutsilv"), "dumeli")
+        self.assertEqual(num2words(2001, lang="rm_sutsilv"), "dumeliadegn")
+        self.assertEqual(num2words(2020, lang="rm_sutsilv"), "dumeliaveintg")
+        self.assertEqual(num2words(2100, lang="rm_sutsilv"), "dumeliatschient")
+        self.assertEqual(num2words(2101, lang="rm_sutsilv"), "dumelitschientadegn")
+        self.assertEqual(num2words(3000, lang="rm_sutsilv"), "tremeli")
+        self.assertEqual(num2words(3012, lang="rm_sutsilv"), "tremeliadudesch")
         self.assertEqual(
-            num2words(6870, lang="rm_sutsilv"),
-            "sismeliotgtschientsatànta"
+            num2words(6870, lang="rm_sutsilv"), "sismeliotgtschientsatànta"
         )
-        self.assertEqual(num2words(10000, lang="rm_sutsilv"),
-                         "dieschmeli")
-        self.assertEqual(num2words(10001, lang="rm_sutsilv"),
-                         "dieschmeliadegn")
+        self.assertEqual(num2words(10000, lang="rm_sutsilv"), "dieschmeli")
+        self.assertEqual(num2words(10001, lang="rm_sutsilv"), "dieschmeliadegn")
         self.assertEqual(
             num2words(98765, lang="rm_sutsilv"),
-            "novàntotgmeliseattschientsissàntatschentg"
+            "novàntotgmeliseattschientsissàntatschentg",
         )
-        self.assertEqual(num2words(100000, lang="rm_sutsilv"),
-                         "tschientmeli")
+        self.assertEqual(num2words(100000, lang="rm_sutsilv"), "tschientmeli")
         self.assertEqual(
             num2words(523456, lang="rm_sutsilv"),
-            "tschentgtschientveintgatremeliquatertschienttschuncàntasis"
+            "tschentgtschientveintgatremeliquatertschienttschuncàntasis",
         )
 
     def test_big(self):
-        self.assertEqual(num2words(1000000, lang="rm_sutsilv"),
-                         "egn miliùn")
-        self.assertEqual(num2words(1000007, lang="rm_sutsilv"),
-                         "egn miliùn a seat")
-        self.assertEqual(num2words(1000008, lang="rm_sutsilv"),
-                         "egn miliùn ad otg")
+        self.assertEqual(num2words(1000000, lang="rm_sutsilv"), "egn miliùn")
+        self.assertEqual(num2words(1000007, lang="rm_sutsilv"), "egn miliùn a seat")
+        self.assertEqual(num2words(1000008, lang="rm_sutsilv"), "egn miliùn ad otg")
         self.assertEqual(
-            num2words(1200000, lang="rm_sutsilv"),
-            "egn miliùn dutschientmeli")
-        self.assertEqual(num2words(2000000, lang="rm_sutsilv"),
-                         "dus miliùns")
-        self.assertEqual(num2words(2000004, lang="rm_sutsilv"),
-                         "dus miliùns a quater")
-        self.assertEqual(num2words(2000009, lang="rm_sutsilv"),
-                         "dus miliùns a nov")
+            num2words(1200000, lang="rm_sutsilv"), "egn miliùn dutschientmeli"
+        )
+        self.assertEqual(num2words(2000000, lang="rm_sutsilv"), "dus miliùns")
+        self.assertEqual(num2words(2000004, lang="rm_sutsilv"), "dus miliùns a quater")
+        self.assertEqual(num2words(2000009, lang="rm_sutsilv"), "dus miliùns a nov")
         self.assertEqual(
             num2words(2200311, lang="rm_sutsilv"),
-            "dus miliùns dutschientmelitretschientadendesch")
+            "dus miliùns dutschientmelitretschientadendesch",
+        )
         self.assertEqual(
-            num2words(2300000, lang="rm_sutsilv"),
-            "dus miliùns tretschientmeli")
-        self.assertEqual(num2words(3000000, lang="rm_sutsilv"),
-                         "tres miliùns")
+            num2words(2300000, lang="rm_sutsilv"), "dus miliùns tretschientmeli"
+        )
+        self.assertEqual(num2words(3000000, lang="rm_sutsilv"), "tres miliùns")
         self.assertEqual(
-            num2words(3000005, lang="rm_sutsilv"),
-            "tres miliùns a tschentg")
+            num2words(3000005, lang="rm_sutsilv"), "tres miliùns a tschentg"
+        )
         self.assertEqual(
-            num2words(3800000, lang="rm_sutsilv"),
-            "tres miliùns otgtschientmeli")
-        self.assertEqual(num2words(1000000000, lang="rm_sutsilv"),
-                         "egna miliarda")
+            num2words(3800000, lang="rm_sutsilv"), "tres miliùns otgtschientmeli"
+        )
+        self.assertEqual(num2words(1000000000, lang="rm_sutsilv"), "egna miliarda")
         self.assertEqual(
-            num2words(1000000017, lang="rm_sutsilv"),
-            "egna miliarda a gisseat")
-        self.assertEqual(num2words(2000000000, lang="rm_sutsilv"),
-                         "duas miliardas")
+            num2words(1000000017, lang="rm_sutsilv"), "egna miliarda a gisseat"
+        )
+        self.assertEqual(num2words(2000000000, lang="rm_sutsilv"), "duas miliardas")
         self.assertEqual(
-            num2words(2000001000, lang="rm_sutsilv"),
-            "duas miliardas a meli")
+            num2words(2000001000, lang="rm_sutsilv"), "duas miliardas a meli"
+        )
         self.assertEqual(
-            num2words(3000000100, lang="rm_sutsilv"),
-            "tres miliardas a tschient")
+            num2words(3000000100, lang="rm_sutsilv"), "tres miliardas a tschient"
+        )
         self.assertEqual(
-            num2words(3000002000, lang="rm_sutsilv"),
-            "tres miliardas a dumeli")
+            num2words(3000002000, lang="rm_sutsilv"), "tres miliardas a dumeli"
+        )
         self.assertEqual(
             num2words(3002000100, lang="rm_sutsilv"),
-            "tres miliardas dus miliùns a tschient")
+            "tres miliardas dus miliùns a tschient",
+        )
         self.assertEqual(
             num2words(3002000101, lang="rm_sutsilv"),
-            "tres miliardas dus miliùns a tschientadegn")
-        self.assertEqual(num2words(21000000000, lang="rm_sutsilv"),
-                         "veintgegn miliardas")
-        self.assertEqual(num2words(22000000000, lang="rm_sutsilv"),
-                         "veintgaduas miliardas")
+            "tres miliardas dus miliùns a tschientadegn",
+        )
+        self.assertEqual(
+            num2words(21000000000, lang="rm_sutsilv"), "veintgegn miliardas"
+        )
+        self.assertEqual(
+            num2words(22000000000, lang="rm_sutsilv"), "veintgaduas miliardas"
+        )
         self.assertEqual(
             num2words(1234567890, lang="rm_sutsilv"),
             "egna miliarda dutschienttraintaquater miliùns "
-            "tschentgtschientsissàntaseatmeliotgtschientnovànta")
-        self.assertEqual(num2words(1000000000000, lang="rm_sutsilv"),
-                         "egn biliùn")
+            "tschentgtschientsissàntaseatmeliotgtschientnovànta",
+        )
+        self.assertEqual(num2words(1000000000000, lang="rm_sutsilv"), "egn biliùn")
         self.assertEqual(
             num2words(123456789012345678901234567890, lang="rm_sutsilv"),
             "tschientveintgatres quadriliardas quatertschienttschuncàntasis"
@@ -323,71 +242,66 @@ class Num2WordsRMSUTSILVTest(TestCase):
             "triliùns tretschientcuràntatschentg biliardas "
             "sistschientsatàntotg biliùns novtschientadegn miliardas "
             "dutschienttraintaquater miliùns "
-            "tschentgtschientsissàntaseatmeliotgtschientnovànta"
+            "tschentgtschientsissàntaseatmeliotgtschientnovànta",
         )
 
     def test_nth_1_to_99(self):
-        self.assertEqual(num2words(1, lang="rm_sutsilv", ordinal=True),
-                         "amprem")
-        self.assertEqual(num2words(7, lang="rm_sutsilv", ordinal=True),
-                         "seatavel")
-        self.assertEqual(num2words(8, lang="rm_sutsilv", ordinal=True),
-                         "otgavel")
-        self.assertEqual(num2words(20, lang="rm_sutsilv", ordinal=True),
-                         "veintgavel")
-        self.assertEqual(num2words(21, lang="rm_sutsilv", ordinal=True),
-                         "veintgegnavel")
+        self.assertEqual(num2words(1, lang="rm_sutsilv", ordinal=True), "amprem")
+        self.assertEqual(num2words(7, lang="rm_sutsilv", ordinal=True), "seatavel")
+        self.assertEqual(num2words(8, lang="rm_sutsilv", ordinal=True), "otgavel")
+        self.assertEqual(num2words(20, lang="rm_sutsilv", ordinal=True), "veintgavel")
         self.assertEqual(
-            num2words(27, lang="rm_sutsilv", ordinal=True),
-            "veintgaseatavel")
+            num2words(21, lang="rm_sutsilv", ordinal=True), "veintgegnavel"
+        )
         self.assertEqual(
-            num2words(48, lang="rm_sutsilv", ordinal=True),
-            "curàntotgavel")
-        self.assertEqual(num2words(60, lang="rm_sutsilv", ordinal=True),
-                         "sissàntavel")
+            num2words(27, lang="rm_sutsilv", ordinal=True), "veintgaseatavel"
+        )
         self.assertEqual(
-            num2words(99, lang="rm_sutsilv", ordinal=True),
-            "novàntanovavel")
+            num2words(48, lang="rm_sutsilv", ordinal=True), "curàntotgavel"
+        )
+        self.assertEqual(num2words(60, lang="rm_sutsilv", ordinal=True), "sissàntavel")
+        self.assertEqual(
+            num2words(99, lang="rm_sutsilv", ordinal=True), "novàntanovavel"
+        )
 
     def test_nth_100_to_999(self):
-        self.assertEqual(num2words(100, lang="rm_sutsilv", ordinal=True),
-                         "tschientavel")
         self.assertEqual(
-            num2words(112, lang="rm_sutsilv", ordinal=True),
-            "tschientadudeschavel")
+            num2words(100, lang="rm_sutsilv", ordinal=True), "tschientavel"
+        )
         self.assertEqual(
-            num2words(137, lang="rm_sutsilv", ordinal=True),
-            "tschienttraintaseatavel")
+            num2words(112, lang="rm_sutsilv", ordinal=True), "tschientadudeschavel"
+        )
         self.assertEqual(
-            num2words(700, lang="rm_sutsilv", ordinal=True),
-            "seattschientavel")
+            num2words(137, lang="rm_sutsilv", ordinal=True), "tschienttraintaseatavel"
+        )
+        self.assertEqual(
+            num2words(700, lang="rm_sutsilv", ordinal=True), "seattschientavel"
+        )
 
     def test_nth_1000_to_999999(self):
-        self.assertEqual(num2words(1000, lang="rm_sutsilv", ordinal=True),
-                         "meliavel")
+        self.assertEqual(num2words(1000, lang="rm_sutsilv", ordinal=True), "meliavel")
         self.assertEqual(
-            num2words(1001, lang="rm_sutsilv", ordinal=True),
-            "meliadegnavel")
+            num2words(1001, lang="rm_sutsilv", ordinal=True), "meliadegnavel"
+        )
         self.assertEqual(
-            num2words(1200, lang="rm_sutsilv", ordinal=True),
-            "melidutschientavel")
+            num2words(1200, lang="rm_sutsilv", ordinal=True), "melidutschientavel"
+        )
         self.assertEqual(
             num2words(8640, lang="rm_sutsilv", ordinal=True),
-            "otgmelisistschientcuràntavel")
+            "otgmelisistschientcuràntavel",
+        )
         self.assertEqual(
-            num2words(14000, lang="rm_sutsilv", ordinal=True),
-            "quitordeschmeliavel")
+            num2words(14000, lang="rm_sutsilv", ordinal=True), "quitordeschmeliavel"
+        )
         self.assertEqual(
             num2words(123456, lang="rm_sutsilv", ordinal=True),
-            "tschientveintgatremeliquatertschienttschuncàntasisavel")
+            "tschientveintgatremeliquatertschienttschuncàntasisavel",
+        )
         self.assertEqual(
             num2words(987655, lang="rm_sutsilv", ordinal=True),
-            "novtschientotgàntaseatmelisistschienttschuncàntatschentgavel")
+            "novtschientotgàntaseatmelisistschienttschuncàntatschentgavel",
+        )
 
     def test_with_decimals(self):
-        self.assertAlmostEqual(
-            num2words(1.0, lang="rm_sutsilv"),
-            "egn coma nola")
-        self.assertAlmostEqual(
-            num2words(1.1, lang="rm_sutsilv"),
-            "egn coma egn")
+        self.assertAlmostEqual(num2words(1.0, lang="rm_sutsilv"), "egn coma nola")
+        self.assertAlmostEqual(num2words(1.1, lang="rm_sutsilv"), "egn coma egn")

@@ -25,7 +25,7 @@ class Num2WordsJWTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="jw"), "zero")
+        self.assertEqual(num2words(0, lang="jw"), "nol")
         self.assertEqual(num2words(1, lang="jw"), "siji")
         self.assertEqual(num2words(2, lang="jw"), "loro")
         self.assertEqual(num2words(3, lang="jw"), "telu")
@@ -214,11 +214,20 @@ class Num2WordsJWTest(TestCase):
             num2words(999999999, lang="jw"),
             "sanga atus sanga puluh sanga yuta sanga atus sanga puluh sanga ewu sanga atus sanga puluh sanga",
         )
-        self.assertEqual(num2words(1000000000, lang="jw"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="jw"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="jw"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="jw"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="jw"), "99999999999")
+        self.assertEqual(num2words(1000000000, lang="jw"), "siji milyar")
+        self.assertEqual(
+            num2words(1234567890, lang="jw"),
+            "siji milyar loro atus telung puluh papat yuta lima atus sewidak pitu ewu wolu atus sanga puluh",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="jw"),
+            "sanga milyar sanga atus sanga puluh sanga yuta sanga atus sanga puluh sanga ewu sanga atus sanga puluh sanga",
+        )
+        self.assertEqual(num2words(10000000000, lang="jw"), "sepuluh milyar")
+        self.assertEqual(
+            num2words(99999999999, lang="jw"),
+            "sanga puluh sanga milyar sanga atus sanga puluh sanga yuta sanga atus sanga puluh sanga ewu sanga atus sanga puluh sanga",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -244,33 +253,33 @@ class Num2WordsJWTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="jw"), "zero point siji")
-        self.assertEqual(num2words(0.5, lang="jw"), "zero point lima")
-        self.assertEqual(num2words(0.9, lang="jw"), "zero point sanga")
-        self.assertEqual(num2words(1.1, lang="jw"), "siji point siji")
-        self.assertEqual(num2words(1.5, lang="jw"), "siji point lima")
-        self.assertEqual(num2words(2.5, lang="jw"), "loro point lima")
-        self.assertEqual(num2words(3.14, lang="jw"), "telu point siji papat")
-        self.assertEqual(num2words(10.5, lang="jw"), "sepuluh point lima")
-        self.assertEqual(num2words(11.11, lang="jw"), "sepuluh siji point siji siji")
-        self.assertEqual(num2words(20.2, lang="jw"), "rong puluh point loro")
+        self.assertEqual(num2words(0.1, lang="jw"), "nol koma siji")
+        self.assertEqual(num2words(0.5, lang="jw"), "nol koma lima")
+        self.assertEqual(num2words(0.9, lang="jw"), "nol koma sanga")
+        self.assertEqual(num2words(1.1, lang="jw"), "siji koma siji")
+        self.assertEqual(num2words(1.5, lang="jw"), "siji koma lima")
+        self.assertEqual(num2words(2.5, lang="jw"), "loro koma lima")
+        self.assertEqual(num2words(3.14, lang="jw"), "telu koma siji papat")
+        self.assertEqual(num2words(10.5, lang="jw"), "sepuluh koma lima")
+        self.assertEqual(num2words(11.11, lang="jw"), "sepuluh siji koma siji siji")
+        self.assertEqual(num2words(20.2, lang="jw"), "rong puluh koma loro")
         self.assertEqual(
-            num2words(99.99, lang="jw"), "sanga puluh sanga point sanga sanga"
+            num2words(99.99, lang="jw"), "sanga puluh sanga koma sanga sanga"
         )
-        self.assertEqual(num2words(100.01, lang="jw"), "siji atus point zero siji")
-        self.assertEqual(num2words(100.5, lang="jw"), "siji atus point lima")
+        self.assertEqual(num2words(100.01, lang="jw"), "siji atus koma nol siji")
+        self.assertEqual(num2words(100.5, lang="jw"), "siji atus koma lima")
         self.assertEqual(
-            num2words(123.45, lang="jw"), "siji atus rong puluh telu point papat lima"
+            num2words(123.45, lang="jw"), "siji atus rong puluh telu koma papat lima"
         )
-        self.assertEqual(num2words(1000.5, lang="jw"), "siji ewu point lima")
+        self.assertEqual(num2words(1000.5, lang="jw"), "siji ewu koma lima")
         self.assertEqual(
             num2words(1234.56, lang="jw"),
-            "siji ewu loro atus telung puluh papat point lima enem",
+            "siji ewu loro atus telung puluh papat koma lima enem",
         )
-        self.assertEqual(num2words(10000.01, lang="jw"), "sepuluh ewu point zero siji")
-        self.assertEqual(num2words(-0.5, lang="jw"), "minus zero point lima")
-        self.assertEqual(num2words(-1.5, lang="jw"), "minus siji point lima")
-        self.assertEqual(num2words(-10.5, lang="jw"), "minus sepuluh point lima")
+        self.assertEqual(num2words(10000.01, lang="jw"), "sepuluh ewu koma nol siji")
+        self.assertEqual(num2words(-0.5, lang="jw"), "minus nol koma lima")
+        self.assertEqual(num2words(-1.5, lang="jw"), "minus siji koma lima")
+        self.assertEqual(num2words(-10.5, lang="jw"), "minus sepuluh koma lima")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -315,15 +324,15 @@ class Num2WordsJWTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="jw", to="currency", currency="IDR"), "zero rupiah"
+            num2words(0, lang="jw", to="currency", currency="IDR"), "nol rupiah"
         )
         self.assertEqual(
             num2words(0.01, lang="jw", to="currency", currency="IDR"),
-            "zero rupiah siji sen",
+            "nol rupiah siji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="jw", to="currency", currency="IDR"),
-            "zero rupiah seket sen",
+            "nol rupiah seket sen",
         )
         self.assertEqual(
             num2words(1, lang="jw", to="currency", currency="IDR"), "siji rupiah"
@@ -333,40 +342,40 @@ class Num2WordsJWTest(TestCase):
             "siji rupiah seket sen",
         )
         self.assertEqual(
-            num2words(0, lang="jw", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="jw", to="currency", currency="USD"), "nol dolar"
         )
         self.assertEqual(
             num2words(0.01, lang="jw", to="currency", currency="USD"),
-            "zero dollars siji cent",
+            "nol dolar siji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="jw", to="currency", currency="USD"),
-            "zero dollars seket cents",
+            "nol dolar seket sen",
         )
         self.assertEqual(
-            num2words(1, lang="jw", to="currency", currency="USD"), "siji dollar"
+            num2words(1, lang="jw", to="currency", currency="USD"), "siji dolar"
         )
         self.assertEqual(
             num2words(1.5, lang="jw", to="currency", currency="USD"),
-            "siji dollar seket cents",
+            "siji dolar seket sen",
         )
         self.assertEqual(
-            num2words(0, lang="jw", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="jw", to="currency", currency="EUR"), "nol euro"
         )
         self.assertEqual(
             num2words(0.01, lang="jw", to="currency", currency="EUR"),
-            "zero euros siji cent",
+            "nol euro siji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="jw", to="currency", currency="EUR"),
-            "zero euros seket cents",
+            "nol euro seket sen",
         )
         self.assertEqual(
             num2words(1, lang="jw", to="currency", currency="EUR"), "siji euro"
         )
         self.assertEqual(
             num2words(1.5, lang="jw", to="currency", currency="EUR"),
-            "siji euro seket cents",
+            "siji euro seket sen",
         )
 
     def test_year(self):
@@ -402,7 +411,7 @@ class Num2WordsJWTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="jw"), "zero")
+        self.assertEqual(num2words("0", lang="jw"), "nol")
         self.assertEqual(num2words("1", lang="jw"), "siji")
         self.assertEqual(num2words("10", lang="jw"), "sepuluh")
         self.assertEqual(num2words("100", lang="jw"), "siji atus")
@@ -414,9 +423,8 @@ class Num2WordsJWTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="jw"), "zero")
+        self.assertEqual(num2words(0, lang="jw"), "nol")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="jw"), num2words("100", lang="jw"))
         self.assertEqual(num2words(1000, lang="jw"), num2words("1000", lang="jw"))
-

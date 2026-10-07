@@ -1055,6 +1055,7 @@ impl LangFi {
     ///
     /// `None` is Python falling off the loop and implicitly returning `None`
     /// (value above every card) — impossible after the MAXVAL guard.
+    #[allow(clippy::never_loop)] // mirrors Python's `for ...: return` (first card <= value)
     fn splitnum(&self, value: &BigInt, options: &Options) -> Result<Option<Vec<Node>>> {
         let elems = if options.ordinal { &self.ords } else { &self.cards };
 

@@ -35,7 +35,7 @@
 //! story, and it differs from Base semantics in every direction at once:
 //!
 //!   * A **whole float keeps its ".0" tail**: `str(5.0)` is "5.0", so
-//!     `to_cardinal(5.0)` is "pet zarez nula nula" (the "0" fractional digit
+//!     `to_cardinal(5.0)` is "pet zarez nula" (the "0" fractional digit
 //!     is counted both as a leading zero and by `_int2word(0)` — see
 //!     [`LangHr::cardinal_float_textual`]), never Base's whole-value "pet".
 //!     [`Lang::cardinal_float_entry`] is therefore overridden to send *every*
@@ -49,14 +49,14 @@
 //!     facto float ceiling, and it is a *ValueError*, unlike the int path's
 //!     10^33 `OverflowError`.
 //!   * `str(-0.0)` is "-0.0", so **negative zero renders the negword**:
-//!     "minus nula zarez nula nula" (corpus-pinned for float and Decimal
+//!     "minus nula zarez nula" (corpus-pinned for float and Decimal
 //!     alike; the binding smuggles `Decimal("-0.0")` in as an f64 `-0.0`
 //!     because `BigDecimal` cannot carry the sign of zero).
 //!
 //! `to_ordinal`, by contrast, opens with `int(number)` — plain truncation
 //! toward zero — so floats lose their fraction *before* the table lookup:
-//! `to_ordinal(2.5)` == "drugi", `to_ordinal(0.5)` == "nulai",
-//! `to_ordinal(-1.5)` == "minus jedani", and `to_ordinal(1e16)` ==
+//! `to_ordinal(2.5)` == "drugi", `to_ordinal(0.5)` == "nulti",
+//! `to_ordinal(-1.5)` == "minus prvi", and `to_ordinal(1e16)` ==
 //! "deset bilijardii" (int(1e16) is exact, then cardinal + "i"). No
 //! ValueError here: `int(float)` succeeds where `int(str)` failed. See
 //! [`Lang::ordinal_float_entry`].
@@ -92,19 +92,17 @@
 //! This is a port, not a rewrite. The following all look wrong but are exactly
 //! what Python emits, verified against the interpreter and the frozen corpus:
 //!
-//! 1. **`to_ordinal` is a lookup table plus a naive `+ "i"` fallback.** Python
-//!    only tables 1..=20, the round tens 30..=90, 100 and 1000. *Every other*
-//!    input falls through to `self.to_cardinal(num) + "i"`, glueing an "i"
-//!    onto the last cardinal word with no grammar whatsoever. Hence the
-//!    corpus rows `to_ordinal(0)` == "nulai", `to_ordinal(42)` ==
-//!    "četrdeset dvai", `to_ordinal(200)` == "dvjestoi",
-//!    `to_ordinal(2000)` == "dvije tisućei", `to_ordinal(10000)` ==
-//!    "deset tisućai" and `to_ordinal(10**10)` == "deset milijardii" (note the
-//!    doubled "ii" — "milijardi" + "i"). The Python source calls this "a
-//!    simplified implementation". None of it is corrected here.
-//! 2. **`to_ordinal` of a negative works and produces nonsense.** Unlike most
-//!    modules HR never calls `verify_ordinal`, so no `TypeError` is raised for
-//!    negatives: `to_ordinal(-1)` == "minus jedani". Preserved.
+//! 1. *(Fixed, #248.)* Python tabled only 1..=20, the round tens, 100 and
+//!    1000, and glued "i" onto the cardinal for everything else ("četrdeset
+//!    dvai", "dvjestoi"). Compound ordinals now inflect their last word
+//!    ([`crate::compound_ordinal`]): 21 == "dvadeset prvi", 101 == "sto
+//!    prvi", 1001 == "tisuća prvi", 200 == "dvjestoti", 0 == "nulti",
+//!    10**6 == "milijunti". Round thousands and larger round values other
+//!    than 10**6 (2000, 10000, 10**10, …) still take Python's `+ "i"`
+//!    fallback ("dvije tisućei"); that remains a known gap.
+//! 2. *(Fixed, #248.)* A negative ordinal is "minus" + the ordinal
+//!    (`to_ordinal(-1)` == "minus prvi"). HR still never calls
+//!    `verify_ordinal`, so negatives do not raise.
 //! 3. **`SCALE[5]` is "bilijardu"**, an accusative form where every other
 //!    entry is nominative ("bilijarda" would be the pattern-consistent word).
 //!    The corpus confirms `to_cardinal(10**15)` == "bilijardu". Kept verbatim.
@@ -144,7 +142,8 @@
 //!
 //! It overrides `to_currency` and `_cents_verbose`; `to_cheque`,
 //! `_money_verbose` and `_cents_terse` stay `Num2Word_Base`'s (the port fixes
-//! `to_cheque`'s unit word, quirk 6). It defines
+//! `to_cheque`'s unit word, quirk 6, and makes `_money_verbose` and the cents
+//! honour the gender flags, quirk 11). It defines
 //! neither `CURRENCY_ADJECTIVES` nor `CURRENCY_PRECISION`, so both remain
 //! Base's empty dicts and [`Lang::currency_precision`] keeps its default 100
 //! for every code.
@@ -196,6 +195,16 @@
 //!    (verified live). The generated [`Lang::default_separator`] below returns
 //!    `""` because that is the literal in the signature; the falsy-to-comma
 //!    step happens inside [`LangHr::to_currency`], as it does in Python.
+//!
+//! 11. **The numerals ignored the currency's gender (fixed, #196).** Python
+//!    spelled both amounts with `self.to_cardinal` (masculine), although the
+//!    form tuples flag kuna and lipa as feminine: `to_currency(1, "HRK")` was
+//!    "jedan kuna" and 2.02 "dva kune, dva lipe". The units numeral now goes
+//!    through [`LangHr::money_verbose`], which reads the unit's flag, and the
+//!    cents through `_cents_verbose`, which reads the subunit's: "jedna
+//!    kuna", "dvije kune, dvije lipe". EUR/USD (euro/dolar, cent) are
+//!    masculine and unchanged. As for `sr` (#188), only the units word is
+//!    re-gendered.
 //!
 //! # Scope: fractional cents
 //!
@@ -390,6 +399,12 @@ const ORDINALS: [(u32, &str); 29] = [
     (90, "devedeseti"),
     (100, "stoti"),
     (1000, "tisući"),
+];
+
+/// Ordinal hundreds 100..=900 (#248). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "stoti", "dvjestoti", "tristoti", "četiristoti", "petstoti", "šeststoti", "sedamstoti",
+    "osamstoti", "devetstoti",
 ];
 
 /// Python's `num in ordinals` / `ordinals[num]`.
@@ -847,14 +862,15 @@ impl LangHr {
     ///   `1.10` → "jedan zarez deset" (not "... jedan nula"), `2.675` → "dva
     ///   zarez šesto sedamdeset pet" (no `674.999…` binary-residue rescue is
     ///   ever needed — the repr string carries "675" directly).
-    /// * A `"0"` fractional digit is counted **both** as a leading zero and by
-    ///   `int2word(0)`, so `1.0` → "jedan zarez nula nula" and
-    ///   `Decimal("10.00")` → "deset zarez nula nula nula".
+    /// * An all-zero fraction reads one "nula" per digit written, so `1.0` →
+    ///   "jedan zarez nula" and `Decimal("10.00")` → "deset zarez nula nula"
+    ///   (Python counted a `"0"` both as a leading zero and by `int2word(0)`,
+    ///   adding one; fixed, gladiaio/num2words2#237).
     ///
     /// `str(number)` is reconstructed per variant:
     /// * `Float` → [`python_repr_f64`], exact — including the exponent form
     ///   ("1e+16") whose `int()` failure is HR's float ceiling, and "-0.0"
-    ///   whose sign survives into "minus nula zarez nula nula". One carve-out:
+    ///   whose sign survives into "minus nula zarez nula". One carve-out:
     ///   the shim smuggles a *Decimal* negative zero in as f64 `-0.0` (the
     ///   sign of zero doesn't fit a `BigDecimal`), so a zero whose `precision`
     ///   isn't repr's fixed 1 is re-expanded to the Decimal's own string
@@ -905,7 +921,11 @@ impl LangHr {
 
         // leading_zero_count = len(right) - len(right.lstrip("0"))
         // (byte counts are char counts: reprs are pure ASCII).
-        let leading_zero_count = right.len() - right.trim_start_matches('0').len();
+        // The final int(right) word already says one zero, so an all-zero
+        // fraction gets len - 1 leading zeros: exactly the digits written
+        // (gladiaio/num2words2#237; Python read 1.0 as "... zero zero").
+        let leading_zero_count = (right.len() - right.trim_start_matches('0').len())
+            .min(right.len().saturating_sub(1));
 
         // int(left), int(right) — a fractional token carrying an exponent
         // ("5e-05" from repr(1.5e-05)) raises ValueError, exactly as Python.
@@ -989,8 +1009,8 @@ impl Lang for LangHr {
     ///
     /// HR's `to_cardinal` is textual over `str(number)`, so *every*
     /// float/Decimal takes the same branch: a visible "." means the decimal
-    /// grammar even for whole values (`5.0` → "pet zarez nula nula",
-    /// `Decimal("5.00")` → "pet zarez nula nula nula"), no "." means `int(n)`
+    /// grammar even for whole values (`5.0` → "pet zarez nula",
+    /// `Decimal("5.00")` → "pet zarez nula nula"), no "." means `int(n)`
     /// (`Decimal("5")` → "pet"; exponent forms "1e+16"/"1E+2" → ValueError).
     /// Base's whole-value shortcut never applies — see the module docs.
     fn cardinal_float_entry(
@@ -1005,7 +1025,7 @@ impl Lang for LangHr {
     ///
     /// Python opens with `num = int(number)` — truncation toward zero — so the
     /// fraction is gone *before* the table lookup: `2.5` → "drugi", `0.5` →
-    /// "nulai", `-1.5` → "minus jedani", `-0.0` → "nulai" (int drops the zero's
+    /// "nulti", `-1.5` → "minus prvi", `-0.0` → "nulti" (int drops the zero's
     /// sign). `int(1e16)` succeeds (unlike the cardinal path's `int("1e+16")`),
     /// so `1e16` → "deset bilijardii". The `except (ValueError, TypeError)`
     /// arm is unreachable for the finite values this hook receives; the
@@ -1037,7 +1057,7 @@ impl Lang for LangHr {
     // year_float_entry: HR does not override to_year, so a float year is
     // Base's `self.to_cardinal(value)` — the trait default already delegates
     // to `cardinal_float_entry`, picking up the override above (year 5.0 →
-    // "pet zarez nula nula", year 1e16 → ValueError; both corpus-pinned).
+    // "pet zarez nula", year 1e16 → ValueError; both corpus-pinned).
     //
     // ordinal_num_float_entry: Base's to_ordinal_num returns the value
     // unchanged and the dispatcher str()s it — the trait default echoes the
@@ -1131,18 +1151,35 @@ impl Lang for LangHr {
     /// return str(number)`; a `BigInt` is already an integer, so that arm is
     /// unreachable and is not modelled.
     ///
-    /// Everything outside the 29-entry table falls through to
-    /// `to_cardinal(num) + "i"` — no `verify_ordinal`, so negatives pass
-    /// through and produce "minus jedani" rather than raising. See the module
-    /// docs.
+    /// Outside the 29-entry table, Python glued "i" onto the cardinal;
+    /// compounds now inflect their last word instead (#248, see the module
+    /// docs for the round values still on that fallback).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        if value.is_negative() {
+            return Ok(format!("{} {}", NEGWORD, self.to_ordinal(&value.abs())?));
+        }
+        if value.is_zero() {
+            return Ok("nulti".to_string());
+        }
         if let Some(word) = ordinal_lookup(value) {
             return Ok(word.to_string());
         }
-
-        // For other numbers, add 'i' suffix to the cardinal.
-        // Python's comment: "This is a simplified implementation".
         let cardinal = self.to_cardinal(value)?;
+        if let Some(n) = value.to_u64() {
+            if n == 1_000_000 {
+                return Ok("milijunti".to_string());
+            }
+            let small = |v: u64| ordinal_lookup(&BigInt::from(v));
+            if let Some(word) = crate::compound_ordinal::last_word_ordinal(
+                n,
+                &cardinal,
+                small,
+                Some(&HUNDREDS_ORD),
+            ) {
+                return Ok(word);
+            }
+        }
+        // Python's comment: "This is a simplified implementation".
         Ok(format!("{}i", cardinal))
     }
 
@@ -1159,9 +1196,9 @@ impl Lang for LangHr {
     // ---- currency -------------------------------------------------------
     //
     // HR overrides `to_currency` and `_cents_verbose`, and supplies its own
-    // `CURRENCY_FORMS` + `pluralize`. Everything else on the currency path —
-    // `_money_verbose`, `_cents_terse` — is `Num2Word_Base`'s, and the trait
-    // defaults already mirror those, so they are left alone. `to_cheque` is
+    // `CURRENCY_FORMS` + `pluralize`. `_money_verbose` is overridden here too,
+    // to honour the unit's gender flag (#196); `_cents_terse` is
+    // `Num2Word_Base`'s, which the trait default already mirrors. `to_cheque` is
     // Base's too, except for the unit word (quirk 6, #189).
     // `CURRENCY_ADJECTIVES` and `CURRENCY_PRECISION` are Base's empty dicts, so
     // `currency_adjective` (None) and `currency_precision` (100) are correct as
@@ -1173,6 +1210,33 @@ impl Lang for LangHr {
 
     fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
         self.currency_forms.get(code)
+    }
+
+    /// Base's `_money_verbose` (`self.to_cardinal(number)`), with the units
+    /// word agreeing with the unit's gender flag (#196): "jedna kuna",
+    /// "dvadeset jedna kuna", "dvije kune"; EUR/USD stay masculine. Only the
+    /// last word is re-gendered, so scale words keep their own gender.
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        let feminine = self
+            .currency_forms
+            .get(currency)
+            .and_then(|f| f.unit.last())
+            .is_some_and(|flag| flag.as_str() == "True");
+        if !feminine {
+            return Ok(words);
+        }
+        let (head, last) = match words.rsplit_once(' ') {
+            Some((h, l)) => (Some(h), l),
+            None => (None, words.as_str()),
+        };
+        Ok(match ONES.iter().skip(1).find(|(m, _)| *m == last) {
+            Some((_, f)) => match head {
+                Some(h) => format!("{} {}", h, f),
+                None => f.to_string(),
+            },
+            None => words.clone(),
+        })
     }
 
     /// `Num2Word_Base.to_cheque` with the "many" form as the unit word instead
@@ -1202,18 +1266,13 @@ impl Lang for LangHr {
     /// `lipa` (flag `True`) would get feminine numerals ("jedna lipa") while
     /// EUR's `cent` (flag `False`) stays masculine ("jedan cent").
     ///
-    /// **Unreachable, and therefore not corpus-verified.** `Num2Word_Base`
-    /// reaches `_cents_verbose` from its own `to_currency`, but HR overrides
-    /// `to_currency` wholesale and spells the cents with `self.to_cardinal`
-    /// instead — which passes `feminine=False` — so the flag this method exists
-    /// to read is never consulted on any live path. `to_cheque` calls
-    /// `_money_verbose`, not this. Ported anyway because it is real surface on
-    /// the class and the trait exposes the hook.
+    /// Python's own `to_currency` spelled the cents with `self.to_cardinal`
+    /// (masculine) and never reached this; the port's does, so "dvije lipe"
+    /// agrees with the feminine subunit (#196). The cents are below 100, so
+    /// `_int2word`'s flag only touches the units word.
     ///
-    /// The `CURRENCY_FORMS[currency]` miss is Python's `KeyError`, not the
-    /// `NotImplementedError` the `to_currency`/`to_cheque` lookups raise; the
-    /// `[-1]` on an empty tuple would be an `IndexError`. Both are dead for the
-    /// same reason as the method itself.
+    /// The `CURRENCY_FORMS[currency]` miss is Python's `KeyError`; `to_currency`
+    /// has already raised NotImplementedError for an unknown code by then.
     fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
         let forms = self
             .currency_forms
@@ -1313,7 +1372,9 @@ impl Lang for LangHr {
         } else {
             String::new()
         };
-        let money_str = self.to_cardinal(&left)?;
+        // Python: `self.to_cardinal(left)`, always masculine; the numeral
+        // agrees with the unit instead ("jedna kuna", #196).
+        let money_str = self.money_verbose(&left, currency)?;
 
         // Python: `if right > 0 or is_float:` — a true `int` always lands here
         // with `right = 0` and `is_float = False`, which is what keeps the cents
@@ -1368,8 +1429,10 @@ impl Lang for LangHr {
             // — `to_cardinal(0) == to_cardinal(0)` and `"0" == str(0)` — so the
             // special case is dead code in the original and is collapsed here.
             // (It exists in Python only to sidestep the isinstance check above.)
+            // Python: `self.to_cardinal(right)`, always masculine; the subunit's
+            // gender flag is honoured instead ("dvije lipe", #196).
             let s = if cents {
-                self.to_cardinal(&r)?
+                self.cents_verbose(&r, currency)?
             } else {
                 r.to_string()
             };

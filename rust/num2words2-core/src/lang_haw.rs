@@ -1,5 +1,24 @@
 //! Port of `lang_HAW.py` (Hawaiian).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154, #263): "'i'o 'ole" (minus), placed after the number
+//!   ("'ekolu 'i'o 'ole" = -3) — best candidate: "negative" in Pukui-Elbert
+//!   (wehe.hilo.hawaii.edu/?q=negative: "helu ʻiʻo ʻole" = negative number,
+//!   "kaha ʻiʻo ʻole" = negative sign), where it follows its head like any
+//!   Hawaiian modifier. No source reads a negative number aloud; one model
+//!   flagged the order unprompted, and a second round whose prompt stated
+//!   the modifier-follows-head rule agreed 5/5.
+//!
+//! # Scale words above a million (gladiaio/num2words2#147)
+//!
+//! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
+//! port adds "piliona" (10^9) and "kiliona" (10^12) (Pukui-Elbert via
+//! wehe.hilo.hawaii.edu), composed like the million arm, and raises
+//! `OverflowError` from 10^15, which `maxval()` reports. Where the notes below
+//! describe the digit fallback ("1000000000", "no overflow check"), they
+//! describe Python; that arm is now unreachable.
+//!
 //! Shape: **self-contained**. `Num2Word_HAW` subclasses `Num2Word_Base` but
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords` and no
 //! `set_high_numwords`, so Python never builds `self.cards` and never sets
@@ -8,9 +27,10 @@
 //! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here,
 //! and there is **no overflow check** — see the 10^9 fallback below.
 //!
-//! `setup()` assigns `negword = "minus "` (trailing space is load-bearing —
-//! `to_cardinal` concatenates then `.strip()`s) and `pointword = "point"`
-//! (float path only, out of scope).
+//! `setup()` assigns `negword = "minus "` (prepended, then `.strip()`ped)
+//! and the English `pointword = "point"`; the port says "kiko" (Pukui-Elbert,
+//! "kiko kekimala" = decimal point), gladiaio/num2words2#154. The negword is
+//! the best candidate "'i'o 'ole", after the number (see UNVERIFIED above).
 //!
 //! Every method in scope is overridden by HAW, so nothing is inherited from
 //! `Num2Word_Base` here except the class scaffolding:
@@ -34,14 +54,14 @@
 //!    Corpus: `{"arg": "1000000000", "out": "1000000000"}`. See [`one_billion`].
 //! 2. **Negatives leak the negword into ordinals.** `to_ordinal` prefixes a
 //!    literal `"ka "` onto whatever `to_cardinal` returns, with no sign
-//!    handling, so `to_ordinal(-1)` == `"ka minus 'ekahi"`. Corpus confirms.
+//!    handling, so Python's `to_ordinal(-1)` was `"ka minus 'ekahi"` (the
+//!    port: `"ka 'ekahi 'i'o 'ole"`).
 //!    Combined with (1), `to_ordinal(10**9)` == `"ka 1000000000"`.
-//! 3. **`ones[0]` is `""`, so zero is English.** The zero guard reads
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is the
-//!    empty string — falsy — so the ternary *always* takes the else branch and
-//!    yields the English `"zero"`, never a Hawaiian word. The first arm is
-//!    dead code. Hence `to_cardinal(0)` == `"zero"` and `to_ordinal(0)` ==
-//!    `"ka zero"`.
+//! 3. **Zero (fixed, gladiaio/num2words2#154).** The zero guard reads
+//!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
+//!    so Python always answered the English "zero". The port says the
+//!    Hawaiian "'ole" (ʻokina written as an apostrophe, as everywhere in this
+//!    module): `to_cardinal(0)` == `"'ole"`, `to_ordinal(0)` == `"ka 'ole"`.
 //! 4. **`_int_to_word`'s negative branch is unreachable.** `to_cardinal`
 //!    strips the `"-"` from the *string* before calling `_int_to_word`, and no
 //!    recursive call can go negative (`div`/`mod` of a non-negative). Kept
@@ -87,8 +107,15 @@
 //! `Num2Word_Base.to_currency`, so `currency::default_to_currency` is bypassed
 //! entirely. `to_cheque` is *not* overridden, so it comes from the base and
 //! `currency::default_to_cheque` serves it unchanged.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). The euro has no reliable Hawaiian noun, so EUR raises
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -96,10 +123,18 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
-/// `setup`: `self.negword = "minus "`. The trailing space matters — see
-/// [`LangHaw::to_cardinal`], which concatenates it then trims.
-const NEGWORD: &str = "minus ";
+/// `setup`: `self.negword = "minus "`, which Python prepends. The port says
+/// "'i'o 'ole" and puts it *after* what it qualifies (#263), as Hawaiian
+/// modifiers follow their head (Pukui-Elbert "helu 'i'o 'ole" = negative
+/// number): -3 is "'ekolu 'i'o 'ole". See [`negate`].
+const NEGWORD: &str = "'i'o 'ole";
+
+/// Mark `words` as negative: the negword follows them (#263).
+fn negate(words: &str) -> String {
+    format!("{} {}", words, NEGWORD)
+}
 
 /// `self.ones`. Index 0 is `""` and is never read as a word — see quirk 3.
 const ONES: [&str; 10] = [
@@ -162,14 +197,14 @@ fn int_to_word(number: &BigInt) -> String {
     // Python: `if number == 0: return self.ones[0] if self.ones[0] else "zero"`
     // `ones[0]` is "" (falsy), so this is unconditionally "zero". Quirk 3.
     if number.is_zero() {
-        return "zero".to_string();
+        return "'ole".to_string();
     }
 
     // Python: `if number < 0: return self.negword + self._int_to_word(abs(number))`
     // Unreachable — to_cardinal strips the sign from the string first, and no
     // recursion below can produce a negative. Kept to mirror the source.
     if number.is_negative() {
-        return format!("{}{}", NEGWORD, int_to_word(&number.abs()));
+        return negate(&int_to_word(&number.abs()));
     }
 
     if number < &ten() {
@@ -230,6 +265,22 @@ fn int_to_word(number: &BigInt) -> String {
             result.push_str(&int_to_word(&BigInt::from(remainder)));
         }
         return result;
+    }
+
+    // Scale words above a million (gladiaio/num2words2#147), composed like
+    // the million arm. Every entry point rejects values at or above
+    // `maxval_ceiling()` first, so the top quotient is always below 1000.
+    for &(exp, word) in SCALES.iter().rev() {
+        let scale = pow10_big(exp);
+        if number >= &scale {
+            let mut result = format!("{} {}", int_to_word(&(number / &scale)), word);
+            let rest = number % &scale;
+            if !rest.is_zero() {
+                result.push(' ');
+                result.push_str(&int_to_word(&rest));
+            }
+            return result;
+        }
     }
 
     // Python: `else: return str(number)  # Fallback for very large numbers`.
@@ -326,6 +377,23 @@ const SEPARATOR_UNSET: &str = ",";
 /// HAW's own `to_currency` default, restored when [`SEPARATOR_UNSET`] arrives.
 const SEPARATOR_DEFAULT: &str = " ";
 
+/// Scale words above a million (gladiaio/num2words2#147), as
+/// `(exponent, word)`. See the module docs for the sources.
+const SCALES: [(u32, &str); 2] = [(9, "piliona"), (12, "kiliona")];
+
+/// The exclusive ceiling: 1000 of the largest scale word, 10^15.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`] (gladiaio/num2words2#147): every
+/// entry point that hands over a caller-supplied integer goes through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 pub struct LangHaw {
     /// `CURRENCY_FORMS`, built once. Both entries carry exactly two unit forms
     /// and two subunit forms, matching Python's tuple arity — `to_currency`
@@ -342,10 +410,8 @@ impl LangHaw {
             "USD",
             CurrencyForms::new(&["kālā", "kālā"], &["keneka", "keneka"]),
         );
-        forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // EUR was English ("dollars", "cents", "euros"); no reliable Hawaiian euro noun was found, so
+        // it raises NotImplementedError (#222).
         LangHaw { forms }
     }
 }
@@ -357,6 +423,10 @@ impl Default for LangHaw {
 }
 
 impl Lang for LangHaw {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -376,7 +446,7 @@ impl Lang for LangHaw {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "kiko"
     }
 
     /// Port of `Num2Word_HAW.to_cardinal`.
@@ -388,19 +458,11 @@ impl Lang for LangHaw {
     /// whitespace, or a `.`. The float branch (`if "." in n`) is unreachable
     /// for integers and out of scope.
     ///
-    /// The trailing `.strip()` is reproduced as `trim()`. It is a no-op for
-    /// every reachable input: `int_to_word` never returns an empty or
-    /// space-padded string, so `negword`'s trailing space always lands
-    /// *between* "minus" and the first word rather than at an edge. Kept for
-    /// fidelity — and because it is what would swallow the sign spacing if
-    /// `int_to_word` ever did return "".
+    /// A negative value takes the negword after the number (#263, see
+    /// [`negate`]); Python prepended "minus ".
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        let (n, ret) = if value.is_negative() {
-            (value.abs(), NEGWORD)
-        } else {
-            (value.clone(), "")
-        };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        let words = checked_int_to_word(&value.abs())?;
+        Ok(if value.is_negative() { negate(&words) } else { words })
     }
 
     /// Port of `Num2Word_HAW.to_ordinal`.
@@ -430,7 +492,7 @@ impl Lang for LangHaw {
     /// The `longval=True` kwarg is accepted and ignored, so years get no
     /// century splitting: 1776 == "'ekahi kaukani 'ehiku haneli kanahiku
     /// 'eono" (one thousand seven hundred seventy six), and negative years get
-    /// no BC marker — `to_year(-44)` == "minus kanahā 'ehā".
+    /// no BC marker — `to_year(-44)` == "kanahā 'ehā 'i'o 'ole".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -483,10 +545,10 @@ impl Lang for LangHaw {
     ///   `Decimal("98746251323029.99")` -> `"98746251323029 point 'eiwa
     ///   'eiwa"` — the integer part is bare digits. Corpus-pinned.
     /// * `zero` (quirk 3) is emitted for every `0` digit, so `0.01` ->
-    ///   `"zero point zero 'ekahi"` and `1.005` -> `"'ekahi point zero zero
+    ///   `"'ole kiko 'ole 'ekahi"` and `1.005` -> `"'ekahi point zero zero
     ///   'elima"`.
     /// * A negative fraction keeps the negword and prints `int_to_word(0)`:
-    ///   `-0.5` -> `"minus zero point 'elima"` (there is no `pre == 0` sign
+    ///   `-0.5` -> `"'ole kiko 'elima 'i'o 'ole"` (there is no `pre == 0` sign
     ///   rescue like the base path — the `"-"` is stripped lexically).
     ///
     /// # Errors
@@ -547,19 +609,16 @@ impl Lang for LangHaw {
             }
         };
 
-        // Build `ret` exactly as Python concatenates, then `.strip()`.
-        let mut ret = String::new();
-        if is_negative {
-            ret.push_str(NEGWORD); // "minus " — trailing space is load-bearing.
-        }
-        ret.push_str(&int_to_word(&int_left));
+        // Build `ret` as Python concatenates, then `.strip()`; the negword
+        // follows the whole number instead of preceding it (#263).
+        let mut ret = checked_int_to_word(&int_left)?;
 
         // Python emits the point + digit words only when `"." in n`, i.e. when
         // there is a fractional part (precision > 0). precision == 0 reproduces
         // the integer `else` branch (bare `int_to_word`, no "point").
         if precision > 0 {
             ret.push(' ');
-            ret.push_str(self.pointword()); // "point"
+            ret.push_str(self.pointword()); // "kiko"
             for ch in frac.chars() {
                 ret.push(' ');
                 let digit = ch.to_digit(10).ok_or_else(|| {
@@ -568,11 +627,12 @@ impl Lang for LangHaw {
                         ch
                     ))
                 })?;
-                ret.push_str(&int_to_word(&BigInt::from(digit)));
+                ret.push_str(&checked_int_to_word(&BigInt::from(digit))?);
             }
         }
 
-        Ok(ret.trim().to_string())
+        let ret = ret.trim();
+        Ok(if is_negative { negate(ret) } else { ret.to_string() })
     }
 
     /// `to_cardinal(float/Decimal)` — the FULL routing, whole values included.
@@ -580,7 +640,7 @@ impl Lang for LangHaw {
     /// HAW routes on the string, not the value: `"." in str(number)` decides
     /// between the digit-word grammar and `int(n)`. So the base default's
     /// whole→int shortcut is wrong here — `str(5.0)` is `"5.0"` and must read
-    /// `"'elima point zero"`, while the point-free `Decimal("5")` stays
+    /// `"'elima kiko 'ole"`, while the point-free `Decimal("5")` stays
     /// `"'elima"`, and an exponent-form repr raises the `int()` ValueError
     /// ([`sci_float_value_error`] / [`decimal_sci_value_error`] reconstruct
     /// which of the two `int()` calls fires).
@@ -619,7 +679,7 @@ impl Lang for LangHaw {
     /// are *numeric* comparisons, so `1.0` is "ka mua" and `Decimal("2.00")`
     /// is "ka lua"; everything else — negative zero included — is `"ka "`
     /// glued to the string-routed cardinal: `to_ordinal(5.0)` ==
-    /// `"ka 'elima point zero"`, `to_ordinal(-0.0)` == `"ka minus zero point
+    /// `"ka 'elima kiko 'ole"`, `to_ordinal(-0.0)` == `"ka minus zero point
     /// zero"`. An exponent-form repr propagates the cardinal's ValueError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         if let Some(i) = value.as_whole_int() {
@@ -641,7 +701,7 @@ impl Lang for LangHaw {
     }
 
     /// `to_year(float/Decimal)`: bare `self.to_cardinal(val)`, string routing
-    /// included — `to_year(5.0)` == `"'elima point zero"`, `to_year(1e16)`
+    /// included — `to_year(5.0)` == `"'elima kiko 'ole"`, `to_year(1e16)`
     /// raises ValueError.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.cardinal_float_entry(value, None)
@@ -845,7 +905,7 @@ impl Lang for LangHaw {
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -855,17 +915,15 @@ impl Lang for LangHaw {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                checked_int_to_word(&right)?,
                 if right != one { &cr2[1] } else { &cr2[0] }
             ));
         }
 
-        // `if is_negative: result = self.negword + result` — "minus " (with its
-        // trailing space) is prepended, then the whole thing is stripped.
-        if is_negative {
-            result = format!("{}{}", NEGWORD, result);
-        }
-        Ok(result.trim().to_string())
+        // Python: `if is_negative: result = self.negword + result`, stripped.
+        // The negword follows the amount instead (#263).
+        let result = result.trim();
+        Ok(if is_negative { negate(result) } else { result.to_string() })
     }
 }
 

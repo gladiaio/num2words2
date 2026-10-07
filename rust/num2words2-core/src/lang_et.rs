@@ -5,9 +5,12 @@
 //! builds `self.cards` and never sets `MAXVAL` (see the `hasattr` guard at the
 //! end of `Num2Word_Base.__init__`). All four in-scope entry points are
 //! overridden outright and drive a hand-written `_int_to_word` recursion.
-//! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here and
-//! there is **no overflow check at all** — arbitrarily large values are
-//! accepted (see bug 5 below for what happens past 10^12).
+//! Consequently `cards`/`merge` stay at their trait defaults here, and Python
+//! has **no overflow check at all** — arbitrarily large values are accepted
+//! (see bug 5 below for what happens past 10^12). On a large enough integer
+//! the port's recursion overflowed the native stack, so it adds a ceiling
+//! (gladiaio/num2words2#203): `maxval` is 10^15 and every mode raises
+//! `OverflowError` from there.
 //!
 //! `Num2Word_ET._setup` is a bare `super()._setup()` passthrough, and nothing
 //! in the base ever calls it (`__init__` calls `setup`, not `_setup`), so it is
@@ -22,14 +25,15 @@
 //! This is a port, not a rewrite. Every item below looks wrong and is exactly
 //! what Python emits — each is pinned by a `bench/corpus.jsonl` row.
 //!
-//! 1. **`to_ordinal(n)` for `n > 100` just glues an `s` onto the cardinal.**
-//!    `_int_to_ordinal` special-cases only 0, <10, 10, <20, <100, 100 and 1000;
-//!    everything else falls through to `self._int_to_cardinal(n) + "s"`. This
-//!    produces non-words: `to_ordinal(101)` == "ükssada ükss",
-//!    `to_ordinal(111)` == "ükssada üksteists", `to_ordinal(2000)` ==
-//!    "kaks tuhats", `to_ordinal(10**12)` == "üks triljons". Note 110 →
-//!    "ükssada kümmes" only *looks* right; it is the same `+ "s"` rule landing
-//!    on "kümme" by luck.
+//! 1. *(Fixed, #248.)* Python glued an `s` onto the cardinal for every
+//!    `n > 100` outside its special cases ("ükssada ükss", "ükssada
+//!    üksteists"). The port now builds standard Estonian compound ordinals:
+//!    every component but the last in the genitive, the last one ordinal —
+//!    101 == "saja esimene", 121 == "saja kahekümne esimene", 200 ==
+//!    "kahesajas", 1001 == "tuhande esimene", 2021 == "kahe tuhande
+//!    kahekümne esimene", 10**6 == "miljones". Round thousands from 2000
+//!    and other round values from 10**6 up ("kaks tuhats", "üks triljons")
+//!    still take the `+ "s"` fallback; that remains a known gap.
 //! 2. ~~**`to_ordinal` on negatives is Python list indexing, not arithmetic.**~~
 //!    Fixed (gladiaio/num2words2#155). `_int_to_ordinal` checks `n == 0`
 //!    then `n < 10`, and every negative passed `n < 10`, reaching
@@ -38,21 +42,18 @@
 //!    `-10..=-1` and raised `IndexError` below that. The port now raises
 //!    Base's `errmsg_negord` `TypeError` for every negative, like most
 //!    languages, and so does the truncating float entry (`-0.5`, `-1.5`).
-//! 3. **Compound ordinals 21..99 use the *cardinal* tens stem.** The `else` arm
-//!    of the `n < 100` branch is `self.tens[t] + " " + self.ordinals_ones[o]`,
-//!    so `to_ordinal(21)` == "kakskümmend esimene" (Estonian wants the genitive
-//!    "kahekümne esimene"). Kept verbatim.
-//! 4. **`ordinals_tens[4]` is "nelikümnes", not "neljakümnes".** Its neighbours
-//!    all use the genitive stem ("kahekümnes", "kolmekümnes", "viiekümnes"), so
-//!    index 4 is a typo in the table. `to_ordinal(40)` == "nelikümnes" is
-//!    corpus-confirmed. Kept verbatim.
+//! 3. *(Fixed, #248.)* Compound ordinals 21..99 used the *cardinal* tens
+//!    stem ("kakskümmend esimene"); they now use the genitive, "kahekümne
+//!    esimene".
+//! 4. *(Fixed, #248.)* `ordinals_tens[4]` was the typo "nelikümnes"; it is
+//!    now "neljakümnes", like its genitive-stem neighbours.
 //! 5. **Above 10^12 the trillions branch recurses into itself**, so the scale
 //!    word repeats instead of naming a higher scale: `10**15` ==
 //!    "tuhat triljonit", `10**18` == "üks miljon triljonit", `10**21` ==
-//!    "üks miljard triljonit". All three are corpus rows. Since there is no
+//!    "üks miljard triljonit". All three are corpus rows. Since Python has no
 //!    MAXVAL, this continues indefinitely (10^24 would be
-//!    "üks triljon triljonit"), which is why the recursion must run on `BigInt`
-//!    and never on a fixed-width int.
+//!    "üks triljon triljonit"). The port stops at 10^15, before the word
+//!    repeats (gladiaio/num2words2#203).
 //! 6. **The `thousands == 100` special case is redundant-looking but load-
 //!    bearing**: it yields "sada tuhat" for 100_000 where the general arm would
 //!    give "ükssada tuhat". Only the *exact* multiplier 100 is special — 101_000
@@ -123,9 +124,7 @@
 //!    numerals; ET just picks index 0 or 1. Corpus-pinned as-is
 //!    ("null eurot", "kaks eurot", "üks euro").
 
-use crate::base::{
-    negord_error, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result,
-};
+use crate::base::{check_maxval, negord_error, pow10_big, py_num_str, strictly_negative, verify_ordinal, Lang, N2WError, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
 use crate::floatpath::{float2tuple, FloatValue};
 use bigdecimal::BigDecimal;
@@ -133,6 +132,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.ones` — index 0 is an unused empty filler.
 const ONES: [&str; 10] = [
@@ -152,9 +152,8 @@ const TENS: [&str; 10] = [
     "kaheksakümmend",
     "üheksakümmend",
 ];
-
-/// `self.ordinals_ones` — index 0 is an empty filler that becomes reachable via
-/// Python's negative indexing; see bug 2 and [`ordinal_ones_at`].
+/// `self.ordinals_ones`. Index 0 is an empty filler, once reachable via
+/// Python's negative indexing (bug 2, fixed in #155); never read now.
 const ORDINALS_ONES: [&str; 10] = [
     "",
     "esimene",
@@ -168,20 +167,77 @@ const ORDINALS_ONES: [&str; 10] = [
     "üheksas",
 ];
 
-/// `self.ordinals_tens`. Index 4 is "nelikümnes" — a typo in the Python table
-/// (bug 4), preserved verbatim.
+/// `self.ordinals_tens`. Index 4 was the typo "nelikümnes" in Python (bug 4,
+/// fixed in #248).
 const ORDINALS_TENS: [&str; 10] = [
     "",
     "kümnes",
     "kahekümnes",
     "kolmekümnes",
-    "nelikümnes",
+    "neljakümnes",
     "viiekümnes",
     "kuuekümnes",
     "seitsmekümnes",
     "kaheksakümnes",
     "üheksakümnes",
 ];
+
+/// Genitive of 1..=9, the stem of every non-final component of a compound
+/// ordinal ("kahekümne esimene", "kahesajas"; #248). Index 0 is unused.
+const GEN_ONES: [&str; 10] = [
+    "", "ühe", "kahe", "kolme", "nelja", "viie", "kuue", "seitsme", "kaheksa", "üheksa",
+];
+
+/// Genitive of `1..=99`.
+fn gen_below_100(r: usize) -> String {
+    match r {
+        1..=9 => GEN_ONES[r].to_string(),
+        10 => "kümne".to_string(),
+        11..=19 => format!("{}teistkümne", GEN_ONES[r - 10]),
+        _ if r % 10 == 0 => format!("{}kümne", GEN_ONES[r / 10]),
+        _ => format!("{}kümne {}", GEN_ONES[r / 10], GEN_ONES[r % 10]),
+    }
+}
+
+/// Genitive of the hundreds digit `h` in 1..=9: "saja", "kahesaja", ….
+fn gen_hundreds(h: usize) -> String {
+    if h == 1 {
+        "saja".to_string()
+    } else {
+        format!("{}saja", GEN_ONES[h])
+    }
+}
+
+/// Genitive of `1..=999`.
+fn gen_below_1000(m: usize) -> String {
+    let (h, r) = (m / 100, m % 100);
+    match (h, r) {
+        (0, _) => gen_below_100(r),
+        (_, 0) => gen_hundreds(h),
+        _ => format!("{} {}", gen_hundreds(h), gen_below_100(r)),
+    }
+}
+
+/// Ordinal of `1..=99`: genitive tens + ordinal ones for compounds.
+fn ord_below_100(r: usize) -> String {
+    match r {
+        1..=9 => ORDINALS_ONES[r].to_string(),
+        10 => "kümnes".to_string(),
+        11..=19 => TEENS_ORDINALS[r - 11].to_string(),
+        _ if r % 10 == 0 => ORDINALS_TENS[r / 10].to_string(),
+        _ => format!("{}kümne {}", GEN_ONES[r / 10], ORDINALS_ONES[r % 10]),
+    }
+}
+
+/// Ordinal of `1..=999`: "sajas", "kahesajas", "saja kahekümne esimene".
+fn ord_below_1000(m: usize) -> String {
+    let (h, r) = (m / 100, m % 100);
+    match (h, r) {
+        (0, _) => ord_below_100(r),
+        (_, 0) => format!("{}s", gen_hundreds(h)),
+        _ => format!("{} {}", gen_hundreds(h), ord_below_100(r)),
+    }
+}
 
 /// The `teens_map` literal inside `_int_to_word`, indexed by `n - 11`.
 const TEENS: [&str; 9] = [
@@ -268,14 +324,6 @@ fn index_form(forms: &[String], singular: bool) -> Result<&str> {
         .get(if singular { 0 } else { 1 })
         .map(String::as_str)
         .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
-}
-
-/// `self.ordinals_ones[n]`. `_int_to_ordinal` rejects negatives first
-/// (#155), so callers only reach here with `0 <= n < 10`.
-fn ordinal_ones_at(n: &BigInt) -> Result<&'static str> {
-    n.to_usize()
-        .and_then(|i| ORDINALS_ONES.get(i).copied())
-        .ok_or_else(|| N2WError::Index("list index out of range".into()))
 }
 
 pub struct LangEt {
@@ -368,14 +416,15 @@ impl LangEt {
     }
 
     /// `_int_to_cardinal`.
-    fn int_to_cardinal(&self, n: &BigInt) -> String {
+    fn int_to_cardinal(&self, n: &BigInt) -> Result<String> {
+        check_maxval(n, maxval_ceiling())?;
         if n.is_zero() {
-            return "null".to_string();
+            return Ok("null".to_string());
         }
         if n.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&-n));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&-n)));
         }
-        self.int_to_word(n)
+        Ok(self.int_to_word(n))
     }
 
     /// `_int_to_ordinal`.
@@ -387,40 +436,31 @@ impl LangEt {
         // Every negative would satisfy `n < 10` and wrap around in the list
         // index below (bug 2, #155): reject it like Base's verify_ordinal.
         verify_ordinal(n)?;
-        if *n < big(10) {
-            return ordinal_ones_at(n).map(|s| s.to_string());
-        }
-
-        if *n == big(10) {
-            return Ok("kümnes".to_string());
-        }
-
-        if *n < big(20) {
-            let i = n.to_usize().expect("bounded to 11..=19");
-            return Ok(TEENS_ORDINALS[i - 11].to_string());
-        }
-
-        if *n < big(100) {
-            let v = n.to_usize().expect("bounded to 20..=99");
-            let (tens_val, ones_val) = (v / 10, v % 10);
-            return Ok(if ones_val == 0 {
-                ORDINALS_TENS[tens_val].to_string()
+        // Compound ordinals: genitive components + ordinal last (#248).
+        if let Some(v) = n.to_usize().filter(|v| *v < 1_000_000) {
+            if v < 1000 {
+                return Ok(ord_below_1000(v));
+            }
+            let (k, low) = (v / 1000, v % 1000);
+            let head = if k == 1 {
+                "tuhande".to_string()
             } else {
-                // Cardinal tens stem + ordinal ones (bug 3).
-                format!("{} {}", TENS[tens_val], ORDINALS_ONES[ones_val])
-            });
+                format!("{} tuhande", gen_below_1000(k))
+            };
+            if low != 0 {
+                return Ok(format!("{} {}", head, ord_below_1000(low)));
+            }
+            if k == 1 {
+                return Ok("tuhandes".to_string());
+            }
         }
 
-        if *n == big(100) {
-            return Ok("sajas".to_string());
+        if *n == big(1_000_000) {
+            return Ok("miljones".to_string());
         }
 
-        if *n == big(1000) {
-            return Ok("tuhandes".to_string());
-        }
-
-        // Everything else: cardinal + "s" (bug 1).
-        Ok(format!("{}s", self.int_to_cardinal(n)))
+        // Round values without a rule: cardinal + "s" (bug 1, known gap).
+        Ok(format!("{}s", self.int_to_cardinal(n)?))
     }
 
     /// `_int_to_word(n)` run on a **non-int** `n` (a float or Decimal), which
@@ -536,7 +576,21 @@ impl Default for LangEt {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#203): the largest scale word is
+/// triljon (10^12), so from 10^15 the module would stack it ("triljonit
+/// triljonit").
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
+
 impl Lang for LangEt {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -566,7 +620,7 @@ impl Lang for LangEt {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         // Python's `to_cardinal` tests for str/float first; for integral input
         // both tests fail and it drops straight to `_int_to_cardinal(int(n))`.
-        Ok(self.int_to_cardinal(value))
+        Ok(self.int_to_cardinal(value)?)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
@@ -581,7 +635,7 @@ impl Lang for LangEt {
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
         // All three Python branches have identical bodies.
-        Ok(self.int_to_cardinal(value))
+        Ok(self.int_to_cardinal(value)?)
     }
 
     /// `Num2Word_ET.to_cardinal` for non-integer input.
@@ -591,10 +645,11 @@ impl Lang for LangEt {
     /// which diverges from `base.to_cardinal_float` in several load-bearing
     /// ways:
     ///
-    /// * **Digits render through `self.ones`, not `to_cardinal`.** A `0` digit
-    ///   is `self.ones[0]` — the empty filler string — so `0.01` becomes
-    ///   "null koma  üks" (two spaces) and `1.005` "üks koma   viis" (three),
-    ///   both corpus-pinned. Base would speak "null" for each zero.
+    /// * **Digits render through `self.ones`, not `to_cardinal`.** In Python a
+    ///   `0` digit is `self.ones[0]` — the empty filler string — so `0.05`
+    ///   became "null koma  viis" (two spaces), indistinguishable from `0.5`
+    ///   once the spaces collapse. The port says "null" for a zero digit, as
+    ///   Base does (gladiaio/num2words2#205): "null koma null viis".
     /// * **The sign is prepended whenever `n < 0`**, with `pre = abs(pre)` —
     ///   not only when `pre == 0` as Base does. It uses the raw `negword`
     ///   ("miinus ", trailing space) directly, mirroring `self.negword`.
@@ -629,7 +684,7 @@ impl Lang for LangEt {
             FloatValue::Decimal { value: d, .. } => d.is_integer(),
         };
         if whole {
-            return Ok(self.int_to_cardinal(&pre));
+            return Ok(self.int_to_cardinal(&pre)?);
         }
 
         let precision = value.precision() as usize;
@@ -641,7 +696,7 @@ impl Lang for LangEt {
             result.push_str(NEGWORD);
             pre = pre.abs();
         }
-        result.push_str(&self.int_to_cardinal(&pre));
+        result.push_str(&self.int_to_cardinal(&pre)?);
 
         if precision > 0 {
             // `result += " " + self.pointword` (raw, no title).
@@ -655,15 +710,15 @@ impl Lang for LangEt {
             let pad = precision.saturating_sub(post_str.len());
             let padded = format!("{}{}", "0".repeat(pad), post_str);
 
-            // `for digit in post_str: result += " " + self.ones[int(digit)]`.
-            // `self.ones[0]` is the empty filler, so a `0` digit adds a
-            // bare space — the source of the extra gaps above.
+            // `for digit in post_str: result += " " + self.ones[int(digit)]`,
+            // except that `self.ones[0]` is the empty filler: a `0` digit
+            // reads "null" (#205).
             for ch in padded.chars() {
                 let d = ch.to_digit(10).ok_or_else(|| {
                     N2WError::Value(format!("non-digit {:?} in fraction", ch))
                 })? as usize;
                 result.push(' ');
-                result.push_str(ONES[d]);
+                result.push_str(if d == 0 { "null" } else { ONES[d] });
             }
         }
 
@@ -754,6 +809,9 @@ impl Lang for LangEt {
             }
             FloatValue::Decimal { value, .. } => value.clone(),
         };
+        // The simulation recurses like `_int_to_word`, so it needs the same
+        // ceiling (#203).
+        check_maxval(&d.abs().with_scale(0).as_bigint_and_exponent().0, maxval_ceiling())?;
         if d.is_zero() {
             // `if n == 0: return "null"` — numeric, so -0.0 loses its sign.
             return Ok("null".to_string());
@@ -846,7 +904,7 @@ impl Lang for LangEt {
         let minus_str = if is_negative { "miinus " } else { "" };
         // `left` is always >= 0 (`parse_currency_parts` abs()es it), so this
         // takes `_int_to_cardinal`'s positive path.
-        let money_str = self.int_to_cardinal(&left);
+        let money_str = self.int_to_cardinal(&left)?;
         let currency_str = index_form(cr1, left.is_one())?;
 
         // For integers, don't show cents.
@@ -859,18 +917,13 @@ impl Lang for LangEt {
             if has_fractional_cents {
                 // `self.to_cardinal(float(right)) if right > 0 else "null"`.
                 //
-                // OUT OF SCOPE per the porting contract, and **known to
-                // diverge**: ET overrides `to_cardinal`'s float path with its
-                // own (`float2tuple` + `pointword` + `self.ones[digit]`),
-                // whereas `cardinal_from_decimal`'s default routes to Base's
+                // ET overrides `to_cardinal`'s float path with its own
+                // (`float2tuple` + `pointword` + `self.ones[digit]`), whereas
+                // `cardinal_from_decimal`'s default routes to Base's
                 // `to_cardinal_float`, which renders each digit via
-                // `to_cardinal`. They agree on digits 1-9 but not on 0: ET's
-                // `self.ones[0]` is the empty filler string, so Python emits a
-                // run of spaces where this emits "null" — `to_currency(1.01005)`
-                // is "üks euro ja üks koma   viis senti" in Python. No corpus
-                // row reaches this branch (every arg has <= 2 decimals).
-                // Flagged rather than hand-rolled, since the float cardinal path
-                // is a later phase.
+                // `to_cardinal`. Python's ET emitted a run of spaces for a 0
+                // digit (`to_currency(1.01005)` was "üks euro ja üks koma   viis
+                // senti"); both now say "null" (#205), so they agree.
                 if right.is_positive() {
                     self.cardinal_from_decimal(&right)?
                 } else {
@@ -882,7 +935,7 @@ impl Lang for LangEt {
                 // it is kept because it is what Python writes.
                 let right_int = right.as_bigint_and_exponent().0;
                 if right_int.is_positive() {
-                    self.int_to_cardinal(&right_int)
+                    self.int_to_cardinal(&right_int)?
                 } else {
                     "null".to_string()
                 }
@@ -919,6 +972,7 @@ impl Lang for LangEt {
     }
 }
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod float_tests {
     use super::*;
@@ -953,10 +1007,10 @@ mod float_tests {
         assert_eq!(f(&l, 2.25, 2), "kaks koma kaks viis");
         assert_eq!(f(&l, 0.1, 1), "null koma üks");
         // f64-artefact + leading-zero-in-fraction rows (extra spaces on 0):
-        assert_eq!(f(&l, 1.005, 3), "üks koma   viis");
+        assert_eq!(f(&l, 1.005, 3), "üks koma null null viis");
         assert_eq!(f(&l, 2.675, 3), "kaks koma kuus seitse viis");
-        assert_eq!(f(&l, 0.01, 2), "null koma  üks");
-        assert_eq!(f(&l, 1.01, 2), "üks koma  üks");
+        assert_eq!(f(&l, 0.01, 2), "null koma null üks");
+        assert_eq!(f(&l, 1.01, 2), "üks koma null üks");
         assert_eq!(f(&l, 0.99, 2), "null koma üheksa üheksa");
         assert_eq!(f(&l, 99.99, 2), "üheksakümmend üheksa koma üheksa üheksa");
         assert_eq!(f(&l, 100.5, 1), "ükssada koma viis");

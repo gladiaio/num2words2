@@ -10,8 +10,9 @@
 //! spellings: "یەک", "چوار", "هەزار", "سەد".
 //!
 //! This is a lexicon change only — the composition rules, the multiplier
-//! guards, the 10^9 digit cliff and the currency fallback are all still
-//! ported verbatim, bug for bug, and `verify_ordinal` is still not called.
+//! guards and the currency fallback are all still ported verbatim, bug for
+//! bug, and `verify_ordinal` is still not called. (The 10^9 digit cliff is
+//! gone since gladiaio/num2words2#147; see bug 1.)
 //!
 //! ## What is *not* fixed: the ordinal after a vowel
 //!
@@ -37,9 +38,9 @@
 //! enters the `__init__` branch that builds `self.cards` / `set_numwords()` /
 //! `self.MAXVAL`. Both `self.cards` and `self.MAXVAL` therefore **never exist**
 //! on a CKB instance. `to_cardinal` is overridden outright and drives a
-//! recursive `_int_to_word`, so `cards`/`maxval`/`merge` stay at their trait
-//! defaults here and are never consulted. There is **no overflow check** and
-//! no `OverflowError` path — see bug 1 below for what happens instead.
+//! recursive `_int_to_word`, so `cards`/`merge` stay at their trait
+//! defaults here and are never consulted. Python has **no overflow check**
+//! (see bug 1); this port raises `OverflowError` from 10^12 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base`, but every one of them is overridden by CKB,
 //! so nothing is picked up from the base class in the four modes in scope:
@@ -90,15 +91,14 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly
 //! what Python emits, and are confirmed by the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the decimal digits.** The
-//!    final line of the if-chain is a bare `return str(number)` — no billion
-//!    word exists in the table (`setup` stops at `million = "ملیۆن"`). So
-//!    `to_cardinal(10**9)` == `"1000000000"`, and `to_ordinal(10**9)` ==
-//!    `"1000000000ەم"` — digits with a word suffix glued on. Corpus rows for
-//!    10^9, 1234567890, 10^10, 10^11, 10^12, 10^15, 10^18 and 10^21 all
-//!    confirm this. It is unbounded: no exception is ever raised, however
-//!    large the input. Modelled in [`LangCkb::int_to_word`].
-//!    Negatives compose with it: `to_cardinal(-10**9)` == `"نێگەتیڤ 1000000000"`.
+//! 1. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's if-chain
+//!    ends in a bare `return str(number)` — no billion word exists in its
+//!    table — so `to_cardinal(10**9)` was the digit string `"1000000000"`.
+//!    This port adds ملیار (10^9; the usual spelling on ckb.wikipedia.org,
+//!    and the counterpart of the module's ملیۆن), composed exactly like the
+//!    million branch: `to_cardinal(10**9)` == `"یەک ملیار"`. No 10^12 word
+//!    is attested well enough (تریلیۆن / ترلیۆن compete), so 10^12 raises
+//!    `OverflowError` (`maxval`). Modelled in [`LangCkb::int_to_word`].
 //! 2. **`tens[1] == "دە"` is dead.** 10..=19 are caught by the `number < 20`
 //!    branch and served from `teens`, so the `< 100` branch never divides down
 //!    to a tens index of 1. The entry is kept verbatim in [`TENS`] anyway.
@@ -141,14 +141,15 @@
 //! # Error variants
 //!
 //! `N2WError::Value` (Python `ValueError`), and only from the float path —
-//! bug 10's `int()` failures on an exponential/non-finite repr. Every *integer*
-//! input in the four modes in scope still returns `Ok`: CKB has no overflow
-//! ceiling (bug 1), no negative-ordinal guard (bug 4) and no dict lookups that
-//! can miss, and `str` of a `BigInt` is never exponential. The 20 non-`ok`
+//! bug 10's `int()` failures on an exponential/non-finite repr — and
+//! `N2WError::Overflow` for `abs(n) >= 10^12` on every path (#147, bug 1).
+//! Every other *integer* input in the four modes in scope returns `Ok`: no
+//! negative-ordinal guard (bug 4) and no dict lookups that can miss, and
+//! `str` of a `BigInt` is never exponential. The 20 non-`ok`
 //! corpus rows for `ckb` are all `cheque:*` (`NotImplementedError`) and
 //! `fraction` (`TypeError`), both out of scope.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -157,6 +158,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup`: `self.negword`. Note the **trailing space** — CKB's `to_cardinal`
 /// concatenates it directly (`self.negword + ...`) rather than joining with a
@@ -190,8 +192,12 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "سەد";
 /// `setup`: `self.thousand`.
 const THOUSAND: &str = "هەزار";
-/// `setup`: `self.million`. The largest scale word CKB defines — hence bug 1.
+/// `setup`: `self.million`. The largest scale word Python's CKB defines —
+/// hence bug 1.
 const MILLION: &str = "ملیۆن";
+/// 10^9, missing from Python (gladiaio/num2words2#147): ملیار, the common
+/// Sorani spelling on ckb.wikipedia.org.
+const BILLION_WORD: &str = "ملیار";
 
 /// The joint between every pair of groups: `" و "` ("and").
 const JOINT: &str = " و ";
@@ -213,9 +219,15 @@ const JOINT: &str = " و ";
 /// guessing; see the module header.
 const ORDINAL_SUFFIX: &str = "ەم";
 
-/// The ceiling of `_int_to_word`'s word-producing branches. At or above this,
-/// Python falls through to `return str(number)` (bug 1).
+/// Where Python's word-producing branches stopped and `return str(number)`
+/// took over (bug 1); the ملیار branch starts here now.
 const BILLION: u64 = 1_000_000_000;
+
+/// The exclusive ceiling (#147): 10^12 has no settled Sorani spelling.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 
 /// `self.__class__.__name__`, for `to_cheque`'s NotImplementedError message.
 const LANG_NAME: &str = "Num2Word_CKB";
@@ -334,16 +346,16 @@ impl LangCkb {
     /// Only ever called with a **non-negative** value (see bug 5): `to_cardinal`
     /// strips the `"-"` before recursing.
     ///
-    /// Values `>= 10^9` take Python's final `return str(number)` — the decimal
-    /// digits, not words (bug 1). That guard is hoisted here so the recursive
-    /// worker can run on `u64`: below 10^9 every value, and every quotient and
-    /// remainder derived from it, provably fits.
-    fn int_to_word(&self, number: &BigInt) -> String {
-        match number.to_u64() {
-            Some(n) if n < BILLION => int_to_word_small(n),
-            // >= 10^9 (or, unreachably, negative): Python's `return str(number)`.
-            _ => number.to_string(),
-        }
+    /// Values `>= 10^9` took Python's final `return str(number)` (bug 1);
+    /// they get the ملیار branch now, and `>= 10^12` is an `OverflowError`
+    /// (#147). That guard is hoisted here so the recursive worker can run on
+    /// `u64`: below 10^12 every value, and every quotient and remainder
+    /// derived from it, provably fits.
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(int_to_word_small(
+            number.to_u64().expect("0 <= number < 10^12 fits u64"),
+        ))
     }
 
     /// Port of `Num2Word_CKB.to_cardinal` operating on the repr, which is the
@@ -394,14 +406,14 @@ impl LangCkb {
         let (left, right) = match n.split_once('.') {
             Some(halves) => halves,
             // return self._int_to_word(int(n))
-            None => return Ok(self.int_to_word(&py_int(n)?)),
+            None => return self.int_to_word(&py_int(n)?),
         };
 
         // ret = self._int_to_word(int(left)) + " " + self.pointword
         //
-        // `int(left)` is the whole integer part, so bug 1 applies at 10^9 and
-        // above: it comes back as bare digits ("98746251323029 خاڵ نۆ نۆ").
-        let mut ret = self.int_to_word(&py_int(left)?);
+        // `int(left)` is the whole integer part, so the 10^12 ceiling (bug 1)
+        // applies to it.
+        let mut ret = self.int_to_word(&py_int(left)?)?;
         ret.push(' ');
         ret.push_str(POINTWORD);
 
@@ -421,7 +433,7 @@ impl LangCkb {
     }
 }
 
-/// The `< 10^9` body of `_int_to_word`, on `u64`.
+/// The `< 10^12` body of `_int_to_word`, on `u64`.
 ///
 /// The branch order mirrors Python's if-chain exactly. `divmod` on
 /// non-negative operands is the same in both languages, so `/` and `%` are
@@ -477,12 +489,18 @@ fn int_to_word_small(number: u64) -> String {
         }
         return out;
     }
-    // number < 1_000_000_000, guaranteed by the caller.
-    // m, r = divmod(number, 1000000)
-    let (m, r) = (number / 1_000_000, number % 1_000_000);
+    // number < 10^12, guaranteed by the caller's maxval check.
+    // m, r = divmod(number, 1000000) — and the ملیار branch above it (#147),
+    // composed the same way.
+    let (unit, word) = if number < BILLION {
+        (1_000_000, MILLION)
+    } else {
+        (BILLION, BILLION_WORD)
+    };
+    let (m, r) = (number / unit, number % unit);
     let mut out = int_to_word_small(m);
     out.push(' ');
-    out.push_str(MILLION);
+    out.push_str(word);
     if r != 0 {
         out.push_str(JOINT);
         out.push_str(&int_to_word_small(r));
@@ -715,6 +733,10 @@ fn py_str_decimal(value: &BigDecimal) -> String {
 }
 
 impl Lang for LangCkb {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -808,10 +830,10 @@ impl Lang for LangCkb {
     /// for fidelity.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let inner = self.int_to_word(&value.abs());
+            let inner = self.int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.int_to_word(value)
     }
 
     /// Port of `Num2Word_CKB.to_cardinal` for `float` / `Decimal` input.
@@ -1015,14 +1037,14 @@ impl Lang for LangCkb {
         let (cr1, cr2) = (&forms.unit, &forms.subunit);
 
         // result = self._int_to_word(left) + " " + (cr1[1] if left != 1 else cr1[0])
-        let mut result = self.int_to_word(&left);
+        let mut result = self.int_to_word(&left)?;
         result.push(' ');
         result.push_str(if left.is_one() { &cr1[0] } else { &cr1[1] }); // bug 9
 
         // if cents and right:
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }

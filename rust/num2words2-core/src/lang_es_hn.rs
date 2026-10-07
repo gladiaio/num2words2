@@ -50,11 +50,11 @@
 //!    noveno" and `to_ordinal(123456)` == "ciento veintitrésmilésimo ...".
 //!    The `%s%s%s %s` format concatenates `cardinal` and `self.ords[dec]`
 //!    directly. Looks wrong; it is what Python emits.
-//! 2. **`to_ordinal(20)` == "vigesimo"**, unaccented, because the `value <= 29`
-//!    branch does `self.ords[dec].replace("é", "e")` to get the
-//!    *sobreesdrújula* spelling ("decimoprimero", "vigesimoquinto") — but
-//!    `to_ordinal(30)` == "trigésimo" keeps its accent. The accent is dropped
-//!    only below 30.
+//! 2. ~~**`to_ordinal(20)` == "vigesimo"**~~, unaccented: the `value <= 29`
+//!    branch builds the *sobreesdrújula* spelling ("decimoprimero",
+//!    "vigesimoquinto"), and 20 landed in it too. Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 3. **`.replace("oo", "o")` is applied at every recursion level**, not just
 //!    the top. This is the intentional "decimooctavo" → "decimoctavo" fix, but
 //!    it fires on any "oo" the concatenation happens to produce.
@@ -407,7 +407,7 @@ impl LangEsHn {
         } else if value <= &BigInt::from(10) {
             let v = value.to_i64().expect("0 < value <= 10");
             format!("{}{}", ords_get(v).expect("ords 1..=10 present"), gender_stem)
-        } else if value <= &BigInt::from(29) {
+        } else if value <= &BigInt::from(29) && *value != BigInt::from(20) {
             // RAE: simple forms preferred up to 30; the accent is stripped for
             // the sobreesdrújula spelling ("décim" -> "decim"). gender_stem is
             // forced to "o" here even when gender == "f" — but the *unit*
@@ -775,7 +775,8 @@ impl Lang for LangEsHn {
 
     /// `Num2Word_ES_HN.to_currency` = `Num2Word_Base.to_currency` +
     /// `.replace("uno", "un")`. The blanket replace is faithful (it also turns
-    /// "veintiuno" into "veintiun"), matching the Python one-liner exactly.
+    /// "veintiuno" into "veintiun"), matching the Python one-liner; the accent
+    /// is then restored, "veintiún" (#253).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -792,7 +793,9 @@ impl Lang for LangEsHn {
             separator.unwrap_or(self.default_separator()),
             adjective,
         )?;
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }
 
@@ -814,6 +817,7 @@ impl Lang for LangEsHn {
 // two f64-artefact rescues (1.005, 2.675) and the trillion-scale Decimal
 // row that a `float()` cast would corrupt (issue #603).
 
+#[allow(clippy::approx_constant)] // 3.14-style literals are test inputs, not π
 #[cfg(test)]
 mod tests {
     use super::*;

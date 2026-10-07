@@ -68,12 +68,15 @@
 //!    drops the count and keeps the plural (10^6 + 1 → "millioner
 //!    første"); the port ordinalises the last word of the plain cardinal,
 //!    10^6 + 1 → "en million første", 10^6 + 1000 → "en million
-//!    ettusindte", as 1001 → "ettusinde og første".
-//! 4. **Ordinal suffixes double up.** `to_ordinal` first rewrites a trailing
-//!    cardinal via `ords`, *then* appends "te"/"ende" by `value % 100`, with
-//!    no check that a rewrite happened. 30 has no `ords` entry ("tredive"
-//!    matches no key) so it becomes "tredivete"; 40 → "fyrreende";
-//!    50 → "halvtredsende"; 100 → "ethundredete".
+//!    ettusinde" (#252), as 1001 → "ettusinde og første".
+//! 4. ~~**Ordinal suffixes doubled up.**~~ `to_ordinal` rewrites a trailing
+//!    cardinal via `ords`, *then* appends "te"/"ende" by `value % 100`, and
+//!    30, 40 and 100 had no `ords` stem: "tredivete", "fyrreende",
+//!    "ethundredete", "ettusindte". Fixed (gladiaio/num2words2#252):
+//!    "tredivte", "fyrrende", "hundrede", "tusinde" ("tohundrede",
+//!    "totusinde"). 50..=90 read as the short forms ("halvtredsende");
+//!    60 built on the cardinal's "treds" ("tredsende") until #259 gave it
+//!    the "tress" stem: "tressende", "enogtressende".
 //! 5. **The `ords` lookup is a suffix scan over a dict, so insertion order is
 //!    load-bearing.** `for key in self.ords: if outword.endswith(key): ...
 //!    break` takes the *first* insertion-ordered hit, not the longest. Ported
@@ -556,6 +559,17 @@ impl LangDa {
             ("atten", "att"),
             ("nitten", "nitt"),
             ("tyve", "tyv"),
+            // 30th is "tredivte" and 40th "fyrrende": without these stems
+            // the suffix landed on the full cardinal, "tredivete" and
+            // "fyrreende" (gladiaio/num2words2#252).
+            ("tredive", "trediv"),
+            ("fyrre", "fyrr"),
+            // 60th is "tressende" (short form, like "halvtredsende") or
+            // "tresindstyvende"; the cardinal's "treds" gave "tredsende"
+            // (#259). "halvtreds" (50) ends in "treds" too and must keep
+            // its stem, so it is tested first.
+            ("halvtreds", "halvtreds"),
+            ("treds", "tress"),
         ];
 
         LangDa {
@@ -746,6 +760,18 @@ impl Lang for LangDa {
 
         // value is non-negative here, so % == mod_floor.
         let m = value.mod_floor(&BigInt::from(100));
+        // "hundrede" is its own ordinal and "tusind" takes a bare "e"
+        // (hundrede, tusinde); appending "te" gave "ethundredete" (#252).
+        // A lone 100 or 1000 also drops the "et": "den hundrede".
+        if m.is_zero() && (outword.ends_with("hundrede") || outword.ends_with("tusind")) {
+            if outword.ends_with("tusind") {
+                outword.push('e');
+            }
+            if value == &BigInt::from(100) || value == &BigInt::from(1000) {
+                outword = outword["et".len()..].to_string();
+            }
+            return Ok(outword);
+        }
         if (m >= BigInt::from(30) && m <= BigInt::from(39)) || m.is_zero() {
             outword.push_str("te");
         } else if m > BigInt::from(12) || m.is_zero() {
@@ -771,7 +797,7 @@ impl Lang for LangDa {
 
     /// `to_ordinal(float/Decimal)`: verify_ordinal, then the integer path.
     /// Whole values ordinalise (5.0 -> "femte", Decimal("1E+2") ->
-    /// "ethundredete", -0.0 -> "nulte"); fractional or negative values raise
+    /// "hundrede", -0.0 -> "nulte"); fractional or negative values raise
     /// TypeError (see module docs, bug 11). `value % 100` on a non-negative
     /// whole float/Decimal equals the integer mod, so delegating to the
     /// BigInt `to_ordinal` (ordflag engine + ords scan + suffix) is exact.

@@ -440,11 +440,9 @@ class Num2WordsPT_BRTest(TestCase):
         self.assertEqual(num2words(100, lang="pt-br"), num2words("100", lang="pt-br"))
         self.assertEqual(num2words(1000, lang="pt-br"), num2words("1000", lang="pt-br"))
 
-        # Test invalid ordinal input (float) - Note: PT_BR doesn't raise TypeError
-        # The implementation allows floats in ordinal
-        result = num2words(3.14, lang="pt-br", ordinal=True)
-        self.assertIsNotNone(result)
-
+        # A fractional ordinal raises TypeError, as in every language (#214).
+        with self.assertRaises(TypeError):
+            num2words(3.14, lang="pt-br", ordinal=True)
 
     def test_more_currency_cases(self):
         """Test additional currency cases."""
@@ -542,7 +540,6 @@ class Num2WordsPT_BRTest(TestCase):
             "menos um real e cinquenta centavos",
         )
 
-
     def test_trillion_scale(self):
         """Test Brazilian short scale for trillions."""
         # Test trillion (10^12)
@@ -569,12 +566,10 @@ class Num2WordsPT_BRTest(TestCase):
         )
 
     def test_unsupported_currency(self):
-        """Test unsupported currency code."""
-        # The parent class should handle unknown currencies
-        # This might not raise an error but return a default format
-        result = num2words(100, lang="pt-br", to="currency", currency="GBP")
-        # Should still produce some output
-        self.assertIsNotNone(result)
+        """An unsupported code raises, int and float alike (#219)."""
+        for value in (100, 100.5):
+            with self.assertRaises(NotImplementedError):
+                num2words(value, lang="pt-br", to="currency", currency="GBP")
 
     def test_decimal_currency_conversion(self):
         """Test currency conversion with Decimal values."""
@@ -650,6 +645,7 @@ def test_pt_br_ordinal_large_scale_words():
     import pytest
 
     from num2words2 import num2words
+
     assert num2words(10**18, lang="pt_BR", to="ordinal") == "quintilionésimo"
     assert num2words(2 * 10**21 + 5, lang="pt_BR", to="ordinal") == (
         "segundo sextilionésimo quinto"
