@@ -32,26 +32,29 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly what
 //! Python emits, verified against the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns bare digits.** The final
-//!    `return str(number)` means `to_cardinal(10**9)` == `"1000000000"` and
-//!    `to_cardinal(10**12)` == `"1000000000000"` — decimal numerals, not words.
-//!    There is no billion word in the table and no `OverflowError`; the
-//!    converter silently degrades. Corpus rows confirm both. Modelled by
-//!    [`int_to_word`].
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` gives up at 10^9: the final `return str(number)` made
+//!    `to_cardinal(10**9)` the digit string `"1000000000"`. This port adds
+//!    the Kinyarwanda scale words `miliyari` (10^9) and `tiriyari` (10^12)
+//!    (Wiktionary "miliyari"; both in current Rwandan press, e.g. igihe.com
+//!    and imvahonshya.co.rw), composed exactly like `miliyoni` (quirk 5), and
+//!    raises `OverflowError` from 10^15 (`maxval`), where no word is attested.
+//!    Modelled by [`int_to_word`].
 //! 2. **`to_ordinal` never calls `verify_ordinal`,** so negatives sail through:
 //!    `to_ordinal(-1)` == `"wa munsi ya rimwe"` ("the -1st"), where every
 //!    `verify_ordinal`-calling language raises `TypeError`. Likewise
 //!    `to_ordinal(0)` == `"wa zeru"`. Both are corpus-confirmed.
-//! 3. **`to_ordinal` inherits the 10^9 fallback,** so `to_ordinal(10**9)` ==
-//!    `"wa 1000000000"` — identical to `to_ordinal_num(10**9)`. The two modes
-//!    are indistinguishable above the ceiling.
+//! 3. **`to_ordinal` inherited the 10^9 fallback,** so Python's
+//!    `to_ordinal(10**9)` was `"wa 1000000000"`; it is `"wa miliyari"` now
+//!    (#147), and `to_ordinal` shares the 10^15 ceiling.
 //! 4. **`negword` carries a trailing space** (`"munsi ya "`), unlike the base
 //!    class's `"(-) "` convention where callers `.strip()` it. RW's
 //!    `to_cardinal` concatenates it raw and `.strip()`s the *whole* result, so
 //!    the space lands between "ya" and the number word. The trailing `.strip()`
 //!    is a no-op in every reachable case (`_int_to_word` never returns padded
 //!    text) but is reproduced anyway.
-//! 5. **The hundreds/thousands/millions multiplier is dropped when it is 1**
+//! 5. **The hundreds/thousands/millions (and, #147, miliyari/tiriyari)
+//!    multiplier is dropped when it is 1**
 //!    but *not* when it is 0-ish — `h > 1` guards `ones[h]`, so 100 is "ijana"
 //!    (bare) while 200 is "kabiri ijana". Same for "igihumbi" and "miliyoni".
 //! 6. **`tens[]` uses different stems from `ones[]`** for the same digit:
@@ -174,8 +177,9 @@
 //! num2words(0.0001, to="currency", lang="rw") # ok -> "zeru idolari"
 //! ```
 //!
-//! i.e. `abs(x) >= 1e16` or `0 < abs(x) < 1e-4`. This port returns a string for
-//! all three instead (`"10000000000000000 idolari"`, `"zeru idolari"`, …).
+//! i.e. `abs(x) >= 1e16` or `0 < abs(x) < 1e-4`. This port raises the 10^15
+//! `OverflowError` for the first two (#147) and returns `"zeru idolari"` for
+//! the third.
 //!
 //! It is **not** reproducible here, and not for want of an error variant —
 //! `N2WError::Value` fits fine. The boundary is the problem: the shim parses
@@ -208,13 +212,14 @@
 //! its `to_u64()` guard would send a negative down the `str(number)` fallback
 //! rather than reproducing the negative-index behaviour.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is `""` and is never used: `_int_to_word` handles 0
 /// before the `< 10` branch, and every other use is guarded (`if o`, `h > 1`).
@@ -249,6 +254,10 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "ijana";
 const THOUSAND: &str = "igihumbi";
 const MILLION: &str = "miliyoni";
+/// 10^9 and 10^12, which Python lacks (gladiaio/num2words2#147): Wiktionary
+/// "miliyari"; "tiriyari" as used by the Rwandan press (imvahonshya.co.rw).
+const MILIYARI: &str = "miliyari";
+const TIRIYARI: &str = "tiriyari";
 
 /// `self.negword`. The trailing space is in the Python source — see quirk 4.
 const NEGWORD: &str = "munsi ya ";
@@ -262,29 +271,32 @@ const EXCLUDE_TITLE: [&str; 4] = ["na", "akadomo", "munsi", "ya"];
 
 const ZERU: &str = "zeru";
 
-/// The ceiling of `_int_to_word`'s word-producing bands: `1000000000`.
-const BILLION: u64 = 1_000_000_000;
+/// The exclusive ceiling of `_int_to_word`'s word-producing bands
+/// (gladiaio/num2words2#147): 10^15 would need a word above `tiriyari`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
 
 /// Python's `_int_to_word`, entry point.
 ///
 /// Python tests `number < 1000000000` last and falls through to
-/// `return str(number)`. Anything at or above 10^9 is therefore rendered as
-/// bare decimal digits (quirk 1). Below that the value provably fits in a
-/// `u64`, so [`int_to_word_small`] does the recursive work on a fixed-width
-/// int — the BigInt is never truncated, only handed off once bounded.
-fn int_to_word(value: &BigInt) -> String {
-    match value.to_u64() {
-        Some(n) if n < BILLION => int_to_word_small(n),
-        // Covers both `>= 10^9` and (unreachably) negatives, matching Python's
-        // final `return str(number)` for the former.
-        _ => value.to_string(),
-    }
+/// `return str(number)` (quirk 1). This port raises `OverflowError` at the
+/// 10^15 ceiling instead; below it the value provably fits in a `u64`, so
+/// [`int_to_word_small`] does the recursive work on a fixed-width int — the
+/// BigInt is never truncated, only handed off once bounded.
+fn int_to_word(value: &BigInt) -> Result<String> {
+    check_maxval(value, maxval_ceiling())?;
+    // `to_cardinal` strips the sign first, so the value is non-negative.
+    Ok(int_to_word_small(
+        value.to_u64().expect("0 <= value < 10^15 fits u64"),
+    ))
 }
 
-/// Python's `_int_to_word` for `0 <= n < 10^9`.
+/// Python's `_int_to_word` for `0 <= n < 10^15`.
 ///
 /// Every recursive call shrinks the value (`divmod` by a strictly larger
-/// power), so no inner call can re-enter the `str(number)` fallback.
+/// power), so no inner call can reach the ceiling.
 fn int_to_word_small(n: u64) -> String {
     // if number == 0: return "zeru"
     if n == 0 {
@@ -351,13 +363,22 @@ fn int_to_word_small(n: u64) -> String {
     //     m, r = divmod(number, 1000000)
     //     base = (self._int_to_word(m) + " " if m > 1 else "") + self.million
     //     return base + (" na " + self._int_to_word(r) if r else "")
-    let (m, r) = (n / 1_000_000, n % 1_000_000);
+    // Python's `return str(number)` followed; the miliyari/tiriyari bands
+    // take over instead, composed the same way (#147).
+    let (unit, word) = if n < 1_000_000_000 {
+        (1_000_000, MILLION)
+    } else if n < 1_000_000_000_000 {
+        (1_000_000_000, MILIYARI)
+    } else {
+        (1_000_000_000_000, TIRIYARI)
+    };
+    let (m, r) = (n / unit, n % unit);
     let mut out = String::new();
     if m > 1 {
         out.push_str(&int_to_word_small(m));
         out.push(' ');
     }
-    out.push_str(MILLION);
+    out.push_str(word);
     if r != 0 {
         out.push_str(" na ");
         out.push_str(&int_to_word_small(r));
@@ -373,12 +394,12 @@ fn int_to_word_small(n: u64) -> String {
 /// including the `"." in n` float/Decimal branch — lives in
 /// [`cardinal_from_str`], reached via
 /// [`to_cardinal_float`](LangRw::to_cardinal_float).
-fn cardinal(value: &BigInt) -> String {
+fn cardinal(value: &BigInt) -> Result<String> {
     // if n.startswith("-"):
     //     return (self.negword + self.to_cardinal(n[1:])).strip()
     if value.is_negative() {
-        let inner = cardinal(&value.abs());
-        return format!("{}{}", NEGWORD, inner).trim().to_string();
+        let inner = cardinal(&value.abs())?;
+        return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
     }
     int_to_word(value)
 }
@@ -551,7 +572,7 @@ fn cardinal_from_str(n: &str) -> Result<String> {
 
     if let Some((left, right)) = n.split_once('.') {
         // `int(left)` runs before the loop, so a bad left raises first.
-        let mut ret = int_to_word(&python_int(left)?);
+        let mut ret = int_to_word(&python_int(left)?)?;
         ret.push(' ');
         ret.push_str(POINTWORD);
         for ch in right.chars() {
@@ -567,7 +588,7 @@ fn cardinal_from_str(n: &str) -> Result<String> {
         return Ok(ret.trim().to_string());
     }
 
-    Ok(int_to_word(&python_int(n)?))
+    int_to_word(&python_int(n)?)
 }
 
 /// `Num2Word_RW.CURRENCY_FORMS`.
@@ -669,6 +690,10 @@ impl LangRw {
 }
 
 impl Lang for LangRw {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -704,7 +729,7 @@ impl Lang for LangRw {
         // Note: unlike `Num2Word_Base.to_cardinal`, RW's override never calls
         // `self.title()`. `is_title` is False anyway, so this is unobservable,
         // but the omission is reproduced rather than papered over.
-        Ok(cardinal(value))
+        cardinal(value)
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
@@ -716,7 +741,7 @@ impl Lang for LangRw {
         if value.is_one() {
             return Ok("mbere".to_string());
         }
-        Ok(format!("wa {}", cardinal(value)))
+        Ok(format!("wa {}", cardinal(value)?))
     }
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
@@ -730,7 +755,7 @@ impl Lang for LangRw {
         // def to_year(self, val, longval=True): return self.to_cardinal(val)
         // `longval` is accepted and ignored. Identical to the base default, but
         // spelled out because Python spells it out.
-        Ok(cardinal(value))
+        cardinal(value)
     }
 
     /// `to_cardinal(float/Decimal)` — the **full** routing, whole values
@@ -952,12 +977,11 @@ impl Lang for LangRw {
         // result = self._int_to_word(left) + " " + (cr1[1] if left != 1 else cr1[0])
         //
         // `_int_to_word`, not `to_cardinal`: no negword handling, and `left` is
-        // non-negative by construction. Above 10^9 it degrades to bare digits
-        // (quirk 1), so e.g. Decimal("10000000000000000") -> "10000000000000000
-        // idolari".
+        // non-negative by construction. Python degraded to bare digits above
+        // 10^9 (quirk 1); the port raises OverflowError at 10^15 (#147).
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            int_to_word(&left)?,
             plural_form(&forms.unit, &left)?
         );
 
@@ -968,7 +992,7 @@ impl Lang for LangRw {
         // point — and `separator` brings its own spacing or none (quirk 12).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&int_to_word(&right)?);
             result.push(' ');
             result.push_str(&plural_form(&forms.subunit, &right)?);
         }
@@ -1136,15 +1160,21 @@ mod tests {
         // Quirk 4: negword's trailing space, on both an int and a float.
         assert_eq!(cur("-1", "RWF"), "munsi ya rimwe amafaranga");
         assert_eq!(cur("-1.0", "RWF"), "munsi ya rimwe amafaranga");
-        // Quirk 1 reached through the currency path: _int_to_word degrades to
-        // bare digits at 10^9, so a large unit count is printed as numerals.
-        let v = CurrencyValue::parse("10000000000000000", false, false, false).unwrap();
+        // Quirk 1 reached through the currency path: Python printed a large
+        // unit count as numerals; the port spells it below its 10^15 ceiling
+        // and raises OverflowError from there (#147).
+        let v = CurrencyValue::parse("2000000000", false, false, false).unwrap();
         assert_eq!(
             LangRw::new()
                 .to_currency(&v, "USD", true, None, false)
                 .unwrap(),
-            "10000000000000000 idolari"
+            "kabiri miliyari idolari"
         );
+        let v = CurrencyValue::parse("10000000000000000", false, false, false).unwrap();
+        assert!(matches!(
+            LangRw::new().to_currency(&v, "USD", true, None, false),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// Knobs the corpus never exercises (diff_test always passes cents=True,
@@ -1252,10 +1282,14 @@ mod tests {
             cd("12.345", 3),
             "icumi na kabiri akadomo gatatu kane gatanu"
         );
-        // Integer part above 10^9 degrades to bare digits (quirk 1).
+        // Integer part above 10^9: Python degraded to bare digits (quirk 1);
+        // spelled with miliyari/tiriyari now (#147).
         assert_eq!(
             cd("98746251323029.99", 2),
-            "98746251323029 akadomo icyenda icyenda"
+            "mirongo cyenda na umunani tiriyari na karindwi ijana na mirongo ine \
+             na gatandatu miliyari na kabiri ijana na mirongo itanu na rimwe \
+             miliyoni na gatatu ijana na makumyabiri na gatatu igihumbi na \
+             makumyabiri na icyenda akadomo icyenda icyenda"
         );
         assert_eq!(cd("0.001", 3), "zeru akadomo zeru zeru rimwe");
     }
@@ -1322,10 +1356,11 @@ mod tests {
             l.cardinal_float_entry(&fv_f(1234.0, 1), None).unwrap(),
             "igihumbi na kabiri ijana na mirongo itatu na kane akadomo zeru"
         );
-        // Above 10^9 the integer field degrades to bare digits (quirk 1).
+        // Above 10^9 Python degraded the integer field to bare digits
+        // (quirk 1); it reads miliyari now (#147).
         assert_eq!(
             l.cardinal_float_entry(&fv_f(1e9, 1), None).unwrap(),
-            "1000000000 akadomo zeru"
+            "miliyari akadomo zeru"
         );
         // Decimal without a visible point takes the integer words...
         assert_eq!(l.cardinal_float_entry(&fv_d("5", 0), None).unwrap(), "gatanu");

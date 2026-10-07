@@ -8,8 +8,9 @@
 //! `hasattr` guard in `Num2Word_Base.__init__` never fires: `self.cards` is
 //! never built and `self.MAXVAL` is never set. `to_cardinal` is overridden
 //! outright and drives `_int_to_word` recursively. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check at all** — see bug 1 below for what happens instead.
+//! `cards`/`merge` stay at their trait defaults here. Python has **no
+//! overflow check at all** — see bug 1 below for what it did instead; this
+//! port raises `OverflowError` from 10^9 (`maxval`).
 //!
 //! Every in-scope method is overridden by Python, so nothing is inherited
 //! from `Num2Word_Base` except `__init__`'s attribute defaults, which
@@ -22,14 +23,16 @@
 //! This is a port, not a rewrite. All of the following look wrong but are
 //! exactly what Python emits:
 //!
-//! 1. **`_int_to_word` falls through to `str(number)` at 10^9.** The chain of
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's chain of
 //!    `if number < ...` guards stops at `1000000000`, and the final statement
-//!    is a bare `return str(number)`. So `to_cardinal(10**9)` returns the
-//!    *digit string* `"1000000000"`, not words — no exception, no overflow
-//!    error. Corpus confirms this for 10^9 through 10^21. Negatives compose:
-//!    `to_cardinal(-10**9)` == `"tsis txaus 1000000000"`, and
-//!    `to_ordinal(10**9)` == `"thib 1000000000"`. This is why the value must
-//!    stay a `BigInt` — the fallback has to print arbitrary precision exactly.
+//!    is a bare `return str(number)`, so `to_cardinal(10**9)` returned the
+//!    *digit string* `"1000000000"` silently. Wikipedia's Hmong numeral table
+//!    gives "kem" for 10^9, but on top of "roob" for 10^6 — the module's
+//!    million word "tawm rau" (bug 3) is itself unattested, and composing a
+//!    real 10^9 word on it would compound the error. So instead this port
+//!    reports `maxval` == 10^9 and raises `OverflowError` there, on the
+//!    integer, float and currency paths alike. Fixing the million word is a
+//!    separate open problem.
 //!
 //! 2. **The tens table mixes two spellings of the same morpheme.** 30–50 use
 //!    "caug" ("peb caug", "plaub caug", "tsib caug") while 60–90 use "caum"
@@ -38,7 +41,8 @@
 //! 3. **"tawm rau" for million, "lab" for the decimal point.** `self.million`
 //!    is "tawm rau" (literally "out six"), while "lab" — the actual Hmong
 //!    word for a million — is used as `pointword` instead. Both are kept as
-//!    written; only `million` is in scope here.
+//!    written; only `million` is in scope here. (Wikipedia "Hmong language"
+//!    gives the native "roob" and the Lao loan "lab" for 10^6; still open.)
 //!
 //! 4. **Inconsistent joiners.** Hundreds glue their remainder with `" thiab "`
 //!    ("and"), but thousands and millions glue theirs with a plain space. So
@@ -162,17 +166,19 @@
 //!    and 2-digit coefficients raise. See [`split_currency`], which also
 //!    documents the one band this port cannot reproduce.
 //!
-//! 10. **Bug 1 leaks into currency.** `to_currency` calls `_int_to_word`, so a
-//!     unit amount >= 10^9 prints as digits: `to_currency(10**9, "USD")` ==
-//!     "1000000000 nyiaj kub".
+//! 10. **Bug 1 leaked into currency.** `to_currency` calls `_int_to_word`, so
+//!     Python printed a unit amount >= 10^9 as digits:
+//!     `to_currency(10**9, "USD")` == "1000000000 nyiaj kub". The port raises
+//!     `OverflowError` there too (#147).
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is load-bearing: it is the separator
 /// between the negative marker and the number, since `to_cardinal`
@@ -397,9 +403,10 @@ impl LangHmn {
     /// Python's `self.ones[number]` would silently index from the *end* of the
     /// list — that path is unreachable on the four in-scope modes, so it is
     /// not modelled.)
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
 
         let ten = BigInt::from(10);
@@ -410,7 +417,7 @@ impl LangHmn {
 
         // `if number < 10: return self.ones[number]`
         if number < &ten {
-            return ONES[idx(number)].to_string();
+            return Ok(ONES[idx(number)].to_string());
         }
 
         // `t, o = divmod(number, 10)`
@@ -421,7 +428,7 @@ impl LangHmn {
                 out.push_str(" thiab ");
                 out.push_str(ONES[idx(&o)]);
             }
-            return out;
+            return Ok(out);
         }
 
         // `h, r = divmod(number, 100)` — hundreds join with " thiab " (bug 4).
@@ -430,35 +437,36 @@ impl LangHmn {
             let mut out = format!("{} {}", ONES[idx(&h)], HUNDRED);
             if !r.is_zero() {
                 out.push_str(" thiab ");
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         // `t, r = divmod(number, 1000)` — thousands join with a bare space.
         if number < &million {
             let (t, r) = number.div_mod_floor(&thousand);
-            let mut out = format!("{} {}", self.int_to_word(&t), THOUSAND);
+            let mut out = format!("{} {}", self.int_to_word(&t)?, THOUSAND);
             if !r.is_zero() {
                 out.push(' ');
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         // `m, r = divmod(number, 1000000)` — millions also join with a space.
         if number < &billion {
             let (m, r) = number.div_mod_floor(&million);
-            let mut out = format!("{} {}", self.int_to_word(&m), MILLION);
+            let mut out = format!("{} {}", self.int_to_word(&m)?, MILLION);
             if !r.is_zero() {
                 out.push(' ');
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
-        // `return str(number)` — bug 1: digits, not words, from 10^9 up.
-        number.to_string()
+        // Python: `return str(number)` — bug 1, now an OverflowError raised
+        // by the maxval check above (#147).
+        unreachable!("values >= 10^9 are rejected by check_maxval")
     }
 
     /// The string body of Python's `to_cardinal`, run on an already-built
@@ -501,7 +509,7 @@ impl LangHmn {
             // `self._int_to_word(int(left))` — `int()` raises ValueError on a
             // non-numeric left (a scientific mantissa never reaches here with
             // one, but a hand-built string could).
-            let mut ret = format!("{} {}", self.int_to_word(&parse_pyint(left)?), self.pointword());
+            let mut ret = format!("{} {}", self.int_to_word(&parse_pyint(left)?)?, self.pointword());
             for ch in right.chars() {
                 // `self.ones[int(digit)] or "xoom"`. `int(digit)` is ValueError
                 // for 'e'/'E'/'+'/'-', which is exactly how a scientific
@@ -516,7 +524,7 @@ impl LangHmn {
 
         // `return self._int_to_word(int(n))` — `int(n)` raises ValueError for a
         // no-dot scientific token like "1e+16" / "1E+3".
-        Ok(self.int_to_word(&parse_pyint(s)?))
+        Ok(self.int_to_word(&parse_pyint(s)?)?)
     }
 }
 
@@ -648,7 +656,18 @@ fn decimal_repr(value: &bigdecimal::BigDecimal) -> String {
     format!("{}{}{}{}", sign, intpart, fracpart, expstr)
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147): no 10^9 word can be
+/// composed on the module's unattested million word, see bug 1.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(9))
+}
+
 impl Lang for LangHmn {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -743,7 +762,7 @@ impl Lang for LangHmn {
             // blank and never whitespace-edged), but it is what Python runs.
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        Ok(self.int_to_word(value)?)
     }
 
     /// Python: `if number == 1: return "thawj"` else `"thib " + to_cardinal`.
@@ -898,7 +917,7 @@ impl Lang for LangHmn {
         // pluralize(). Python would raise IndexError on a 1-form entry; every
         // HMN entry has 2, so the Err is unreachable, but the type is kept.
         let unit = pick(&forms.unit, &left, &one)?;
-        let mut result = format!("{} {}", self.int_to_word(&left), unit);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, unit);
 
         // `if cents and right:` — `right == 0` is falsy, so 1.0 and 5.00 lose
         // the cents segment entirely while 0.01 keeps it.
@@ -909,7 +928,7 @@ impl Lang for LangHmn {
             result.push_str(&format!(
                 "{}{} {}",
                 separator,
-                self.int_to_word(&right),
+                self.int_to_word(&right)?,
                 subunit
             ));
         }
@@ -1100,9 +1119,10 @@ mod currency_tests {
             LangHmn::new().to_currency(&d500, "USD", true, None, false).unwrap(),
             "tsib nyiaj kub"
         );
-        // Bug 10: bug 1's digit fallback reaches the currency surface.
-        assert_eq!(cur("1000000000", "USD").unwrap(), "1000000000 nyiaj kub");
-        assert_eq!(cur("1000000000.0", "USD").unwrap(), "1000000000 nyiaj kub");
+        // Bug 10: Python's digit fallback reached the currency surface; the
+        // port's 10^9 ceiling does too (#147).
+        assert!(matches!(cur("1000000000", "USD"), Err(N2WError::Overflow(_))));
+        assert!(matches!(cur("1000000000.0", "USD"), Err(N2WError::Overflow(_))));
     }
 
     /// Bug 9, raising half: a 1- or 2-digit coefficient leaves `int()` holding
@@ -1287,7 +1307,8 @@ mod float_tests {
         assert_eq!(d("0.01").unwrap(), "xoom lab xoom ib");
         assert_eq!(d("1.10").unwrap(), "ib lab ib xoom");
         assert_eq!(d("12.345").unwrap(), "kaum thiab ob lab peb plaub tsib");
-        assert_eq!(d("98746251323029.99").unwrap(), "98746251323029 lab cuaj cuaj");
+        // Python echoed the digits; past the 10^9 ceiling now (#147).
+        assert!(matches!(d("98746251323029.99"), Err(N2WError::Overflow(_))));
         assert_eq!(d("0.001").unwrap(), "xoom lab xoom xoom ib");
     }
 
@@ -1313,8 +1334,13 @@ mod float_tests {
         assert_eq!(d("-12.34").unwrap(), "tsis txaus kaum thiab ob lab peb plaub");
         assert_eq!(d("100").unwrap(), "ib puas");
         assert_eq!(d("0.0").unwrap(), "xoom lab xoom");
-        // Bug 1 leaks through the Decimal path too: 14-digit int part -> digits.
-        assert_eq!(d("1000000000.5").unwrap(), "1000000000 lab tsib");
+        // The 10^9 ceiling holds on the Decimal path too (#147).
+        assert!(matches!(d("1000000000.5"), Err(N2WError::Overflow(_))));
+        assert_eq!(
+            d("999999999.5").unwrap(),
+            "cuaj puas thiab cuaj caum thiab cuaj tawm rau cuaj puas thiab cuaj caum \
+             thiab cuaj txhiab cuaj puas thiab cuaj caum thiab cuaj lab tsib"
+        );
     }
 
     /// The plain neighbours of the scientific window must render, not raise.
@@ -1352,11 +1378,9 @@ mod float_tests {
         }
         // The immediate plain neighbours must NOT raise (exponent -4 / 15).
         assert_eq!(f(0.0001, 4).unwrap(), "xoom lab xoom xoom xoom ib");
-        assert_eq!(
-            f(1e15, 1).unwrap(),
-            // 1e15 reprs plain as "1000000000000000.0" -> bug 1 digit fallback.
-            "1000000000000000 lab xoom"
-        );
+        // 1e15 reprs plain as "1000000000000000.0", so it reaches the 10^9
+        // ceiling (#147; Python printed the digits) rather than ValueError.
+        assert!(matches!(f(1e15, 1), Err(N2WError::Overflow(_))));
     }
 
     /// A `Decimal` whose `str` goes exponential raises `ValueError` (bug 13):

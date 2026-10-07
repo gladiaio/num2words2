@@ -5,9 +5,9 @@
 //! `any(hasattr(...))` guard in `Num2Word_Base.__init__` never fires: Python
 //! never builds `self.cards` and never sets `self.MAXVAL`. `to_cardinal` is
 //! overridden outright and drives a hand-written `_int_to_word` recursion.
-//! Consequently `cards` / `maxval` / `merge` stay at their trait defaults here,
-//! and there is **no overflow check** — see bug 1 below for what happens past
-//! the table's ceiling instead.
+//! Consequently `cards` / `merge` stay at their trait defaults here. Python has
+//! **no overflow check** — see bug 1 below for what it did past the table's
+//! ceiling; this port raises `OverflowError` from 10^9 (`maxval`).
 //!
 //! Number system: pure decimal, no teens table. Tens and ones are joined with
 //! `" leh "` ("and"), as are hundreds and their remainder — but thousands and
@@ -28,19 +28,20 @@
 //! This is a port, not a rewrite. Each of these is what CPython actually
 //! emits, and each is corpus-confirmed:
 //!
-//! 1. **`_int_to_word` falls off the end and returns bare digits.** The
-//!    cascade stops at `number < 1000000000`; anything `>= 10**9` hits the
-//!    final `return str(number)`. So `to_cardinal(10**9)` == "1000000000" —
-//!    a *string of digits*, not words, and emphatically not an
-//!    `OverflowError`. Mizo has no word above `nuai` (10^6) here, so the
-//!    converter silently degrades to numerals rather than raising. This is why
-//!    `maxval()` is left at its default and no overflow check exists.
-//!    Preserved verbatim in [`int_to_word`]'s final arm.
-//! 2. **The digit fallback leaks into the ordinal and the negative forms.**
-//!    `to_ordinal` is `to_cardinal(n) + "-na"` with no guard, so
-//!    `to_ordinal(10**21)` == "1000000000000000000000-na" — the suffix is
-//!    glued onto raw digits. Likewise `to_cardinal(-10**9)` == "phak
-//!    1000000000".
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's cascade
+//!    stops at `number < 1000000000`; anything `>= 10**9` hit the final
+//!    `return str(number)`, so `to_cardinal(10**9)` was "1000000000" — a
+//!    *string of digits*, silently. No published source gives a Mizo word
+//!    for 10^9, and the module's "million" is itself wrong: Wiktionary has
+//!    `nuai` as 10^5 (lakh) and `maktaduai` as 10^6, so this table's `nuai`
+//!    already under-counts by ten (an open problem, not touched here).
+//!    Rather than stack a new word on that, this port reports `maxval` ==
+//!    10^9 and raises `OverflowError` there, on every path (`miz` too).
+//! 2. **The digit fallback leaked into the ordinal and the negative forms.**
+//!    `to_ordinal` is `to_cardinal(n) + "-na"` with no guard, so Python's
+//!    `to_ordinal(10**21)` was "1000000000000000000000-na" and
+//!    `to_cardinal(-10**9)` "phak 1000000000". Both raise `OverflowError`
+//!    now (#147).
 //! 3. **`to_ordinal` accepts negatives and zero.** `Num2Word_Base` carries
 //!    `errmsg_negord` / "Cannot treat negative num as ordinal", but LUS's
 //!    override never consults it, so `to_ordinal(-1)` == "phak pakhat-na" and
@@ -75,17 +76,16 @@
 //!    accepts it, but the body has no `CURRENCY_ADJECTIVES` lookup, so it is
 //!    inert. (`CURRENCY_ADJECTIVES` is `{}` for LUS anyway, so even the base
 //!    would have been a no-op.)
-//! 8. **The digit fallback of bug 1 leaks into currency too.** `to_currency`
-//!    calls `_int_to_word` directly, so `to_currency(10**10)` ==
-//!    "10000000000 rupee" — digits, then a currency word.
+//! 8. **The digit fallback of bug 1 leaked into currency too.** `to_currency`
+//!    calls `_int_to_word` directly, so Python's `to_currency(10**10)` was
+//!    "10000000000 rupee"; it raises `OverflowError` now (#147).
 //!
 //! # Exceptions in scope
 //!
-//! Unlike most modules, LUS raises nothing across `to_cardinal` /
-//! `to_ordinal` / `to_ordinal_num` / `to_year` for any integer input: no
-//! overflow ceiling (bug 1), no negative-ordinal guard (bug 3), and no dict or
-//! list access that can miss (bug 4). All 324 integer-mode corpus rows are
-//! `ok: true`.
+//! Across `to_cardinal` / `to_ordinal` / `to_year`, LUS raises only the
+//! `OverflowError` of its 10^9 ceiling (bug 1, #147): no negative-ordinal
+//! guard (bug 3), and no dict or list access that can miss (bug 4).
+//! `to_ordinal_num` never raises.
 //!
 //! The currency surface adds exactly two raising paths, and they are *not*
 //! symmetric — see bug 5 below:
@@ -101,7 +101,7 @@
 //!
 //! `to_fraction` (TypeError) remains out of scope.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -287,18 +287,18 @@ fn split_currency(n: &BigDecimal) -> Result<(BigInt, BigInt)> {
 /// agree, but `div_mod_floor` is used below regardless so the correspondence to
 /// Python is exact rather than merely incidental.
 ///
-/// The recursion can never itself reach the digit fallback: for `number` under
-/// 10^6 the quotient is under 1000, and for `number` under 10^9 the quotient is
-/// under 1000. Only a top-level call of 10^9 or more falls through (bug 1).
-fn int_to_word(number: &BigInt) -> String {
+/// A top-level call of 10^9 or more raises `OverflowError` (bug 1, #147);
+/// below it, every quotient the recursion passes is under 1000.
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     if number.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
 
     let ten = BigInt::from(10u32);
     if number < &ten {
         // 1..=9, so the index is in range and never hits the empty slot.
-        return ONES[small(number)].to_string();
+        return Ok(ONES[small(number)].to_string());
     }
 
     let hundred = BigInt::from(100u32);
@@ -309,7 +309,7 @@ fn int_to_word(number: &BigInt) -> String {
             out.push_str(LEH);
             out.push_str(ONES[small(&o)]);
         }
-        return out;
+        return Ok(out);
     }
 
     let thousand = BigInt::from(1_000u32);
@@ -320,37 +320,45 @@ fn int_to_word(number: &BigInt) -> String {
         if !r.is_zero() {
             // Hundreds *do* take " leh " before their remainder.
             out.push_str(LEH);
-            out.push_str(&int_to_word(&r));
+            out.push_str(&int_to_word(&r)?);
         }
-        return out;
+        return Ok(out);
     }
 
     let million = BigInt::from(1_000_000u32);
     if number < &million {
         let (t, r) = number.div_mod_floor(&thousand);
-        let mut out = format!("{} {}", int_to_word(&t), THOUSAND);
+        let mut out = format!("{} {}", int_to_word(&t)?, THOUSAND);
         if !r.is_zero() {
             // Bare space, not " leh " — hence "pakhat sang pakhat" for 1001.
             out.push(' ');
-            out.push_str(&int_to_word(&r));
+            out.push_str(&int_to_word(&r)?);
         }
-        return out;
+        return Ok(out);
     }
 
     let billion = BigInt::from(1_000_000_000u32);
     if number < &billion {
         let (m, r) = number.div_mod_floor(&million);
-        let mut out = format!("{} {}", int_to_word(&m), MILLION);
+        let mut out = format!("{} {}", int_to_word(&m)?, MILLION);
         if !r.is_zero() {
             // Bare space again.
             out.push(' ');
-            out.push_str(&int_to_word(&r));
+            out.push_str(&int_to_word(&r)?);
         }
-        return out;
+        return Ok(out);
     }
 
-    // Bug 1: `return str(number)` — bare digits, no words, no OverflowError.
-    number.to_string()
+    // Bug 1: Python's `return str(number)`, now an OverflowError raised by
+    // the maxval check above (#147).
+    unreachable!("values >= 10^9 are rejected by check_maxval")
+}
+
+/// The exclusive ceiling (gladiaio/num2words2#147): no attested Mizo word for
+/// 10^9, and the module's million word is itself off by ten (bug 1).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(9))
 }
 
 /// Narrow a BigInt already proven to be in `0..=9` to a table index.
@@ -631,17 +639,17 @@ fn cardinal_from_str(number: &str) -> Result<String> {
         Some(dot) => {
             // n.split(".", 1): maxsplit 1, so `right` keeps any further dots.
             let (left, right) = (&n[..dot], &n[dot + 1..]);
-            let mut ret = format!("{} {}", int_to_word(&py_int(left)?), POINTWORD);
+            let mut ret = format!("{} {}", int_to_word(&py_int(left)?)?, POINTWORD);
             // Python iterates *characters* of `right`; index by chars().
             for d in right.chars() {
                 let mut buf = [0u8; 4];
                 let digit = py_int(d.encode_utf8(&mut buf))?;
                 ret.push(' ');
-                ret.push_str(&int_to_word(&digit));
+                ret.push_str(&int_to_word(&digit)?);
             }
             Ok(ret.trim().to_string())
         }
-        None => Ok(int_to_word(&py_int(n)?)),
+        None => Ok(int_to_word(&py_int(n)?)?),
     }
 }
 
@@ -698,6 +706,10 @@ impl LangLus {
 }
 
 impl Lang for LangLus {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -826,7 +838,7 @@ impl Lang for LangLus {
             let inner = self.to_cardinal(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(int_to_word(value))
+        Ok(int_to_word(value)?)
     }
 
     /// Python: `return self.to_cardinal(number) + "-na"`.
@@ -989,7 +1001,7 @@ impl Lang for LangLus {
 
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            int_to_word(&left)?,
             LangLus::pick_form(&forms.unit, &left)
         );
 
@@ -999,7 +1011,7 @@ impl Lang for LangLus {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                int_to_word(&right),
+                int_to_word(&right)?,
                 LangLus::pick_form(&forms.subunit, &right)
             ));
         }

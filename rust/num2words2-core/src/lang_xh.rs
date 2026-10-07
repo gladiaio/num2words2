@@ -23,11 +23,13 @@
 //! This is a port, not a rewrite. All of the following are wrong-looking but
 //! are exactly what Python emits, verified against the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the bare digits.** The
-//!    final `return str(number)` means `to_cardinal(10**9) == "1000000000"` —
-//!    a decimal numeral, not words. No `OverflowError` is raised, because XH
-//!    never sets `MAXVAL`. Corpus confirms this all the way to 10^21, so the
-//!    fallback must stay a `BigInt::to_string()` and must never be capped.
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` gives up at 10^9: the final `return str(number)` made
+//!    `to_cardinal(10**9)` the decimal numeral "1000000000". This port adds
+//!    `ibhiliyoni` (10^9; Wiktionary "billion" translations, and the SA
+//!    National Treasury's Xhosa budget guide 2011, "I R2.8 bhiliyoni"),
+//!    composed exactly like `isigidi` (`m > 1` guard, " na " joiner), and
+//!    raises `OverflowError` from 10^12 (`maxval`), where no word is attested.
 //! 2. **`to_ordinal` blindly prefixes "we"** to the cardinal for every value
 //!    except exactly 1. This yields `to_ordinal(0) == "weiqanda"` and, for
 //!    negatives, `to_ordinal(-1) == "wengaphantsi kwe nye"` — "we" glued onto
@@ -145,7 +147,7 @@
 //! None. `setup()` only assigns constant tables; no method sets a flag that
 //! another consumes.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::python_decimal_str;
@@ -154,6 +156,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is load-bearing — Python concatenates
 /// it directly (`self.negword + self.to_cardinal(...)`) rather than joining.
@@ -190,6 +193,15 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "ikhulu";
 const THOUSAND: &str = "iwaka";
 const MILLION: &str = "isigidi";
+/// 10^9, which Python lacks (gladiaio/num2words2#147): Wiktionary
+/// "billion" (Xhosa), SA National Treasury Xhosa budget guide 2011.
+const BILLION: &str = "ibhiliyoni";
+
+/// The exclusive ceiling (#147): 10^12 would need a word above `ibhiliyoni`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 
 /// Narrow a provably-small `BigInt` to a table index.
 ///
@@ -207,9 +219,10 @@ fn digit(n: &BigInt) -> usize {
 /// Faithful to the original's cascade of magnitude tests. The input is always
 /// non-negative: `to_cardinal` strips the sign before recursing, and every
 /// internal recursion passes a quotient or remainder of a non-negative value.
-fn int_to_word(number: &BigInt) -> String {
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     if number.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
 
     let ten = BigInt::from(10);
@@ -221,7 +234,7 @@ fn int_to_word(number: &BigInt) -> String {
 
     // if number < 10: return self.ones[number]
     if number < &ten {
-        return ONES[digit(number)].to_string();
+        return Ok(ONES[digit(number)].to_string());
     }
 
     // if number < 100:
@@ -234,7 +247,7 @@ fn int_to_word(number: &BigInt) -> String {
             out.push_str(" ana ");
             out.push_str(ONES[digit(&o)]);
         }
-        return out;
+        return Ok(out);
     }
 
     // if number < 1000:
@@ -255,9 +268,9 @@ fn int_to_word(number: &BigInt) -> String {
         out.push_str(HUNDRED);
         if !r.is_zero() {
             out.push_str(" na ");
-            out.push_str(&int_to_word(&r));
+            out.push_str(&int_to_word(&r)?);
         }
-        return out;
+        return Ok(out);
     }
 
     // if number < 1000000:
@@ -268,15 +281,15 @@ fn int_to_word(number: &BigInt) -> String {
         let (t, r) = number.div_mod_floor(&thousand);
         let mut out = String::new();
         if t > one {
-            out.push_str(&int_to_word(&t));
+            out.push_str(&int_to_word(&t)?);
             out.push(' ');
         }
         out.push_str(THOUSAND);
         if !r.is_zero() {
             out.push_str(" na ");
-            out.push_str(&int_to_word(&r));
+            out.push_str(&int_to_word(&r)?);
         }
-        return out;
+        return Ok(out);
     }
 
     // if number < 1000000000:
@@ -287,19 +300,32 @@ fn int_to_word(number: &BigInt) -> String {
         let (m, r) = number.div_mod_floor(&million);
         let mut out = String::new();
         if m > one {
-            out.push_str(&int_to_word(&m));
+            out.push_str(&int_to_word(&m)?);
             out.push(' ');
         }
         out.push_str(MILLION);
         if !r.is_zero() {
             out.push_str(" na ");
-            out.push_str(&int_to_word(&r));
+            out.push_str(&int_to_word(&r)?);
         }
-        return out;
+        return Ok(out);
     }
 
-    // return str(number)  -- bug 1: words run out at 10^9.
-    number.to_string()
+    // Python: `return str(number)` -- bug 1: words ran out at 10^9. The
+    // ibhiliyoni band instead, composed like the million one; the maxval
+    // check above keeps `b` below 1000 (#147).
+    let (b, r) = number.div_mod_floor(&billion);
+    let mut out = String::new();
+    if b > one {
+        out.push_str(&int_to_word(&b)?);
+        out.push(' ');
+    }
+    out.push_str(BILLION);
+    if !r.is_zero() {
+        out.push_str(" na ");
+        out.push_str(&int_to_word(&r)?);
+    }
+    Ok(out)
 }
 
 // Reconstructing `str(number)` for a `FloatValue::Decimal` is
@@ -396,7 +422,7 @@ fn xh_string_to_words(n: &str) -> Result<String> {
         let left_int = left.parse::<BigInt>().map_err(|_| {
             N2WError::Value(format!("invalid literal for int() with base 10: '{}'", left))
         })?;
-        let mut ret = int_to_word(&left_int);
+        let mut ret = int_to_word(&left_int)?;
         ret.push(' ');
         ret.push_str(POINTWORD);
         for ch in right.chars() {
@@ -416,7 +442,7 @@ fn xh_string_to_words(n: &str) -> Result<String> {
         let v = n.parse::<BigInt>().map_err(|_| {
             N2WError::Value(format!("invalid literal for int() with base 10: '{}'", n))
         })?;
-        Ok(int_to_word(&v))
+        Ok(int_to_word(&v)?)
     }
 }
 
@@ -522,6 +548,10 @@ impl LangXh {
 }
 
 impl Lang for LangXh {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -563,10 +593,10 @@ impl Lang for LangXh {
     /// padded output and NEGWORD starts with 'n'), but is kept for fidelity.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
-            let words = int_to_word(&value.abs());
+            let words = int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, words).trim().to_string());
         }
-        Ok(int_to_word(value))
+        Ok(int_to_word(value)?)
     }
 
     /// Python:
@@ -862,7 +892,7 @@ impl Lang for LangXh {
 
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            int_to_word(&left)?,
             indexed_form(&forms.unit, &left)?
         );
 
@@ -870,7 +900,7 @@ impl Lang for LangXh {
             // Python concatenates `separator + word` with no space between
             // them -- bug 9. The space before cr2 is a separate literal.
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&int_to_word(&right)?);
             result.push(' ');
             result.push_str(&indexed_form(&forms.subunit, &right)?);
         }
@@ -1007,8 +1037,9 @@ mod tests {
         // -0.0 < 0 is False in Python, so no negword.
         assert_eq!(cur("-0.0", "ZAR"), "iqanda randi");
         assert_eq!(cur("-1", "ZAR"), "ngaphantsi kwe nye randi");
-        // Bug 1 leaks into currency: _int_to_word gives up at 10^9.
-        assert_eq!(cur("1000000000", "ZAR"), "1000000000 randi");
+        // Bug 1 leaked into currency (Python: "1000000000 randi"); the
+        // ibhiliyoni band and the 10^12 ceiling reach it too (#147).
+        assert_eq!(cur("1000000000", "ZAR"), "ibhiliyoni randi");
         // A Decimal with no dot in str() takes the no-cents branch; one with a
         // dot but a zero fraction still ends up with right == 0.
         let five = CurrencyValue::parse("5", false, false, false).unwrap();
@@ -1097,11 +1128,12 @@ mod tests {
         assert_eq!(card_dec("0.01"), "iqanda ichaphaza qanda nye");
         assert_eq!(card_dec("1.10"), "nye ichaphaza nye qanda");
         assert_eq!(card_dec("12.345"), "lishumi ana mbini ichaphaza ntathu ne ntlanu");
-        // Bug 1 leaks in: the 10^13 integer part gives up and prints digits.
-        assert_eq!(
-            card_dec("98746251323029.99"),
-            "98746251323029 ichaphaza lithoba lithoba"
-        );
+        // Bug 1 leaked in: Python printed the 10^13 integer part as digits;
+        // it is past the 10^12 ceiling now (#147).
+        assert!(matches!(
+            card_dec_p("98746251323029.99", 2),
+            Err(N2WError::Overflow(_))
+        ));
         assert_eq!(card_dec("0.001"), "iqanda ichaphaza qanda qanda nye");
         // Beyond the corpus, checked against the live interpreter.
         assert_eq!(card_dec("1.5000"), "nye ichaphaza ntlanu qanda qanda qanda");
@@ -1186,20 +1218,23 @@ mod tests {
         );
     }
 
-    /// Large values: the integer part exhausts `_int_to_word` at 10^9 (bug 1)
-    /// but the float stays in repr's fixed window until 10^16, so digits are
-    /// spoken either side of the pointword. Checked against the live
-    /// interpreter: 1234567890.5 -> '1234567890 ichaphaza ntlanu'.
+    /// Large values: Python's `_int_to_word` gave up at 10^9 (bug 1) and
+    /// spoke digits before the pointword ('1234567890 ichaphaza ntlanu'). The
+    /// port spells the ibhiliyoni band and raises OverflowError from 10^12
+    /// (#147), e.g. for the 17-digit Decimal Python printed as
+    /// '12345678901234567 ichaphaza sibhozo lithoba'.
     #[test]
     fn large_values_fixed_window() {
-        assert_eq!(card_float(1234567890.5, 1), "1234567890 ichaphaza ntlanu");
-        // A 17-digit Decimal is still fixed notation (adjusted exponent 16
-        // matters only for floats): '12345678901234567 ichaphaza sibhozo
-        // lithoba', verified live.
         assert_eq!(
-            card_dec_p("12345678901234567.89", 2).unwrap(),
-            "12345678901234567 ichaphaza sibhozo lithoba"
+            card_float(1234567890.5, 1),
+            "ibhiliyoni na mbini ikhulu na amashumi amathathu ana ne isigidi na \
+             ntlanu ikhulu na amashumi amathandathu ana sixhenxe iwaka na sibhozo \
+             ikhulu na amashumi alithoba ichaphaza ntlanu"
         );
+        assert!(matches!(
+            card_dec_p("12345678901234567.89", 2),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// The whole-value routing: Python's `to_cardinal` keys on `str(number)`,
@@ -1257,8 +1292,13 @@ mod tests {
         );
         assert_eq!(l.ordinal_float_entry(&d("5", 0)).unwrap(), "wentlanu");
         assert_eq!(l.ordinal_float_entry(&d("0", 0)).unwrap(), "weiqanda");
-        // #211: str(Decimal) is written out, so 1E+20 reads as an integer.
-        assert_eq!(l.ordinal_float_entry(&d("1E+20", 20)).unwrap(), "we100000000000000000000");
+        // #211: str(Decimal) is written out, so 1E+9 reads as an integer;
+        // 1E+20 is past the 10^12 ceiling (#147, Python echoed the digits).
+        assert_eq!(l.ordinal_float_entry(&d("1E+9", 9)).unwrap(), "weibhiliyoni");
+        assert!(matches!(
+            l.ordinal_float_entry(&d("1E+20", 20)),
+            Err(N2WError::Overflow(_))
+        ));
 
         // ordinal_num: "we" + the binding's repr, verbatim.
         assert_eq!(

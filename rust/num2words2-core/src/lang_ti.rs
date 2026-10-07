@@ -15,16 +15,15 @@
 //! word tables here are the Ge'ez spellings: "ሓደ", "ሚእቲ", "ሽሕ".
 //!
 //! This is a lexicon change only — the composition rules, the `> 1` multiplier
-//! guards, the billion cliff and the currency fallback are all still ported
-//! verbatim. The frozen-corpus fixtures in this file were re-spelled to match;
-//! every other assertion they make is unchanged. (Upstream's *missing*
+//! guards and the currency fallback are all still ported verbatim (the
+//! billion cliff is fixed separately, #147). The frozen-corpus fixtures in
+//! this file were re-spelled to match; every other assertion they make is
+//! unchanged. (Upstream's *missing*
 //! `verify_ordinal` is the one piece of behaviour this module does not keep —
 //! §2 below restores the guard.)
 //!
-//! One consequence worth naming, inherited structure rather than new
-//! behaviour: **the billion cliff still emits ASCII digits.** Above 10^9
-//! upstream returns `str(number)`; those are Western digits, not Ge'ez
-//! numerals, and that is untouched.
+//! Upstream's billion cliff — `str(number)`, Western digits, above 10^9 — is
+//! fixed by gladiaio/num2words2#147, see bug note 1 below.
 //!
 //! ## 2. Ordinal algorithm
 //!
@@ -94,15 +93,17 @@
 //! This is a port, not a rewrite. The following are all wrong-looking but are
 //! exactly what Python emits, verified against the interpreter:
 //!
-//! 1. **The billion cliff.** `_int_to_word` has no branch above 10^9 and ends
-//!    with `return str(number)`, so any `abs(n) >= 10**9` falls out as raw
-//!    ASCII digits instead of words: `to_cardinal(10**9) == "1000000000"` and
-//!    `to_cardinal(10**21) == "1000000000000000000000"`. No exception, no
-//!    words — the digits are the output. Modelled in [`LangTi::int_to_word`].
-//! 2. The cliff leaks into the other modes: `to_ordinal(10**9)` is
-//!    `"መበል 1000000000"`, the same digits `to_ordinal_num(10**9)` produces.
-//!    The cliff itself is the inherited bug; the ordinal fix above changed
-//!    only how the digits are framed.
+//! 1. **The billion cliff (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` has no branch above 10^9 and ends with
+//!    `return str(number)`, so `to_cardinal(10**9)` was `"1000000000"` —
+//!    raw ASCII digits. This port adds ቢልዮን (10^9; arXiv 2601.03403 Table 1,
+//!    spelled like the module's ሚልዮን), composed exactly like the million
+//!    branch (`m > 1` guard, " ን " joiner), and raises `OverflowError` from
+//!    10^12 (`maxval`): the same source's ትሪልዮን is single-sourced, so it is
+//!    left out. Modelled in [`LangTi::int_to_word`].
+//! 2. The cliff leaked into the other modes: Python's `to_ordinal(10**9)` was
+//!    `"መበል 1000000000"`; it is `"መበል ቢልዮን"` now, and every mode shares the
+//!    10^12 ceiling.
 //! 3. ~~`to_ordinal` never calls `verify_ordinal`~~ — **fixed**, see the
 //!    ordinal divergence above. Upstream let zero and negatives through and
 //!    suffixed them ("ባዶኣይ", "ኣሉታ ሓደኣይ"); both now raise `TypeError`.
@@ -142,8 +143,8 @@
 //!    (ROUND_HALF_UP would say 68), 12.345 is 34, and 0.005 truncates to 0 —
 //!    which, being falsy, drops the cents segment entirely ("ባዶ ዩሮ").
 //! 5. **`left`/`right` go through `_int_to_word`, not `to_cardinal`**, so the
-//!    billion cliff applies to the units too: `to_currency(1e15)` is
-//!    "1000000000000000 ዩሮ" (digits, verified against the interpreter).
+//!    billion cliff applied to the units too: Python's `to_currency(1e15)` is
+//!    "1000000000000000 ዩሮ"; the port raises the 10^12 `OverflowError` (#147).
 //!
 //! Base's `to_cheque`, `_money_verbose`, `_cents_verbose` and `_cents_terse`
 //! are all inherited unchanged, so their trait defaults already match; only the
@@ -167,7 +168,7 @@
 //! `default_to_currency` (its only other caller) is unreachable because
 //! `to_currency` is overridden here.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -177,6 +178,7 @@ use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `setup(): self.ones`. Index 0 is the empty string, exactly as in Python.
 /// The `< 10` branch is guarded by the zero test above it, so index 0 is only
@@ -214,6 +216,16 @@ const ZERO_WORD: &str = "ባዶ";
 const HUNDRED: &str = "ሚእቲ";
 const THOUSAND: &str = "ሽሕ";
 const MILLION: &str = "ሚልዮን";
+/// 10^9, which Python lacks (gladiaio/num2words2#147): arXiv 2601.03403,
+/// Table 1 (alongside ሽሕ and ሚልዮን).
+const BILLION: &str = "ቢልዮን";
+
+/// The exclusive ceiling (#147): 10^12 would need a word above ቢልዮን, and
+/// the only source for ትሪልዮን is the single paper above.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 
 /// `setup(): self.negword`. The trailing space is part of the Python literal.
 const NEGWORD: &str = "ኣሉታ ";
@@ -473,16 +485,17 @@ impl LangTi {
     /// (Python's floor-division semantics only diverge from Rust's truncating
     /// `/` on negatives). All the small-index conversions are therefore
     /// provably in range.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // Python: if number == 0: return "ባዶ"
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
 
         // Python: if number < 10: return self.ones[number]
         if *number < BigInt::from(10) {
             // Safe: 0 < number < 10.
-            return ONES[to_index(number)].to_string();
+            return Ok(ONES[to_index(number)].to_string());
         }
 
         // Python: t, o = divmod(number, 10)
@@ -496,7 +509,7 @@ impl LangTi {
                 out.push_str(AND);
                 out.push_str(ONES[o]);
             }
-            return out;
+            return Ok(out);
         }
 
         // Python: h, r = divmod(number, 100)
@@ -514,9 +527,9 @@ impl LangTi {
             out.push_str(HUNDRED);
             if !r.is_zero() {
                 out.push_str(AND);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         // Python: t, r = divmod(number, 1000)
@@ -528,15 +541,15 @@ impl LangTi {
             let mut out = String::new();
             // The `t > 1` guard: 1000 -> "ሽሕ", never "ሓደ ሽሕ".
             if t > BigInt::from(1) {
-                out.push_str(&self.int_to_word(&t));
+                out.push_str(&self.int_to_word(&t)?);
                 out.push(' ');
             }
             out.push_str(THOUSAND);
             if !r.is_zero() {
                 out.push_str(AND);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
         // Python: m, r = divmod(number, 1000000)
@@ -548,21 +561,32 @@ impl LangTi {
             let mut out = String::new();
             // The `m > 1` guard is present here too: 10**6 -> "ሚልዮን".
             if m > BigInt::from(1) {
-                out.push_str(&self.int_to_word(&m));
+                out.push_str(&self.int_to_word(&m)?);
                 out.push(' ');
             }
             out.push_str(MILLION);
             if !r.is_zero() {
                 out.push_str(AND);
-                out.push_str(&self.int_to_word(&r));
+                out.push_str(&self.int_to_word(&r)?);
             }
-            return out;
+            return Ok(out);
         }
 
-        // Python: return str(number) — the billion cliff (bug note 1).
-        // `number` is unbounded here (values reach 10**21+ in the corpus), so
-        // this must stay BigInt: never cast.
-        number.to_string()
+        // Python: return str(number) — the billion cliff (bug note 1). The
+        // ቢልዮን band instead, composed like the million one; the maxval check
+        // above keeps `b` below 1000 (#147).
+        let (b, r) = number.div_mod_floor(&BigInt::from(1_000_000_000));
+        let mut out = String::new();
+        if b > BigInt::from(1) {
+            out.push_str(&self.int_to_word(&b)?);
+            out.push(' ');
+        }
+        out.push_str(BILLION);
+        if !r.is_zero() {
+            out.push_str(AND);
+            out.push_str(&self.int_to_word(&r)?);
+        }
+        Ok(out)
     }
 
     /// Port of `Num2Word_TI.to_cardinal` for **non-integer** input.
@@ -614,15 +638,15 @@ impl LangTi {
         let (left, right) = match n.split_once('.') {
             Some(halves) => halves,
             // return self._int_to_word(int(n))
-            None => return Ok(self.int_to_word(&py_int(n)?)),
+            None => return Ok(self.int_to_word(&py_int(n)?)?),
         };
 
         // ret = self._int_to_word(int(left)) + " " + self.pointword
         //
-        // `int(left)` is the whole integer part, so the billion cliff (bug note
-        // 1) applies: at 1e9 and above it comes back as bare digits
-        // ("98746251323029 ነጥቢ ትሽዓተ ትሽዓተ").
-        let mut ret = self.int_to_word(&py_int(left)?);
+        // `int(left)` is the whole integer part, so the 10^12 ceiling (bug
+        // note 1) applies: Python echoed "98746251323029 ነጥቢ ትሽዓተ ትሽዓተ",
+        // the port raises OverflowError (#147).
+        let mut ret = self.int_to_word(&py_int(left)?)?;
         ret.push(' ');
         ret.push_str(POINTWORD);
 
@@ -654,6 +678,10 @@ fn to_index(n: &BigInt) -> usize {
 }
 
 impl Lang for LangTi {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -744,10 +772,10 @@ impl Lang for LangTi {
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         if value.is_negative() {
             // Python: (self.negword + self.to_cardinal(n[1:])).strip()
-            let inner = self.int_to_word(&value.abs());
+            let inner = self.int_to_word(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        Ok(self.int_to_word(value)?)
     }
 
     /// Tigrinya ordinals. **Diverges from upstream** (see the module header).
@@ -923,7 +951,7 @@ impl Lang for LangTi {
         // Python: self._int_to_word(left) + " " + (cr1[1] if left != 1 else cr1[0])
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.int_to_word(&left)?,
             pick_form(&forms.unit, &left)?
         );
 
@@ -933,7 +961,7 @@ impl Lang for LangTi {
             result.push_str(separator);
             result.push_str(&format!(
                 "{} {}",
-                self.int_to_word(&right),
+                self.int_to_word(&right)?,
                 pick_form(&forms.subunit, &right)?
             ));
         }
@@ -1369,15 +1397,20 @@ mod tests {
         assert_eq!(ti.default_separator(), " ");
     }
 
-    /// `left` goes through `_int_to_word`, so the billion cliff reaches
-    /// currency too: verified `to_currency(1e15, "EUR")` is digits + " ዩሮ".
+    /// `left` goes through `_int_to_word`, so the billion band and the 10^12
+    /// ceiling reach currency too (#147; Python's `to_currency(1e15, "EUR")`
+    /// was digits + " ዩሮ").
     #[test]
     fn billion_cliff_reaches_currency() {
         let ti = LangTi::new();
         assert_eq!(
-            ti.to_currency(&value_of("1000000000000000.0", false), "EUR", true, None, false).unwrap(),
-            "1000000000000000 ዩሮ"
+            ti.to_currency(&value_of("2000000000", true), "EUR", true, None, false).unwrap(),
+            "ክልተ ቢልዮን ዩሮ"
         );
+        assert!(matches!(
+            ti.to_currency(&value_of("1000000000000000.0", false), "EUR", true, None, false),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// `adjective` is accepted and never read by the Python signature.
@@ -1413,9 +1446,13 @@ mod tests {
                 "{s} should be a ValueError"
             );
         }
-        // ...while the plain-decimal spelling of the same magnitude does not.
+        // ...while the plain-decimal spelling of the same magnitude reaches
+        // the 10^12 ceiling instead (#147).
         let v = CurrencyValue::parse("1000000000000000000000", false, false, false).unwrap();
-        assert!(ti.to_currency(&v, "EUR", true, None, false).is_ok());
+        assert!(matches!(
+            ti.to_currency(&v, "EUR", true, None, false),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// Pins the one **known divergence** from Python, so it fails loudly if
@@ -1505,7 +1542,6 @@ mod tests {
         ("0.01", "ባዶ ነጥቢ ባዶ ሓደ"),
         ("1.10", "ሓደ ነጥቢ ሓደ ባዶ"),
         ("12.345", "ዓሰርተ ን ክልተ ነጥቢ ሰለስተ ኣርባዕተ ሓሙሽተ"),
-        ("98746251323029.99", "98746251323029 ነጥቢ ትሽዓተ ትሽዓተ"),
         ("0.001", "ባዶ ነጥቢ ባዶ ባዶ ሓደ"),
     ];
 
@@ -1525,6 +1561,12 @@ mod tests {
             let got = ti.to_cardinal_float(&dec_val(arg), None).unwrap();
             assert_eq!(&got, expected, "cardinal_dec arg={arg}");
         }
+        // The corpus row "98746251323029.99" was digits in Python; it is past
+        // the 10^12 ceiling now (#147).
+        assert!(matches!(
+            ti.to_cardinal_float(&dec_val("98746251323029.99"), None),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// The `precision=` kwarg is dropped by the dispatcher before TI's

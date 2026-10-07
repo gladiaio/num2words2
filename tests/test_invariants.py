@@ -219,6 +219,22 @@ def _currency_noun_failures(lang):
     return out
 
 
+def _digit_output_failures(lang):
+    """10^9..10^21 are spelled out or raise OverflowError -- never the raw
+    ASCII digits of a `return str(number)` fallback (#147). ordinal_num is
+    digits by design; currency is not checked here."""
+    out = []
+    for e in (9, 12, 15, 18, 21):
+        n = 10**e
+        for x, to in [(n, "cardinal"), (-n - 7, "cardinal"),
+                      (n + 1, "ordinal"), (n + 3, "year"),
+                      (Decimal(n) + Decimal("0.5"), "cardinal")]:
+            r, err = _call(x, lang, to)
+            if err is None and isinstance(r, str) and re.search(r"[0-9]", r):
+                out.append((to, "10**%d" % e, r[:40]))
+    return out
+
+
 CHECKS = {
     "exceptions": _exception_failures,
     "hygiene": _hygiene_failures,
@@ -229,6 +245,7 @@ CHECKS = {
     "currency_code_respected": _currency_code_failures,
     "ordinal_unique_1_2000": _ordinal_unique_failures,
     "currency_nouns_native": _currency_noun_failures,
+    "no_digit_output": _digit_output_failures,
 }
 
 # Languages whose own decimal word is spelled "point".
@@ -252,6 +269,13 @@ ALLOW = {
     # Only be and el failed this when it was added; both fixed in #251.
     "ordinal_unique_1_2000": set(),
     "currency_nouns_native": set(),
+    # gladiaio/num2words2#147
+    "no_digit_output": {
+        # fixed on sibling branches fix/a5-indic and fix/a5-latin
+        "kok", "ml", "ne", "or", "pa", "pli", "sa", "sd", "si", "ur",
+        "br", "cnh", "haw", "ht", "jv", "jw", "ky", "ln", "mg", "mi", "mt",
+        "so", "su", "tk", "tl", "tt", "uz", "wo", "yo",
+    },
 }
 
 

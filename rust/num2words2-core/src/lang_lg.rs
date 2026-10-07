@@ -28,14 +28,15 @@
 //! This is a port, not a rewrite. Both of the following look wrong and are
 //! exactly what Python emits, verified against the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the bare digits.** The
-//!    ladder stops after the `number < 1000000` (thousand) and
-//!    `number < 1000000000` (million) branches; the final statement is a plain
-//!    `return str(number)`. So `to_cardinal(10**9)` == "1000000000" — an
-//!    unconverted numeral, not words, and *not* an `OverflowError`. Corpus rows
-//!    confirm this up to 10^21. By extension `to_ordinal(10**9)` ==
-//!    "ow' 1000000000". Modelled in [`int_to_word`]. Note this is a silent
-//!    wrong-looking answer rather than a raise, so callers get no signal.
+//! 1. **10^9 and up (fixed, gladiaio/num2words2#147).** Python's ladder
+//!    stops after the `number < 1000000` (thousand) and `number < 1000000000`
+//!    (million) branches; the final statement is a plain `return str(number)`,
+//!    so `to_cardinal(10**9)` was "1000000000" — silently. This port adds
+//!    `kawumbi` (10^9; Wikipedia "Luganda", numbers section: akawumbi, plural
+//!    obuwumbi — written without the a- prefix like the module's `kakadde`),
+//!    composed exactly like the million branch (quirk 2), and raises
+//!    `OverflowError` from 10^12 (`maxval`): the same section's akase (10^12)
+//!    is single-sourced and left out. Modelled in [`int_to_word`].
 //! 2. **The multiplier "emu" (one) is suppressed on every scale word**, because
 //!    each branch guards the multiplier with `if h > 1` / `if t > 1` /
 //!    `if m > 1` rather than `!= 0`. Hence 100 → "kikumi" (not "emu kikumi"),
@@ -116,7 +117,7 @@
 //! [`py_str`] does exactly that and the rest is a literal transcription of the
 //! slicing. See [`py_str`] for what is and is not recoverable.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -124,6 +125,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.ones`. Index 0 is the empty string; `_int_to_word` never reads it
 /// (zero is caught by the `number == 0` branch first). Index 0 *is* read on the
@@ -142,6 +144,15 @@ const ZERO_WORD: &str = "nuli";
 const HUNDRED: &str = "kikumi";
 const THOUSAND: &str = "lukumi";
 const MILLION: &str = "kakadde";
+/// 10^9, which Python lacks (gladiaio/num2words2#147): Wikipedia "Luganda"
+/// (akawumbi), prefix dropped as in `kakadde`.
+const BILLION: &str = "kawumbi";
+
+/// The exclusive ceiling (#147): 10^12 would need a word above `kawumbi`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
 
 /// `self.pointword`. Mirrors [`LangLg::pointword`] (same string); duplicated as
 /// a `const` only so the free-function float path can name it without a `self`.
@@ -164,31 +175,26 @@ const JOIN: &str = " mu ";
 /// the minus sign from the *string* form before calling `int()`, so the
 /// negative-index quirk described in the module docs is structurally
 /// unreachable. Nothing else in this module calls into here.
-fn int_to_word(number: &BigInt) -> String {
+fn int_to_word(number: &BigInt) -> Result<String> {
     // Python checks `number == 0` first; zero is below every bound that
     // follows, so hoisting the check above the 10^9 test is equivalent.
     if number.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
 
     // Python's ladder ends with a bare `return str(number)` for anything the
-    // million branch does not cover. Reproduced verbatim: digits, not words,
-    // and not an OverflowError. See module docs, quirk 1.
-    let billion = BigInt::from(1_000_000_000u32);
-    if number >= &billion {
-        return number.to_string();
-    }
+    // million branch does not cover (quirk 1). The port adds the kawumbi
+    // band and raises OverflowError from 10^12 instead (#147).
+    check_maxval(number, maxval_ceiling())?;
 
-    // Proven bounded: 0 < number < 10^9, so u64 is safe here. The BigInt input
-    // is only load-bearing above, where oversized values short-circuit to
-    // their decimal form.
+    // Proven bounded: 0 < number < 10^12, so u64 is safe here.
     let n = number
         .to_u64()
-        .expect("0 < number < 10^9 was just established");
-    int_to_word_small(n)
+        .expect("0 < number < 10^12 was just established");
+    Ok(int_to_word_small(n))
 }
 
-/// The word-producing half of `_int_to_word`, for `0 <= n < 10^9`.
+/// The word-producing half of `_int_to_word`, for `0 <= n < 10^12`.
 ///
 /// Split out from [`int_to_word`] so the recursive calls (which Python makes
 /// back into the full `_int_to_word`) stay on plain integers. Each recursion
@@ -243,15 +249,21 @@ fn int_to_word_small(n: u64) -> String {
         }
         return s;
     }
-    // n < 10^9, guaranteed by the caller.
+    // n < 10^12, guaranteed by the caller.
     // Python: base = (self._int_to_word(m) + " " if m > 1 else "") + self.million
-    let (m, r) = (n / 1_000_000, n % 1_000_000);
+    // and nothing above; the kawumbi band is composed the same way (#147).
+    let (unit, word) = if n < 1_000_000_000 {
+        (1_000_000, MILLION)
+    } else {
+        (1_000_000_000, BILLION)
+    };
+    let (m, r) = (n / unit, n % unit);
     let mut s = String::new();
     if m > 1 {
         s.push_str(&int_to_word_small(m));
         s.push(' ');
     }
-    s.push_str(MILLION);
+    s.push_str(word);
     if r != 0 {
         s.push_str(JOIN);
         s.push_str(&int_to_word_small(r));
@@ -376,7 +388,7 @@ fn cardinal_from_pystr(n: &str) -> Result<String> {
         Some((left, right)) => {
             // ret = _int_to_word(int(left)) + " " + pointword
             let left_int = py_int(left)?;
-            let mut ret = format!("{} {}", int_to_word(&left_int), POINTWORD);
+            let mut ret = format!("{} {}", int_to_word(&left_int)?, POINTWORD);
             // for digit in right: ret += " " + (ones[int(digit)] or "nuli")
             for ch in right.chars() {
                 ret.push(' ');
@@ -387,7 +399,7 @@ fn cardinal_from_pystr(n: &str) -> Result<String> {
         // No ".": `return self._int_to_word(int(n))`. Reachable on the float
         // path only when `repr` produced exponential form (no dot), where
         // `int(n)` raises — reproduced by `py_int`.
-        None => Ok(int_to_word(&py_int(n)?)),
+        None => Ok(int_to_word(&py_int(n)?)?),
     }
 }
 
@@ -571,6 +583,10 @@ impl LangLg {
 }
 
 impl Lang for LangLg {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -657,7 +673,7 @@ impl Lang for LangLg {
         if value.is_negative() {
             // The recursion in Python re-enters to_cardinal with the digits
             // only, which lands straight on `_int_to_word(int(n))`.
-            let inner = int_to_word(&value.abs());
+            let inner = int_to_word(&value.abs())?;
             // Python applies .strip() to the whole concatenation. NEGWORD's
             // trailing space is interior by then, so only the (already absent)
             // outer whitespace is affected — applied anyway for fidelity.
@@ -665,7 +681,7 @@ impl Lang for LangLg {
         }
         // Note: the non-negative branch has NO .strip() in Python. It makes no
         // difference (int_to_word never pads), but the asymmetry is real.
-        Ok(int_to_word(value))
+        Ok(int_to_word(value)?)
     }
 
     /// Python: `return "ow' " + self.to_cardinal(number)`.
@@ -867,7 +883,7 @@ impl Lang for LangLg {
 
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            int_to_word(&left)?,
             pick_form(&forms.unit, &left)?
         );
 
@@ -875,7 +891,7 @@ impl Lang for LangLg {
         // never prints a cents segment.
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&int_to_word(&right)?);
             result.push(' ');
             result.push_str(&pick_form(&forms.subunit, &right)?);
         }
@@ -993,12 +1009,17 @@ mod tests {
             currency("1.25e+20", false, "EUR").unwrap(),
             "emu yuro abiri mu ttaano senti"
         );
-        // A true int never gets stringified, so it is immune: no ValueError,
-        // just _int_to_word's bare-digits fallback past 10^9.
+        // A true int never gets stringified, so it is immune to the
+        // ValueError: it meets _int_to_word's kawumbi band and 10^12 ceiling
+        // (#147; Python printed the bare digits past 10^9).
         assert_eq!(
-            currency("10000000000000000", true, "EUR").unwrap(),
-            "10000000000000000 yuro"
+            currency("2000000000", true, "EUR").unwrap(),
+            "bbiri kawumbi yuro"
         );
+        assert!(matches!(
+            currency("10000000000000000", true, "EUR"),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     fn card_f(f: f64) -> Result<String> {
@@ -1069,15 +1090,13 @@ mod tests {
     }
 
     /// Decimal `cardinal_dec` rows, byte for byte. The Decimal arm is exact:
-    /// "1.10" keeps its trailing zero (unlike float 1.1), and issue-#603's
-    /// trillion-scale value survives without a float() cast.
+    /// "1.10" keeps its trailing zero (unlike float 1.1).
     #[test]
     fn to_cardinal_decimal_matches_corpus() {
         for (s, want) in [
             ("0.01", "nuli akatonnyeze nuli emu"),
             ("1.10", "emu akatonnyeze emu nuli"),
             ("12.345", "kkumi mu bbiri akatonnyeze ssatu nnya ttaano"),
-            ("98746251323029.99", "98746251323029 akatonnyeze mwenda mwenda"),
             ("0.001", "nuli akatonnyeze nuli nuli emu"),
             // Integral Decimal: str is "5" (no dot) -> plain _int_to_word.
             ("5", "ttaano"),
@@ -1085,6 +1104,9 @@ mod tests {
         ] {
             assert_eq!(card_d(s).unwrap(), want, "{s}");
         }
+        // Issue-#603's trillion-scale value: Python printed its integer part
+        // as digits; past the 10^12 ceiling now (#147).
+        assert!(matches!(card_d("98746251323029.99"), Err(N2WError::Overflow(_))));
     }
 
     /// `py_decimal_str` follows Decimal's own `__str__`, not `py_str`'s float
