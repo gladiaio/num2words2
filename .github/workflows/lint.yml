@@ -26,15 +26,9 @@ jobs:
         # Same versions as .pre-commit-config.yaml, so the hooks and CI agree.
         pip install flake8 "isort==5.13.2" "black==23.12.1" mypy
 
-    # Not blocking yet: ~125 files under tests/ (and num2words2/__init__.py,
-    # __main__.py) predate the formatter. Making this step blocking needs a
-    # one-off `black num2words2 tests` reformat PR (plus a
-    # .git-blame-ignore-revs entry) landed on its own, so it does not
-    # conflict with in-flight changes; then drop continue-on-error.
     - name: Check code formatting with Black
       run: |
         black --check --diff num2words2 tests
-      continue-on-error: true
 
     - name: Lint with flake8
       run: |
