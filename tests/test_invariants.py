@@ -257,10 +257,7 @@ ALLOW = {
     "exceptions": set(),
     "hygiene": set(),
     # gladiaio/num2words2#154
-    "english_words": {
-        "br", "haw", "ht", "jv", "jw", "ln", "mg", "mi", "mt",
-        "so", "su", "tk", "tl", "uz", "wo", "yo",
-    },
+    "english_words": {"ln", "su", "tk", "wo", "yo"},
     # pt_BR keeps the string's own notation on purpose, see #92
     "parity": {"pt_BR"},
     "maxval": set(),

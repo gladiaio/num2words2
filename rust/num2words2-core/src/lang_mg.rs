@@ -34,8 +34,8 @@
 //!    itself. So `to_ordinal(-1)` == `"faha-minus iray"`. Unlike most modules,
 //!    MG never raises `errmsg_negord` — there is no negative guard at all.
 //!
-//! 3. **`to_ordinal(0)` == `"faha-zero"`**, since `_int_to_word(0)` returns
-//!    `"zero"` and 0 is not 1. (Contrast `lang_PL`, which crashes on 0.)
+//! 3. **`to_ordinal(0)` == `"faha-aotra"`**, since `_int_to_word(0)` returns
+//!    the zero word and 0 is not 1. (Contrast `lang_PL`, which crashes on 0.)
 //!
 //! 4. **`to_ordinal` inherits the digit fallback**, giving the hybrid
 //!    `to_ordinal(10**9)` == `"faha-1000000000"` — a Malagasy prefix glued to
@@ -48,9 +48,11 @@
 //!    prepended unconditionally: 100 == `"iray zato"` (not bare `"zato"`), and
 //!    likewise 1000 == `"iray arivo"`, 10^6 == `"iray tapitrisa"`.
 //!
-//! 7. **`_int_to_word(0)`'s dead conditional.** Python writes
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `self.ones[0]` is `""`,
-//!    which is falsy, so the branch always yields `"zero"`. Collapsed here.
+//! 7. **Zero and decimal (fixed, gladiaio/num2words2#154).** Python writes
+//!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
+//!    so it always said the English "zero", and `pointword` was "point". The
+//!    port says "aotra" and "faingo" (the comma — Madagascar writes a decimal
+//!    comma; mg.wiktionary "faingo"): 1.5 == "iray faingo dimy".
 //!
 //! # Unreachable Python code, deliberately mirrored
 //!
@@ -63,7 +65,7 @@
 //!
 //! # The float/Decimal path
 //!
-//! `self.pointword` (`"point"`) and the `"." in n` branch of `to_cardinal` fire
+//! `self.pointword` (`"faingo"`) and the `"." in n` branch of `to_cardinal` fire
 //! only for float/Decimal input. MG overrides `to_cardinal` (not
 //! `to_cardinal_float`) and handles non-integers **inline on the string**
 //! `str(number)`, so it never calls `base.float2tuple` and never reaches
@@ -76,7 +78,7 @@
 //!
 //! Because the routing itself is `"." in str(number)`, whole values are NOT
 //! collapsed onto the integer path (the base default): `to_cardinal(5.0)` is
-//! `"dimy point zero"`, `to_cardinal(-0.0)` is `"minus zero point zero"`
+//! `"dimy faingo aotra"`, `to_cardinal(-0.0)` is `"minus aotra faingo aotra"`
 //! (str(-0.0) keeps the sign), and only a point-free string form — an
 //! integer-valued `Decimal` like `Decimal("5")` — takes the bare integer
 //! grammar. `cardinal_float_entry` below carries that routing, and it also
@@ -255,7 +257,7 @@ fn int_to_word(number: &BigInt) -> String {
     // `if number == 0: return self.ones[0] if self.ones[0] else "zero"`.
     // ones[0] is "" (falsy), so this is unconditionally "zero".
     if number.is_zero() {
-        return "zero".to_string();
+        return "aotra".to_string();
     }
 
     // Unreachable from to_cardinal/to_ordinal/to_year (the sign is stripped as
@@ -382,7 +384,7 @@ impl Lang for LangMg {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "faingo"
     }
 
     /// Python:
@@ -454,7 +456,7 @@ impl Lang for LangMg {
     /// behaviours hang off the exact shape of `str()`:
     ///
     /// * **Whole floats keep their ".0"** — `str(5.0)` is `"5.0"`, so
-    ///   `to_cardinal(5.0)` == `"dimy point zero"`, never the bare integer
+    ///   `to_cardinal(5.0)` == `"dimy faingo aotra"`, never the bare integer
     ///   word the base default would pick. Only a point-free string — an
     ///   integer-valued `Decimal` like `Decimal("5")` — takes the int path.
     /// * **Exponent-form reprs raise ValueError.** `str(1e16)` is `"1e+16"`
@@ -464,7 +466,7 @@ impl Lang for LangMg {
     ///   enters the `"."` branch instead and dies in the digit loop at
     ///   `int('e')` — same type, message `'e'` (`'E'` for Decimals).
     /// * **-0.0 keeps its sign** — `str(-0.0)` is `"-0.0"`, sign detached as
-    ///   a string, hence `"minus zero point zero"`.
+    ///   a string, hence `"minus aotra faingo aotra"`.
     ///
     /// The bridge converts a signed-zero `Decimal("-0.0")` to
     /// `Float { -0.0 }` (BigDecimal cannot carry the sign), so the Float arm
@@ -549,7 +551,7 @@ impl Lang for LangMg {
 
     /// `to_year(float/Decimal)`: the same bare `self.to_cardinal(val)`
     /// delegation as the int path, string routing included — so
-    /// `to_year(5.0)` == "dimy point zero" and `to_year(1e16)` raises
+    /// `to_year(5.0)` == "dimy faingo aotra" and `to_year(1e16)` raises
     /// ValueError.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.cardinal_float_entry(value, None)
@@ -619,20 +621,20 @@ impl Lang for LangMg {
     ///   same shortest round-trip repr, so rounding the raw f64 to `p` places
     ///   reproduces it (`2.675` -> `"2.675"`, `1.005` -> `"1.005"`). Note plain
     ///   `{}` would render `1.0` as `"1"` and lose the `".0"`, so the explicit
-    ///   precision is load-bearing: `1.0` must give `"iray point zero"`.
+    ///   precision is load-bearing: `1.0` must give `"iray faingo aotra"`.
     /// * **Decimal** — the mantissa at scale `precision` gives the exact digits
     ///   with trailing zeros preserved (`Decimal("1.10")` -> `"1"`, `"10"`),
-    ///   matching `str(Decimal)`. Corpus row `1.10` -> `"iray point iray zero"`.
+    ///   matching `str(Decimal)`. Corpus row `1.10` -> `"iray faingo iray aotra"`.
     ///
     /// # Quirks reproduced
     ///
     /// * The 10^9 digit fallback fires on the **integer part** too:
-    ///   `Decimal("98746251323029.99")` -> `"98746251323029 point sivy sivy"` —
+    ///   `Decimal("98746251323029.99")` -> `"98746251323029 faingo sivy sivy"` —
     ///   the integer part is bare digits. Corpus-pinned.
     /// * `zero` is emitted for every `0` digit, so `0.01` -> `"zero point zero
     ///   iray"` and `1.005` -> `"iray point zero zero dimy"`.
     /// * A negative fraction keeps the negword and prints `int_to_word(0)`:
-    ///   `-0.5` -> `"minus zero point dimy"`. There is no `pre == 0` sign rescue
+    ///   `-0.5` -> `"minus aotra faingo dimy"`. There is no `pre == 0` sign rescue
     ///   like the base path — the `"-"` is stripped lexically from the string.
     ///
     /// # Errors
@@ -704,7 +706,7 @@ impl Lang for LangMg {
         // the integer `else` branch (bare `int_to_word`, no "point").
         if precision > 0 {
             ret.push(' ');
-            ret.push_str(self.pointword()); // "point"
+            ret.push_str(self.pointword()); // "faingo"
             for ch in frac.chars() {
                 ret.push(' ');
                 let digit = ch.to_digit(10).ok_or_else(|| {

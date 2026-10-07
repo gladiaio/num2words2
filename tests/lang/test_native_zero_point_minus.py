@@ -25,7 +25,27 @@ CASES = {
     "fo": ("null", "ein komma fimm", "minus ein", "null-ti"),
     "lb": ("null", "eent Komma fënnef", "minus eent", "null-ten"),
     "oc": ("zèro", "un virgula cinc", "mens un", "zèro-en"),
+    "br": ("mann", "unan skej pemp", "lei unan", "mann-vet"),
+    "haw": ("'ole", "'ekahi kiko 'elima", "minus 'ekahi", "ka 'ole"),
+    "ht": ("zewo", "en vigil senk", "mwens en", "zewo-yèm"),
+    "jv": ("nol", "siji koma lima", "minus siji", "nol-e"),
+    "jw": ("nol", "siji koma lima", "minus siji", "nol-e"),
+    "mg": ("aotra", "iray faingo dimy", "minus iray", "faha-aotra"),
+    "mi": ("kore", "tahi ira rima", "minus tahi", "tua kore"),
+    "mt": ("żero", "wieħed punt ħamsa", "minus wieħed", "l-żero"),
+    "so": ("eber", "kow dhibic shan", "minus kow", "eber-aad"),
+    "tl": ("sero", "isa punto lima", "minus isa", "ika-sero"),
+    "uz": ("nol", "bir vergul besh", "minus bir", "nolinchi"),
 }
+
+
+@pytest.mark.parametrize("lang,zero", [("tk", "nol"), ("yo", "òdo"),
+                                       ("su", "nol")])
+def test_native_zero_english_decimal_word_kept(lang, zero):
+    # Zero is native now; the decimal word is still "point" because no
+    # reliable source gives one (see the module headers, #154).
+    assert num2words(0, lang=lang) == zero
+    assert num2words(1.05, lang=lang).split()[2] == zero
 
 
 @pytest.mark.parametrize("lang", sorted(CASES))

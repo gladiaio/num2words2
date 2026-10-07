@@ -25,7 +25,7 @@ class Num2WordsUZTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="uz"), "zero")
+        self.assertEqual(num2words(0, lang="uz"), "nol")
         self.assertEqual(num2words(1, lang="uz"), "bir")
         self.assertEqual(num2words(2, lang="uz"), "ikki")
         self.assertEqual(num2words(3, lang="uz"), "uch")
@@ -232,33 +232,33 @@ class Num2WordsUZTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="uz"), "zero point bir")
-        self.assertEqual(num2words(0.5, lang="uz"), "zero point besh")
-        self.assertEqual(num2words(0.9, lang="uz"), "zero point to'qqiz")
-        self.assertEqual(num2words(1.1, lang="uz"), "bir point bir")
-        self.assertEqual(num2words(1.5, lang="uz"), "bir point besh")
-        self.assertEqual(num2words(2.5, lang="uz"), "ikki point besh")
-        self.assertEqual(num2words(3.14, lang="uz"), "uch point bir to'rt")
-        self.assertEqual(num2words(10.5, lang="uz"), "o'n point besh")
-        self.assertEqual(num2words(11.11, lang="uz"), "o'n bir point bir bir")
-        self.assertEqual(num2words(20.2, lang="uz"), "yigirma point ikki")
+        self.assertEqual(num2words(0.1, lang="uz"), "nol vergul bir")
+        self.assertEqual(num2words(0.5, lang="uz"), "nol vergul besh")
+        self.assertEqual(num2words(0.9, lang="uz"), "nol vergul to'qqiz")
+        self.assertEqual(num2words(1.1, lang="uz"), "bir vergul bir")
+        self.assertEqual(num2words(1.5, lang="uz"), "bir vergul besh")
+        self.assertEqual(num2words(2.5, lang="uz"), "ikki vergul besh")
+        self.assertEqual(num2words(3.14, lang="uz"), "uch vergul bir to'rt")
+        self.assertEqual(num2words(10.5, lang="uz"), "o'n vergul besh")
+        self.assertEqual(num2words(11.11, lang="uz"), "o'n bir vergul bir bir")
+        self.assertEqual(num2words(20.2, lang="uz"), "yigirma vergul ikki")
         self.assertEqual(
-            num2words(99.99, lang="uz"), "to'qson to'qqiz point to'qqiz to'qqiz"
+            num2words(99.99, lang="uz"), "to'qson to'qqiz vergul to'qqiz to'qqiz"
         )
-        self.assertEqual(num2words(100.01, lang="uz"), "bir yuz point zero bir")
-        self.assertEqual(num2words(100.5, lang="uz"), "bir yuz point besh")
+        self.assertEqual(num2words(100.01, lang="uz"), "bir yuz vergul nol bir")
+        self.assertEqual(num2words(100.5, lang="uz"), "bir yuz vergul besh")
         self.assertEqual(
-            num2words(123.45, lang="uz"), "bir yuz yigirma uch point to'rt besh"
+            num2words(123.45, lang="uz"), "bir yuz yigirma uch vergul to'rt besh"
         )
-        self.assertEqual(num2words(1000.5, lang="uz"), "bir ming point besh")
+        self.assertEqual(num2words(1000.5, lang="uz"), "bir ming vergul besh")
         self.assertEqual(
             num2words(1234.56, lang="uz"),
-            "bir ming ikki yuz o'ttiz to'rt point besh olti",
+            "bir ming ikki yuz o'ttiz to'rt vergul besh olti",
         )
-        self.assertEqual(num2words(10000.01, lang="uz"), "o'n ming point zero bir")
-        self.assertEqual(num2words(-0.5, lang="uz"), "minus zero point besh")
-        self.assertEqual(num2words(-1.5, lang="uz"), "minus bir point besh")
-        self.assertEqual(num2words(-10.5, lang="uz"), "minus o'n point besh")
+        self.assertEqual(num2words(10000.01, lang="uz"), "o'n ming vergul nol bir")
+        self.assertEqual(num2words(-0.5, lang="uz"), "minus nol vergul besh")
+        self.assertEqual(num2words(-1.5, lang="uz"), "minus bir vergul besh")
+        self.assertEqual(num2words(-10.5, lang="uz"), "minus o'n vergul besh")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
@@ -303,15 +303,15 @@ class Num2WordsUZTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="uz", to="currency", currency="UZS"), "zero so'm"
+            num2words(0, lang="uz", to="currency", currency="UZS"), "nol so'm"
         )
         self.assertEqual(
             num2words(0.01, lang="uz", to="currency", currency="UZS"),
-            "zero so'm bir tiyin",
+            "nol so'm bir tiyin",
         )
         self.assertEqual(
             num2words(0.5, lang="uz", to="currency", currency="UZS"),
-            "zero so'm ellik tiyin",
+            "nol so'm ellik tiyin",
         )
         self.assertEqual(
             num2words(1, lang="uz", to="currency", currency="UZS"), "bir so'm"
@@ -321,15 +321,15 @@ class Num2WordsUZTest(TestCase):
             "bir so'm ellik tiyin",
         )
         self.assertEqual(
-            num2words(0, lang="uz", to="currency", currency="USD"), "zero dollar"
+            num2words(0, lang="uz", to="currency", currency="USD"), "nol dollar"
         )
         self.assertEqual(
             num2words(0.01, lang="uz", to="currency", currency="USD"),
-            "zero dollar bir sent",
+            "nol dollar bir sent",
         )
         self.assertEqual(
             num2words(0.5, lang="uz", to="currency", currency="USD"),
-            "zero dollar ellik sent",
+            "nol dollar ellik sent",
         )
         self.assertEqual(
             num2words(1, lang="uz", to="currency", currency="USD"), "bir dollar"
@@ -339,15 +339,15 @@ class Num2WordsUZTest(TestCase):
             "bir dollar ellik sent",
         )
         self.assertEqual(
-            num2words(0, lang="uz", to="currency", currency="EUR"), "zero yevro"
+            num2words(0, lang="uz", to="currency", currency="EUR"), "nol yevro"
         )
         self.assertEqual(
             num2words(0.01, lang="uz", to="currency", currency="EUR"),
-            "zero yevro bir sent",
+            "nol yevro bir sent",
         )
         self.assertEqual(
             num2words(0.5, lang="uz", to="currency", currency="EUR"),
-            "zero yevro ellik sent",
+            "nol yevro ellik sent",
         )
         self.assertEqual(
             num2words(1, lang="uz", to="currency", currency="EUR"), "bir yevro"
@@ -387,7 +387,7 @@ class Num2WordsUZTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="uz"), "zero")
+        self.assertEqual(num2words("0", lang="uz"), "nol")
         self.assertEqual(num2words("1", lang="uz"), "bir")
         self.assertEqual(num2words("10", lang="uz"), "o'n")
         self.assertEqual(num2words("100", lang="uz"), "bir yuz")
@@ -399,7 +399,7 @@ class Num2WordsUZTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="uz"), "zero")
+        self.assertEqual(num2words(0, lang="uz"), "nol")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="uz"), num2words("100", lang="uz"))

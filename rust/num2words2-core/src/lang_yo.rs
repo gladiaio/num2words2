@@ -10,7 +10,8 @@
 //! `_int_to_word` has a `str(number)` fallback instead of a ceiling (bug 1).
 //!
 //! `setup()` supplies `negword = "minus "` (note the trailing space) and
-//! `pointword = "point"`. Every in-scope entry point is overridden by
+//! `pointword = "point"` — still English: the only decimal word found
+//! ("ẹsẹ") comes from a single proposal dictionary (gladiaio/num2words2#154). Every in-scope entry point is overridden by
 //! `Num2Word_YO`, so nothing is inherited from `Num2Word_Base` except the
 //! attributes above:
 //!   * `to_cardinal`    — overridden (see below)
@@ -42,14 +43,14 @@
 //! 3. **`to_ordinal` appends a fixed `"-kẹta"` to the cardinal** — `kẹta` is
 //!    the Yoruba ordinal for *third*, so every ordinal literally reads
 //!    "<n>-third": `to_ordinal(1)` == `"ọkan-kẹta"`, `to_ordinal(0)` ==
-//!    `"zero-kẹta"`. It is a fixed suffix, not agreement, and unlike most
+//!    `"òdo-kẹta"`. It is a fixed suffix, not agreement, and unlike most
 //!    modules it neither rejects 0 nor rejects negatives:
 //!    `to_ordinal(-1)` == `"minus ọkan-kẹta"`. No exception path exists.
 //!
 //! 4. **`_int_to_word(0)` is written `self.ones[0] if self.ones[0] else "zero"`.**
-//!    `ones[0]` is `""` — falsy — so the conditional always takes the `else`
-//!    and returns the English `"zero"`. The `ones[0]` arm is unreachable dead
-//!    code; modelled here as the constant [`ZERO`].
+//!    `ones[0]` is `""` — falsy — so Python always returned the English
+//!    "zero". Fixed (gladiaio/num2words2#154): the constant [`ZERO`] is the
+//!    Yoruba "òdo".
 //!
 //! 5. **The `number < 0` arm of `_int_to_word` is unreachable** from every
 //!    in-scope entry point: `to_cardinal` strips the leading `"-"` from the
@@ -96,7 +97,7 @@
 //! 7. **Cents are truncated to 2 digits, never rounded.** The subunit comes
 //!    from `int(parts[1][:2].ljust(2, "0"))` — a *string* slice of `str(val)`.
 //!    So `2.675` -> 67 cents (not 68; there is no ROUND_HALF_UP anywhere),
-//!    `1.005` -> 0 cents, and `0.0001` -> `"zero euros"`. Conversely `1.5`
+//!    `1.005` -> 0 cents, and `0.0001` -> `"òdo euros"`. Conversely `1.5`
 //!    -> `"5"` -> ljust -> `"50"` -> 50 cents, i.e. the slice is positional,
 //!    not numeric.
 //!
@@ -155,7 +156,7 @@
 //! The base-path traps (banker's rounding, the `< 0.01` float2tuple rescue)
 //! do not apply here: for Yoruba the decimal *string* is the spec, so `2.675`
 //! reads its repr digits verbatim (`"méjì point mẹfa meje marun"`) and `1.005`
-//! keeps its leading zeros (`"ọkan point zero zero marun"`).
+//! keeps its leading zeros (`"ọkan point òdo òdo marun"`).
 //!
 //! # Faithfully reproduced Python bugs / oddities — float cardinal
 //!
@@ -177,14 +178,14 @@
 //!     `"mẹta point ọkan mẹrin"`.
 //!
 //! 15. **A whole float keeps its fractional clause**: `repr(1.0)` is `"1.0"`,
-//!     so Python renders `"ọkan point zero"`, never bare `"ọkan"` (corpus rows
+//!     so Python renders `"ọkan point òdo"`, never bare `"ọkan"` (corpus rows
 //!     `0.0`/`1.0` pin this). The dispatcher routes whole floats to the Python
 //!     converter, so the Rust hook only ever *receives* non-whole values — but
 //!     the reconstruction appends `repr`'s `".0"` anyway, so both sides agree
 //!     even on a direct call.
 //!
 //! 16. **Float noise is spelled out digit by digit.** There is no rounding
-//!     rescue anywhere, so `0.30000000000000004` becomes `"zero point mẹta"`
+//!     rescue anywhere, so `0.30000000000000004` becomes `"òdo point mẹta"`
 //!     followed by fifteen `"zero"`s and a `"mẹrin"` — 17 fraction words,
 //!     exactly the repr digits. Similarly the `>= 10**9` fallback (bug 1)
 //!     applies to the integer part: `Decimal("98746251323029.99")` is
@@ -226,7 +227,7 @@ use std::str::FromStr;
 
 /// `_int_to_word(0)`. Python writes `self.ones[0] if self.ones[0] else "zero"`,
 /// and `ones[0]` is `""`, so this constant is the only reachable result.
-const ZERO: &str = "zero";
+const ZERO: &str = "òdo";
 
 /// `setup()`: `self.negword = "minus "` — the trailing space is load-bearing.
 /// `to_cardinal` concatenates it directly (`ret + word`) rather than joining,
@@ -389,13 +390,13 @@ fn py_int(s: &str) -> Result<BigInt> {
 ///
 /// | input | Python | this port |
 /// |---|---|---|
-/// | `Decimal("0.00001")` | `"zero euros"` | ValueError |
-/// | `Decimal("1e-5")`    | `"zero euros"` | ValueError |
+/// | `Decimal("0.00001")` | `"òdo euros"` | ValueError |
+/// | `Decimal("1e-5")`    | `"òdo euros"` | ValueError |
 /// | `Decimal("1E+2")`    | ValueError     | `"ọkan ọgọrun euros"` |
 ///
 /// The first two are **not fixable here, even in principle**:
 /// `Decimal("0.00001")` and the float `1e-05` both parse to exactly
-/// `(digits: 1, scale: 5)`, yet Python renders one `"zero euros"` and raises on
+/// `(digits: 1, scale: 5)`, yet Python renders one `"òdo euros"` and raises on
 /// the other. The distinguishing information is the *spelling*, which
 /// `CurrencyValue::parse` consumes before this file is reached. The fix belongs
 /// at the boundary — `CurrencyValue::Decimal` would have to carry the original
@@ -645,7 +646,7 @@ impl Lang for LangYo {
 
     /// `to_ordinal(float/Decimal)`. YO's `to_ordinal` is
     /// `self.to_cardinal(number) + "-kẹta"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "marun point zero-kẹta".
+    /// entry is the float cardinal plus the suffix — "marun point òdo-kẹta".
     /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
     /// ValueError inside the cardinal, before the suffix is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -813,7 +814,7 @@ impl Lang for LangYo {
                 out.push_str(self.pointword());
                 out.push(' ');
                 // Python: `for digit in right: ret += self._int_to_word(
-                //          int(digit)) + " "` — a '0' char renders "zero",
+                //          int(digit)) + " "` — a '0' char renders "òdo",
                 //          which is how 1.005 keeps its leading zeros.
                 for ch in right.chars() {
                     out.push_str(&self.int_to_word(&py_int(&ch.to_string())?));
@@ -1036,16 +1037,16 @@ mod tests {
     #[test]
     fn corpus_float_rows() {
         for (v, p, want) in [
-            (0.0, 1, "zero point zero"),
-            (0.5, 1, "zero point marun"),
-            (1.0, 1, "ọkan point zero"),
+            (0.0, 1, "òdo point òdo"),
+            (0.5, 1, "òdo point marun"),
+            (1.0, 1, "ọkan point òdo"),
             (1.5, 1, "ọkan point marun"),
             (2.25, 2, "méjì point méjì marun"),
             (3.14, 2, "mẹta point ọkan mẹrin"),
-            (0.01, 2, "zero point zero ọkan"),
-            (0.1, 1, "zero point ọkan"),
-            (0.99, 2, "zero point mẹsan mẹsan"),
-            (1.01, 2, "ọkan point zero ọkan"),
+            (0.01, 2, "òdo point òdo ọkan"),
+            (0.1, 1, "òdo point ọkan"),
+            (0.99, 2, "òdo point mẹsan mẹsan"),
+            (1.01, 2, "ọkan point òdo ọkan"),
             (12.34, 2, "mẹwa méjì point mẹta mẹrin"),
             (99.99, 2, "àádọrún mẹsan point mẹsan mẹsan"),
             (100.5, 1, "ọkan ọgọrun point marun"),
@@ -1054,20 +1055,20 @@ mod tests {
                 2,
                 "ọkan ẹgbẹrun méjì ọgọrun ọgbọn mẹrin point marun mẹfa",
             ),
-            (-0.5, 1, "minus zero point marun"),
+            (-0.5, 1, "minus òdo point marun"),
             (-1.5, 1, "minus ọkan point marun"),
             (-12.34, 2, "minus mẹwa méjì point mẹta mẹrin"),
             // The f64-artefact values: for yo the repr digits are the spec —
             // no float2tuple, no rounding, leading zeros kept.
-            (1.005, 3, "ọkan point zero zero marun"),
+            (1.005, 3, "ọkan point òdo òdo marun"),
             (2.675, 3, "méjì point mẹfa meje marun"),
-            (0.0001, 4, "zero point zero zero zero ọkan"),
+            (0.0001, 4, "òdo point òdo òdo òdo ọkan"),
             // Float noise spelled digit by digit (bug 16).
             (
                 0.30000000000000004,
                 17,
-                "zero point mẹta zero zero zero zero zero zero zero zero \
-                 zero zero zero zero zero zero zero mẹrin",
+                "òdo point mẹta òdo òdo òdo òdo òdo òdo òdo òdo \
+                 òdo òdo òdo òdo òdo òdo òdo mẹrin",
             ),
             (
                 123456789.12345679,
@@ -1085,13 +1086,13 @@ mod tests {
     #[test]
     fn corpus_decimal_rows() {
         for (s, want) in [
-            ("0.01", "zero point zero ọkan"),
-            ("1.10", "ọkan point ọkan zero"),
+            ("0.01", "òdo point òdo ọkan"),
+            ("1.10", "ọkan point ọkan òdo"),
             ("12.345", "mẹwa méjì point mẹta mẹrin marun"),
             // Trillion-scale: the integer part takes the str(number)
             // fallback of bug 1, in full precision.
             ("98746251323029.99", "98746251323029 point mẹsan mẹsan"),
-            ("0.001", "zero point zero zero ọkan"),
+            ("0.001", "òdo point òdo òdo ọkan"),
             ("-12.345", "minus mẹwa méjì point mẹta mẹrin marun"),
         ] {
             assert_eq!(card_d(s).unwrap(), want, "value {}", s);

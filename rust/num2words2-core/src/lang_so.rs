@@ -20,7 +20,8 @@
 //!   * `to_year`        — overridden (delegates to `to_cardinal`, ignoring
 //!     its own `longval=True` parameter entirely)
 //!
-//! `setup()` also sets `pointword = "point"`, used only by the float branch of
+//! `setup()` also sets `pointword = "point"` (English; the port says "dhibic",
+//! gladiaio/num2words2#154: "sero dhibic shan" = 0.5), used only by the float branch of
 //! `to_cardinal`, which is out of scope (integer input only) and unreachable
 //! here: an integer's decimal repr never contains ".".
 //!
@@ -43,13 +44,11 @@
 //! This is a port, not a rewrite. Everything below looks wrong but is exactly
 //! what Python emits, and every item is confirmed against the frozen corpus:
 //!
-//! 1. **Zero is the English word "zero".** `setup` makes `ones[0]` the empty
-//!    string, and `_int_to_word` opens with
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `""` is falsy, so the
-//!    guard always takes the `else`: the table's own entry for 0 is dead and
-//!    Somali emits English "zero". Hence `to_cardinal(0)` == "zero" and
-//!    `to_ordinal(0)` == "zero-aad". (Contrast `lang_PL`, where `to_ordinal(0)`
-//!    crashes — Somali does not crash, it just answers in English.)
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** `setup` makes `ones[0]` the
+//!    empty string, and `_int_to_word` opens with
+//!    `return self.ones[0] if self.ones[0] else "zero"`, so Python always
+//!    answered the English "zero". The port says the Somali "eber":
+//!    `to_cardinal(0)` == "eber" and `to_ordinal(0)` == "eber-aad".
 //! 2. **Numbers >= 10^9 come back as digits, not words.** `_int_to_word`'s
 //!    final `else` is `return str(number)  # Fallback for very large numbers`.
 //!    There is no `MAXVAL` and no `OverflowError` — the function silently
@@ -58,7 +57,8 @@
 //!    "1000000000000000000000". All four are corpus rows. This is why
 //!    [`LangSo::int_to_word`] takes a `BigInt`: the fallback must render
 //!    arbitrarily large values, so the input is genuinely unbounded.
-//! 3. **The negword is the English "minus ".** Not a Somali word.
+//! 3. **The negword is "minus ".** Kept: no source shows how a negative
+//!    number is read aloud in Somali.
 //! 4. **Teens and compounds are bare juxtaposition.** 11 is "toban kow"
 //!    ("ten one"), not the idiomatic "kow iyo toban"; 100 is "kow boqol"
 //!    ("one hundred"), never a bare "boqol". No conjunction is ever inserted
@@ -129,7 +129,7 @@ const MILLION: &str = "milyan";
 const NEGWORD: &str = "minus ";
 
 /// The literal in `_int_to_word`'s zero guard — see bug 1.
-const ZERO_WORD: &str = "zero";
+const ZERO_WORD: &str = "eber";
 
 /// `_int_to_word`'s `else` threshold: at or above this, Python returns
 /// `str(number)` rather than words (bug 2).
@@ -333,7 +333,7 @@ impl LangSo {
     ///
     /// * The sign is stripped off the *string*, then `ret` (the negword) prefixes
     ///   both branches — so a negative with zero integer part still prints
-    ///   `"minus zero ..."` (`int_to_word(0)` is "zero", bug 1), and the "."
+    ///   `"minus eber ..."` (`int_to_word(0)` is "zero", bug 1), and the "."
     ///   branch keeps its negword too.
     /// * `int(digit)` runs per **character**, so a malformed fraction character
     ///   raises `ValueError` quoting that one char, where a malformed whole `n`
@@ -395,7 +395,7 @@ impl Lang for LangSo {
 
     /// `to_ordinal(float/Decimal)`. SO's `to_ordinal` is
     /// `self.to_cardinal(number) + "-aad"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "kow point shan-aad".
+    /// entry is the float cardinal plus the suffix — "kow dhibic shan-aad".
     /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
     /// ValueError inside the cardinal, before the suffix is ever appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -445,7 +445,7 @@ impl Lang for LangSo {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "dhibic"
     }
 
     /// Python's `Num2Word_SO.to_cardinal`.

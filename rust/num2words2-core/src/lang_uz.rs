@@ -45,7 +45,7 @@
 //! * a repr **with** a dot (every finite float with `|v| == 0` or
 //!   `1e-4 <= |v| < 1e16`; any Decimal with a positive scale) takes the
 //!   `pointword` branch — so whole values keep their tail: `5.0` ->
-//!   "besh point zero", `Decimal("5.00")` -> "besh point zero zero";
+//!   "besh vergul nol", `Decimal("5.00")` -> "besh vergul nol nol";
 //! * a repr **without** a dot and all digits (`Decimal("5")`, `Decimal("100")`)
 //!   is `int(n)` -> the integer path;
 //! * a repr without a dot that `int()` cannot parse — scientific notation
@@ -105,16 +105,16 @@
 //!    strips the sign, `_int_to_word` stringifies the magnitude, and the
 //!    `negword` prefix is re-attached. (No corpus row covers that; see the
 //!    report's `concerns`.)
-//! 2. **Zero is the English "zero", not an Uzbek word.** `_int_to_word` does
-//!    `return self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is the
-//!    empty string (falsy), so the fallback always wins: `to_cardinal(0)` ==
-//!    "zero" and `to_ordinal(0)` == "zeronchi". The `self.ones[0]` arm is
-//!    dead code. Uzbek for zero is "nol".
+//! 2. **Zero (fixed, gladiaio/num2words2#154).** `_int_to_word` does
+//!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
+//!    so Python always said the English "zero". The port says "nol", as
+//!    `uz_cyr` does ("нол"): `to_ordinal(0)` == "nolinchi".
 //! 3. **The hundreds digit is always spelled out**, so 100 == "bir yuz"
 //!    rather than a bare "yuz" ("hundreds_val" is 1..=9 and never suppressed).
-//! 4. **`pointword` is the untranslated English "point"**, not an Uzbek word,
-//!    and is used raw (UZ never titles). Reached only by the float path
-//!    ([`LangUz::to_cardinal_float`]).
+//! 4. **`pointword` (fixed, #154)** was the English "point". It is now
+//!    "vergul" (comma — Uzbek writes a decimal comma, and the digit-by-digit
+//!    reading uses its name, as `uz_cyr`'s "вергул"). Reached only by the
+//!    float path ([`LangUz::to_cardinal_float`]).
 //! 5. **Fixed (gladiaio/num2words2#148): the ordinal ending.** Upstream did
 //!    `to_ordinal(n) == to_cardinal(n) + "-chi"`, giving non-words ("bir-chi",
 //!    "uch-chi", "o'n-chi"). The port now puts *-(i)nchi* on the last word —
@@ -193,8 +193,8 @@
 //!
 //! | input | Python | here |
 //! |---|---|---|
-//! | `1e-05` (float) | `ValueError` — `str` is "1e-05" | "zero euros" — Display is "0.00001" |
-//! | `Decimal("0.00001")` | "zero euros" — `str` is "0.00001" | "zero euros" |
+//! | `1e-05` (float) | `ValueError` — `str` is "1e-05" | "nol euros" — Display is "0.00001" |
+//! | `Decimal("0.00001")` | "nol euros" — `str` is "0.00001" | "nol euros" |
 //!
 //! Note the two Python rows are the *same number* and differ only in type, so
 //! this is not something the language file can repair: `CurrencyValue::Decimal`
@@ -228,7 +228,7 @@ use std::str::FromStr;
 const NEGWORD: &str = "minus ";
 
 /// `self.pointword`. Float path only — unreachable for integer input.
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "vergul";
 
 /// `self.ones`. Index 0 is `""`; see quirk 2 — it is only ever read by the
 /// dead `if self.ones[0]` test, never as a word.
@@ -246,8 +246,8 @@ const HUNDRED: &str = "yuz";
 const THOUSAND: &str = "ming";
 const MILLION: &str = "million";
 
-/// The "zero" literal from `_int_to_word`'s falsy-`ones[0]` fallback.
-const ZERO_WORD: &str = "zero";
+/// `_int_to_word`'s zero: "nol" where Python said the English "zero" (#154).
+const ZERO_WORD: &str = "nol";
 
 /// The ordinal suffix *-(i)nchi* (gladiaio/num2words2#148). Uzbek has no
 /// vowel harmony, so there is one ending with two shapes: "inchi" after a
@@ -514,7 +514,7 @@ impl Lang for LangUz {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "vergul"
     }
 
     /// `Num2Word_UZ.to_cardinal`.
@@ -611,7 +611,7 @@ impl Lang for LangUz {
     /// `precision=` (issue #580 → `precision_override`) is **inert** for UZ:
     /// `Num2Word_UZ.to_cardinal(self, number)` takes no `precision` argument and
     /// never reads `self.precision`. Confirmed live — `num2words(2.675, 'uz',
-    /// precision=2)` and `precision=0` both give "ikki point olti yetti besh".
+    /// precision=2)` and `precision=0` both give "ikki vergul olti yetti besh".
     /// The argument is accepted and ignored.
     ///
     /// # Scientific-notation reprs never reach this method
@@ -692,13 +692,13 @@ impl Lang for LangUz {
     // method, and UZ's own `to_cardinal` decides where it lands by looking at
     // `str(number)` — NOT by base's `int(value) == value` assert. The trait
     // default (whole -> int path) is therefore wrong for every whole float:
-    // `to_cardinal(5.0)` is "besh point zero", never "besh".
+    // `to_cardinal(5.0)` is "besh vergul nol", never "besh".
 
     /// `Num2Word_UZ.to_cardinal`'s `"." in str(number)` routing, whole values
     /// included:
     ///
     /// * dotted repr -> the `pointword` branch ([`Self::to_cardinal_float`]),
-    ///   so 5.0 -> "besh point zero" and -0.0 -> "minus zero point zero";
+    ///   so 5.0 -> "besh vergul nol" and -0.0 -> "minus nol vergul nol";
     /// * dot-less digits (`Decimal("5")`, `Decimal("-3")`) -> `int(n)` ->
     ///   the integer path, identical to [`Self::to_cardinal`];
     /// * dot-less non-digits — scientific reprs ("1e+16", "1E+2") and
@@ -940,7 +940,7 @@ impl Lang for LangUz {
         // unreachable from here.
         //
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`. Note
-        // 0 takes the *plural*: "zero euros".
+        // 0 takes the *plural*: "nol euros".
         let mut result = format!(
             "{} {}",
             int_to_word(&left),
@@ -999,28 +999,28 @@ mod tests {
     #[test]
     fn corpus_cardinal_float_rows() {
         for (value, precision, out) in [
-            (0.0, 1, "zero point zero"),
-            (0.5, 1, "zero point besh"),
-            (1.0, 1, "bir point zero"),
-            (1.5, 1, "bir point besh"),
-            (2.25, 2, "ikki point ikki besh"),
-            (3.14, 2, "uch point bir to'rt"),
-            (0.01, 2, "zero point zero bir"),
-            (0.1, 1, "zero point bir"),
-            (0.99, 2, "zero point to'qqiz to'qqiz"),
-            (1.01, 2, "bir point zero bir"),
-            (12.34, 2, "o'n ikki point uch to'rt"),
-            (99.99, 2, "to'qson to'qqiz point to'qqiz to'qqiz"),
-            (100.5, 1, "bir yuz point besh"),
-            (1234.56, 2, "bir ming ikki yuz o'ttiz to'rt point besh olti"),
-            (-0.5, 1, "minus zero point besh"),
-            (-1.5, 1, "minus bir point besh"),
-            (-12.34, 2, "minus o'n ikki point uch to'rt"),
+            (0.0, 1, "nol vergul nol"),
+            (0.5, 1, "nol vergul besh"),
+            (1.0, 1, "bir vergul nol"),
+            (1.5, 1, "bir vergul besh"),
+            (2.25, 2, "ikki vergul ikki besh"),
+            (3.14, 2, "uch vergul bir to'rt"),
+            (0.01, 2, "nol vergul nol bir"),
+            (0.1, 1, "nol vergul bir"),
+            (0.99, 2, "nol vergul to'qqiz to'qqiz"),
+            (1.01, 2, "bir vergul nol bir"),
+            (12.34, 2, "o'n ikki vergul uch to'rt"),
+            (99.99, 2, "to'qson to'qqiz vergul to'qqiz to'qqiz"),
+            (100.5, 1, "bir yuz vergul besh"),
+            (1234.56, 2, "bir ming ikki yuz o'ttiz to'rt vergul besh olti"),
+            (-0.5, 1, "minus nol vergul besh"),
+            (-1.5, 1, "minus bir vergul besh"),
+            (-12.34, 2, "minus o'n ikki vergul uch to'rt"),
             // The f64-artefact rows: 1.005 -> 4.99999999999989 and
             // 2.675 -> 674.9999999999998, both rescued by float2tuple's
             // `< 0.01` heuristic, exactly as in Python.
-            (1.005, 3, "bir point zero zero besh"),
-            (2.675, 3, "ikki point olti yetti besh"),
+            (1.005, 3, "bir vergul nol nol besh"),
+            (2.675, 3, "ikki vergul olti yetti besh"),
         ] {
             assert_eq!(go(&f(value, precision)), out, "float {}", value);
         }
@@ -1033,11 +1033,11 @@ mod tests {
     #[test]
     fn corpus_cardinal_dec_rows() {
         for (arg, out) in [
-            ("0.01", "zero point zero bir"),
-            ("1.10", "bir point bir zero"),
-            ("12.345", "o'n ikki point uch to'rt besh"),
-            ("98746251323029.99", "98746251323029 point to'qqiz to'qqiz"),
-            ("0.001", "zero point zero zero bir"),
+            ("0.01", "nol vergul nol bir"),
+            ("1.10", "bir vergul bir nol"),
+            ("12.345", "o'n ikki vergul uch to'rt besh"),
+            ("98746251323029.99", "98746251323029 vergul to'qqiz to'qqiz"),
+            ("0.001", "nol vergul nol nol bir"),
         ] {
             assert_eq!(go(&d(arg)), out, "decimal {}", arg);
         }
@@ -1050,16 +1050,16 @@ mod tests {
     fn traced_against_pure_python() {
         // str(-0.0) is "-0.0", so the sign survives: the IEEE sign bit, not
         // `< 0` (which -0.0 fails), decides the negword.
-        assert_eq!(go(&f(-0.0, 1)), "minus zero point zero");
+        assert_eq!(go(&f(-0.0, 1)), "minus nol vergul nol");
         // Integer part past 10^9: _int_to_word's digit fallback (quirk 1)
         // applies to the float path's integer part too.
-        assert_eq!(go(&f(1234567890.5, 1)), "1234567890 point besh");
+        assert_eq!(go(&f(1234567890.5, 1)), "1234567890 vergul besh");
         // Large magnitude where float2tuple takes the floor branch
         // (67.1875 is not within 0.01 of an integer) and still agrees with
         // Python's str()-derived digits.
         assert_eq!(
             go(&f(123456789012345.67, 2)),
-            "123456789012345 point olti yetti"
+            "123456789012345 vergul olti yetti"
         );
     }
 
@@ -1070,7 +1070,7 @@ mod tests {
     fn precision_override_is_ignored() {
         let uz = LangUz::new();
         let v = f(2.675, 3);
-        let expect = "ikki point olti yetti besh";
+        let expect = "ikki vergul olti yetti besh";
         assert_eq!(uz.to_cardinal_float(&v, None).unwrap(), expect);
         assert_eq!(uz.to_cardinal_float(&v, Some(2)).unwrap(), expect);
         assert_eq!(uz.to_cardinal_float(&v, Some(0)).unwrap(), expect);

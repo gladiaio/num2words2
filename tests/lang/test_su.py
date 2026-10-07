@@ -25,7 +25,7 @@ class Num2WordsSUTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="su"), "zero")
+        self.assertEqual(num2words(0, lang="su"), "nol")
         self.assertEqual(num2words(1, lang="su"), "hiji")
         self.assertEqual(num2words(2, lang="su"), "dua")
         self.assertEqual(num2words(3, lang="su"), "tilu")
@@ -254,9 +254,9 @@ class Num2WordsSUTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="su"), "zero point hiji")
-        self.assertEqual(num2words(0.5, lang="su"), "zero point lima")
-        self.assertEqual(num2words(0.9, lang="su"), "zero point salapan")
+        self.assertEqual(num2words(0.1, lang="su"), "nol point hiji")
+        self.assertEqual(num2words(0.5, lang="su"), "nol point lima")
+        self.assertEqual(num2words(0.9, lang="su"), "nol point salapan")
         self.assertEqual(num2words(1.1, lang="su"), "hiji point hiji")
         self.assertEqual(num2words(1.5, lang="su"), "hiji point lima")
         self.assertEqual(num2words(2.5, lang="su"), "dua point lima")
@@ -267,7 +267,7 @@ class Num2WordsSUTest(TestCase):
         self.assertEqual(
             num2words(99.99, lang="su"), "salapan puluh salapan point salapan salapan"
         )
-        self.assertEqual(num2words(100.01, lang="su"), "hiji ratus point zero hiji")
+        self.assertEqual(num2words(100.01, lang="su"), "hiji ratus point nol hiji")
         self.assertEqual(num2words(100.5, lang="su"), "hiji ratus point lima")
         self.assertEqual(
             num2words(123.45, lang="su"), "hiji ratus dua puluh tilu point opat lima"
@@ -277,8 +277,8 @@ class Num2WordsSUTest(TestCase):
             num2words(1234.56, lang="su"),
             "hiji rebu dua ratus tilu puluh opat point lima genep",
         )
-        self.assertEqual(num2words(10000.01, lang="su"), "sapuluh rebu point zero hiji")
-        self.assertEqual(num2words(-0.5, lang="su"), "minus zero point lima")
+        self.assertEqual(num2words(10000.01, lang="su"), "sapuluh rebu point nol hiji")
+        self.assertEqual(num2words(-0.5, lang="su"), "minus nol point lima")
         self.assertEqual(num2words(-1.5, lang="su"), "minus hiji point lima")
         self.assertEqual(num2words(-10.5, lang="su"), "minus sapuluh point lima")
 
@@ -325,15 +325,15 @@ class Num2WordsSUTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="su", to="currency", currency="IDR"), "zero rupiah"
+            num2words(0, lang="su", to="currency", currency="IDR"), "nol rupiah"
         )
         self.assertEqual(
             num2words(0.01, lang="su", to="currency", currency="IDR"),
-            "zero rupiah hiji sen",
+            "nol rupiah hiji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="su", to="currency", currency="IDR"),
-            "zero rupiah lima puluh sen",
+            "nol rupiah lima puluh sen",
         )
         self.assertEqual(
             num2words(1, lang="su", to="currency", currency="IDR"), "hiji rupiah"
@@ -343,15 +343,15 @@ class Num2WordsSUTest(TestCase):
             "hiji rupiah lima puluh sen",
         )
         self.assertEqual(
-            num2words(0, lang="su", to="currency", currency="USD"), "zero dolar"
+            num2words(0, lang="su", to="currency", currency="USD"), "nol dolar"
         )
         self.assertEqual(
             num2words(0.01, lang="su", to="currency", currency="USD"),
-            "zero dolar hiji sen",
+            "nol dolar hiji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="su", to="currency", currency="USD"),
-            "zero dolar lima puluh sen",
+            "nol dolar lima puluh sen",
         )
         self.assertEqual(
             num2words(1, lang="su", to="currency", currency="USD"), "hiji dolar"
@@ -361,15 +361,15 @@ class Num2WordsSUTest(TestCase):
             "hiji dolar lima puluh sen",
         )
         self.assertEqual(
-            num2words(0, lang="su", to="currency", currency="EUR"), "zero euro"
+            num2words(0, lang="su", to="currency", currency="EUR"), "nol euro"
         )
         self.assertEqual(
             num2words(0.01, lang="su", to="currency", currency="EUR"),
-            "zero euro hiji sen",
+            "nol euro hiji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="su", to="currency", currency="EUR"),
-            "zero euro lima puluh sen",
+            "nol euro lima puluh sen",
         )
         self.assertEqual(
             num2words(1, lang="su", to="currency", currency="EUR"), "hiji euro"
@@ -418,7 +418,7 @@ class Num2WordsSUTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="su"), "zero")
+        self.assertEqual(num2words("0", lang="su"), "nol")
         self.assertEqual(num2words("1", lang="su"), "hiji")
         self.assertEqual(num2words("10", lang="su"), "sapuluh")
         self.assertEqual(num2words("100", lang="su"), "hiji ratus")
@@ -430,7 +430,7 @@ class Num2WordsSUTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="su"), "zero")
+        self.assertEqual(num2words(0, lang="su"), "nol")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="su"), num2words("100", lang="su"))

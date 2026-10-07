@@ -73,7 +73,7 @@
 //!     BR's `to_cardinal` spells *every* character of `right` regardless.
 //!     Verified against the interpreter: `num2words(1.2345, lang="br",
 //!     precision=2)` == `num2words(1.2345, lang="br", precision=8)` ==
-//!     `"unan point daou tri pevar pemp"` — all four digits, both times. Hence
+//!     `"unan skej daou tri pevar pemp"` — all four digits, both times. Hence
 //!     `precision_override` is accepted and ignored below.
 //! 16. **Scientific notation is a `ValueError`, and *which* one depends on the
 //!     digit count.** `repr` switches to exponent form at `decpt <= -4` or
@@ -88,9 +88,9 @@
 //!     `inf` and `nan` die the same way as the first case. So BR converts no
 //!     float at or beyond `1e16`, and none below `1e-4`.
 //! 17. **A `Decimal` keeps its trailing zeros, because `str` does.**
-//!     `str(Decimal("1.10")) == "1.10"`, so 1.10 is `"unan point unan zero"` —
+//!     `str(Decimal("1.10")) == "1.10"`, so 1.10 is `"unan skej unan mann"` —
 //!     two fraction words for a value a float would render with one. Likewise
-//!     `Decimal("5.00")` is `"pemp point zero zero"` while `Decimal("5")`, whose
+//!     `Decimal("5.00")` is `"pemp skej mann mann"` while `Decimal("5")`, whose
 //!     `str` has no `"."` at all, takes the *integer* branch and is plain
 //!     `"pemp"`. This is why the value cannot be normalised on the way in.
 //! 18. **`Decimal`'s exponent threshold is not `float`'s.** `Decimal.__str__`
@@ -100,7 +100,7 @@
 //!     "0.00001"` where the float renders `"1e-05"` and raises. So `Decimal`
 //!     spells fractions four orders of magnitude smaller than `float` can.
 //! 19. **`98746251323029.99` survives as a `Decimal` and would not as a float**
-//!     (issue #603). It renders `"98746251323029 point nav nav"` — the integer
+//!     (issue #603). It renders `"98746251323029 skej nav nav"` — the integer
 //!     part going through `_int_to_word`'s 10^9 digit fallback (quirk 1).
 //!
 //! # Faithfully reproduced Python quirks
@@ -114,18 +114,20 @@
 //!    `to_cardinal(10**9)` == `"1000000000"` — bare digits, not words — and
 //!    `to_ordinal(10**9)` == `"1000000000-vet"`. The negative sign is stripped
 //!    by `to_cardinal` before `_int_to_word` runs, so
-//!    `to_cardinal(-10**9)` == `"minus 1000000000"`. This is why the fallback
+//!    `to_cardinal(-10**9)` == `"lei 1000000000"`. This is why the fallback
 //!    must use arbitrary-precision `to_string()`: the corpus reaches 10^21,
 //!    well past `u64`. Confirmed by corpus rows for 10^9, 10^12, 10^18, 10^21.
-//! 2. **Zero is spelled by an accident of falsiness.** `_int_to_word(0)` reads
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is the empty
-//!    string, which is falsy in Python, so the ternary *always* takes the else
-//!    branch and the first operand is dead. Result: `"zero"`.
+//! 2. **Zero, decimal and minus (fixed, gladiaio/num2words2#154).** Python's
+//!    `_int_to_word(0)` reads `return self.ones[0] if self.ones[0] else
+//!    "zero"` and `setup` kept the base's English `negword`/`pointword`, so
+//!    BR said "zero", "unan point pemp" and "minus unan". The port says the
+//!    Breton "mann", "skej" (comma: Breton writes a decimal comma) and "lei"
+//!    ("lei daou skej pemp" = -2,5 in a Breton maths textbook).
 //! 3. **No `verify_ordinal` call.** `Num2Word_Base.verify_ordinal` would raise
 //!    `TypeError` for negative ordinals, but BR's `to_ordinal` never calls it.
-//!    So `to_ordinal(-1)` == `"minus unan-vet"` rather than raising — the
+//!    So `to_ordinal(-1)` == `"lei unan-vet"` rather than raising — the
 //!    suffix lands on the end of the whole phrase, not on the number word.
-//!    Likewise `to_ordinal(-100)` == `"minus unan kant-vet"`.
+//!    Likewise `to_ordinal(-100)` == `"lei unan kant-vet"`.
 //! 4. **Hundreds are never bare.** The `number < 1000` branch always emits
 //!    `self.ones[hundreds_val] + " " + self.hundred`, so 100 is `"unan kant"`
 //!    ("one hundred"), never `"kant"`. Same for `mil` and `milion` via the
@@ -134,7 +136,7 @@
 //!    included: `tens[7]` is `"dek ha tri-ugent"` (70) and `tens[9]` is
 //!    `"dek ha pevar-ugent"` (90). Concatenation is therefore blind to word
 //!    count — 99 becomes `"dek ha pevar-ugent nav"`.
-//! 6. **`negword` keeps its trailing space.** `setup` sets `"minus "` (unlike
+//! 6. **`negword` keeps its trailing space.** It is `"lei "` (unlike
 //!    `Num2Word_Base.to_cardinal`, which does `self.negword.strip()`). BR's
 //!    `to_cardinal` prepends it raw and `.strip()`s the finished string, so the
 //!    single space survives between sign and number and nowhere else.
@@ -229,11 +231,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 /// `setup`: `self.negword`. Trailing space is intentional — see quirk 6.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "lei ";
 
 /// `setup`: `self.pointword`. Read by the float/Decimal branch of
 /// [`cardinal_from_py_str`], which splices it between the two halves.
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "skej";
 
 /// `setup`: `self.ones`. Index 0 is the empty string; see quirk 2.
 const ONES: [&str; 10] = [
@@ -304,7 +306,7 @@ pub fn int_to_word(number: &BigInt) -> String {
     // Python: `return self.ones[0] if self.ones[0] else "zero"` — ones[0] is
     // "", which is falsy, so the else branch always wins. See quirk 2.
     if number.is_zero() {
-        return "zero".to_string();
+        return "mann".to_string();
     }
 
     // Dead on every in-scope path (quirk 7), kept for fidelity.
@@ -392,7 +394,7 @@ fn py_int(s: &str) -> Result<BigInt> {
 /// the float path and has to be exact, `".0"` suffix and `"e+16"` threshold
 /// included. It cannot be replaced by `format!("{}", v)`: Rust's `Display`
 /// prints `1.0` as `"1"`, which has no `"."` and would silently route 1.0
-/// through the *integer* branch to `"unan"` instead of `"unan point zero"`.
+/// through the *integer* branch to `"unan"` instead of `"unan skej mann"`.
 ///
 /// # Why the digits are taken in two steps
 ///
@@ -428,7 +430,7 @@ fn py_float_str(v: f64) -> String {
     }
 
     // `is_sign_negative`, not `v < 0.0`: `_Py_dg_dtoa` reports the sign *bit*,
-    // so `repr(-0.0) == "-0.0"` and BR answers "minus zero point zero". A
+    // so `repr(-0.0) == "-0.0"` and BR answers "lei mann skej mann". A
     // `< 0.0` test says false for -0.0 and would drop the minus.
     let sign = if v.is_sign_negative() { "-" } else { "" };
 
@@ -687,7 +689,7 @@ impl Lang for LangBr {
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + "-vet"` with no verify_ordinal guard, so a
     /// float keeps its spelled-out ".0" tail: `to_ordinal(5.0)` ==
-    /// "pemp point zero-vet", `to_ordinal(-1.5)` == "minus unan point
+    /// "pemp skej mann-vet", `to_ordinal(-1.5)` == "minus unan point
     /// pemp-vet". Exponent-form reprs raise the cardinal path's ValueError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!("{}-vet", self.to_cardinal_float(value, None)?))
@@ -734,7 +736,7 @@ impl Lang for LangBr {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "skej"
     }
 
     /// Port of `Num2Word_BR.to_cardinal` for integral input.
@@ -797,7 +799,7 @@ impl Lang for LangBr {
 
     /// Port of `Num2Word_BR.to_ordinal`: cardinal + `"-vet"`, with no
     /// `verify_ordinal` guard (quirk 3). The suffix attaches to the end of the
-    /// whole phrase, so `to_ordinal(-100)` == `"minus unan kant-vet"` and
+    /// whole phrase, so `to_ordinal(-100)` == `"lei unan kant-vet"` and
     /// `to_ordinal(10**9)` == `"1000000000-vet"`.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}-vet", self.to_cardinal(value)?))
@@ -948,7 +950,7 @@ impl Lang for LangBr {
         let one = BigInt::one();
 
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`. Note 0 takes
-        // the plural: "zero euroioù".
+        // the plural: "mann euroioù".
         let mut result = format!(
             "{} {}",
             int_to_word(&left),
@@ -1017,41 +1019,41 @@ mod tests {
     /// Every `"lang": "br", "to": "cardinal"` corpus row whose arg has a dot.
     #[test]
     fn corpus_float_rows() {
-        assert_eq!(ok(f(0.0)), "zero point zero");
-        assert_eq!(ok(f(0.5)), "zero point pemp");
-        assert_eq!(ok(f(1.0)), "unan point zero");
-        assert_eq!(ok(f(1.5)), "unan point pemp");
-        assert_eq!(ok(f(2.25)), "daou point daou pemp");
-        assert_eq!(ok(f(3.14)), "tri point unan pevar");
-        assert_eq!(ok(f(0.01)), "zero point zero unan");
-        assert_eq!(ok(f(0.1)), "zero point unan");
-        assert_eq!(ok(f(0.99)), "zero point nav nav");
-        assert_eq!(ok(f(1.01)), "unan point zero unan");
-        assert_eq!(ok(f(12.34)), "dek daou point tri pevar");
-        assert_eq!(ok(f(99.99)), "dek ha pevar-ugent nav point nav nav");
-        assert_eq!(ok(f(100.5)), "unan kant point pemp");
+        assert_eq!(ok(f(0.0)), "mann skej mann");
+        assert_eq!(ok(f(0.5)), "mann skej pemp");
+        assert_eq!(ok(f(1.0)), "unan skej mann");
+        assert_eq!(ok(f(1.5)), "unan skej pemp");
+        assert_eq!(ok(f(2.25)), "daou skej daou pemp");
+        assert_eq!(ok(f(3.14)), "tri skej unan pevar");
+        assert_eq!(ok(f(0.01)), "mann skej mann unan");
+        assert_eq!(ok(f(0.1)), "mann skej unan");
+        assert_eq!(ok(f(0.99)), "mann skej nav nav");
+        assert_eq!(ok(f(1.01)), "unan skej mann unan");
+        assert_eq!(ok(f(12.34)), "dek daou skej tri pevar");
+        assert_eq!(ok(f(99.99)), "dek ha pevar-ugent nav skej nav nav");
+        assert_eq!(ok(f(100.5)), "unan kant skej pemp");
         assert_eq!(
             ok(f(1234.56)),
-            "unan mil daou kant tregont pevar point pemp c'hwec'h"
+            "unan mil daou kant tregont pevar skej pemp c'hwec'h"
         );
-        assert_eq!(ok(f(-0.5)), "minus zero point pemp");
-        assert_eq!(ok(f(-1.5)), "minus unan point pemp");
-        assert_eq!(ok(f(-12.34)), "minus dek daou point tri pevar");
-        assert_eq!(ok(f(1.005)), "unan point zero zero pemp");
-        assert_eq!(ok(f(2.675)), "daou point c'hwec'h seizh pemp");
+        assert_eq!(ok(f(-0.5)), "lei mann skej pemp");
+        assert_eq!(ok(f(-1.5)), "lei unan skej pemp");
+        assert_eq!(ok(f(-12.34)), "lei dek daou skej tri pevar");
+        assert_eq!(ok(f(1.005)), "unan skej mann mann pemp");
+        assert_eq!(ok(f(2.675)), "daou skej c'hwec'h seizh pemp");
     }
 
     /// Every `"lang": "br", "to": "cardinal_dec"` corpus row.
     #[test]
     fn corpus_decimal_rows() {
-        assert_eq!(ok(d("0.01")), "zero point zero unan");
-        assert_eq!(ok(d("1.10")), "unan point unan zero");
-        assert_eq!(ok(d("12.345")), "dek daou point tri pevar pemp");
+        assert_eq!(ok(d("0.01")), "mann skej mann unan");
+        assert_eq!(ok(d("1.10")), "unan skej unan mann");
+        assert_eq!(ok(d("12.345")), "dek daou skej tri pevar pemp");
         assert_eq!(
             ok(d("98746251323029.99")),
-            "98746251323029 point nav nav"
+            "98746251323029 skej nav nav"
         );
-        assert_eq!(ok(d("0.001")), "zero point zero zero unan");
+        assert_eq!(ok(d("0.001")), "mann skej mann mann unan");
     }
 
     /// Quirk 14: BR reads `repr`, not `float2tuple`, and the two are not
@@ -1066,12 +1068,12 @@ mod tests {
     fn does_not_take_the_float2tuple_route() {
         assert_eq!(
             ok(f(0.17108284528077355)),
-            "zero point unan seizh unan zero eizh daou eizh pevar pemp daou \
-             eizh zero seizh seizh tri pemp pemp"
+            "mann skej unan seizh unan mann eizh daou eizh pevar pemp daou \
+             eizh mann seizh seizh tri pemp pemp"
         );
         // The corpus's artefact cases, where the two routes happen to agree.
-        assert_eq!(ok(f(1.005)), "unan point zero zero pemp");
-        assert_eq!(ok(f(2.675)), "daou point c'hwec'h seizh pemp");
+        assert_eq!(ok(f(1.005)), "unan skej mann mann pemp");
+        assert_eq!(ok(f(2.675)), "daou skej c'hwec'h seizh pemp");
     }
 
     /// Quirk 15: `precision=` is inert — BR never reads `self.precision`.
@@ -1083,17 +1085,17 @@ mod tests {
             value: 1.2345,
             precision: 4,
         };
-        let expected = "unan point daou tri pevar pemp";
+        let expected = "unan skej daou tri pevar pemp";
         assert_eq!(l.to_cardinal_float(&v, None).unwrap(), expected);
         assert_eq!(l.to_cardinal_float(&v, Some(2)).unwrap(), expected);
         assert_eq!(l.to_cardinal_float(&v, Some(8)).unwrap(), expected);
     }
 
-    /// `repr(-0.0)` is "-0.0": the sign *bit*, not `v < 0.0`, drives the minus.
+    /// `repr(-0.0)` is "-0.0": the sign *bit*, not `v < 0.0`, drives the lei.
     #[test]
     fn negative_zero_float_keeps_its_sign() {
-        assert_eq!(ok(f(-0.0)), "minus zero point zero");
-        assert_eq!(ok(f(0.0)), "zero point zero");
+        assert_eq!(ok(f(-0.0)), "lei mann skej mann");
+        assert_eq!(ok(f(0.0)), "mann skej mann");
     }
 
     /// Quirk 16: scientific notation dies in `int()`, and which `int()` call
@@ -1143,10 +1145,10 @@ mod tests {
     #[test]
     fn repr_thresholds() {
         // 1e15 is positional, 1e16 is not.
-        assert_eq!(ok(f(1e15)), "1000000000000000 point zero");
+        assert_eq!(ok(f(1e15)), "1000000000000000 skej mann");
         assert!(f(1e16).is_err());
         // 1e-4 is positional, 1e-5 is not.
-        assert_eq!(ok(f(1e-4)), "zero point zero zero zero unan");
+        assert_eq!(ok(f(1e-4)), "mann skej mann mann mann unan");
         assert!(f(1e-5).is_err());
     }
 
@@ -1167,11 +1169,11 @@ mod tests {
     #[test]
     fn decimal_str_is_not_float_repr() {
         // Trailing zeros are spoken.
-        assert_eq!(ok(d("5.00")), "pemp point zero zero");
+        assert_eq!(ok(d("5.00")), "pemp skej mann mann");
         // No "." in str(Decimal("5")) -> the *integer* branch.
         assert_eq!(ok(d("5")), "pemp");
         // Decimal goes positional four orders further down than float does.
-        assert_eq!(ok(d("1e-5")), "zero point zero zero zero zero unan");
+        assert_eq!(ok(d("1e-5")), "mann skej mann mann mann mann unan");
         assert!(f(1e-5).is_err());
         // ... and gives up one order earlier, with a capital, unpadded E.
         assert_eq!(
@@ -1190,7 +1192,7 @@ mod tests {
     fn decimal_str_matches_python_not_bigdecimal_display() {
         assert_eq!(py_decimal_str(&BigDecimal::from_str("0.0").unwrap()), "0.0");
         assert_eq!(BigDecimal::from_str("0.0").unwrap().to_string(), "0");
-        assert_eq!(ok(d("0.0")), "zero point zero");
+        assert_eq!(ok(d("0.0")), "mann skej mann");
         assert_eq!(py_decimal_str(&BigDecimal::from_str("1.10").unwrap()), "1.10");
         assert_eq!(py_decimal_str(&BigDecimal::from_str("1e-6").unwrap()), "0.000001");
         assert_eq!(py_decimal_str(&BigDecimal::from_str("-1.10").unwrap()), "-1.10");
@@ -1201,13 +1203,13 @@ mod tests {
     /// a float cast would have rounded away.
     #[test]
     fn large_values() {
-        assert_eq!(ok(d("98746251323029.99")), "98746251323029 point nav nav");
-        assert_eq!(ok(f(1234567890.5)), "1234567890 point pemp");
+        assert_eq!(ok(d("98746251323029.99")), "98746251323029 skej nav nav");
+        assert_eq!(ok(f(1234567890.5)), "1234567890 skej pemp");
         // Just under the fallback: still spelled.
         assert_eq!(
             ok(f(123456789.5)),
             "unan kant ugent tri milion pevar kant hanter-kant c'hwec'h mil \
-             seizh kant pevar-ugent nav point pemp"
+             seizh kant pevar-ugent nav skej pemp"
         );
     }
 }

@@ -25,7 +25,7 @@ class Num2WordsYOTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="yo"), "zero")
+        self.assertEqual(num2words(0, lang="yo"), "òdo")
         self.assertEqual(num2words(1, lang="yo"), "ọkan")
         self.assertEqual(num2words(2, lang="yo"), "méjì")
         self.assertEqual(num2words(3, lang="yo"), "mẹta")
@@ -248,9 +248,9 @@ class Num2WordsYOTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="yo"), "zero point ọkan")
-        self.assertEqual(num2words(0.5, lang="yo"), "zero point marun")
-        self.assertEqual(num2words(0.9, lang="yo"), "zero point mẹsan")
+        self.assertEqual(num2words(0.1, lang="yo"), "òdo point ọkan")
+        self.assertEqual(num2words(0.5, lang="yo"), "òdo point marun")
+        self.assertEqual(num2words(0.9, lang="yo"), "òdo point mẹsan")
         self.assertEqual(num2words(1.1, lang="yo"), "ọkan point ọkan")
         self.assertEqual(num2words(1.5, lang="yo"), "ọkan point marun")
         self.assertEqual(num2words(2.5, lang="yo"), "méjì point marun")
@@ -259,7 +259,7 @@ class Num2WordsYOTest(TestCase):
         self.assertEqual(num2words(11.11, lang="yo"), "mẹwa ọkan point ọkan ọkan")
         self.assertEqual(num2words(20.2, lang="yo"), "ogún point méjì")
         self.assertEqual(num2words(99.99, lang="yo"), "àádọrún mẹsan point mẹsan mẹsan")
-        self.assertEqual(num2words(100.01, lang="yo"), "ọkan ọgọrun point zero ọkan")
+        self.assertEqual(num2words(100.01, lang="yo"), "ọkan ọgọrun point òdo ọkan")
         self.assertEqual(num2words(100.5, lang="yo"), "ọkan ọgọrun point marun")
         self.assertEqual(
             num2words(123.45, lang="yo"), "ọkan ọgọrun ogún mẹta point mẹrin marun"
@@ -269,8 +269,8 @@ class Num2WordsYOTest(TestCase):
             num2words(1234.56, lang="yo"),
             "ọkan ẹgbẹrun méjì ọgọrun ọgbọn mẹrin point marun mẹfa",
         )
-        self.assertEqual(num2words(10000.01, lang="yo"), "mẹwa ẹgbẹrun point zero ọkan")
-        self.assertEqual(num2words(-0.5, lang="yo"), "minus zero point marun")
+        self.assertEqual(num2words(10000.01, lang="yo"), "mẹwa ẹgbẹrun point òdo ọkan")
+        self.assertEqual(num2words(-0.5, lang="yo"), "minus òdo point marun")
         self.assertEqual(num2words(-1.5, lang="yo"), "minus ọkan point marun")
         self.assertEqual(num2words(-10.5, lang="yo"), "minus mẹwa point marun")
 
@@ -321,15 +321,15 @@ class Num2WordsYOTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="yo", to="currency", currency="NGN"), "zero náírà"
+            num2words(0, lang="yo", to="currency", currency="NGN"), "òdo náírà"
         )
         self.assertEqual(
             num2words(0.01, lang="yo", to="currency", currency="NGN"),
-            "zero náírà ọkan kóbò",
+            "òdo náírà ọkan kóbò",
         )
         self.assertEqual(
             num2words(0.5, lang="yo", to="currency", currency="NGN"),
-            "zero náírà àádọta kóbò",
+            "òdo náírà àádọta kóbò",
         )
         self.assertEqual(
             num2words(1, lang="yo", to="currency", currency="NGN"), "ọkan náírà"
@@ -386,7 +386,7 @@ class Num2WordsYOTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="yo"), "zero")
+        self.assertEqual(num2words("0", lang="yo"), "òdo")
         self.assertEqual(num2words("1", lang="yo"), "ọkan")
         self.assertEqual(num2words("10", lang="yo"), "mẹwa")
         self.assertEqual(num2words("100", lang="yo"), "ọkan ọgọrun")
@@ -398,7 +398,7 @@ class Num2WordsYOTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="yo"), "zero")
+        self.assertEqual(num2words(0, lang="yo"), "òdo")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="yo"), num2words("100", lang="yo"))

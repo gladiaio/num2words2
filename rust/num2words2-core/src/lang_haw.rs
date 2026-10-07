@@ -9,8 +9,10 @@
 //! and there is **no overflow check** — see the 10^9 fallback below.
 //!
 //! `setup()` assigns `negword = "minus "` (trailing space is load-bearing —
-//! `to_cardinal` concatenates then `.strip()`s) and `pointword = "point"`
-//! (float path only, out of scope).
+//! `to_cardinal` concatenates then `.strip()`s) and the English
+//! `pointword = "point"`; the port says "kiko" (Pukui-Elbert, "kiko
+//! kekimala" = decimal point), gladiaio/num2words2#154. "minus" is kept: no
+//! source shows how a negative number is read aloud in Hawaiian.
 //!
 //! Every method in scope is overridden by HAW, so nothing is inherited from
 //! `Num2Word_Base` here except the class scaffolding:
@@ -36,12 +38,11 @@
 //!    literal `"ka "` onto whatever `to_cardinal` returns, with no sign
 //!    handling, so `to_ordinal(-1)` == `"ka minus 'ekahi"`. Corpus confirms.
 //!    Combined with (1), `to_ordinal(10**9)` == `"ka 1000000000"`.
-//! 3. **`ones[0]` is `""`, so zero is English.** The zero guard reads
-//!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is the
-//!    empty string — falsy — so the ternary *always* takes the else branch and
-//!    yields the English `"zero"`, never a Hawaiian word. The first arm is
-//!    dead code. Hence `to_cardinal(0)` == `"zero"` and `to_ordinal(0)` ==
-//!    `"ka zero"`.
+//! 3. **Zero (fixed, gladiaio/num2words2#154).** The zero guard reads
+//!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
+//!    so Python always answered the English "zero". The port says the
+//!    Hawaiian "'ole" (ʻokina written as an apostrophe, as everywhere in this
+//!    module): `to_cardinal(0)` == `"'ole"`, `to_ordinal(0)` == `"ka 'ole"`.
 //! 4. **`_int_to_word`'s negative branch is unreachable.** `to_cardinal`
 //!    strips the `"-"` from the *string* before calling `_int_to_word`, and no
 //!    recursive call can go negative (`div`/`mod` of a non-negative). Kept
@@ -169,7 +170,7 @@ fn int_to_word(number: &BigInt) -> String {
     // Python: `if number == 0: return self.ones[0] if self.ones[0] else "zero"`
     // `ones[0]` is "" (falsy), so this is unconditionally "zero". Quirk 3.
     if number.is_zero() {
-        return "zero".to_string();
+        return "'ole".to_string();
     }
 
     // Python: `if number < 0: return self.negword + self._int_to_word(abs(number))`
@@ -381,7 +382,7 @@ impl Lang for LangHaw {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "kiko"
     }
 
     /// Port of `Num2Word_HAW.to_cardinal`.
@@ -488,10 +489,10 @@ impl Lang for LangHaw {
     ///   `Decimal("98746251323029.99")` -> `"98746251323029 point 'eiwa
     ///   'eiwa"` — the integer part is bare digits. Corpus-pinned.
     /// * `zero` (quirk 3) is emitted for every `0` digit, so `0.01` ->
-    ///   `"zero point zero 'ekahi"` and `1.005` -> `"'ekahi point zero zero
+    ///   `"'ole kiko 'ole 'ekahi"` and `1.005` -> `"'ekahi point zero zero
     ///   'elima"`.
     /// * A negative fraction keeps the negword and prints `int_to_word(0)`:
-    ///   `-0.5` -> `"minus zero point 'elima"` (there is no `pre == 0` sign
+    ///   `-0.5` -> `"minus 'ole kiko 'elima"` (there is no `pre == 0` sign
     ///   rescue like the base path — the `"-"` is stripped lexically).
     ///
     /// # Errors
@@ -564,7 +565,7 @@ impl Lang for LangHaw {
         // the integer `else` branch (bare `int_to_word`, no "point").
         if precision > 0 {
             ret.push(' ');
-            ret.push_str(self.pointword()); // "point"
+            ret.push_str(self.pointword()); // "kiko"
             for ch in frac.chars() {
                 ret.push(' ');
                 let digit = ch.to_digit(10).ok_or_else(|| {
@@ -585,7 +586,7 @@ impl Lang for LangHaw {
     /// HAW routes on the string, not the value: `"." in str(number)` decides
     /// between the digit-word grammar and `int(n)`. So the base default's
     /// whole→int shortcut is wrong here — `str(5.0)` is `"5.0"` and must read
-    /// `"'elima point zero"`, while the point-free `Decimal("5")` stays
+    /// `"'elima kiko 'ole"`, while the point-free `Decimal("5")` stays
     /// `"'elima"`, and an exponent-form repr raises the `int()` ValueError
     /// ([`sci_float_value_error`] / [`decimal_sci_value_error`] reconstruct
     /// which of the two `int()` calls fires).
@@ -624,7 +625,7 @@ impl Lang for LangHaw {
     /// are *numeric* comparisons, so `1.0` is "ka mua" and `Decimal("2.00")`
     /// is "ka lua"; everything else — negative zero included — is `"ka "`
     /// glued to the string-routed cardinal: `to_ordinal(5.0)` ==
-    /// `"ka 'elima point zero"`, `to_ordinal(-0.0)` == `"ka minus zero point
+    /// `"ka 'elima kiko 'ole"`, `to_ordinal(-0.0)` == `"ka minus zero point
     /// zero"`. An exponent-form repr propagates the cardinal's ValueError.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         if let Some(i) = value.as_whole_int() {
@@ -646,7 +647,7 @@ impl Lang for LangHaw {
     }
 
     /// `to_year(float/Decimal)`: bare `self.to_cardinal(val)`, string routing
-    /// included — `to_year(5.0)` == `"'elima point zero"`, `to_year(1e16)`
+    /// included — `to_year(5.0)` == `"'elima kiko 'ole"`, `to_year(1e16)`
     /// raises ValueError.
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.cardinal_float_entry(value, None)

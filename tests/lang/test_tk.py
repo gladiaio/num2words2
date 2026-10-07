@@ -25,7 +25,7 @@ class Num2WordsTKTest(TestCase):
 
     def test_cardinal_basic(self):
         """Test cardinal numbers from 0 to 100."""
-        self.assertEqual(num2words(0, lang="tk"), "zero")
+        self.assertEqual(num2words(0, lang="tk"), "nol")
         self.assertEqual(num2words(1, lang="tk"), "bir")
         self.assertEqual(num2words(2, lang="tk"), "iki")
         self.assertEqual(num2words(3, lang="tk"), "üç")
@@ -219,9 +219,9 @@ class Num2WordsTKTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="tk"), "zero point bir")
-        self.assertEqual(num2words(0.5, lang="tk"), "zero point bäş")
-        self.assertEqual(num2words(0.9, lang="tk"), "zero point dokuz")
+        self.assertEqual(num2words(0.1, lang="tk"), "nol point bir")
+        self.assertEqual(num2words(0.5, lang="tk"), "nol point bäş")
+        self.assertEqual(num2words(0.9, lang="tk"), "nol point dokuz")
         self.assertEqual(num2words(1.1, lang="tk"), "bir point bir")
         self.assertEqual(num2words(1.5, lang="tk"), "bir point bäş")
         self.assertEqual(num2words(2.5, lang="tk"), "iki point bäş")
@@ -230,7 +230,7 @@ class Num2WordsTKTest(TestCase):
         self.assertEqual(num2words(11.11, lang="tk"), "on bir point bir bir")
         self.assertEqual(num2words(20.2, lang="tk"), "ýigrimi point iki")
         self.assertEqual(num2words(99.99, lang="tk"), "togsan dokuz point dokuz dokuz")
-        self.assertEqual(num2words(100.01, lang="tk"), "bir ýüz point zero bir")
+        self.assertEqual(num2words(100.01, lang="tk"), "bir ýüz point nol bir")
         self.assertEqual(num2words(100.5, lang="tk"), "bir ýüz point bäş")
         self.assertEqual(
             num2words(123.45, lang="tk"), "bir ýüz ýigrimi üç point dört bäş"
@@ -239,8 +239,8 @@ class Num2WordsTKTest(TestCase):
         self.assertEqual(
             num2words(1234.56, lang="tk"), "bir müň iki ýüz otuz dört point bäş alty"
         )
-        self.assertEqual(num2words(10000.01, lang="tk"), "on müň point zero bir")
-        self.assertEqual(num2words(-0.5, lang="tk"), "minus zero point bäş")
+        self.assertEqual(num2words(10000.01, lang="tk"), "on müň point nol bir")
+        self.assertEqual(num2words(-0.5, lang="tk"), "minus nol point bäş")
         self.assertEqual(num2words(-1.5, lang="tk"), "minus bir point bäş")
         self.assertEqual(num2words(-10.5, lang="tk"), "minus on point bäş")
 
@@ -287,15 +287,15 @@ class Num2WordsTKTest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="tk", to="currency", currency="TMT"), "zero manat"
+            num2words(0, lang="tk", to="currency", currency="TMT"), "nol manat"
         )
         self.assertEqual(
             num2words(0.01, lang="tk", to="currency", currency="TMT"),
-            "zero manat bir teňňe",
+            "nol manat bir teňňe",
         )
         self.assertEqual(
             num2words(0.5, lang="tk", to="currency", currency="TMT"),
-            "zero manat elli teňňe",
+            "nol manat elli teňňe",
         )
         self.assertEqual(
             num2words(1, lang="tk", to="currency", currency="TMT"), "bir manat"
@@ -338,7 +338,7 @@ class Num2WordsTKTest(TestCase):
 
     def test_string_input(self):
         """Test string input conversion."""
-        self.assertEqual(num2words("0", lang="tk"), "zero")
+        self.assertEqual(num2words("0", lang="tk"), "nol")
         self.assertEqual(num2words("1", lang="tk"), "bir")
         self.assertEqual(num2words("10", lang="tk"), "on")
         self.assertEqual(num2words("100", lang="tk"), "bir ýüz")
@@ -350,7 +350,7 @@ class Num2WordsTKTest(TestCase):
     def test_edge_cases(self):
         """Test edge cases and special conditions."""
         # Test zero
-        self.assertEqual(num2words(0, lang="tk"), "zero")
+        self.assertEqual(num2words(0, lang="tk"), "nol")
 
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tk"), num2words("100", lang="tk"))

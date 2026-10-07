@@ -52,7 +52,7 @@
 //!    following consonant. Hence `to_ordinal(30)` == "l-tletin" (Maltese:
 //!    "it-tletin"), `to_ordinal(20)` == "l-għoxrin", and — because the branch
 //!    is a bare `else` with no guard on sign or zero —
-//!    `to_ordinal(0)` == "l-zero" and `to_ordinal(-1)` == "l-minus wieħed".
+//!    `to_ordinal(0)` == "l-żero" and `to_ordinal(-1)` == "l-minus wieħed".
 //!    Those last two are nonsense, are not errors, and are in the corpus.
 //! 6. **`to_ordinal_num` is `str(number) + "."` with no sign guard**, so
 //!    `to_ordinal_num(-1)` == "-1.".
@@ -60,9 +60,10 @@
 //!    it is a bare delegation to `to_cardinal`. So `to_year(-500)` ==
 //!    "minus ħamsa mija" (no "BC"), and `to_year(1984)` reads as a plain
 //!    cardinal rather than the usual year-pair phrasing.
-//! 8. **`negword` carries a trailing space** ("minus ") and `pointword` is the
-//!    English "point". `to_cardinal` relies on a final `.strip()` to tidy the
-//!    seam.
+//! 8. **`negword` carries a trailing space** ("minus ", which is Maltese).
+//!    `to_cardinal` relies on a final `.strip()` to tidy the seam. Python's
+//!    zero and `pointword` were the English "zero"/"point"; the port says
+//!    "żero" and "punt" (fixed, gladiaio/num2words2#154).
 //!
 //! # Float / Decimal cardinal path
 //!
@@ -85,13 +86,13 @@
 //! whole-value shortcut of the base `cardinal_float_entry` is wrong here. All
 //! four float entry hooks are therefore overridden:
 //! * `cardinal_float_entry` — everything through the string algorithm:
-//!   `5.0` -> "ħamsa point zero", `Decimal("5.00")` -> "ħamsa point zero
+//!   `5.0` -> "ħamsa punt żero", `Decimal("5.00")` -> "ħamsa point zero
 //!   zero", `-0.0` -> "minus zero point zero", `Decimal("12.")` (str "12", no
 //!   dot) -> "għaxra tnejn". Exponent-form strings ("1e+16", "1E+2") have no
 //!   dot either, so `int()` raises `ValueError` — corpus-pinned.
 //! * `ordinal_float_entry` — the 1..=10 ladder is *numeric* (`5.0 == 5` ->
 //!   "il-ħames"); everything else is `"l-" + to_cardinal(number)`, float
-//!   spelling and ValueErrors included ("l-minus zero point zero").
+//!   spelling and ValueErrors included ("l-minus żero punt żero").
 //! * `ordinal_num_float_entry` — `str(number) + "."`, no error even on
 //!   exponent forms ("1e+16.").
 //! * `year_float_entry` — bare `to_cardinal` delegation.
@@ -100,12 +101,12 @@
 //! * The integer-part bugs 1-4 reach floats too: `12.34` -> "għaxra tnejn
 //!   point …" (broken teens), `100.5` -> "wieħed mija point …" (un-elided
 //!   hundred), and the digit-leaking fallback surfaces in the huge Decimal row
-//!   `98746251323029.99` -> "98746251323029 point disgħa disgħa".
+//!   `98746251323029.99` -> "98746251323029 punt disgħa disgħa".
 //! * The `precision=` kwarg is inert — MT's method never reads `self.precision`
 //!   (`num2words(1.5, lang='mt', precision=5)` == the un-overridden result), so
 //!   `precision_override` is accepted and ignored.
 //! * Fractional digits are spelt one glyph at a time via the same `_int_to_word`
-//!   ladder, so a leading-zero fraction reads "zero …": `0.01` -> "zero point
+//!   ladder, so a leading-zero fraction reads "żero …": `0.01` -> "zero point
 //!   zero wieħed".
 //!
 //! # Errors
@@ -169,7 +170,7 @@
 //! 13. **`cents=True` still hides zero cents.** The guard is `if cents and
 //!    right:` — a truthiness test on the cent *count* — so a float with zero
 //!    cents drops the segment entirely: `to_currency(1.0)` == "wieħed ewro",
-//!    not "wieħed ewro zero ċenteżmi". This is the opposite of
+//!    not "wieħed ewro żero ċenteżmi". This is the opposite of
 //!    `Num2Word_Base.to_currency`, which always shows a float's cents. Because
 //!    MT reaches the same result for `1` and `1.0`, the int/float distinction
 //!    that `CurrencyValue` preserves is **not** observable here — but it is
@@ -207,10 +208,11 @@ use std::str::FromStr;
 /// Python's `ret + self._int_to_word(...)` seam, then removed by `.strip()`.
 const NEGWORD: &str = "minus ";
 
-/// `setup`: `self.pointword = "point"` — the English word, not a Maltese one.
+/// `setup`: `self.pointword` — Python's English "point", here the Maltese
+/// "punt" (gladiaio/num2words2#154).
 /// Used by [`LangMt::to_cardinal_float`] as the integer/fraction separator,
 /// verbatim (MT does *not* run it through `title()`, unlike `Num2Word_Base`).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "punt";
 
 /// `setup`: `self.ones`. Index 0 is the empty string — see [`ZERO`].
 const ONES: [&str; 10] = [
@@ -229,9 +231,9 @@ const THOUSAND: &str = "elf";
 const MILLION: &str = "miljun";
 
 /// Python: `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""`,
-/// which is falsy, so this branch *always* yields "zero" — the conditional is
-/// dead code. Corpus: `to_cardinal(0)` == "zero".
-const ZERO: &str = "zero";
+/// which is falsy, so Python *always* yielded the English "zero"; the port
+/// says the Maltese "żero" (gladiaio/num2words2#154).
+const ZERO: &str = "żero";
 
 /// `to_ordinal`'s hard-coded ladder for 1..=10, indexed by `n - 1`.
 ///
@@ -287,7 +289,7 @@ fn py_int(s: &str) -> Result<BigInt> {
 /// and appends `.0` to anything that would otherwise look like an integer.
 /// Rust's `{}` does none of this, so both `1e16` and `1.0` would come out
 /// wrong in opposite directions. Both matter to MT: `str(1.0)` is `"1.0"` →
-/// "wieħed point zero", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
+/// "wieħed punt żero", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
 /// `ValueError`.
 ///
 /// The `precision` that `FloatValue::Float` carries is deliberately *not* used
@@ -304,7 +306,7 @@ fn python_float_repr(v: f64) -> String {
         return (if v.is_sign_negative() { "-inf" } else { "inf" }).to_string();
     }
     // The sign bit, not `v < 0.0`: repr(-0.0) is "-0.0", and MT renders that
-    // "minus zero point zero".
+    // "minus żero punt żero".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let a = v.abs();
 
@@ -532,7 +534,7 @@ impl Lang for LangMt {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "punt"
     }
 
     /// Port of `Num2Word_MT.to_cardinal`.
@@ -679,8 +681,8 @@ impl Lang for LangMt {
 
     /// `to_cardinal(float/Decimal)` — the **full** routing, whole values
     /// included. MT's `to_cardinal` reads `str(number)`, so a whole-valued
-    /// float keeps its ".0" tail (`5.0` -> "ħamsa point zero", `-0.0` ->
-    /// "minus zero point zero") and an exponent-form repr raises ValueError;
+    /// float keeps its ".0" tail (`5.0` -> "ħamsa punt żero", `-0.0` ->
+    /// "minus żero punt żero") and an exponent-form repr raises ValueError;
     /// the base default's whole -> integer-path route would get both wrong. A
     /// Decimal without a visible point (`Decimal("12.")` -> "12") lands in the
     /// same string algorithm's else branch, which *is* the integer path — the
@@ -698,7 +700,7 @@ impl Lang for LangMt {
     /// return "il-ħames" (corpus: ordinal 5.0 / 5.00 -> "il-ħames"). Anything
     /// else — 0.0, negatives, non-integral values, 11.0 and up — falls into
     /// the bare else: `"l-" + self.to_cardinal(number)`, where the cardinal
-    /// spells the float ("l-għaxra wieħed point zero") or raises the
+    /// spells the float ("l-għaxra wieħed punt żero") or raises the
     /// exponent-form ValueError before the prefix is attached.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         // `as_whole_int` is None for fractional values and NaN/±inf, all of

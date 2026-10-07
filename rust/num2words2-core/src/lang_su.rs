@@ -24,10 +24,12 @@
 //! This is a port, not a rewrite. Each of the following looks wrong and is
 //! nevertheless exactly what Python emits (verified against the frozen corpus):
 //!
-//! 1. **`to_cardinal(0)` == "zero"**, not a Sundanese word. `_int_to_word`
-//!    opens with `return self.ones[0] if self.ones[0] else "zero"`, and
-//!    `ones[0]` is the empty string — always falsy — so the English fallback
-//!    fires unconditionally. The idiomatic Sundanese "nol" never appears.
+//! 1. **Zero (fixed, gladiaio/num2words2#154).** `_int_to_word` opens with
+//!    `return self.ones[0] if self.ones[0] else "zero"` and `ones[0]` is the
+//!    empty string, so Python always said the English "zero". The port says
+//!    the Sundanese "nol". The decimal word is still the English "point":
+//!    CLDR's Sundanese rules say "titik", Indonesian usage "koma", and no
+//!    Sundanese source settles it.
 //! 2. **The teens are built compositionally and come out wrong.** 11..19 go
 //!    through the generic `tens[1] + " " + ones[n]` path, yielding
 //!    "sapuluh hiji" (lit. "ten one") for 11 and "sapuluh dua" for 12. Real
@@ -123,7 +125,7 @@
 //!
 //! 7. **Cents are truncated to two digits, never rounded.** `12.345` and
 //!    `12.999` give 34 and 99 cents; `0.001` gives `"001"[:2] == "00"` -> 0
-//!    cents, i.e. plain "zero euros".
+//!    cents, i.e. plain "nol euros".
 //! 8. **`ljust` scales a short fraction.** `0.5` -> `"5".ljust(2,"0")` ==
 //!    `"50"` -> fifty cents. Correct here, but arrived at by string padding.
 //! 9. **An `int` skips cents structurally, not by an `isinstance` check.**
@@ -170,7 +172,7 @@ const POINTWORD: &str = "point";
 /// The `"zero"` fallback in `_int_to_word`. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""`, so this is
 /// the only reachable result for 0.
-const ZERO: &str = "zero";
+const ZERO: &str = "nol";
 
 /// `self.ones`. Index 0 is `""` (see bug 1) and is never used as a word.
 const ONES: [&str; 10] = [
@@ -225,7 +227,7 @@ const CURRENCY_ORDER: [&str; 3] = ["IDR", "USD", "EUR"];
 /// The notation Python chose is *not* always recoverable. `str(1e-05)` is
 /// `'1e-05'` but `str(Decimal('0.00001'))` is `'0.00001'`; both parse to the
 /// identical `BigDecimal(1, scale=5)`, and Python's two answers differ
-/// (ValueError vs "zero euros"). Same for a 17-significant-digit float at
+/// (ValueError vs "nol euros"). Same for a 17-significant-digit float at
 /// `e+16` (scale lands on 0). This function takes the fixed reading in both
 /// cases, which is right for `Decimal` input and wrong for `float` input.
 /// Recovering it needs the original string, which `CurrencyValue::Decimal`
@@ -237,7 +239,7 @@ fn python_str(d: &BigDecimal) -> String {
     // `val < 0` guard is false for -0.0, so Python keeps the string "-0.0" and
     // then reads int("-0") == 0. BigDecimal drops the sign of zero at parse
     // time, so this returns "0.0" — a different string, the same 0/0 split,
-    // and the same "zero euros".)
+    // and the same "nol euros".)
     let digits = int_val.abs().to_string();
 
     if scale < 0 {
@@ -508,7 +510,7 @@ impl Lang for LangSu {
     ///
     /// Python's `to_cardinal` is string-driven: `"." in str(number)` picks the
     /// decimal grammar, and `str(5.0)` is `"5.0"`, so **whole floats keep
-    /// their ".0" tail** ("lima point zero") instead of taking Base's
+    /// their ".0" tail** ("lima point nol") instead of taking Base's
     /// whole-value integer route. Without a visible point the sign-free string
     /// lands in `int(n)`:
     ///   * `Decimal("5")` -> `"5"` -> the integer path ("lima");
@@ -542,7 +544,7 @@ impl Lang for LangSu {
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + "-na"` with no type guard, so floats get
-    /// the full decimal phrase plus the suffix ("lima point zero-na") and the
+    /// the full decimal phrase plus the suffix ("lima point nol-na") and the
     /// exponential-form ValueError propagates unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!("{}-na", self.cardinal_float_entry(value, None)?))
@@ -609,15 +611,15 @@ impl Lang for LangSu {
     ///
     /// Consequences reproduced:
     ///
-    /// * `1.005` → "hiji point zero zero lima" and `2.675` → "dua point genep
+    /// * `1.005` → "hiji point nol nol lima" and `2.675` → "dua point genep
     ///   tujuh lima": the repr digits are taken verbatim, so the f64 artefacts
     ///   (`674.9999…`) never arise — there is no `abs(value-pre)*10**p` here.
-    /// * Trailing repr zeros survive: `str(1.0)` == "1.0" → "hiji point zero",
-    ///   and the Decimal `1.10` → "hiji point hiji zero".
+    /// * Trailing repr zeros survive: `str(1.0)` == "1.0" → "hiji point nol",
+    ///   and the Decimal `1.10` → "hiji point hiji nol".
     /// * Bug 3 leaks in: a `left` ≥ 10^9 is emitted as bare digits, so the
     ///   Decimal `98746251323029.99` → "98746251323029 point salapan salapan".
     /// * The sign is peeled off `str(number)` exactly as Python does, so
-    ///   `str(-0.0)` == "-0.0" would yield "minus zero point zero" (Rust's
+    ///   `str(-0.0)` == "-0.0" would yield "minus nol point nol" (Rust's
     ///   fixed formatting preserves the negative-zero sign, matching repr).
     fn to_cardinal_float(
         &self,

@@ -61,14 +61,15 @@
 //! 3. **`to_ordinal` accepts negatives and zero and emits nonsense.** It has
 //!    no sign/zero guard (unlike most modules, which raise `TypeError` via
 //!    `errmsg_negord`), so it just prefixes the cardinal:
-//!    `to_ordinal(0) == "ika-zero"` and `to_ordinal(-1) == "ika-minus isa"`.
+//!    `to_ordinal(0) == "ika-sero"` and `to_ordinal(-1) == "ika-minus isa"`.
 //!    The `"ika-"` prefix is also glued onto multi-word cardinals, giving
 //!    `to_ordinal(10**6) == "ika-isa milyon"` (prefix binds the first word only).
 //! 4. **`ones[0]` is `""`,** and `_int_to_word` guards with
 //!    `return self.ones[0] if self.ones[0] else "zero"` — a conditional whose
-//!    true arm is unreachable, since `""` is falsy. Zero is therefore always
-//!    the English loanword `"zero"` (Tagalog "sero"/"wala" never appears).
-//!    Likewise `pointword` is the English `"point"`.
+//!    true arm is unreachable, since `""` is falsy, so Python always said the
+//!    English "zero"; its `pointword` was "point". Fixed
+//!    (gladiaio/num2words2#154): the port says "sero" and "punto", the
+//!    spoken Tagalog forms ("isa punto lima").
 //! 5. **The `number < 0` arm of `_int_to_word` is dead code** on *every* path,
 //!    not just the cardinal one: `to_cardinal` strips the `"-"` from the
 //!    *string* before calling `int()`, and `to_currency` does `val = abs(val)`
@@ -88,8 +89,8 @@
 //!    empty anyway, so this is unobservable *through TL* — but it means a
 //!    3-decimal code (KWD/BHD) and a 0-decimal one (JPY) are both treated as
 //!    2-decimal, on top of bug 6 renaming them "piso". Corpus:
-//!    `currency:KWD 0.01 -> "zero piso isa sentimo"` (not `.../1000`), and
-//!    `currency:JPY 0.5 -> "zero piso limampu sentimo"` — a subunit for a
+//!    `currency:KWD 0.01 -> "sero piso isa sentimo"` (not `.../1000`), and
+//!    `currency:JPY 0.5 -> "sero piso limampu sentimo"` — a subunit for a
 //!    currency that has none.
 //! 8. **`to_currency`'s `adjective` parameter is declared and never read.**
 //!    `adjective=True` changes nothing. (`CURRENCY_ADJECTIVES` is `{}` too, so
@@ -141,12 +142,12 @@ use std::collections::HashMap;
 /// through `Num2Word_Base.parse_minus`, which would `.strip()` and re-add one).
 const NEGWORD: &str = "minus ";
 
-/// `self.pointword`. The English loanword, reached on the float/Decimal path
+/// `self.pointword`: "punto" (Python had the English "point"; #154), reached on the float/Decimal path
 /// (see [`LangTl::cardinal_from_str`] / [`LangTl::to_cardinal_float`]).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "punto";
 
-/// The `"zero"` literal from `_int_to_word`'s falsy-`ones[0]` guard.
-const ZERO_WORD: &str = "zero";
+/// `_int_to_word`'s zero: "sero" where Python said the English "zero" (#154).
+const ZERO_WORD: &str = "sero";
 
 /// `self.ones`. Index 0 is `""` and is never returned (see bug 4).
 const ONES: [&str; 10] = [
@@ -415,7 +416,7 @@ impl LangTl {
     ///
     /// * The sign is stripped **textually** (`n.startswith("-")`), so `-0.0`
     ///   — whose `str` is `"-0.0"` — keeps its negword even though the value is
-    ///   not `< 0`: Python answers "minus zero point zero". (Reachable only for
+    ///   not `< 0`: Python answers "minus sero punto sero". (Reachable only for
     ///   `FloatValue::Float`; a `BigDecimal` cannot carry negative zero — see
     ///   the report.)
     /// * `split(".", 1)` caps at one split, so a second dot would stay inside
@@ -485,7 +486,7 @@ impl Lang for LangTl {
     /// first — `number == 1` / `number == 2` are *numeric* equality, so the
     /// whole floats 1.0 / 2.0 (and `Decimal("1.0")`) hit the special forms
     /// "una" / "ikalawa". Everything else is `"ika-" + self.to_cardinal(number)`,
-    /// i.e. the float string grammar with the prefix: "ika-lima point zero".
+    /// i.e. the float string grammar with the prefix: "ika-lima punto sero".
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let (is_one, is_two) = match value {
             FloatValue::Float { value, .. } => (*value == 1.0, *value == 2.0),
@@ -546,7 +547,7 @@ impl Lang for LangTl {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "punto"
     }
 
     /// The float/Decimal path. `Num2Word_TL` never defines `to_cardinal_float`;
@@ -946,7 +947,7 @@ fn py_float_repr(value: f64) -> String {
 ///
 /// `Decimal` carries `_sign` independently, so `Decimal("-0.0")` is signed zero
 /// and `str()` gives `'-0.0'`; TL then strips that minus textually and answers
-/// "minus zero point zero". A `BigDecimal` cannot represent it — its `int_val`
+/// "minus sero punto sero". A `BigDecimal` cannot represent it — its `int_val`
 /// is a `BigInt` with no negative zero, so `BigDecimal::from_str("-0.0")` has
 /// already discarded the sign before this function runs. We emit `'0.0'` and
 /// drop the negword. The discriminator is the original string, which the
