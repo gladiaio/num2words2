@@ -41,7 +41,7 @@ CASES = {
 
 UNVERIFIED = {
     # Best-candidate words, flagged UNVERIFIED in the module headers (#154).
-    "su": ("nol", "hiji koma lima", "mineus hiji", "nol-na"),
+    "su": ("nol", "hiji koma lima", "minus hiji", "nol-na"),
     "yo": ("òdo", "ọkan ẹsẹ marun", "òdì ọkan", "òdo-kẹta"),
     "tk": ("nol", "bir otur bäş", "minus bir", "nolunjy"),
     "cnh": ("pakpalawng", "pakhat deh panga", "zuh pakhat", "pakpalawng-nak"),

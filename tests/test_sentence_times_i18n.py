@@ -33,6 +33,10 @@ from num2words2 import num2words_sentence
         ("fr", "à 1:00", "à une heure"),
         ("fr", "à 21:00", "à vingt-et-une heures"),
         ("fr", "à 0:10", "à zéro heure dix"),
+        # minutes are feminine too ("minute"): consensus of an LLM review.
+        ("fr", "à 14:21", "à quatorze heures vingt-et-une"),
+        ("fr", "à 21:01", "à vingt-et-une heures une"),
+        ("fr", "à 9:31", "à neuf heures trente-et-une"),
         # de: bare H:MM reads like "… Uhr" (#183).
         ("de", "um 14:30", "um vierzehn Uhr dreißig"),
         ("de", "um 14:00", "um vierzehn Uhr"),

@@ -1882,16 +1882,21 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
                 }
                 // "quatorze heures trente", "une heure", "vingt-et-une
                 // heures", "zéro heure dix" (heure is feminine, singular
-                // below two).
+                // below two). The minutes count "minutes" (feminine) too:
+                // "quatorze heures vingt-et-une", "vingt-et-une heures une".
                 "fr" => {
-                    let mut hour = card(h)?;
-                    if hour.ends_with("un") {
-                        hour.push('e');
-                    }
+                    let fem = |x: u32| -> Result<String, N2WError> {
+                        let mut w = card(x)?;
+                        if w.ends_with("un") {
+                            w.push('e');
+                        }
+                        Ok(w)
+                    };
+                    let hour = fem(h)?;
                     let unit = if h < 2 { "heure" } else { "heures" };
                     match m {
                         0 => format!("{} {}", hour, unit),
-                        m => format!("{} {} {}", hour, unit, card(m)?),
+                        m => format!("{} {} {}", hour, unit, fem(m)?),
                     }
                 }
                 // "quattordici e trenta", "l'una e venti", "le quattordici".

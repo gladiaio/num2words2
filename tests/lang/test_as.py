@@ -70,7 +70,7 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(85, lang="as"), "পঁচাশী")
         self.assertEqual(num2words(90, lang="as"), "নব্বৈ")
         self.assertEqual(num2words(95, lang="as"), "পঁচানব্বৈ")
-        self.assertEqual(num2words(99, lang="as"), "নিৰান্নব্বৈ")
+        self.assertEqual(num2words(99, lang="as"), "নিৰানব্বৈ")
         self.assertEqual(num2words(100, lang="as"), "এক শ")
 
     def test_cardinal_hundreds(self):
@@ -82,13 +82,13 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(125, lang="as"), "এক শ পঁচিশ")
         self.assertEqual(num2words(150, lang="as"), "এক শ পঞ্চাশ")
         self.assertEqual(num2words(175, lang="as"), "এক শ পঁসত্তৰ")
-        self.assertEqual(num2words(199, lang="as"), "এক শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(199, lang="as"), "এক শ নিৰানব্বৈ")
         self.assertEqual(num2words(200, lang="as"), "দুই শ")
         self.assertEqual(num2words(201, lang="as"), "দুই শ এক")
         self.assertEqual(num2words(210, lang="as"), "দুই শ দহ")
         self.assertEqual(num2words(220, lang="as"), "দুই শ বিশ")
         self.assertEqual(num2words(250, lang="as"), "দুই শ পঞ্চাশ")
-        self.assertEqual(num2words(299, lang="as"), "দুই শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(299, lang="as"), "দুই শ নিৰানব্বৈ")
         self.assertEqual(num2words(300, lang="as"), "তিনি শ")
         self.assertEqual(num2words(333, lang="as"), "তিনি শ তেত্ৰিশ")
         self.assertEqual(num2words(400, lang="as"), "চাৰি শ")
@@ -102,7 +102,7 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(800, lang="as"), "আঠ শ")
         self.assertEqual(num2words(888, lang="as"), "আঠ শ আঠাশী")
         self.assertEqual(num2words(900, lang="as"), "নয় শ")
-        self.assertEqual(num2words(999, lang="as"), "নয় শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(999, lang="as"), "নয় শ নিৰানব্বৈ")
 
     def test_cardinal_thousands(self):
         """Test cardinal numbers from 1000 to 999999."""
@@ -113,7 +113,7 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(1111, lang="as"), "এক হাজাৰ এক শ এঘাৰ")
         self.assertEqual(num2words(1234, lang="as"), "এক হাজাৰ দুই শ চৌত্ৰিশ")
         self.assertEqual(num2words(1500, lang="as"), "এক হাজাৰ পাঁচ শ")
-        self.assertEqual(num2words(1999, lang="as"), "এক হাজাৰ নয় শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(1999, lang="as"), "এক হাজাৰ নয় শ নিৰানব্বৈ")
         self.assertEqual(num2words(2000, lang="as"), "দুই হাজাৰ")
         self.assertEqual(num2words(2001, lang="as"), "দুই হাজাৰ এক")
         self.assertEqual(num2words(2020, lang="as"), "দুই হাজাৰ বিশ")
@@ -131,14 +131,14 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(8000, lang="as"), "আঠ হাজাৰ")
         self.assertEqual(num2words(8888, lang="as"), "আঠ হাজাৰ আঠ শ আঠাশী")
         self.assertEqual(num2words(9000, lang="as"), "নয় হাজাৰ")
-        self.assertEqual(num2words(9999, lang="as"), "নয় হাজাৰ নয় শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(9999, lang="as"), "নয় হাজাৰ নয় শ নিৰানব্বৈ")
         self.assertEqual(num2words(10000, lang="as"), "দহ হাজাৰ")
         self.assertEqual(num2words(10001, lang="as"), "দহ হাজাৰ এক")
         self.assertEqual(num2words(11111, lang="as"), "এঘাৰ হাজাৰ এক শ এঘাৰ")
         self.assertEqual(num2words(12345, lang="as"), "বাৰ হাজাৰ তিনি শ পঞ্চল্লিশ")
         self.assertEqual(num2words(20000, lang="as"), "বিশ হাজাৰ")
         self.assertEqual(num2words(50000, lang="as"), "পঞ্চাশ হাজাৰ")
-        self.assertEqual(num2words(99999, lang="as"), "নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(99999, lang="as"), "নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ")
         self.assertEqual(num2words(100000, lang="as"), "এক লাখ")
         self.assertEqual(
             num2words(123456, lang="as"), "এক লাখ তেইশ হাজাৰ চাৰি শ ছাপন"
@@ -149,7 +149,7 @@ class Num2WordsASTest(TestCase):
             num2words(654321, lang="as"), "ছয় লাখ চৌৱন হাজাৰ তিনি শ একৈশ"
         )
         self.assertEqual(
-            num2words(999999, lang="as"), "নয় লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ"
+            num2words(999999, lang="as"), "নয় লাখ নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ"
         )
 
     def test_cardinal_large(self):
@@ -164,7 +164,7 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(5000000, lang="as"), "পঞ্চাশ লাখ")
         self.assertEqual(
             num2words(9999999, lang="as"),
-            "নিৰান্নব্বৈ লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ",
+            "নিৰানব্বৈ লাখ নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ",
         )
         self.assertEqual(num2words(10000000, lang="as"), "এক কোটি")
         self.assertEqual(
@@ -173,7 +173,7 @@ class Num2WordsASTest(TestCase):
         )
         self.assertEqual(
             num2words(99999999, lang="as"),
-            "নয় কোটি নিৰান্নব্বৈ লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ",
+            "নয় কোটি নিৰানব্বৈ লাখ নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ",
         )
         self.assertEqual(num2words(100000000, lang="as"), "দহ কোটি")
         self.assertEqual(
@@ -182,7 +182,7 @@ class Num2WordsASTest(TestCase):
         )
         self.assertEqual(
             num2words(999999999, lang="as"),
-            "নিৰান্নব্বৈ কোটি নিৰান্নব্বৈ লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ",
+            "নিৰানব্বৈ কোটি নিৰানব্বৈ লাখ নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ",
         )
         self.assertEqual(num2words(1000000000, lang="as"), "এক শ কোটি")
         self.assertEqual(
@@ -191,12 +191,12 @@ class Num2WordsASTest(TestCase):
         )
         self.assertEqual(
             num2words(9999999999, lang="as"),
-            "নয় শ নিৰান্নব্বৈ কোটি নিৰান্নব্বৈ লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ",
+            "নয় শ নিৰানব্বৈ কোটি নিৰানব্বৈ লাখ নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ",
         )
         self.assertEqual(num2words(10000000000, lang="as"), "এক হাজাৰ কোটি")
         self.assertEqual(
             num2words(99999999999, lang="as"),
-            "নয় হাজাৰ নয় শ নিৰান্নব্বৈ কোটি নিৰান্নব্বৈ লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ",
+            "নয় হাজাৰ নয় শ নিৰানব্বৈ কোটি নিৰানব্বৈ লাখ নিৰানব্বৈ হাজাৰ নয় শ নিৰানব্বৈ",
         )
 
     def test_negative_numbers(self):
@@ -208,11 +208,11 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(-11, lang="as"), "ঋণাত্মক এঘাৰ")
         self.assertEqual(num2words(-20, lang="as"), "ঋণাত্মক বিশ")
         self.assertEqual(num2words(-50, lang="as"), "ঋণাত্মক পঞ্চাশ")
-        self.assertEqual(num2words(-99, lang="as"), "ঋণাত্মক নিৰান্নব্বৈ")
+        self.assertEqual(num2words(-99, lang="as"), "ঋণাত্মক নিৰানব্বৈ")
         self.assertEqual(num2words(-100, lang="as"), "ঋণাত্মক এক শ")
         self.assertEqual(num2words(-101, lang="as"), "ঋণাত্মক এক শ এক")
         self.assertEqual(num2words(-200, lang="as"), "ঋণাত্মক দুই শ")
-        self.assertEqual(num2words(-999, lang="as"), "ঋণাত্মক নয় শ নিৰান্নব্বৈ")
+        self.assertEqual(num2words(-999, lang="as"), "ঋণাত্মক নয় শ নিৰানব্বৈ")
         self.assertEqual(num2words(-1000, lang="as"), "ঋণাত্মক এক হাজাৰ")
         self.assertEqual(num2words(-1001, lang="as"), "ঋণাত্মক এক হাজাৰ এক")
         self.assertEqual(num2words(-10000, lang="as"), "ঋণাত্মক দহ হাজাৰ")
@@ -231,7 +231,7 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(10.5, lang="as"), "দহ দশমিক পাঁচ")
         self.assertEqual(num2words(11.11, lang="as"), "এঘাৰ দশমিক এক এক")
         self.assertEqual(num2words(20.2, lang="as"), "বিশ দশমিক দুই")
-        self.assertEqual(num2words(99.99, lang="as"), "নিৰান্নব্বৈ দশমিক নয় নয়")
+        self.assertEqual(num2words(99.99, lang="as"), "নিৰানব্বৈ দশমিক নয় নয়")
         self.assertEqual(num2words(100.01, lang="as"), "এক শ দশমিক শূন্য এক")
         self.assertEqual(num2words(100.5, lang="as"), "এক শ দশমিক পাঁচ")
         self.assertEqual(num2words(123.45, lang="as"), "এক শ তেইশ দশমিক চাৰি পাঁচ")
@@ -357,7 +357,7 @@ class Num2WordsASTest(TestCase):
             num2words(1984, lang="as", to="year"), "চন এক হাজাৰ নয় শ চৌৰাশী"
         )
         self.assertEqual(
-            num2words(1999, lang="as", to="year"), "চন এক হাজাৰ নয় শ নিৰান্নব্বৈ"
+            num2words(1999, lang="as", to="year"), "চন এক হাজাৰ নয় শ নিৰানব্বৈ"
         )
         self.assertEqual(num2words(2000, lang="as", to="year"), "চন দুই হাজাৰ")
         self.assertEqual(num2words(2001, lang="as", to="year"), "চন দুই হাজাৰ এক")

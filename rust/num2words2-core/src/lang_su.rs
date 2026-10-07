@@ -5,8 +5,9 @@
 //! UNVERIFIED (#154): "koma" (decimal) — best candidate: Sundanese is written
 //!   in Indonesia, which uses a decimal comma read "koma"; CLDR su.xml says
 //!   "titik" instead.
-//! UNVERIFIED (#154): "mineus" (minus) — best candidate: CLDR su.xml rbnf rule
-//!   "-x: mineus".
+//! Minus is "minus": CLDR's su.xml rbnf rule has "mineus", but a review by
+//!   five LLMs (GPT-5.6, Gemini 3.8, Grok 4.7, DeepSeek V4, Qwen 3.8) found
+//!   3 of 5 preferring "minus" as the spoken form; still worth a native check.
 //!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
@@ -45,7 +46,7 @@
 //!    `return self.ones[0] if self.ones[0] else "zero"` and `ones[0]` is the
 //!    empty string, so Python always said the English "zero". The port says
 //!    the Sundanese "nol". The decimal word and negword are the
-//!    best candidates "koma" and "mineus" (see UNVERIFIED above).
+//!    best candidates "koma" and "minus" (see UNVERIFIED above).
 //! 2. **The teens are built compositionally and come out wrong.** 11..19 go
 //!    through the generic `tens[1] + " " + ones[n]` path, yielding
 //!    "sapuluh hiji" (lit. "ten one") for 11 and "sapuluh dua" for 12. Real
@@ -64,7 +65,7 @@
 //!    sign in numeric form: `to_ordinal_num(-1)` == "-1.".
 //! 5. **`to_ordinal` is cardinal + "-na" with no linguistic agreement**, and
 //!    the suffix binds to the whole phrase, sign included:
-//!    `to_ordinal(-1)` == "mineus hiji-na".
+//!    `to_ordinal(-1)` == "minus hiji-na".
 //! 6. `negword` is `"minus "` — with a **trailing space** baked into the
 //!    attribute. `to_cardinal` concatenates it raw and relies on the final
 //!    `.strip()` to tidy up. [`LangSu::negword`] returns the attribute
@@ -182,7 +183,7 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is part of the Python attribute.
-const NEGWORD: &str = "mineus ";
+const NEGWORD: &str = "minus ";
 /// `self.pointword`.
 const POINTWORD: &str = "koma";
 
@@ -673,7 +674,7 @@ impl Lang for LangSu {
     /// * Bug 3 leaks in: a `left` ≥ 10^9 is emitted as bare digits, so the
     ///   Decimal `98746251323029.99` → "98746251323029 koma salapan salapan".
     /// * The sign is peeled off `str(number)` exactly as Python does, so
-    ///   `str(-0.0)` == "-0.0" would yield "mineus nol koma nol" (Rust's
+    ///   `str(-0.0)` == "-0.0" would yield "minus nol koma nol" (Rust's
     ///   fixed formatting preserves the negative-zero sign, matching repr).
     fn to_cardinal_float(
         &self,

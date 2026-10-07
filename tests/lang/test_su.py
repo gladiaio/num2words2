@@ -232,25 +232,25 @@ class Num2WordsSUTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="su"), "mineus hiji")
-        self.assertEqual(num2words(-2, lang="su"), "mineus dua")
-        self.assertEqual(num2words(-5, lang="su"), "mineus lima")
-        self.assertEqual(num2words(-10, lang="su"), "mineus sapuluh")
-        self.assertEqual(num2words(-11, lang="su"), "mineus sapuluh hiji")
-        self.assertEqual(num2words(-20, lang="su"), "mineus dua puluh")
-        self.assertEqual(num2words(-50, lang="su"), "mineus lima puluh")
-        self.assertEqual(num2words(-99, lang="su"), "mineus salapan puluh salapan")
-        self.assertEqual(num2words(-100, lang="su"), "mineus hiji ratus")
-        self.assertEqual(num2words(-101, lang="su"), "mineus hiji ratus hiji")
-        self.assertEqual(num2words(-200, lang="su"), "mineus dua ratus")
+        self.assertEqual(num2words(-1, lang="su"), "minus hiji")
+        self.assertEqual(num2words(-2, lang="su"), "minus dua")
+        self.assertEqual(num2words(-5, lang="su"), "minus lima")
+        self.assertEqual(num2words(-10, lang="su"), "minus sapuluh")
+        self.assertEqual(num2words(-11, lang="su"), "minus sapuluh hiji")
+        self.assertEqual(num2words(-20, lang="su"), "minus dua puluh")
+        self.assertEqual(num2words(-50, lang="su"), "minus lima puluh")
+        self.assertEqual(num2words(-99, lang="su"), "minus salapan puluh salapan")
+        self.assertEqual(num2words(-100, lang="su"), "minus hiji ratus")
+        self.assertEqual(num2words(-101, lang="su"), "minus hiji ratus hiji")
+        self.assertEqual(num2words(-200, lang="su"), "minus dua ratus")
         self.assertEqual(
-            num2words(-999, lang="su"), "mineus salapan ratus salapan puluh salapan"
+            num2words(-999, lang="su"), "minus salapan ratus salapan puluh salapan"
         )
-        self.assertEqual(num2words(-1000, lang="su"), "mineus hiji rebu")
-        self.assertEqual(num2words(-1001, lang="su"), "mineus hiji rebu hiji")
-        self.assertEqual(num2words(-10000, lang="su"), "mineus sapuluh rebu")
-        self.assertEqual(num2words(-100000, lang="su"), "mineus hiji ratus rebu")
-        self.assertEqual(num2words(-1000000, lang="su"), "mineus hiji juta")
+        self.assertEqual(num2words(-1000, lang="su"), "minus hiji rebu")
+        self.assertEqual(num2words(-1001, lang="su"), "minus hiji rebu hiji")
+        self.assertEqual(num2words(-10000, lang="su"), "minus sapuluh rebu")
+        self.assertEqual(num2words(-100000, lang="su"), "minus hiji ratus rebu")
+        self.assertEqual(num2words(-1000000, lang="su"), "minus hiji juta")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
@@ -278,9 +278,9 @@ class Num2WordsSUTest(TestCase):
             "hiji rebu dua ratus tilu puluh opat koma lima genep",
         )
         self.assertEqual(num2words(10000.01, lang="su"), "sapuluh rebu koma nol hiji")
-        self.assertEqual(num2words(-0.5, lang="su"), "mineus nol koma lima")
-        self.assertEqual(num2words(-1.5, lang="su"), "mineus hiji koma lima")
-        self.assertEqual(num2words(-10.5, lang="su"), "mineus sapuluh koma lima")
+        self.assertEqual(num2words(-0.5, lang="su"), "minus nol koma lima")
+        self.assertEqual(num2words(-1.5, lang="su"), "minus hiji koma lima")
+        self.assertEqual(num2words(-10.5, lang="su"), "minus sapuluh koma lima")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
