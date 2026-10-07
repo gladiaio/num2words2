@@ -29,11 +29,11 @@
 //! This is a port, not a rewrite. The following all look wrong but are exactly
 //! what Python emits, verified against `bench/corpus.jsonl`:
 //!
-//! 1. **No compound tens.** `_int_to_word` glues the tens word and the ones
-//!    word with a plain space instead of using the (real, irregular) Gujarati
-//!    compounds: `21` == "વીસ એક" ("twenty one"), not "એકવીસ"; `42` ==
-//!    "ચાલીસ બે"; `99` == "નેવું નવ". Only 10–19 use real single words.
-//!    Corpus-confirmed for 21/42/99/999.
+//! 1. **No compound tens (fixed, gladiaio/num2words2#247).** Python's
+//!    `_int_to_word` glued the tens word and the ones word with a plain space
+//!    ("વીસ એક" for 21, "નેવું નવ" for 99) instead of the real, irregular
+//!    Gujarati words. The port reads [`BELOW_HUNDRED`]: 21 is "એકવીસ", 42
+//!    "બેતાલીસ", 99 "નવ્વાણું".
 //! 2. **`to_ordinal_num` mixed numeral systems (fixed, #224).** Python gave
 //!    Gujarati digits for 1/2/3 ("૧લો", "૨જો", "૩જો") but `str(number) + "મો"`,
 //!    i.e. ASCII digits, for everything else ("5મો"). The port writes ASCII
@@ -50,9 +50,7 @@
 //!    1/2/3/4/6 the `cardinal` local is built and discarded. Reproduced (it is
 //!    side-effect free, but keeping it preserves the crash surface if
 //!    `to_cardinal` ever raises).
-//! 6. **`tens[1]` ("દસ") is unreachable.** The `< 100` arm only runs for
-//!    20..=99, so `number // 10` is 2..=9. The slot is kept to preserve
-//!    indexing.
+//! 6. (Python's unreachable `tens[1]` went with the `tens` table, #247.)
 //! 7. **`ones[0]` is the empty string** and `_int_to_word`'s `number < 0` arm
 //!    is dead code on every in-scope path (`to_cardinal` strips the sign
 //!    before recursing, so `_int_to_word` only ever sees non-negatives; only
@@ -164,39 +162,26 @@ const NEGWORD: &str = "ઋણ ";
 /// in-scope modes; kept so the trait's `pointword()` reports the truth.
 const POINTWORD: &str = "દશાંશ";
 
-/// `ones`. Index 0 is the empty string in Python; `_int_to_word` guards it
-/// with the `number == 0` early return, so it is never emitted.
-const ONES: [&str; 10] = [
-    "", "એક", "બે", "ત્રણ", "ચાર", "પાંચ", "છ", "સાત", "આઠ", "નવ",
-];
-
-/// `tens`. Index 0 is empty and index 1 ("દસ") is unreachable — the `< 100`
-/// arm only runs for 20..=99. Both kept to preserve `number // 10` indexing.
-const TENS: [&str; 10] = [
-    "",
-    "દસ",
-    "વીસ",
-    "ત્રીસ",
-    "ચાલીસ",
-    "પચાસ",
-    "સાઠ",
-    "સિત્તેર",
-    "એંસી",
-    "નેવું",
-];
-
-/// `teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "દસ",
-    "અગિયાર",
-    "બાર",
-    "તેર",
-    "ચૌદ",
-    "પંદર",
-    "સોળ",
-    "સત્તર",
-    "અઢાર",
-    "ઓગણીસ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and joined a ten and a unit with a space
+/// ("વીસ એક" for 21), but Gujarati has its own word for every number below a
+/// hundred. Index 0 is never read (the `number == 0` early return). 21..=99
+/// from learningujarati.com, saralgujarati.in and atozworksheet.com, which
+/// agree entry for entry; 0..=20 and the round tens also match Wikibooks
+/// and languagesandnumbers.com. The module's ચાલીસ (40) is kept, so the 40s
+/// use -તાલીસ (Wiktionary also has ચાળીસ / -તાળીસ).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "એક", "બે", "ત્રણ", "ચાર", "પાંચ", "છ", "સાત", "આઠ", "નવ", // 0..9
+    "દસ", "અગિયાર", "બાર", "તેર", "ચૌદ", "પંદર", "સોળ", "સત્તર", "અઢાર", "ઓગણીસ", // 10..19
+    "વીસ", "એકવીસ", "બાવીસ", "તેવીસ", "ચોવીસ", "પચ્ચીસ", "છવીસ", "સત્તાવીસ", "અઠ્ઠાવીસ", "ઓગણત્રીસ", // 20..29
+    "ત્રીસ", "એકત્રીસ", "બત્રીસ", "તેત્રીસ", "ચોત્રીસ", "પાંત્રીસ", "છત્રીસ", "સાડત્રીસ", "આડત્રીસ", "ઓગણચાલીસ", // 30..39
+    "ચાલીસ", "એકતાલીસ", "બેતાલીસ", "ત્રેતાલીસ", "ચુંમાલીસ", "પિસ્તાલીસ", "છેતાલીસ", "સુડતાલીસ", "અડતાલીસ", "ઓગણપચાસ", // 40..49
+    "પચાસ", "એકાવન", "બાવન", "ત્રેપન", "ચોપન", "પંચાવન", "છપ્પન", "સત્તાવન", "અઠ્ઠાવન", "ઓગણસાઠ", // 50..59
+    "સાઠ", "એકસઠ", "બાસઠ", "ત્રેસઠ", "ચોસઠ", "પાંસઠ", "છાસઠ", "સડસઠ", "અડસઠ", "અગણોસિત્તેર", // 60..69
+    "સિત્તેર", "એકોતેર", "બોતેર", "તોતેર", "ચુમોતેર", "પંચોતેર", "છોતેર", "સિત્યોતેર", "ઇઠ્યોતેર", "ઓગણાએંસી", // 70..79
+    "એંસી", "એક્યાસી", "બ્યાસી", "ત્યાસી", "ચોર્યાસી", "પંચાસી", "છ્યાસી", "સિત્યાસી", "ઈઠ્યાસી", "નેવ્યાસી", // 80..89
+    "નેવું", "એકાણું", "બાણું", "ત્રાણું", "ચોરાણું", "પંચાણું", "છન્નું", "સત્તાણું", "અઠ્ઠાણું", "નવ્વાણું", // 90..99
 ];
 
 /// Scale words. Each carries Python's leading space, because `_int_to_word`
@@ -316,29 +301,14 @@ fn int_to_word(number: &BigInt) -> String {
     }
 
     // number is now in 1..=inf, so to_usize() is safe wherever it is bounded.
-    if number < &BigInt::from(10) {
-        return ONES[number.to_usize().expect("bounded by 10")].to_string();
-    }
-
-    if number < &BigInt::from(20) {
-        let idx = (number - 10u8).to_usize().expect("bounded by 10");
-        return TEENS[idx].to_string();
-    }
-
     if number < &BigInt::from(100) {
-        let n = number.to_usize().expect("bounded by 100");
-        let mut result = TENS[n / 10].to_string();
-        if n % 10 != 0 {
-            result.push(' ');
-            result.push_str(ONES[n % 10]);
-        }
-        return result;
+        return BELOW_HUNDRED[number.to_usize().expect("bounded by 100")].to_string();
     }
 
     if number < &BigInt::from(1000) {
         let n = number.to_usize().expect("bounded by 1000");
         // ones[number // 100] + " સો" — the divisor is 1..=9 here, never 0.
-        let mut result = format!("{}{}", ONES[n / 100], HUNDRED);
+        let mut result = format!("{}{}", BELOW_HUNDRED[n / 100], HUNDRED);
         let remainder = n % 100;
         if remainder != 0 {
             result.push(' ');

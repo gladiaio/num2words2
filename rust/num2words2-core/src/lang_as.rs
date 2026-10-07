@@ -44,19 +44,15 @@
 //! This is a port, not a rewrite. The following look wrong but are exactly
 //! what Python emits, and every one is pinned by a corpus row:
 //!
-//! 1. **The hundreds branch omits the separating space.** Every other branch
-//!    of `_int_to_word` joins its remainder with `" " + ...`; the `< 1000`
-//!    branch alone writes `+ (self._int_to_word(number % 100) if ...)` with
-//!    no space. So the hundred-word "শ" fuses onto the next word:
-//!    `101` → "এক শএক", `110` → "এক শদহ", `999` → "নয় শনব্বই নয়",
-//!    `1905` → "এক হাজাৰ নয় শপাঁচ". A bare `100` is unaffected ("এক শ")
-//!    because the remainder is empty. Note the space that *does* appear is
-//!    the leading one baked into the `" শ"` literal ([`HUNDRED`]), not a
-//!    separator. See [`int_to_word`].
-//! 2. **Tens are not compounded.** `21` is "বিশ এক" (literally "twenty one"
-//!    as two juxtaposed words) rather than the idiomatic Assamese "একৈশ";
-//!    `42` is "চল্লিশ দুই". The table has no 21–99 compound forms at all.
-//!    Reproduced verbatim.
+//! 1. **The hundreds branch omitted the separating space (fixed,
+//!    gladiaio/num2words2#247).** Every other branch of `_int_to_word` joins
+//!    its remainder with `" " + ...`; Python's `< 1000` branch did not, so
+//!    the hundred-word "শ" fused onto the next word: `101` was "এক শএক",
+//!    `456` "চাৰি শপঞ্চাশ ছয়". The port adds the space: "এক শ এক",
+//!    "চাৰি শ ছাপন".
+//! 2. **Tens were not compounded (fixed, gladiaio/num2words2#247).** `21` was
+//!    "বিশ এক" (literally "twenty one") rather than the Assamese "একৈশ";
+//!    the port reads [`BELOW_HUNDRED`].
 //! 3. **`to_ordinal` inserts a stray space before the suffix**:
 //!    `cardinal + " -তম"` yields "এক -তম", not "এক-তম". `to_ordinal_num`
 //!    uses the tight `"-তম"` instead, so the two disagree by a space.
@@ -139,39 +135,27 @@ const POINTWORD: &str = "দশমিক";
 /// guard is what makes `to_cardinal(0)` produce a word at all.
 const ZERO_WORD: &str = "শূন্য";
 
-/// `ones`. Index 0 is `""` and is only ever reached via `number % 10 == 0`
-/// (guarded against) or `number // 100 == 0` (impossible for `number >= 100`).
-const ONES: [&str; 10] = [
-    "", "এক", "দুই", "তিনি", "চাৰি", "পাঁচ", "ছয়", "সাত", "আঠ", "নয়",
-];
-
-/// `tens`. Indices 0 and 1 are `""`: the `< 20` teens branch runs first, so
-/// `tens[0]`/`tens[1]` are unreachable.
-const TENS: [&str; 10] = [
-    "",
-    "",
-    "বিশ",
-    "ত্ৰিশ",
-    "চল্লিশ",
-    "পঞ্চাশ",
-    "ষাঠি",
-    "সত্তৰ",
-    "আশী",
-    "নব্বই",
-];
-
-/// `teens`, indexed `number - 10`, covering 10..=19.
-const TEENS: [&str; 10] = [
-    "দহ",
-    "এঘাৰ",
-    "বাৰ",
-    "তেৰ",
-    "চৈধ্য",
-    "পোন্ধৰ",
-    "ষোল্ল",
-    "সোতৰ",
-    "ওঠৰ",
-    "উনিশ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and juxtaposed a ten and a unit ("বিশ
+/// এক" for 21), but Assamese has its own word for every number below a
+/// hundred. Index 0 is never read. Forms from Wiktionary's Assamese
+/// cardinal-number entries and Omniglot, which write the sibilant ছ (বিছ,
+/// একৈছ); the module's শ spelling (বিশ, ত্ৰিশ, also in dailyassam.com's
+/// school list) is kept throughout. 19 and 90 follow both sources (ঊনৈশ,
+/// নব্বৈ) instead of Python's Bengali উনিশ/নব্বই; 9 keeps the module's নয়.
+/// Lower confidence, sources disagree: 44, 45, 51..=58, 59..=78, 99.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "এক", "দুই", "তিনি", "চাৰি", "পাঁচ", "ছয়", "সাত", "আঠ", "নয়", // 0..9
+    "দহ", "এঘাৰ", "বাৰ", "তেৰ", "চৈধ্য", "পোন্ধৰ", "ষোল্ল", "সোতৰ", "ওঠৰ", "ঊনৈশ", // 10..19
+    "বিশ", "একৈশ", "বাইশ", "তেইশ", "চৌবিশ", "পঁচিশ", "ছাবিশ", "সাতাইশ", "আঠাইশ", "ঊনত্ৰিশ", // 20..29
+    "ত্ৰিশ", "একত্ৰিশ", "বত্ৰিশ", "তেত্ৰিশ", "চৌত্ৰিশ", "পঁয়ত্ৰিশ", "ছয়ত্ৰিশ", "সাতত্ৰিশ", "আঠত্ৰিশ", "ঊনচল্লিশ", // 30..39
+    "চল্লিশ", "একচল্লিশ", "বিয়াল্লিশ", "তিয়াল্লিশ", "চৌৰাল্লিশ", "পঞ্চল্লিশ", "ছয়চল্লিশ", "সাতচল্লিশ", "আঠচল্লিশ", "ঊনপঞ্চাশ", // 40..49
+    "পঞ্চাশ", "একাৱন", "বাৱন", "তেৱন", "চৌৱন", "পঁচপন", "ছাপন", "সাতাৱন", "আঠাৱন", "ঊনষাঠি", // 50..59
+    "ষাঠি", "এষষ্ঠি", "বাষষ্ঠি", "তেষষ্ঠি", "চৌষষ্ঠি", "পঁষষ্ঠি", "ছয়ষষ্ঠি", "সাতষষ্ঠি", "আঠষষ্ঠি", "ঊনসত্তৰ", // 60..69
+    "সত্তৰ", "এসত্তৰ", "বাসত্তৰ", "তেসত্তৰ", "চৌসত্তৰ", "পঁসত্তৰ", "ছয়সত্তৰ", "সাতসত্তৰ", "আঠসত্তৰ", "ঊনআশী", // 70..79
+    "আশী", "একাশী", "বিয়াশী", "তিৰাশী", "চৌৰাশী", "পঁচাশী", "ছয়াশী", "সাতাশী", "আঠাশী", "ঊননব্বৈ", // 80..89
+    "নব্বৈ", "একান্নব্বৈ", "বিয়ান্নব্বৈ", "তিৰান্নব্বৈ", "চৌৰান্নব্বৈ", "পঁচানব্বৈ", "ছয়ান্নব্বৈ", "সাতান্নব্বৈ", "আঠান্নব্বৈ", "নিৰান্নব্বৈ", // 90..99
 ];
 
 /// `" শ"` (hundred) — the leading space is part of the Python literal.
@@ -658,35 +642,20 @@ fn int_to_word(number: &BigInt) -> String {
         return ZERO_WORD.to_string();
     }
 
-    // number < 10  →  ones[number]
-    if *number < BigInt::from(10) {
-        return ONES[small(number)].to_string();
-    }
-
-    // number < 20  →  teens[number - 10]
-    if *number < BigInt::from(20) {
-        return TEENS[small(number) - 10].to_string();
-    }
-
-    // number < 100  →  tens[number // 10] + (" " + ones[number % 10] if number % 10 else "")
+    // number < 100  →  one word (#247; Python composed tens and ones)
     if *number < BigInt::from(100) {
-        let n = small(number);
-        let mut out = TENS[n / 10].to_string();
-        if n % 10 != 0 {
-            out.push(' ');
-            out.push_str(ONES[n % 10]);
-        }
-        return out;
+        return BELOW_HUNDRED[small(number)].to_string();
     }
 
     // number < 1000  →  ones[number // 100] + " শ" + (_int_to_word(number % 100) if number % 100 else "")
     //
-    // BUG 1: no " " before the recursive call, unlike every branch below.
+    // Python wrote no " " before the recursive call (bug 1, fixed in #247).
     if *number < BigInt::from(1000) {
         let n = small(number);
-        let mut out = ONES[n / 100].to_string();
+        let mut out = BELOW_HUNDRED[n / 100].to_string();
         out.push_str(HUNDRED);
         if n % 100 != 0 {
+            out.push(' ');
             out.push_str(&int_to_word(&BigInt::from(n % 100)));
         }
         return out;
@@ -1175,9 +1144,9 @@ mod tests {
         assert_eq!(flt(0.99), "শূন্য দশমিক নয় নয়");
         assert_eq!(flt(1.01), "এক দশমিক শূন্য এক");
         assert_eq!(flt(12.34), "বাৰ দশমিক তিনি চাৰি");
-        assert_eq!(flt(99.99), "নব্বই নয় দশমিক নয় নয়");
+        assert_eq!(flt(99.99), "নিৰান্নব্বৈ দশমিক নয় নয়");
         assert_eq!(flt(100.5), "এক শ দশমিক পাঁচ");
-        assert_eq!(flt(1234.56), "এক হাজাৰ দুই শত্ৰিশ চাৰি দশমিক পাঁচ ছয়");
+        assert_eq!(flt(1234.56), "এক হাজাৰ দুই শ চৌত্ৰিশ দশমিক পাঁচ ছয়");
         assert_eq!(flt(-0.5), "ঋণাত্মক শূন্য দশমিক পাঁচ");
         assert_eq!(flt(-1.5), "ঋণাত্মক এক দশমিক পাঁচ");
         assert_eq!(flt(-12.34), "ঋণাত্মক বাৰ দশমিক তিনি চাৰি");
@@ -1197,8 +1166,8 @@ mod tests {
         // Issue #603's value: exact at trillion scale, no float() cast.
         assert_eq!(
             dec("98746251323029.99"),
-            "নব্বই আঠ লাখ সত্তৰ চাৰি হাজাৰ ছয় শবিশ পাঁচ কোটি তেৰ লাখ \
-             বিশ তিনি হাজাৰ বিশ নয় দশমিক নয় নয়"
+            "আঠান্নব্বৈ লাখ চৌসত্তৰ হাজাৰ ছয় শ পঁচিশ কোটি তেৰ লাখ \
+             তেইশ হাজাৰ ঊনত্ৰিশ দশমিক নয় নয়"
         );
         assert_eq!(dec("0.001"), "শূন্য দশমিক শূন্য শূন্য এক");
     }

@@ -87,14 +87,17 @@
 //!    gave "1ಒಂದನೇ". The port writes the numeral plus the ordinal suffix
 //!    `to_ordinal` uses: "1ನೇ", "100ನೇ".
 //!
-//! 4. **Typos and inconsistent spacing in `low_numwords`, kept verbatim.** The
-//!    30s are especially ragged: 36/37/38 are missing the second "ta" that every
-//!    other thirty-something carries. Spacing is arbitrary across the table --
-//!    93/94 use a bare consonant plus a space (no virama), 83/84 use virama plus
-//!    space, 53/54 run the words together with no space at all, while 22..=25 use
-//!    virama plus space. Consequently `to_cardinal(31)` is joined but
-//!    `to_cardinal(21)` is spaced. Do not normalise any of it.
-//!
+//! 4. **Typos and inconsistent spacing in `low_numwords` (fixed,
+//!    gladiaio/num2words2#247).** Python's table wrote 21..=44 and the 3s/4s
+//!    of each later decade as two words or with a stray virama ("ಇಪ್ಪತ್ತ್
+//!    ಮೂರು" for 23, "ಮೂವತ್ಎಂಟು" for 38, missing a ತ). Kannada writes each of
+//!    them as one word: the ten drops its final -ು and a vowel-initial unit
+//!    fuses as a vowel sign (ಇಪ್ಪತ್ತೊಂದು, ಇಪ್ಪತ್ತೈದು, ಮೂವತ್ತೆಂಟು); a
+//!    consonant-initial one follows -ತ್ತ (ಇಪ್ಪತ್ತಮೂರು, ನಲವತ್ತನಾಲ್ಕು), the
+//!    pattern the table already used for 53 (ಐವತ್ತಮೂರು). The 30
+//!    corrected entries are marked `(#247)` and written NFC; the other
+//!    entries, decomposed ones included, are untouched. (ಇಪ್ಪತ್ಮೂರು-style
+//!    contractions are also attested; Omniglot/preply/multibhashi differ.)
 //! 5. **The `"%s-%s"` hyphen branch of `merge` is unreachable.** Every value
 //!    below 100 has its own card, so `splitnum` always resolves it with `div == 1`
 //!    and `merge` takes the first branch instead. The branch is ported anyway to
@@ -179,8 +182,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 97 = ತೊಂಬತ್ತೇಳು
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 96 = ತೊಂಬತ್ತಾರು
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 95 = ತೊಂಬತ್ತೈದು
-    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 94 = ತೊಂಬತ್ತ ನಾಲ್ಕು
-    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 93 = ತೊಂಬತ್ತ ಮೂರು
+    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 94 = ತೊಂಬತ್ತನಾಲ್ಕು (#247)
+    "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 93 = ತೊಂಬತ್ತಮೂರು (#247)
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 92 = ತೊಂಬತ್ತೆರಡು
     "\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 91 = ತೊಂಬತ್ತೊಂದು
     "\u{0ca4}\u{0cc6}\u{0cc2}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 90 = ತೊಂಬತ್ತು (decomposed)
@@ -189,8 +192,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 87 = ಎಂಬತ್ತೇಳು
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 86 = ಎಂಬತ್ತಾರು
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 85 = ಎಂಬತ್ತೈದು
-    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 84 = ಎಂಬತ್ತ್ ನಾಲ್ಕು
-    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 83 = ಎಂಬತ್ತ್ ಮೂರು
+    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 84 = ಎಂಬತ್ತನಾಲ್ಕು (#247)
+    "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 83 = ಎಂಬತ್ತಮೂರು (#247)
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 82 = ಎಂಬತ್ತೆರಡು
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cc2}\u{0c82}\u{0ca6}\u{0cc1}", // 81 = ಎಂಬತ್ತೊಂದು (decomposed)
     "\u{0c8e}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 80 = ಎಂಬತ್ತು
@@ -199,8 +202,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 77 = ಎಪ್ಪತ್ತೇಳು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 76 = ಎಪ್ಪತ್ತಾರು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 75 = ಎಪ್ಪತ್ತೈದು
-    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 74 = ಎಪ್ಪತ್ತ್ ನಾಲ್ಕು
-    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 73 = ಎಪ್ಪತ್ತ್ ಮೂರು
+    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 74 = ಎಪ್ಪತ್ತನಾಲ್ಕು (#247)
+    "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 73 = ಎಪ್ಪತ್ತಮೂರು (#247)
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 72 = ಎಪ್ಪತ್ತೆರಡು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 71 = ಎಪ್ಪತ್ತೊಂದು
     "\u{0c8e}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 70 = ಎಪ್ಪತ್ತು
@@ -209,8 +212,8 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 67 = ಅರವತ್ತೇಳು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 66 = ಅರವತ್ತಾರು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 65 = ಅರವತ್ತೈದು
-    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 64 = ಅರವತ್ತ್ ನಾಲ್ಕು
-    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 63 = ಅರವತ್ತ್ ಮೂರು
+    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 64 = ಅರವತ್ತನಾಲ್ಕು (#247)
+    "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 63 = ಅರವತ್ತಮೂರು (#247)
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 62 = ಅರವತ್ತೆರಡು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 61 = ಅರವತ್ತೊಂದು
     "\u{0c85}\u{0cb0}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 60 = ಅರವತ್ತು
@@ -219,7 +222,7 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 57 = ಐವತ್ತೇಳು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 56 = ಐವತ್ತಾರು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 55 = ಐವತ್ತೈದು
-    "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 54 = ಐವತ್ತ್ನಾಲ್ಕು
+    "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 54 = ಐವತ್ತನಾಲ್ಕು (#247)
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 53 = ಐವತ್ತಮೂರು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 52 = ಐವತ್ತೆರಡು
     "\u{0c90}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 51 = ಐವತ್ತೊಂದು
@@ -229,30 +232,30 @@ const LOW_NUMWORDS: [&str; 100] = [
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 47 = ನಲವತ್ತೇಳು
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 46 = ನಲವತ್ತಾರು
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cd6}\u{0ca6}\u{0cc1}", // 45 = ನಲವತ್ತೈದು (decomposed)
-    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 44 = ನಲವತ್ತ್ ನಾಲ್ಕು
-    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 43 = ನಲವತ್ತ್ ಮೂರು
-    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c8e}\u{0cb0}\u{0ca1}\u{0cc1}", // 42 = ನಲವತ್ತ್ ಎರಡು
+    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 44 = ನಲವತ್ತನಾಲ್ಕು (#247)
+    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 43 = ನಲವತ್ತಮೂರು (#247)
+    "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 42 = ನಲವತ್ತೆರಡು (#247)
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cc2}\u{0c82}\u{0ca6}\u{0cc1}", // 41 = ನಲವತ್ತೊಂದು (decomposed)
     "\u{0ca8}\u{0cb2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 40 = ನಲವತ್ತು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c92}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 39 = ಮೂವತ್ತ್ ಒಂಬತ್ತು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0c8e}\u{0c82}\u{0c9f}\u{0cc1}", // 38 = ಮೂವತ್ಎಂಟು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0c8f}\u{0cb3}\u{0cc1}", // 37 = ಮೂವತ್ಏಳು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0c86}\u{0cb0}\u{0cc1}", // 36 = ಮೂವತ್ಆರು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c90}\u{0ca6}\u{0cc1}", // 35 = ಮೂವತ್ತ್ ಐದು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 34 = ಮೂವತ್ತ್ ನಾಲ್ಕು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 33 = ಮೂವತ್ತ್ ಮೂರು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c8e}\u{0cb0}\u{0ca1}\u{0cc1}", // 32 = ಮೂವತ್ತ್ಎರಡು
-    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c92}\u{0c82}\u{0ca6}\u{0cc1}", // 31 = ಮೂವತ್ತ್ಒಂದು
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 39 = ಮೂವತ್ತೊಂಬತ್ತು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0c82}\u{0c9f}\u{0cc1}", // 38 = ಮೂವತ್ತೆಂಟು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 37 = ಮೂವತ್ತೇಳು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 36 = ಮೂವತ್ತಾರು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 35 = ಮೂವತ್ತೈದು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 34 = ಮೂವತ್ತನಾಲ್ಕು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 33 = ಮೂವತ್ತಮೂರು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 32 = ಮೂವತ್ತೆರಡು (#247)
+    "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 31 = ಮೂವತ್ತೊಂದು (#247)
     "\u{0cae}\u{0cc2}\u{0cb5}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 30 = ಮೂವತ್ತು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c92}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 29 = ಇಪ್ಪತ್ತ್ಒಂಬತ್ತು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c8e}\u{0c82}\u{0c9f}\u{0cc1}", // 28 = ಇಪ್ಪತ್ತ್ಎಂಟು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c8f}\u{0cb3}\u{0cc1}", // 27 = ಇಪ್ಪತ್ತ್ಏಳು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0c86}\u{0cb0}\u{0cc1}", // 26 = ಇಪ್ಪತ್ತ್ಆರು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c90}\u{0ca6}\u{0cc1}", // 25 = ಇಪ್ಪತ್ತ್ ಐದು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 24 = ಇಪ್ಪತ್ತ್ ನಾಲ್ಕು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 23 = ಇಪ್ಪತ್ತ್ ಮೂರು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c8e}\u{0cb0}\u{0ca1}\u{0cc1}", // 22 = ಇಪ್ಪತ್ತ್ ಎರಡು
-    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ccd}\u{0020}\u{0c92}\u{0c82}\u{0ca6}\u{0cc1}", // 21 = ಇಪ್ಪತ್ತ್ ಒಂದು
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 29 = ಇಪ್ಪತ್ತೊಂಬತ್ತು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0c82}\u{0c9f}\u{0cc1}", // 28 = ಇಪ್ಪತ್ತೆಂಟು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc7}\u{0cb3}\u{0cc1}", // 27 = ಇಪ್ಪತ್ತೇಳು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cbe}\u{0cb0}\u{0cc1}", // 26 = ಇಪ್ಪತ್ತಾರು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc8}\u{0ca6}\u{0cc1}", // 25 = ಇಪ್ಪತ್ತೈದು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0ca8}\u{0cbe}\u{0cb2}\u{0ccd}\u{0c95}\u{0cc1}", // 24 = ಇಪ್ಪತ್ತನಾಲ್ಕು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cae}\u{0cc2}\u{0cb0}\u{0cc1}", // 23 = ಇಪ್ಪತ್ತಮೂರು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc6}\u{0cb0}\u{0ca1}\u{0cc1}", // 22 = ಇಪ್ಪತ್ತೆರಡು (#247)
+    "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0ca6}\u{0cc1}", // 21 = ಇಪ್ಪತ್ತೊಂದು (#247)
     "\u{0c87}\u{0caa}\u{0ccd}\u{0caa}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 20 = ಇಪ್ಪತ್ತು
     "\u{0cb9}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cca}\u{0c82}\u{0cac}\u{0ca4}\u{0ccd}\u{0ca4}\u{0cc1}", // 19 = ಹತ್ತೊಂಬತ್ತು
     "\u{0cb9}\u{0ca6}\u{0cbf}\u{0ca8}\u{0cc6}\u{0c82}\u{0c9f}\u{0cc1}", // 18 = ಹದಿನೆಂಟು

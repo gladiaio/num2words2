@@ -32,19 +32,16 @@
 //! exactly what Python emits, and every one is confirmed against the frozen
 //! corpus:
 //!
-//! 1. **Only the 20s compound.** `_int_to_word` glues the unit onto "वीस"
-//!    for 21..29 ("एकवीस", "पाचवीस", "चारवीस"), but every other decade is
-//!    emitted as two space-separated words in the wrong order for Marathi:
-//!    31 is "तीस एक" (lit. "thirty one"), 42 "चाळीस दोन", 99 the hardcoded
-//!    "नव्याण्णव". Real Marathi would be एकतीस / बेचाळीस. Preserved verbatim.
-//! 2. **The 20s compounds are themselves malformed.** 22 → `ones[2] + "वीस"`
-//!    = "दोनवीस" (Marathi: बावीस), 23 → "तीनवीस" (Marathi: तेवीस). Only 21
-//!    ("एकवीस") happens to come out right.
-//! 3. **The `number == 21` special case is dead code.** It produces
-//!    `"एक" + tens[2]`, but `ones[21 % 10]` is *already* "एक", so both arms
-//!    of the conditional agree. Reproduced anyway — see [`int_to_word`].
-//! 4. **`99` is special-cased but `98`/`97`/... are not**, so 99 is
-//!    "नव्याण्णव" while 98 is "नव्वद आठ".
+//! 1. **Tens and units (fixed, gladiaio/num2words2#247).** Python glued the
+//!    unit onto "वीस" for 21..29 only ("एकवीस", "पाचवीस", "चारवीस") and
+//!    emitted every other decade as two space-separated words: 31 was
+//!    "तीस एक" (lit. "thirty one"), 42 "चाळीस दोन", 98 "नव्वद आठ", with 99
+//!    alone hardcoded to "नव्याण्णव". The 20s compounds were malformed too:
+//!    22 "दोनवीस" (Marathi बावीस), 23 "तीनवीस" (तेवीस). The port reads
+//!    [`BELOW_HUNDRED`]: 31 is "एकतीस", 42 "बेचाळीस", 23 "तेवीस".
+//!
+//!    Items 2-4 of the old list (the malformed 20s, Python's dead
+//!    `number == 21` arm and the lone 99 special case) went with it.
 //! 5. **`to_ordinal` suffixes the raw cardinal**, so negatives and zero
 //!    produce nonsense rather than raising: `to_ordinal(0)` == "शून्यवा",
 //!    `to_ordinal(-21)` == "ऋण एकवीसवा", `to_ordinal(-1000)` ==
@@ -75,7 +72,7 @@
 //! `to_cheque` is *not* overridden, so it comes from `Num2Word_Base` and needs
 //! only `lang_name` + `currency_forms` + the default `money_verbose` (which
 //! routes to MR's `to_cardinal`) to reproduce
-//! "एक हजार दोनशे तीस चार AND 56/100 युरो". `.upper()` is a no-op on
+//! "एक हजार दोनशे चौतीस AND 56/100 युरो". `.upper()` is a no-op on
 //! Devanagari — it is caseless — so only the literal "AND" looks upper-cased.
 //! `pluralize` is never reached from either path and correctly keeps the
 //! trait's raising default (`Num2Word_Base.pluralize` raises
@@ -112,27 +109,28 @@ const POINTWORD: &str = "दशांश";
 
 const ZERO_WORD: &str = "शून्य";
 
-/// `ones`. Index 0 is "" and is only ever selected when the caller has
-/// already established `number % 10 != 0` (or `number != 0`), so the empty
-/// string never reaches the output.
-const ONES: [&str; 10] = [
-    "", "एक", "दोन", "तीन", "चार", "पाच", "सहा", "सात", "आठ", "नऊ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens`, glued a unit onto वीस for the 20s only
+/// ("तीनवीस" for 23, Marathi तेवीस) and joined every other decade with a
+/// space ("तीस एक" for 31), hardcoding only 99. Marathi has its own word for
+/// every number below a hundred. Index 0 is never read (`number == 0`
+/// returns first). 21..=98 follow the majority of four 1-100 lists
+/// (superprof.co.in, yugmarathi.com, mahasarav.com, helpdiva.com; Wiktionary
+/// for सव्वीस); 0..=20, the round tens and 99 नव्याण्णव are the module's own
+/// words (the lists also spell 99 नव्व्याण्णव).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "एक", "दोन", "तीन", "चार", "पाच", "सहा", "सात", "आठ", "नऊ", // 0..9
+    "दहा", "अकरा", "बारा", "तेरा", "चौदा", "पंधरा", "सोळा", "सतरा", "अठरा", "एकोणीस", // 10..19
+    "वीस", "एकवीस", "बावीस", "तेवीस", "चोवीस", "पंचवीस", "सव्वीस", "सत्तावीस", "अठ्ठावीस", "एकोणतीस", // 20..29
+    "तीस", "एकतीस", "बत्तीस", "तेहतीस", "चौतीस", "पस्तीस", "छत्तीस", "सदतीस", "अडतीस", "एकोणचाळीस", // 30..39
+    "चाळीस", "एक्केचाळीस", "बेचाळीस", "त्रेचाळीस", "चव्वेचाळीस", "पंचेचाळीस", "सेहेचाळीस", "सत्तेचाळीस", "अठ्ठेचाळीस", "एकोणपन्नास", // 40..49
+    "पन्नास", "एक्कावन्न", "बावन्न", "त्रेपन्न", "चोपन्न", "पंचावन्न", "छप्पन्न", "सत्तावन्न", "अठ्ठावन्न", "एकोणसाठ", // 50..59
+    "साठ", "एकसष्ट", "बासष्ट", "त्रेसष्ट", "चौसष्ट", "पासष्ट", "सहासष्ट", "सदुसष्ट", "अडुसष्ट", "एकोणसत्तर", // 60..69
+    "सत्तर", "एक्काहत्तर", "बाहत्तर", "त्र्याहत्तर", "चौऱ्याहत्तर", "पंच्याहत्तर", "शहात्तर", "सत्याहत्तर", "अठ्ठ्याहत्तर", "एकोणऐंशी", // 70..79
+    "ऐंशी", "एक्क्याऐंशी", "ब्याऐंशी", "त्र्याऐंशी", "चौऱ्याऐंशी", "पंच्याऐंशी", "शहाऐंशी", "सत्त्याऐंशी", "अठ्ठ्याऐंशी", "एकोणनव्वद", // 80..89
+    "नव्वद", "एक्क्याण्णव", "ब्याण्णव", "त्र्याण्णव", "चौऱ्याण्णव", "पंच्याण्णव", "शहाण्णव", "सत्त्याण्णव", "अठ्ठ्याण्णव", "नव्याण्णव", // 90..99
 ];
-
-/// `tens`. Index 0 is unreachable (`number >= 20` in the only branch that
-/// reads this table) and index 1 is dead too — 10..19 are handled by
-/// [`TEENS`] before the `< 100` branch is ever entered.
-const TENS: [&str; 10] = [
-    "", "दहा", "वीस", "तीस", "चाळीस", "पन्नास", "साठ", "सत्तर", "ऐंशी", "नव्वद",
-];
-
-/// `teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "दहा", "अकरा", "बारा", "तेरा", "चौदा", "पंधरा", "सोळा", "सतरा", "अठरा", "एकोणीस",
-];
-
-/// Hardcoded in the `number // 10 == 9 and number % 10 == 9` arm.
-const NINETY_NINE: &str = "नव्याण्णव";
 
 /// Suffix appended by the `< 1000` branch: `ones[number // 100] + "शे"`.
 const HUNDRED_SUFFIX: &str = "शे";
@@ -181,7 +179,7 @@ const SEPARATOR_DEFAULT: &str = " आणि ";
 /// This is the only reading that matches the oracle: every float row of the
 /// `mr` currency corpus was generated by `num2words(v, lang="mr",
 /// to="currency", currency=c)` with no `separator=`, and each one expects
-/// " आणि " (e.g. `12.34` -> "बारा युरो आणि तीस चार सेंट्स").
+/// " आणि " (e.g. `12.34` -> "बारा युरो आणि चौतीस सेंट्स").
 ///
 /// The cost is narrow and known: a caller who *explicitly* passes
 /// `separator=","` gets " आणि " here where Python would give ",". Fixing that
@@ -239,46 +237,13 @@ fn int_to_word(number: &BigInt) -> String {
         return format!("{}{}", NEGWORD, int_to_word(&number.abs()));
     }
 
-    if number < &bi(10) {
-        return ONES[small(number)].to_string();
-    }
-
-    if number < &bi(20) {
-        return TEENS[small(number) - 10].to_string();
-    }
-
     if number < &bi(100) {
-        let n = small(number);
-        let tens_digit = n / 10;
-        let ones_digit = n % 10;
-        let mut result = TENS[tens_digit].to_string();
-        if ones_digit != 0 {
-            if tens_digit == 2 {
-                // Python: `"एक" + tens[2] if number == 21 else ones[number % 10] + tens[2]`
-                // — the conditional binds looser than `+`, so both arms
-                // concatenate onto tens[2]. The n == 21 arm is dead code:
-                // ONES[1] is already "एक". Kept for fidelity.
-                result = if n == 21 {
-                    format!("एक{}", TENS[2])
-                } else {
-                    format!("{}{}", ONES[ones_digit], TENS[2])
-                };
-            } else if tens_digit == 9 && ones_digit == 9 {
-                result = NINETY_NINE.to_string();
-            } else {
-                // Python: `result += " " + ones[number % 10] if number % 10 else ""`.
-                // The trailing conditional is redundant — we are already
-                // inside `if number % 10:` — so the else-branch never fires.
-                result.push(' ');
-                result.push_str(ONES[ones_digit]);
-            }
-        }
-        return result;
+        return BELOW_HUNDRED[small(number)].to_string();
     }
 
     if number < &bi(1000) {
         let (div, rem) = number.div_mod_floor(&bi(100));
-        let mut result = format!("{}{}", ONES[small(&div)], HUNDRED_SUFFIX);
+        let mut result = format!("{}{}", BELOW_HUNDRED[small(&div)], HUNDRED_SUFFIX);
         if !rem.is_zero() {
             result.push(' ');
             result.push_str(&int_to_word(&rem));
@@ -988,7 +953,7 @@ impl Lang for LangMr {
     ///    NotImplementedError rows while the cheque corpus has five.
     /// 2. **Precision is hardcoded to two decimal places** by the `[:2]`
     ///    slice, so the 3-decimal (KWD/BHD) and 0-decimal (JPY) currencies get
-    ///    no special handling: `12.34 KWD` is "बारा रुपये आणि तीस चार पैसे",
+    ///    no special handling: `12.34 KWD` is "बारा रुपये आणि चौतीस पैसे",
     ///    not mils, and `12.34 JPY` still shows a cents segment.
     /// 3. **`adjective` is accepted and then ignored** — MR declares the
     ///    parameter but never reads it, and defines no `CURRENCY_ADJECTIVES`.

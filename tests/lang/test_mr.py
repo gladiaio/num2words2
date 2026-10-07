@@ -47,29 +47,29 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(19, lang="mr"), "एकोणीस")
         self.assertEqual(num2words(20, lang="mr"), "वीस")
         self.assertEqual(num2words(21, lang="mr"), "एकवीस")
-        self.assertEqual(num2words(22, lang="mr"), "दोनवीस")
-        self.assertEqual(num2words(23, lang="mr"), "तीनवीस")
-        self.assertEqual(num2words(24, lang="mr"), "चारवीस")
-        self.assertEqual(num2words(25, lang="mr"), "पाचवीस")
-        self.assertEqual(num2words(26, lang="mr"), "सहावीस")
-        self.assertEqual(num2words(27, lang="mr"), "सातवीस")
-        self.assertEqual(num2words(28, lang="mr"), "आठवीस")
-        self.assertEqual(num2words(29, lang="mr"), "नऊवीस")
+        self.assertEqual(num2words(22, lang="mr"), "बावीस")
+        self.assertEqual(num2words(23, lang="mr"), "तेवीस")
+        self.assertEqual(num2words(24, lang="mr"), "चोवीस")
+        self.assertEqual(num2words(25, lang="mr"), "पंचवीस")
+        self.assertEqual(num2words(26, lang="mr"), "सव्वीस")
+        self.assertEqual(num2words(27, lang="mr"), "सत्तावीस")
+        self.assertEqual(num2words(28, lang="mr"), "अठ्ठावीस")
+        self.assertEqual(num2words(29, lang="mr"), "एकोणतीस")
         self.assertEqual(num2words(30, lang="mr"), "तीस")
-        self.assertEqual(num2words(31, lang="mr"), "तीस एक")
-        self.assertEqual(num2words(35, lang="mr"), "तीस पाच")
+        self.assertEqual(num2words(31, lang="mr"), "एकतीस")
+        self.assertEqual(num2words(35, lang="mr"), "पस्तीस")
         self.assertEqual(num2words(40, lang="mr"), "चाळीस")
-        self.assertEqual(num2words(45, lang="mr"), "चाळीस पाच")
+        self.assertEqual(num2words(45, lang="mr"), "पंचेचाळीस")
         self.assertEqual(num2words(50, lang="mr"), "पन्नास")
-        self.assertEqual(num2words(55, lang="mr"), "पन्नास पाच")
+        self.assertEqual(num2words(55, lang="mr"), "पंचावन्न")
         self.assertEqual(num2words(60, lang="mr"), "साठ")
-        self.assertEqual(num2words(65, lang="mr"), "साठ पाच")
+        self.assertEqual(num2words(65, lang="mr"), "पासष्ट")
         self.assertEqual(num2words(70, lang="mr"), "सत्तर")
-        self.assertEqual(num2words(75, lang="mr"), "सत्तर पाच")
+        self.assertEqual(num2words(75, lang="mr"), "पंच्याहत्तर")
         self.assertEqual(num2words(80, lang="mr"), "ऐंशी")
-        self.assertEqual(num2words(85, lang="mr"), "ऐंशी पाच")
+        self.assertEqual(num2words(85, lang="mr"), "पंच्याऐंशी")
         self.assertEqual(num2words(90, lang="mr"), "नव्वद")
-        self.assertEqual(num2words(95, lang="mr"), "नव्वद पाच")
+        self.assertEqual(num2words(95, lang="mr"), "पंच्याण्णव")
         self.assertEqual(num2words(99, lang="mr"), "नव्याण्णव")
         self.assertEqual(num2words(100, lang="mr"), "एकशे")
 
@@ -79,9 +79,9 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(110, lang="mr"), "एकशे दहा")
         self.assertEqual(num2words(111, lang="mr"), "एकशे अकरा")
         self.assertEqual(num2words(120, lang="mr"), "एकशे वीस")
-        self.assertEqual(num2words(125, lang="mr"), "एकशे पाचवीस")
+        self.assertEqual(num2words(125, lang="mr"), "एकशे पंचवीस")
         self.assertEqual(num2words(150, lang="mr"), "एकशे पन्नास")
-        self.assertEqual(num2words(175, lang="mr"), "एकशे सत्तर पाच")
+        self.assertEqual(num2words(175, lang="mr"), "एकशे पंच्याहत्तर")
         self.assertEqual(num2words(199, lang="mr"), "एकशे नव्याण्णव")
         self.assertEqual(num2words(200, lang="mr"), "दोनशे")
         self.assertEqual(num2words(201, lang="mr"), "दोनशे एक")
@@ -90,17 +90,17 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(250, lang="mr"), "दोनशे पन्नास")
         self.assertEqual(num2words(299, lang="mr"), "दोनशे नव्याण्णव")
         self.assertEqual(num2words(300, lang="mr"), "तीनशे")
-        self.assertEqual(num2words(333, lang="mr"), "तीनशे तीस तीन")
+        self.assertEqual(num2words(333, lang="mr"), "तीनशे तेहतीस")
         self.assertEqual(num2words(400, lang="mr"), "चारशे")
-        self.assertEqual(num2words(444, lang="mr"), "चारशे चाळीस चार")
+        self.assertEqual(num2words(444, lang="mr"), "चारशे चव्वेचाळीस")
         self.assertEqual(num2words(500, lang="mr"), "पाचशे")
-        self.assertEqual(num2words(555, lang="mr"), "पाचशे पन्नास पाच")
+        self.assertEqual(num2words(555, lang="mr"), "पाचशे पंचावन्न")
         self.assertEqual(num2words(600, lang="mr"), "सहाशे")
-        self.assertEqual(num2words(666, lang="mr"), "सहाशे साठ सहा")
+        self.assertEqual(num2words(666, lang="mr"), "सहाशे सहासष्ट")
         self.assertEqual(num2words(700, lang="mr"), "सातशे")
-        self.assertEqual(num2words(777, lang="mr"), "सातशे सत्तर सात")
+        self.assertEqual(num2words(777, lang="mr"), "सातशे सत्याहत्तर")
         self.assertEqual(num2words(800, lang="mr"), "आठशे")
-        self.assertEqual(num2words(888, lang="mr"), "आठशे ऐंशी आठ")
+        self.assertEqual(num2words(888, lang="mr"), "आठशे अठ्ठ्याऐंशी")
         self.assertEqual(num2words(900, lang="mr"), "नऊशे")
         self.assertEqual(num2words(999, lang="mr"), "नऊशे नव्याण्णव")
 
@@ -111,42 +111,42 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(1010, lang="mr"), "एक हजार दहा")
         self.assertEqual(num2words(1100, lang="mr"), "एक हजार एकशे")
         self.assertEqual(num2words(1111, lang="mr"), "एक हजार एकशे अकरा")
-        self.assertEqual(num2words(1234, lang="mr"), "एक हजार दोनशे तीस चार")
+        self.assertEqual(num2words(1234, lang="mr"), "एक हजार दोनशे चौतीस")
         self.assertEqual(num2words(1500, lang="mr"), "एक हजार पाचशे")
         self.assertEqual(num2words(1999, lang="mr"), "एक हजार नऊशे नव्याण्णव")
         self.assertEqual(num2words(2000, lang="mr"), "दोन हजार")
         self.assertEqual(num2words(2001, lang="mr"), "दोन हजार एक")
         self.assertEqual(num2words(2020, lang="mr"), "दोन हजार वीस")
-        self.assertEqual(num2words(2222, lang="mr"), "दोन हजार दोनशे दोनवीस")
+        self.assertEqual(num2words(2222, lang="mr"), "दोन हजार दोनशे बावीस")
         self.assertEqual(num2words(3000, lang="mr"), "तीन हजार")
-        self.assertEqual(num2words(3333, lang="mr"), "तीन हजार तीनशे तीस तीन")
+        self.assertEqual(num2words(3333, lang="mr"), "तीन हजार तीनशे तेहतीस")
         self.assertEqual(num2words(4000, lang="mr"), "चार हजार")
-        self.assertEqual(num2words(4444, lang="mr"), "चार हजार चारशे चाळीस चार")
+        self.assertEqual(num2words(4444, lang="mr"), "चार हजार चारशे चव्वेचाळीस")
         self.assertEqual(num2words(5000, lang="mr"), "पाच हजार")
-        self.assertEqual(num2words(5555, lang="mr"), "पाच हजार पाचशे पन्नास पाच")
+        self.assertEqual(num2words(5555, lang="mr"), "पाच हजार पाचशे पंचावन्न")
         self.assertEqual(num2words(6000, lang="mr"), "सहा हजार")
-        self.assertEqual(num2words(6666, lang="mr"), "सहा हजार सहाशे साठ सहा")
+        self.assertEqual(num2words(6666, lang="mr"), "सहा हजार सहाशे सहासष्ट")
         self.assertEqual(num2words(7000, lang="mr"), "सात हजार")
-        self.assertEqual(num2words(7777, lang="mr"), "सात हजार सातशे सत्तर सात")
+        self.assertEqual(num2words(7777, lang="mr"), "सात हजार सातशे सत्याहत्तर")
         self.assertEqual(num2words(8000, lang="mr"), "आठ हजार")
-        self.assertEqual(num2words(8888, lang="mr"), "आठ हजार आठशे ऐंशी आठ")
+        self.assertEqual(num2words(8888, lang="mr"), "आठ हजार आठशे अठ्ठ्याऐंशी")
         self.assertEqual(num2words(9000, lang="mr"), "नऊ हजार")
         self.assertEqual(num2words(9999, lang="mr"), "नऊ हजार नऊशे नव्याण्णव")
         self.assertEqual(num2words(10000, lang="mr"), "दहा हजार")
         self.assertEqual(num2words(10001, lang="mr"), "दहा हजार एक")
         self.assertEqual(num2words(11111, lang="mr"), "अकरा हजार एकशे अकरा")
-        self.assertEqual(num2words(12345, lang="mr"), "बारा हजार तीनशे चाळीस पाच")
+        self.assertEqual(num2words(12345, lang="mr"), "बारा हजार तीनशे पंचेचाळीस")
         self.assertEqual(num2words(20000, lang="mr"), "वीस हजार")
         self.assertEqual(num2words(50000, lang="mr"), "पन्नास हजार")
         self.assertEqual(num2words(99999, lang="mr"), "नव्याण्णव हजार नऊशे नव्याण्णव")
         self.assertEqual(num2words(100000, lang="mr"), "एक लाख")
         self.assertEqual(
-            num2words(123456, lang="mr"), "एक लाख तीनवीस हजार चारशे पन्नास सहा"
+            num2words(123456, lang="mr"), "एक लाख तेवीस हजार चारशे छप्पन्न"
         )
         self.assertEqual(num2words(200000, lang="mr"), "दोन लाख")
         self.assertEqual(num2words(500000, lang="mr"), "पाच लाख")
         self.assertEqual(
-            num2words(654321, lang="mr"), "सहा लाख पन्नास चार हजार तीनशे एकवीस"
+            num2words(654321, lang="mr"), "सहा लाख चोपन्न हजार तीनशे एकवीस"
         )
         self.assertEqual(
             num2words(999999, lang="mr"), "नऊ लाख नव्याण्णव हजार नऊशे नव्याण्णव"
@@ -158,7 +158,7 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(1000001, lang="mr"), "दहा लाख एक")
         self.assertEqual(num2words(1111111, lang="mr"), "अकरा लाख अकरा हजार एकशे अकरा")
         self.assertEqual(
-            num2words(1234567, lang="mr"), "बारा लाख तीस चार हजार पाचशे साठ सात"
+            num2words(1234567, lang="mr"), "बारा लाख चौतीस हजार पाचशे सदुसष्ट"
         )
         self.assertEqual(num2words(2000000, lang="mr"), "वीस लाख")
         self.assertEqual(num2words(5000000, lang="mr"), "पन्नास लाख")
@@ -168,7 +168,7 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(10000000, lang="mr"), "एक कोटी")
         self.assertEqual(
             num2words(12345678, lang="mr"),
-            "एक कोटी तीनवीस लाख चाळीस पाच हजार सहाशे सत्तर आठ",
+            "एक कोटी तेवीस लाख पंचेचाळीस हजार सहाशे अठ्ठ्याहत्तर",
         )
         self.assertEqual(
             num2words(99999999, lang="mr"),
@@ -177,7 +177,7 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(100000000, lang="mr"), "दहा कोटी")
         self.assertEqual(
             num2words(123456789, lang="mr"),
-            "बारा कोटी तीस चार लाख पन्नास सहा हजार सातशे ऐंशी नऊ",
+            "बारा कोटी चौतीस लाख छप्पन्न हजार सातशे एकोणनव्वद",
         )
         self.assertEqual(
             num2words(999999999, lang="mr"),
@@ -186,7 +186,7 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(1000000000, lang="mr"), "एक अब्ज")
         self.assertEqual(
             num2words(1234567890, lang="mr"),
-            "एक अब्ज तीनवीस कोटी चाळीस पाच लाख साठ सात हजार आठशे नव्वद",
+            "एक अब्ज तेवीस कोटी पंचेचाळीस लाख सदुसष्ट हजार आठशे नव्वद",
         )
         self.assertEqual(
             num2words(9999999999, lang="mr"),
@@ -233,10 +233,10 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(99.99, lang="mr"), "नव्याण्णव दशांश नऊ नऊ")
         self.assertEqual(num2words(100.01, lang="mr"), "एकशे दशांश शून्य एक")
         self.assertEqual(num2words(100.5, lang="mr"), "एकशे दशांश पाच")
-        self.assertEqual(num2words(123.45, lang="mr"), "एकशे तीनवीस दशांश चार पाच")
+        self.assertEqual(num2words(123.45, lang="mr"), "एकशे तेवीस दशांश चार पाच")
         self.assertEqual(num2words(1000.5, lang="mr"), "एक हजार दशांश पाच")
         self.assertEqual(
-            num2words(1234.56, lang="mr"), "एक हजार दोनशे तीस चार दशांश पाच सहा"
+            num2words(1234.56, lang="mr"), "एक हजार दोनशे चौतीस दशांश पाच सहा"
         )
         self.assertEqual(num2words(10000.01, lang="mr"), "दहा हजार दशांश शून्य एक")
         self.assertEqual(num2words(-0.5, lang="mr"), "ऋण शून्य दशांश पाच")
@@ -266,8 +266,8 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(19, lang="mr", ordinal=True), "एकोणीसवा")
         self.assertEqual(num2words(20, lang="mr", ordinal=True), "वीसवा")
         self.assertEqual(num2words(21, lang="mr", ordinal=True), "एकवीसवा")
-        self.assertEqual(num2words(22, lang="mr", ordinal=True), "दोनवीसवा")
-        self.assertEqual(num2words(25, lang="mr", ordinal=True), "पाचवीसवा")
+        self.assertEqual(num2words(22, lang="mr", ordinal=True), "बावीसवा")
+        self.assertEqual(num2words(25, lang="mr", ordinal=True), "पंचवीसवा")
         self.assertEqual(num2words(30, lang="mr", ordinal=True), "तीसवा")
         self.assertEqual(num2words(40, lang="mr", ordinal=True), "चाळीसवा")
         self.assertEqual(num2words(50, lang="mr", ordinal=True), "पन्नासवा")
@@ -361,17 +361,17 @@ class Num2WordsMRTest(TestCase):
     def test_year(self):
         """Test year conversion."""
         self.assertEqual(num2words(1000, lang="mr", to="year"), "सन एक हजार")
-        self.assertEqual(num2words(1066, lang="mr", to="year"), "सन एक हजार साठ सहा")
+        self.assertEqual(num2words(1066, lang="mr", to="year"), "सन एक हजार सहासष्ट")
         self.assertEqual(
-            num2words(1492, lang="mr", to="year"), "सन एक हजार चारशे नव्वद दोन"
+            num2words(1492, lang="mr", to="year"), "सन एक हजार चारशे ब्याण्णव"
         )
         self.assertEqual(
-            num2words(1776, lang="mr", to="year"), "सन एक हजार सातशे सत्तर सहा"
+            num2words(1776, lang="mr", to="year"), "सन एक हजार सातशे शहात्तर"
         )
         self.assertEqual(num2words(1800, lang="mr", to="year"), "सन एक हजार आठशे")
         self.assertEqual(num2words(1900, lang="mr", to="year"), "सन एक हजार नऊशे")
         self.assertEqual(
-            num2words(1984, lang="mr", to="year"), "सन एक हजार नऊशे ऐंशी चार"
+            num2words(1984, lang="mr", to="year"), "सन एक हजार नऊशे चौऱ्याऐंशी"
         )
         self.assertEqual(
             num2words(1999, lang="mr", to="year"), "सन एक हजार नऊशे नव्याण्णव"
@@ -380,7 +380,7 @@ class Num2WordsMRTest(TestCase):
         self.assertEqual(num2words(2001, lang="mr", to="year"), "सन दोन हजार एक")
         self.assertEqual(num2words(2010, lang="mr", to="year"), "सन दोन हजार दहा")
         self.assertEqual(num2words(2020, lang="mr", to="year"), "सन दोन हजार वीस")
-        self.assertEqual(num2words(2024, lang="mr", to="year"), "सन दोन हजार चारवीस")
+        self.assertEqual(num2words(2024, lang="mr", to="year"), "सन दोन हजार चोवीस")
         self.assertEqual(num2words(2100, lang="mr", to="year"), "सन दोन हजार एकशे")
 
     def test_string_input(self):
