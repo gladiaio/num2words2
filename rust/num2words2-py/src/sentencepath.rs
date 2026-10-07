@@ -62,7 +62,8 @@
 //! trente", de "vierzehn Uhr dreißig" (also without "Uhr"), it "quattordici
 //! e trenta", pt "catorze e trinta", sv "fjorton och trettio", nl "veertien
 //! uur dertig". Other languages, and times with seconds, keep the time as
-//! written.
+//! written. A dotted `H.MM` is a time only with a time context (#193): it
+//! "alle 14.30", sv "kl. 14.30", nl "14.30 uur".
 //!
 //! Also deliberate (#234): a plain or grouped number is read from its digits
 //! as written, like `num2words("3.50")` — the integer path when whole, the
@@ -662,7 +663,8 @@ enum Typ {
     Time(u32, u32, Option<String>),
     /// German clock time `H.MM Uhr` / `H:MM Uhr` as (hour, minute) (#183).
     UhrTime(u32, u32),
-    /// Clock time `H:MM` in es/fr/it/pt/sv/nl as (hour, minute) (#192).
+    /// Clock time `H:MM` (or a dotted time in context) in es/fr/it/pt/sv/nl
+    /// as (hour, minute) (#192, #193).
     Clock(u32, u32),
     /// A numeric range `X-Y` (#229) as (to, joined with "to"): en reads
     /// "X to Y", other languages "X - Y".
@@ -1168,11 +1170,25 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
     // trente", de "vierzehn Uhr dreißig", it "quattordici e trenta", …)
     // instead of two numbers around a kept colon ("catorce:treinta").
     // Languages with no verified rule keep the time as written, and so does
-    // every language for a time with seconds ("14:30:45").
+    // every language for a time with seconds ("14:30:45"). "H.MM" is a time
+    // only where the dot is the language's time notation and the context
+    // says so (#193): it after "alle"/"dalle"/"le"/"ore", sv after "kl."/
+    // "klockan", nl before "uur"; elsewhere it stays a decimal.
     let base = lang.trim().to_lowercase().split(['-', '_']).next().unwrap_or("").to_string();
     if base != "en" && !base.is_empty() {
         let c = &t.chars;
         let ruled = matches!(base.as_str(), "es" | "fr" | "de" | "it" | "pt" | "sv" | "nl");
+        let prev_word = |s: usize| -> String {
+            let mut k = s;
+            while k > 0 && c[k - 1].is_whitespace() {
+                k -= 1;
+            }
+            let e = k;
+            while k > 0 && (c[k - 1].is_alphabetic() || c[k - 1] == '.') {
+                k -= 1;
+            }
+            c[k..e].iter().filter(|&&ch| ch != '.').collect::<String>().to_lowercase()
+        };
         // A trailing nl "uur" (with or without a space), claimed with the
         // time so it is not read twice ("veertien uur dertig uur").
         let uur_after = |e: usize| -> Option<usize> {
@@ -1231,8 +1247,16 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                 continue;
             }
             if !colon {
-                i = e;
-                continue;
+                let ctx_ok = match base.as_str() {
+                    "it" => matches!(prev_word(i).as_str(), "alle" | "dalle" | "le" | "ore"),
+                    "sv" => matches!(prev_word(i).as_str(), "kl" | "klockan"),
+                    "nl" => uur.is_some(),
+                    _ => false,
+                };
+                if !ctx_ok {
+                    i = e;
+                    continue;
+                }
             }
             if let Some(k) = uur {
                 e = k;
@@ -2002,6 +2026,8 @@ const ABBREVIATIONS: &[&str] = &[
     "prof", "jr", "sr", "tel",
     "zb", "bzw", "ggf", "usw", "inkl", "zzgl", "vgl", "evtl", "s", "abs", "env", "aprox",
     "pág", "pag", "núm", "nº", "blz", "str", "ок", "стр", "см",
+    // sv "kl. 14.30" (klockan): not a sentence end (#193).
+    "kl",
 ];
 
 /// Whether the text before a number ends a sentence, so the number is

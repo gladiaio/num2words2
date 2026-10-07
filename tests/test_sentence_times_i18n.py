@@ -3,7 +3,9 @@
 `num2words_sentence` read "14:30" digit group by digit group and kept the
 colon in every language but English ("catorce:treinta", "vierzehn:dreißig").
 It now reads the language's spoken 24-hour time where the form is attested,
-and leaves the time as written elsewhere.
+and leaves the time as written elsewhere. A dotted "14.30" is a time only
+with a time context (it "alle 14.30", sv "kl. 14.30", nl "14.30 uur"); it
+used to be read as a decimal ("quattordici virgola tre", #193).
 """
 
 import re
@@ -58,6 +60,28 @@ from num2words2 import num2words_sentence
     ],
 )
 def test_clock_time(lang, text, expected):
+    assert num2words_sentence(text, lang=lang) == expected
+
+
+@pytest.mark.parametrize(
+    "lang, text, expected",
+    [
+        # #193: dotted times with a time context.
+        ("it", "alle 14.30", "alle quattordici e trenta"),
+        ("it", "dalle 9.00 alle 18.30", "dalle nove alle diciotto e trenta"),
+        ("it", "ore 9.05", "ore nove e cinque"),
+        ("sv", "kl. 14.30", "kl. fjorton och trettio"),
+        ("sv", "klockan 7.45", "klockan sju och fyrtiofem"),
+        ("nl", "om 14.30 uur", "om veertien uur dertig"),
+        ("nl", "om 14.00 uur", "om veertien uur"),
+        # Without one, a dotted number stays a decimal.
+        ("it", "costa 14.30", "costa quattordici virgola tre zero"),
+        ("sv", "3.14", "Tre komma ett fyra"),
+        # A dotted date is not a time.
+        ("it", "dalle 3.10.2024", "dalle 3.10.2024"),
+    ],
+)
+def test_dotted_time_in_context(lang, text, expected):
     assert num2words_sentence(text, lang=lang) == expected
 
 
