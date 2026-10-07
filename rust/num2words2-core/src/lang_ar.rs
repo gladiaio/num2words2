@@ -57,19 +57,22 @@
 //!    comments say "Note: this never happens". Both branches are omitted here
 //!    because they are unreachable; the surviving `elif`/`else` ordering is
 //!    preserved exactly.
-//! 6. **`isCurrencyNameFeminine` leaks into ordinals of 0 and negatives.**
-//!    `to_ordinal`'s fallback sets the flag from `number < 100`, which is true
-//!    for every negative. So `to_ordinal(-1)` returns the *feminine* `"إحدى"`
-//!    and `to_ordinal(-999)` returns `"تسعمائة وتسع وتسعون"` (feminine `تسع`),
-//!    while the cardinals use the masculine forms. Reproduced via the
-//!    `fem_name` argument threaded through [`convert`].
-//! 7. **Ordinals ≥ 1000 and ≤ 0 silently fall back to the cardinal form** and
-//!    drop the sign (`to_ordinal(-1000)` == `"ألف"`), because the fallback
-//!    converts `self.abs(number)` with no `minus` prefix.
-//! 8. **`to_ordinal(2000)` == `"ألفا"` but `to_cardinal(2000)` == `"ألفان"`.**
-//!    The construct-form → independent-form rewrite (`_AR_STANDALONE_DUAL`)
-//!    lives only in `to_cardinal`; the ordinal fallback calls `convert`
-//!    directly and never sees it.
+//! 6. ~~**`isCurrencyNameFeminine` leaks into ordinals of 0 and negatives.**~~
+//!    `to_ordinal`'s fallback set the flag from `number < 100`, so
+//!    `to_ordinal(-1)` returned the *feminine* `"إحدى"`. Negatives are now
+//!    rejected by [`verify_ordinal`] and the fallback is gone (7), so no
+//!    ordinal reaches the flag.
+//! 7. ~~**Ordinals ≥ 1000 silently fell back to the cardinal form**~~
+//!    (`to_ordinal(1000)` == `"ألف"`, `to_ordinal(10**6)` == `"مليون"`).
+//!    Fixed (gladiaio/num2words2#249): a round scale word takes the article
+//!    and is its own ordinal (`"الألف"`, `"المليون"`, `"المليار"`, …),
+//!    1001..=1999 read `"<ordinal> بعد الألف"` like 101..=999 read
+//!    `"… بعد المائة"`, and every other value from 2000 up raises
+//!    `OverflowError` — it would need the definite form of a compound
+//!    cardinal, which this module does not build. The units digit 1 of a
+//!    compound is `"الحادي"`/`"الحادية"` (`"الحادي والعشرون"`), as in 11.
+//! 8. ~~**`to_ordinal(2000)` == `"ألفا"`**~~, the construct form — gone with
+//!    the fallback in 7; 2000 now raises `OverflowError`.
 //! 9. **Trailing spaces in two table entries** are shipped verbatim:
 //!    `arabicAppendedTwos[9]` is `"أوكتيليونا "` and `arabicTwos[9]`/`[10]`
 //!    are `"أوكتيليونان "` / `"نونيليونان "` — all with a trailing space.
@@ -145,7 +148,7 @@ use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
+use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 
 // ---------------------------------------------------------------------------
 // Tables — transcribed verbatim from lang_AR.py.
@@ -361,6 +364,10 @@ const AR_ORDINALS_DEF: [(&str, &str); 20] = [
     ("الثامن عشر", "الثامنة عشرة"),
     ("التاسع عشر", "التاسعة عشرة"),
 ];
+
+/// The units digit 1 inside a compound ordinal (21st, 31st, …): Arabic uses
+/// الحادي/الحادية there, as in 11 (الحادي عشر), not الأول/الأولى (#249).
+const AR_COMPOUND_ONE: (&str, &str) = ("الحادي", "الحادية");
 
 /// `_AR_TENS_DEF`, keyed 20..=90 step 10 → indexed here by `tens/10 - 2`.
 const AR_TENS_DEF: [&str; 8] = [
@@ -714,13 +721,10 @@ fn cardinal_int_case(value: &BigInt, is_oblique: bool) -> Result<String> {
 /// [`LangAr::to_ordinal_kw`] preserves that.
 ///
 /// `prefix` is Python's `prefix=` kwarg **already `str.format`-ted** (see
-/// [`kwval_display`]). It only matters in the fallback branch, which sets
-/// `self.arabicPrefixText = prefix` before `convert`; `convert_to_arabic`
-/// prepends `"{} ".format(prefix)` when `prefix != ""` — but its `== 0` early
-/// return fires *before* that, so `to_ordinal(0, prefix="xx")` is a bare
-/// `"صفر"`. The 1..=999 table branches never see the prefix at all, and the
-/// 100..=999 recursion passes `gender` but leaves `prefix` at its `""`
-/// default, exactly as `self.to_ordinal(remainder, gender=gender)` does.
+/// [`kwval_display`]). Python only applied it in the cardinal fallback for
+/// >= 1000 (replaced by real ordinals, #249); it is still prepended to those
+/// forms, while `to_ordinal(0, prefix="xx")` is a bare `"صفر"` and the
+/// 1..=999 table branches never see it.
 /// `Num2Word_Base.verify_ordinal`, which `Num2Word_AR.to_ordinal` did not
 /// call — ported from savoirfairelinux/num2words#672.
 ///
@@ -805,7 +809,13 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
         if ones == 0 {
             return Ok(AR_TENS_DEF[(tens / 10 - 2) as usize].to_string());
         }
-        let ones_form = pick(&AR_ORDINALS_DEF[ones as usize]);
+        // In a compound the units digit 1 is الحادي/الحادية, as in 11
+        // (الحادي عشر): "الحادي والعشرون", never "الأول والعشرون" (#249).
+        let ones_form = if ones == 1 {
+            pick(&AR_COMPOUND_ONE)
+        } else {
+            pick(&AR_ORDINALS_DEF[ones as usize])
+        };
         return Ok(format!("{} و{}", ones_form, AR_TENS_DEF[(tens / 10 - 2) as usize]));
     }
     if *number >= hundred && *number <= nine_ninety_nine {
@@ -825,29 +835,66 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
         ));
     }
 
-    // Fallback: >= 1000, or 0/negative. Note `to_ordinal` never calls
-    // `validate_number` (bug 3) and drops the sign (bug 7). `gender` is
-    // ignored here — the feminine leak comes from `isCurrencyNameFeminine`
-    // (bug 6), not from the kwarg.
-    let fem_name = *number < hundred; // true for 0 and every negative (bug 6)
-    let abs = if number.is_negative() {
-        -number
-    } else {
-        number.clone()
-    };
-    // Python skips `validate_number` here and dies on a group-table `assert`
-    // — but only after work quadratic in the digit count, so 10**50000 hung
-    // for minutes (#203). Reject at the ceiling first, as `to_cardinal` does.
-    check_maxval(&abs, &maxval())?;
-    let conv = convert(&abs, fem_name)?;
-    // `convert_to_arabic` prepends `"{} ".format(arabicPrefixText)` when it is
-    // non-empty — but returns "صفر" for zero *before* reaching that append,
-    // and `convert` already reproduces the early return, so only guard the
-    // non-zero shape here.
-    if !prefix.is_empty() && !abs.is_zero() {
-        return Ok(format!("{} {}", prefix, conv).trim().to_string());
+    // 0 is the only value left below 1000 (negatives were rejected by
+    // `verify_ordinal`); it keeps the cardinal "صفر", as before, and the
+    // prefix never reached it.
+    if number.is_zero() {
+        return Ok(ZERO_WORD.to_string());
     }
-    Ok(conv.trim().to_string())
+
+    // >= 1000 (#249). The scale nouns are themselves used as ordinals with
+    // the article — "الليلة الألف", "الكتاب المليون" — so a round scale reads
+    // "الألف", "المليون", "المليار", …, and 1001..=1999 follow the
+    // "<ordinal> بعد المائة" pattern this module already uses for 101..=999:
+    // "الأول بعد الألف". Every other value from 2000 up would need the
+    // definite form of a compound cardinal ("الألفان", "الثلاثة آلاف", …),
+    // whose article placement varies between grammars, so it raises
+    // OverflowError instead of returning the bare cardinal as it used to.
+    let thousand = BigInt::from(1000u16);
+    let body = if *number < BigInt::from(2000u16) {
+        let rest = number - &thousand;
+        if rest.is_zero() {
+            "الألف".to_string()
+        } else {
+            format!("{} بعد الألف", to_ordinal_impl(&rest, feminine, "")?)
+        }
+    } else {
+        match scale_index(number) {
+            Some(k) => format!("ال{}", ARABIC_GROUP[k]),
+            None => {
+                return Err(N2WError::Overflow(format!(
+                    "lang='ar' spells ordinals from 2000 up only for a round \
+                     scale word (المليون, المليار, …); {} has no ordinal form",
+                    number
+                )))
+            }
+        }
+    };
+    // `prefix=` was prepended to the old cardinal fallback; it still applies
+    // to the >= 1000 forms and nowhere else.
+    if !prefix.is_empty() {
+        return Ok(format!("{} {}", prefix, body).trim().to_string());
+    }
+    Ok(body)
+}
+
+/// `k` when `number == 1000**k` for a scale word `ARABIC_GROUP[k]` (k >= 1).
+fn scale_index(number: &BigInt) -> Option<usize> {
+    let thousand = BigInt::from(1000u16);
+    let mut v = number.clone();
+    let mut k = 0usize;
+    while v > BigInt::one() {
+        if !(&v % &thousand).is_zero() {
+            return None;
+        }
+        v /= &thousand;
+        k += 1;
+    }
+    if v == BigInt::one() && (1..ARABIC_GROUP.len()).contains(&k) {
+        Some(k)
+    } else {
+        None
+    }
 }
 
 /// Python's `int(number)` on a float/Decimal operand — the first line of
@@ -1914,8 +1961,8 @@ impl Lang for LangAr {
     /// `gender_idx = 0 if gender == "m" else 1` — only the exact string
     /// `"m"` is masculine; `"M"`, `"f"`, `None`, ints, anything else compares
     /// unequal and selects the feminine column. `prefix` is interpolated with
-    /// `"{} ".format(prefix)` in the >= 1000 / <= 0 fallback only (and even
-    /// there, zero's early return beats it); no value of either kwarg raises.
+    /// `"{} ".format(prefix)` in front of the >= 1000 forms only (zero and the
+    /// 1..=999 table forms never see it); no value of either kwarg raises.
     fn to_ordinal_kw(&self, value: &BigInt, kw: &Kwargs) -> Result<String> {
         if !kw.only(&["gender", "prefix"]) {
             return Err(N2WError::Fallback("kwargs".into()));
@@ -2423,13 +2470,12 @@ mod tests {
             (1.0, "الأول"),
             (12.0, "الثاني عشر"),
             (20.0, "العشرون"),
-            (21.0, "الأول والعشرون"),
+            (21.0, "الحادي والعشرون"),
             (42.0, "الثاني والأربعون"),
             (100.0, "المائة"),
             (101.0, "الأول بعد المائة"),
-            (1234.0, "ألف ومئتان وأربعة وثلاثون"),
-            (1e16, "عشرة كوادريليونات"),
-            (1e20, "مائة كوينتليون"),
+            (1234.0, "الرابع والثلاثون بعد المئتين بعد الألف"),
+            (1e18, "الكوينتليون"),
         ] {
             assert_eq!(ord_f(f(arg)), out, "ordinal {}", arg);
             assert_eq!(ordnum_f(f(arg), "x"), out, "ordinal_num {}", arg);
@@ -2439,12 +2485,19 @@ mod tests {
             ("5", "الخامس"),
             ("5.00", "الخامس"),
             ("1E+2", "المائة"),
-            ("12345.000", "اثنا عشر ألفاً وثلاثمائة وخمسة وأربعون"),
-            ("1E+20", "مائة كوينتليون"),
+            ("1999.000", "التاسع والتسعون بعد التسعمائة بعد الألف"),
+            ("1E+21", "السكستيليون"),
             ("-0.0", "صفر"),
         ] {
             assert_eq!(ord_f(d(arg)), out, "ordinal Decimal {}", arg);
             assert_eq!(ordnum_f(d(arg), "x"), out, "ordinal_num Decimal {}", arg);
+        }
+        // No verified ordinal past 1999 unless a round scale word (#249).
+        for v in [f(1e16), f(1e20), d("12345.000")] {
+            assert!(matches!(
+                LangAr::new().ordinal_float_entry(&v),
+                Err(N2WError::Overflow(_))
+            ));
         }
         // int(inf)/int(nan), same errors as to_str's guard.
         assert!(matches!(
@@ -2521,7 +2574,7 @@ mod tests {
         let fem = kws(&[("gender", KwVal::Str("f".into()))]);
         assert_eq!(l.to_ordinal_kw(&n(1), &fem).unwrap(), "الأولى");
         assert_eq!(l.to_ordinal_kw(&n(11), &fem).unwrap(), "الحادية عشرة");
-        assert_eq!(l.to_ordinal_kw(&n(21), &fem).unwrap(), "الأولى والعشرون");
+        assert_eq!(l.to_ordinal_kw(&n(21), &fem).unwrap(), "الحادية والعشرون");
         assert_eq!(l.to_ordinal_kw(&n(100), &fem).unwrap(), "المائة");
         // A negative is rejected before the kwargs are read (#672); it used
         // to fall through to the gender-ignoring fallback and return "خمس".
@@ -2529,16 +2582,19 @@ mod tests {
             l.to_ordinal_kw(&n(-5), &fem),
             Err(N2WError::Type(_))
         ));
-        assert_eq!(l.to_ordinal_kw(&n(1234), &fem).unwrap(), "ألف ومئتان وأربعة وثلاثون");
+        assert_eq!(
+            l.to_ordinal_kw(&n(1234), &fem).unwrap(),
+            "الرابعة والثلاثون بعد المئتين بعد الألف"
+        );
         // Any non-"m" gender is feminine — "M", None, ints included.
         for v in [KwVal::Str("M".into()), KwVal::None, KwVal::Int(0)] {
             let kw = kws(&[("gender", v)]);
             assert_eq!(l.to_ordinal_kw(&n(1), &kw).unwrap(), "الأولى");
         }
-        // prefix: fallback only ("xx ألفا"), zero early-returns bare "صفر",
-        // table branches never see it.
+        // prefix: the >= 1000 forms only ("xx الألف"), zero early-returns
+        // bare "صفر", table branches never see it.
         let px = kws(&[("prefix", KwVal::Str("xx".into()))]);
-        assert_eq!(l.to_ordinal_kw(&n(2000), &px).unwrap(), "xx ألفا");
+        assert_eq!(l.to_ordinal_kw(&n(1000), &px).unwrap(), "xx الألف");
         assert_eq!(l.to_ordinal_kw(&n(0), &px).unwrap(), "صفر");
         assert_eq!(l.to_ordinal_kw(&n(5), &px).unwrap(), "الخامس");
         // Unknown kwarg falls back to Python (Fallback decline signal).

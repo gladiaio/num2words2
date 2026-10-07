@@ -54,10 +54,19 @@ class TestAR(LangTest, TestCase):
         (94, "الرابع والتسعون"),
         (102, "الثاني بعد المائة"),
         (23, "الثالث والعشرون"),
+        # #249: الحادي in compounds, and real ordinals from 1000 up.
+        (21, "الحادي والعشرون"),
+        (121, "الحادي والعشرون بعد المائة"),
+        (1000, "الألف"),
+        (1001, "الأول بعد الألف"),
+        (10**6, "المليون"),
+        (10**9, "المليار"),
     ]
 
     ordinal_num_tests = [
-        (923411, "تسعمائة وثلاثة وعشرون ألفاً وأربعمائة وأحد عشر"),
+        # Was the cardinal of 923411; ordinals >= 2000 that are not a round
+        # scale word now raise OverflowError instead (#249).
+        (1411, "الحادي عشر بعد الأربعمائة بعد الألف"),
     ]
 
     cardinal_tests = [
@@ -151,6 +160,17 @@ class TestAR(LangTest, TestCase):
             with self.assertRaises(OverflowError) as context:
                 num2words(number, lang="ar")
             self.assertTrue("must be less" in str(context.exception))
+
+
+def test_ar_ordinal_without_a_verified_form_raises():
+    # #249: 2000, 1000000 + 1, ... used to return the bare cardinal.
+    import pytest
+    from num2words2 import num2words
+    for value in (2000, 1100 * 10, 10**6 + 1, 10**50):
+        with pytest.raises(OverflowError):
+            num2words(value, lang="ar", to="ordinal")
+    assert num2words(21, lang="ar", to="ordinal", gender="f") == (
+        "الحادية والعشرون")
 
 
 def test_ar_decimal_uses_arabic_comma_no_double_space():
