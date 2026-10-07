@@ -165,6 +165,7 @@ class TestAR(LangTest, TestCase):
 def test_ar_ordinal_without_a_verified_form_raises():
     # #249: 2000, 1000000 + 1, ... used to return the bare cardinal.
     import pytest
+
     from num2words2 import num2words
     for value in (2000, 1100 * 10, 10**6 + 1, 10**50):
         with pytest.raises(OverflowError):
