@@ -57,9 +57,19 @@
 //!    "هڪ لک" and 123456789 as "هڪ سو ويهه ٽي لک ...". The port groups by
 //!    هزار, لک (10^5) and ڪروڙ (10^7): 10^6 is "ڏهه لک", 123456789
 //!    "ٻارهن ڪروڙ چوٽيهه لک ڇاونجاهه هزار ست سو اوڻانوي".
-//! 5. **`negword`** is the English "minus " in Python; this port uses منفي
-//!    (#154): `to_cardinal(-1)` == "منفي هڪ". The decimal word is still the
-//!    English "point" (see [`POINTWORD`]) — the Sindhi term is not confirmed.
+//! 5. **`negword` and `pointword`** are the English "minus " and "point" in
+//!    Python; this port uses منفي and اعشاريه (#154): `to_cardinal(-1)` ==
+//!    "منفي هڪ", `to_cardinal(1.5)` == "هڪ اعشاريه پنج".
+//!
+//!    UNVERIFIED (#154): اعشاريه — best candidate, not confirmed by a Sindhi
+//!    source for reading a decimal point aloud. Basis: the Sindhi Language
+//!    Authority dictionary (dic.sindhila.edu.pk) attests the adjective
+//!    اعشاري "decimal" (اعشاري نظام, decimal system) from the same root;
+//!    Urdu, the other language of Pakistani schooling, reads 1.5 as
+//!    "ایک اعشاریہ پانچ"; indifferentlanguages.com gives "اعشاريه پوائنٽ" for
+//!    "decimal point". Written in Sindhi letters (ي U+064A, ه U+0647). The
+//!    alternative ڏهائي is attested only as "tenth part / decimal system".
+//!    Needs a native speaker.
 //! 6. **Two kafs, on purpose.** `ones[1]` ("هڪ") spells its kaf with U+06AA
 //!    ARABIC LETTER SWASH KAF, while لک uses U+06A9 KEHEH. That is Sindhi
 //!    orthography (ڪ is /k/, ک is /kʰ/), not an inconsistency. The two
@@ -314,9 +324,9 @@ const KHARAB: &str = "\u{06A9}\u{0631}\u{0628}"; // کرب
 const ORDINAL_SUFFIX: &str = "-\u{0648}";
 
 /// `self.pointword` — the word between the integer and fractional parts on the
-/// float path. Still the English "point": the Sindhi decimal word needs a
-/// native-speaker check (gladiaio/num2words2#154), so it is left as is.
-const POINTWORD: &str = "point";
+/// float path. Python said the English "point". UNVERIFIED (#154): see the
+/// module header for the basis of اعشاريه.
+const POINTWORD: &str = "\u{0627}\u{0639}\u{0634}\u{0627}\u{0631}\u{064A}\u{0647}"; // اعشاريه
 
 /// Where the `u64` ladder hands over to [`ARAB`]/[`KHARAB`].
 const FALLBACK_THRESHOLD: u64 = 1_000_000_000;
@@ -528,7 +538,7 @@ impl Lang for LangSd {
     /// `to_ordinal(float/Decimal)` — Python's `to_ordinal` is
     /// `to_cardinal(number) + "-و"` for *any* input (no
     /// `verify_ordinal`), so the float path is the float cardinal put through
-    /// the same literal transformation: `5.0` -> "پنج point ٻڙي-و".
+    /// the same literal transformation: `5.0` -> "پنج اعشاريه ٻڙي-و".
     /// Errors from the cardinal (`int("1e+16")` -> ValueError) propagate
     /// before the transformation, exactly as in Python.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -578,7 +588,7 @@ impl Lang for LangSd {
 
     /// `self.pointword`. Consulted on the `"." in n` branch of Python's
     /// `to_cardinal` — the float/Decimal path now served by
-    /// [`LangSd::to_cardinal_float`] below. Plain ASCII "point".
+    /// [`LangSd::to_cardinal_float`] below.
     fn pointword(&self) -> &str {
         POINTWORD
     }
@@ -688,7 +698,7 @@ impl Lang for LangSd {
     /// # The negative-zero hole (Decimal only)
     ///
     /// `str(Decimal("-0.0")) == "-0.0"` keeps the sign, so Python answers
-    /// "منفي ٻڙي point ٻڙي"; a `BigDecimal` has no signed zero (its `BigInt`
+    /// "منفي ٻڙي اعشاريه ٻڙي"; a `BigDecimal` has no signed zero (its `BigInt`
     /// mantissa normalises `-0` to `0`), and the discriminating string is not
     /// carried across the `FloatValue::Decimal` boundary, so this arm drops the
     /// negword. Out of this file's remit — same boundary hole `lang_pa` flags.
@@ -965,38 +975,38 @@ mod float_tests {
     #[test]
     fn corpus_float_rows() {
         // Every `"lang":"sd","to":"cardinal"` row with a dot in `arg`.
-        assert_eq!(flt(0.0, 1), "ٻڙي point ٻڙي");
-        assert_eq!(flt(0.5, 1), "ٻڙي point پنج");
-        assert_eq!(flt(1.0, 1), "هڪ point ٻڙي");
-        assert_eq!(flt(1.5, 1), "هڪ point پنج");
-        assert_eq!(flt(2.25, 2), "ٻه point ٻه پنج");
-        assert_eq!(flt(3.14, 2), "ٽي point هڪ چار");
-        assert_eq!(flt(0.01, 2), "ٻڙي point ٻڙي هڪ");
-        assert_eq!(flt(0.1, 1), "ٻڙي point هڪ");
-        assert_eq!(flt(0.99, 2), "ٻڙي point نو نو");
-        assert_eq!(flt(1.01, 2), "هڪ point ٻڙي هڪ");
-        assert_eq!(flt(12.34, 2), "ٻارهن point ٽي چار");
-        assert_eq!(flt(99.99, 2), "نوانوي point نو نو");
-        assert_eq!(flt(100.5, 1), "هڪ سو point پنج");
-        assert_eq!(flt(1234.56, 2), "هڪ هزار ٻه سو چوٽيهه point پنج ڇهه");
-        assert_eq!(flt(-0.5, 1), "منفي ٻڙي point پنج");
-        assert_eq!(flt(-1.5, 1), "منفي هڪ point پنج");
-        assert_eq!(flt(-12.34, 2), "منفي ٻارهن point ٽي چار");
-        assert_eq!(flt(1.005, 3), "هڪ point ٻڙي ٻڙي پنج");
-        assert_eq!(flt(2.675, 3), "ٻه point ڇهه ست پنج"); // f64 artefact -> 675
+        assert_eq!(flt(0.0, 1), "ٻڙي اعشاريه ٻڙي");
+        assert_eq!(flt(0.5, 1), "ٻڙي اعشاريه پنج");
+        assert_eq!(flt(1.0, 1), "هڪ اعشاريه ٻڙي");
+        assert_eq!(flt(1.5, 1), "هڪ اعشاريه پنج");
+        assert_eq!(flt(2.25, 2), "ٻه اعشاريه ٻه پنج");
+        assert_eq!(flt(3.14, 2), "ٽي اعشاريه هڪ چار");
+        assert_eq!(flt(0.01, 2), "ٻڙي اعشاريه ٻڙي هڪ");
+        assert_eq!(flt(0.1, 1), "ٻڙي اعشاريه هڪ");
+        assert_eq!(flt(0.99, 2), "ٻڙي اعشاريه نو نو");
+        assert_eq!(flt(1.01, 2), "هڪ اعشاريه ٻڙي هڪ");
+        assert_eq!(flt(12.34, 2), "ٻارهن اعشاريه ٽي چار");
+        assert_eq!(flt(99.99, 2), "نوانوي اعشاريه نو نو");
+        assert_eq!(flt(100.5, 1), "هڪ سو اعشاريه پنج");
+        assert_eq!(flt(1234.56, 2), "هڪ هزار ٻه سو چوٽيهه اعشاريه پنج ڇهه");
+        assert_eq!(flt(-0.5, 1), "منفي ٻڙي اعشاريه پنج");
+        assert_eq!(flt(-1.5, 1), "منفي هڪ اعشاريه پنج");
+        assert_eq!(flt(-12.34, 2), "منفي ٻارهن اعشاريه ٽي چار");
+        assert_eq!(flt(1.005, 3), "هڪ اعشاريه ٻڙي ٻڙي پنج");
+        assert_eq!(flt(2.675, 3), "ٻه اعشاريه ڇهه ست پنج"); // f64 artefact -> 675
         // extra live-interpreter checks
-        assert_eq!(flt(2.0, 1), "ٻه point ٻڙي");
-        assert_eq!(flt(1000000.5, 1), "ڏهه لک point پنج");
+        assert_eq!(flt(2.0, 1), "ٻه اعشاريه ٻڙي");
+        assert_eq!(flt(1000000.5, 1), "ڏهه لک اعشاريه پنج");
     }
 
     #[test]
     fn corpus_decimal_rows() {
         // Every `"lang":"sd","to":"cardinal_dec"` row.
-        assert_eq!(dec("0.01", 2), "ٻڙي point ٻڙي هڪ");
-        assert_eq!(dec("1.10", 2), "هڪ point هڪ ٻڙي"); // trailing zero kept
-        assert_eq!(dec("12.345", 3), "ٻارهن point ٽي چار پنج");
-        assert_eq!(dec("98746251323029.99", 2), "نو سو ستاسي کرب ڇائيتاليهه ارب پنجويهه ڪروڙ تيرهن لک ٽريويهه هزار اوڻٽيهه point نو نو"); // bug 3, fixed (#147)
-        assert_eq!(dec("0.001", 3), "ٻڙي point ٻڙي ٻڙي هڪ");
+        assert_eq!(dec("0.01", 2), "ٻڙي اعشاريه ٻڙي هڪ");
+        assert_eq!(dec("1.10", 2), "هڪ اعشاريه هڪ ٻڙي"); // trailing zero kept
+        assert_eq!(dec("12.345", 3), "ٻارهن اعشاريه ٽي چار پنج");
+        assert_eq!(dec("98746251323029.99", 2), "نو سو ستاسي کرب ڇائيتاليهه ارب پنجويهه ڪروڙ تيرهن لک ٽريويهه هزار اوڻٽيهه اعشاريه نو نو"); // bug 3, fixed (#147)
+        assert_eq!(dec("0.001", 3), "ٻڙي اعشاريه ٻڙي ٻڙي هڪ");
     }
 
     #[test]
@@ -1007,7 +1017,7 @@ mod float_tests {
         let v = FloatValue::Float { value: 2.675, precision: 3 };
         assert_eq!(
             sd.to_cardinal_float(&v, Some(1)).unwrap(),
-            "ٻه point ڇهه ست پنج"
+            "ٻه اعشاريه ڇهه ست پنج"
         );
     }
 
@@ -1015,7 +1025,7 @@ mod float_tests {
     fn float_negative_zero_keeps_negword() {
         // str(-0.0) == "-0.0" -> Python prepends the negword; is_sign_negative
         // recovers it where `< 0.0` would not.
-        assert_eq!(flt(-0.0, 1), "منفي ٻڙي point ٻڙي");
+        assert_eq!(flt(-0.0, 1), "منفي ٻڙي اعشاريه ٻڙي");
     }
 
     #[test]

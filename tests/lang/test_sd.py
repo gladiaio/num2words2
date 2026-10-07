@@ -210,28 +210,28 @@ class Num2WordsSDTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="sd"), "ٻڙي point هڪ")
-        self.assertEqual(num2words(0.5, lang="sd"), "ٻڙي point پنج")
-        self.assertEqual(num2words(0.9, lang="sd"), "ٻڙي point نو")
-        self.assertEqual(num2words(1.1, lang="sd"), "هڪ point هڪ")
-        self.assertEqual(num2words(1.5, lang="sd"), "هڪ point پنج")
-        self.assertEqual(num2words(2.5, lang="sd"), "ٻه point پنج")
-        self.assertEqual(num2words(3.14, lang="sd"), "ٽي point هڪ چار")
-        self.assertEqual(num2words(10.5, lang="sd"), "ڏهه point پنج")
-        self.assertEqual(num2words(11.11, lang="sd"), "يارهن point هڪ هڪ")
-        self.assertEqual(num2words(20.2, lang="sd"), "ويهه point ٻه")
-        self.assertEqual(num2words(99.99, lang="sd"), "نوانوي point نو نو")
-        self.assertEqual(num2words(100.01, lang="sd"), "هڪ سو point ٻڙي هڪ")
-        self.assertEqual(num2words(100.5, lang="sd"), "هڪ سو point پنج")
-        self.assertEqual(num2words(123.45, lang="sd"), "هڪ سو ٽريويهه point چار پنج")
-        self.assertEqual(num2words(1000.5, lang="sd"), "هڪ هزار point پنج")
+        self.assertEqual(num2words(0.1, lang="sd"), "ٻڙي اعشاريه هڪ")
+        self.assertEqual(num2words(0.5, lang="sd"), "ٻڙي اعشاريه پنج")
+        self.assertEqual(num2words(0.9, lang="sd"), "ٻڙي اعشاريه نو")
+        self.assertEqual(num2words(1.1, lang="sd"), "هڪ اعشاريه هڪ")
+        self.assertEqual(num2words(1.5, lang="sd"), "هڪ اعشاريه پنج")
+        self.assertEqual(num2words(2.5, lang="sd"), "ٻه اعشاريه پنج")
+        self.assertEqual(num2words(3.14, lang="sd"), "ٽي اعشاريه هڪ چار")
+        self.assertEqual(num2words(10.5, lang="sd"), "ڏهه اعشاريه پنج")
+        self.assertEqual(num2words(11.11, lang="sd"), "يارهن اعشاريه هڪ هڪ")
+        self.assertEqual(num2words(20.2, lang="sd"), "ويهه اعشاريه ٻه")
+        self.assertEqual(num2words(99.99, lang="sd"), "نوانوي اعشاريه نو نو")
+        self.assertEqual(num2words(100.01, lang="sd"), "هڪ سو اعشاريه ٻڙي هڪ")
+        self.assertEqual(num2words(100.5, lang="sd"), "هڪ سو اعشاريه پنج")
+        self.assertEqual(num2words(123.45, lang="sd"), "هڪ سو ٽريويهه اعشاريه چار پنج")
+        self.assertEqual(num2words(1000.5, lang="sd"), "هڪ هزار اعشاريه پنج")
         self.assertEqual(
-            num2words(1234.56, lang="sd"), "هڪ هزار ٻه سو چوٽيهه point پنج ڇهه"
+            num2words(1234.56, lang="sd"), "هڪ هزار ٻه سو چوٽيهه اعشاريه پنج ڇهه"
         )
-        self.assertEqual(num2words(10000.01, lang="sd"), "ڏهه هزار point ٻڙي هڪ")
-        self.assertEqual(num2words(-0.5, lang="sd"), "منفي ٻڙي point پنج")
-        self.assertEqual(num2words(-1.5, lang="sd"), "منفي هڪ point پنج")
-        self.assertEqual(num2words(-10.5, lang="sd"), "منفي ڏهه point پنج")
+        self.assertEqual(num2words(10000.01, lang="sd"), "ڏهه هزار اعشاريه ٻڙي هڪ")
+        self.assertEqual(num2words(-0.5, lang="sd"), "منفي ٻڙي اعشاريه پنج")
+        self.assertEqual(num2words(-1.5, lang="sd"), "منفي هڪ اعشاريه پنج")
+        self.assertEqual(num2words(-10.5, lang="sd"), "منفي ڏهه اعشاريه پنج")
 
     def test_ordinal(self):
         """Test ordinal numbers."""
