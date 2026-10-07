@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -219,11 +221,27 @@ class Num2WordsFOTest(TestCase):
             num2words(999999999, lang="fo"),
             "níggju hundrað níti níggju millión níggju hundrað níti níggju túsund níggju hundrað níti níggju",
         )
-        self.assertEqual(num2words(1000000000, lang="fo"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="fo"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="fo"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="fo"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="fo"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="fo"),
+            "ein milliard",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="fo"),
+            "ein milliard tvey hundrað tríati fýra millión fimm hundrað seksti sjey túsund átta hundrað níti",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="fo"),
+            "níggju milliard níggju hundrað níti níggju millión níggju hundrað níti níggju túsund níggju hundrað níti níggju",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="fo"),
+            "tíggju milliard",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="fo"),
+            "níti níggju milliard níggju hundrað níti níggju millión níggju hundrað níti níggju túsund níggju hundrað níti níggju",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -427,3 +445,12 @@ class Num2WordsFOTest(TestCase):
         self.assertEqual(num2words(100, lang="fo"), num2words("100", lang="fo"))
         self.assertEqual(num2words(1000, lang="fo"), num2words("1000", lang="fo"))
 
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="fo") == "ein billión"
+    assert num2words(10**15, lang="fo") == "ein billiard"
+    assert num2words(10**18, lang="fo") == "ein trillión"
+    assert num2words(10**21, lang="fo") == "ein trilliard"
+    with pytest.raises(OverflowError):
+        num2words(10**24, lang="fo")

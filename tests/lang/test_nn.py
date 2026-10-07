@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -198,11 +200,27 @@ class Num2WordsNNTest(TestCase):
             num2words(999999999, lang="nn"),
             "ni hundre nitti ni million ni hundre nitti ni tusen ni hundre nitti ni",
         )
-        self.assertEqual(num2words(1000000000, lang="nn"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="nn"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="nn"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="nn"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="nn"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="nn"),
+            "ein milliard",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="nn"),
+            "ein milliard to hundre tretti fire million fem hundre seksti sju tusen åtte hundre nitti",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="nn"),
+            "ni milliard ni hundre nitti ni million ni hundre nitti ni tusen ni hundre nitti ni",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="nn"),
+            "ti milliard",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="nn"),
+            "nitti ni milliard ni hundre nitti ni million ni hundre nitti ni tusen ni hundre nitti ni",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -404,3 +422,12 @@ def test_teens_issue_216():
     assert [num2words(i, lang="nn") for i in range(11, 20)] == want
     assert num2words(12.13, lang="nn", to="currency", currency="NOK") == (
         "tolv kroner tretten øre")
+
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="nn") == "ein billion"
+    assert num2words(10**15, lang="nn") == "ein billiard"
+    assert num2words(10**18, lang="nn") == "ein trillion"
+    with pytest.raises(OverflowError):
+        num2words(10**21, lang="nn")

@@ -5,8 +5,9 @@
 //! `hasattr` probe in `Num2Word_Base.__init__` fails and Python never builds
 //! `self.cards` nor sets `self.MAXVAL`. `to_cardinal` is overridden outright
 //! and drives a hand-rolled `_int_to_word` recursion. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — see bug 2 below for what happens instead.
+//! `cards`/`merge` stay at their trait defaults here. Python has **no
+//! overflow check** — see bug 2 below for what it did instead; this port
+//! raises `OverflowError` from 10^24 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base` (unchanged by BS):
 //!   * `setup()` sets `negword = "minus "` (note the **trailing space**) and
@@ -64,13 +65,16 @@
 //!    now uses the standard `-naest` teens from [`TEENS`] (jedanaest,
 //!    dvanaest, trinaest, četrnaest, …, devetnaest), as `lang_hr.rs` does.
 //!    The bug number is kept so the numbering below stays stable.
-//! 2. **Everything >= 10^9 falls back to digits.** The final `else` of
-//!    `_int_to_word` is `return str(number)`, so `to_cardinal(10**9)` is the
-//!    *string* `"1000000000"`, not words — and `to_ordinal(10**9)` is
-//!    `"1000000000."`. This is BS's de facto ceiling: it never raises
-//!    `OverflowError`, it silently degrades. The `milijarda` (10^9) and
-//!    `bilion` (10^12) entries of `self.scale` are therefore **unreachable
-//!    dead data** — nothing in the module ever reads `self.scale` at all.
+//! 2. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` of `_int_to_word` is `return str(number)`, so `to_cardinal(10**9)`
+//!    was the *string* `"1000000000"` — even though `self.scale` lists
+//!    `milijarda` and `bilion`, which nothing ever read. This port continues
+//!    the scale with milijarda (10^9), bilion (10^12), bilijarda (10^15),
+//!    trilion (10^18) and trilijarda (10^21) — the -ijarda words also appear
+//!    in `lang_hr.rs`'s table — and raises `OverflowError` from 10^24
+//!    (`maxval`). The feminine -ijarda words agree like `hiljada` and the
+//!    masculine -ilion words like `milion`, bug 3's quirks included:
+//!    10^9 == "milijarda", 2*10^9 == "dva milijarde", 10^12 == "bilion".
 //! 3. **`hiljada` never agrees for 1 or for compound thousands.** Exactly
 //!    1000 renders as bare "hiljada" with no leading "jedan" (real Bosnian:
 //!    "hiljadu"), and the 2/3/4 -> "hiljade" rule keys off the *whole*
@@ -115,9 +119,9 @@
 //!    `float("nan")`/`float("inf")`/`float("-inf")` land in the first shape
 //!    ('nan' / 'inf' / 'inf' — the sign is stripped before `int()` sees it),
 //!    as do `Decimal("NaN")`/`Decimal("Infinity")`. This is BS's *lower* and
-//!    *upper* de facto ceiling on the float path, the mirror of bug 2's silent
-//!    digit fallback on the integer path — and unlike bug 2 it is loud.
-//!    Reproduced in [`py_int`]; there is no OverflowError anywhere near it.
+//!    *upper* de facto ceiling on the float path. Reproduced in [`py_int`];
+//!    only a `Decimal` whose whole part reaches 10^24 hits the `maxval`
+//!    OverflowError first (bug 2, #147).
 //!
 //! # Currency (phase 2)
 //!
@@ -146,24 +150,25 @@
 //!
 //! # Error variants
 //!
-//! The four integer modes are total over the integers: there is no overflow
-//! check (bug 2), no table lookup that can miss, and no `int()` of a parsed
-//! token. `to_currency` is likewise total — its `.get(..., BAM)` fallback
-//! cannot miss. The only error on this surface is the `NotImplementedError`
+//! The four integer modes raise only `OverflowError`, for `abs(n) >= 10^24`
+//! (bug 2, #147): there is no table lookup that can miss and no `int()` of a
+//! parsed token. `to_currency` shares that ceiling — its `.get(..., BAM)`
+//! fallback cannot miss. The only error on this surface is the `NotImplementedError`
 //! that `Num2Word_Base.to_cheque` raises for a code outside `CURRENCY_FORMS`,
 //! and that is produced by `currency::default_to_cheque` from the `None` that
 //! `LangBs::currency_forms` returns.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is significant: `to_cardinal` does a
 /// bare `ret + word` concatenation with no separator and relies on it. The
@@ -211,8 +216,31 @@ const TENS: [&str; 10] = [
     "devedeset",
 ];
 
-/// 10^9 — the point at which `_int_to_word` gives up and returns digits.
+/// 10^9 — where Python's `_int_to_word` gave up and returned digits, and
+/// where [`HIGH_SCALES`] take over (#147).
 const FALLBACK_THRESHOLD: u64 = 1_000_000_000;
+
+/// The scales above `milion` that Python lacks (gladiaio/num2words2#147),
+/// largest first, as `(power of ten, singular, paucal, plural)`. Bosnian
+/// long scale, per Radio Sarajevo's table of large numbers
+/// (radiosarajevo.ba/…/371905), bs.wikipedia "Milijarda"/"Bilion" and the
+/// -ijarda rows of `lang_hr.rs`. Feminine -ijarda words take
+/// `hiljada`'s 1 / 2-4 / 5+ forms; masculine -ilion words take `milion`'s
+/// bare-1 / `-a` forms (bug 3's whole-count test included).
+const HIGH_SCALES: [(u32, &str, &str, &str); 5] = [
+    (21, "trilijarda", "trilijarde", "trilijardi"),
+    (18, "trilion", "triliona", "triliona"),
+    (15, "bilijarda", "bilijarde", "bilijardi"),
+    (12, "bilion", "biliona", "biliona"),
+    (9, "milijarda", "milijarde", "milijardi"),
+];
+
+/// The exclusive ceiling: 10^24 would need a kvadrilion, which the sources
+/// above do not agree on (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(24))
+}
 
 /// The separator the pyo3 binding hands us when the Python caller omitted one.
 ///
@@ -403,7 +431,7 @@ fn shortest_digits(f: f64) -> (bool, String, i32) {
 ///
 /// plus `Py_DTSF_ADD_DOT_0`, which appends the `".0"` that keeps `repr` from
 /// ever looking like an int — load-bearing for BS, because the `".0"` is the
-/// only reason `1e15` renders as `"1000000000000000 zarez nula"` instead of
+/// only reason `1e15` renders as `"bilijarda zarez nula"` instead of
 /// taking the dotless branch. The exponent is `"%+.02d"`: always signed, and
 /// zero-padded to two digits (`1e-05`, not `1e-5`).
 ///
@@ -730,19 +758,19 @@ impl LangBs {
         match n.split_once('.') {
             // `"." in n` -> `n.split(".", 1)`, which yields exactly two parts.
             Some((left, right)) => {
-                ret.push_str(&self.int_to_word(&py_int(left)?));
+                ret.push_str(&self.int_to_word(&py_int(left)?)?);
                 ret.push(' ');
                 ret.push_str(POINTWORD);
                 ret.push(' ');
                 // `for digit in right` iterates *characters*.
                 for digit in right.chars() {
-                    ret.push_str(&self.int_to_word(&py_int(&digit.to_string())?));
+                    ret.push_str(&self.int_to_word(&py_int(&digit.to_string())?)?);
                     ret.push(' ');
                 }
                 Ok(ret.trim().to_string())
             }
             None => {
-                ret.push_str(&self.int_to_word(&py_int(n)?));
+                ret.push_str(&self.int_to_word(&py_int(n)?)?);
                 Ok(ret.trim().to_string())
             }
         }
@@ -754,12 +782,13 @@ impl LangBs {
     /// `< 100`, `< 1000`, `< 1000000`, `< 1000000000`, else `str(number)`.
     /// Everything from `< 10` through `< 1000000000` is bounded by 10^9 and so
     /// fits a `u64`; that whole span is delegated to [`Self::int_to_word_small`]
-    /// after this function has peeled off zero, the sign, and the digit
-    /// fallback. The split is behaviour-preserving because the boundaries are
-    /// checked here in the same order Python checks them.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    /// after this function has peeled off zero and the sign. Python's
+    /// `str(number)` fallback is replaced by the [`HIGH_SCALES`] and the
+    /// `maxval` check (bug 2, #147).
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return "nula".to_string();
+            return Ok("nula".to_string());
         }
 
         if number.is_negative() {
@@ -771,17 +800,37 @@ impl LangBs {
             // `to_currency`, which is out of scope. Ported anyway for fidelity;
             // note it would yield a doubled "minus " if it ever were reached
             // through `to_cardinal`.
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
-        match number.to_u64() {
+        if let Some(n) = number.to_u64() {
             // Bounded by the `< 1000000000` guard, so `to_u64` cannot fail
             // for any value this arm accepts.
-            Some(n) if n < FALLBACK_THRESHOLD => self.int_to_word_small(n),
-            // `else: return str(number)` — bug 2. Covers every value >= 10^9,
-            // including those far past u64 (the corpus exercises 10^21).
-            _ => number.to_string(),
+            if n < FALLBACK_THRESHOLD {
+                return Ok(self.int_to_word_small(n));
+            }
         }
+        // Python: `else: return str(number)` — bug 2. The scales above
+        // milion instead (#147); the maxval check keeps the count below 1000.
+        for &(exp, one, few, many) in HIGH_SCALES.iter() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let (count, remainder) = number.div_mod_floor(&scale);
+                let mut result = if count.is_one() {
+                    one.to_string()
+                } else if count < BigInt::from(5) {
+                    format!("{} {}", self.int_to_word(&count)?, few)
+                } else {
+                    format!("{} {}", self.int_to_word(&count)?, many)
+                };
+                if !remainder.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&remainder)?);
+                }
+                return Ok(result);
+            }
+        }
+        unreachable!("every value >= 10^9 and below maxval has a HIGH_SCALES entry")
     }
 
     /// The `0 < number < 10^9` span of `_int_to_word`.
@@ -870,6 +919,10 @@ impl LangBs {
 }
 
 impl Lang for LangBs {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -974,13 +1027,13 @@ impl Lang for LangBs {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_BS.to_ordinal`.
     ///
     /// Only 1/2/3 have real ordinal words; everything else — 0, negatives, and
-    /// the >= 10^9 digit fallback alike — is the cardinal plus ".". See bug 5.
+    /// 10^9 and up alike — is the cardinal plus ".". See bug 5.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         if value == &BigInt::from(1) {
             return Ok("prvi".to_string());
@@ -1142,7 +1195,7 @@ impl Lang for LangBs {
         // bypasses the `currency_forms` hook on purpose; that one is strict.
         let forms = self.currency_forms.get(currency).unwrap_or(&self.bam);
 
-        let left_str = self.int_to_word(&left);
+        let left_str = self.int_to_word(&left)?;
         let currency_word = Self::select_form(&left, &forms.unit);
         let mut result = format!("{} {}", left_str, currency_word);
 
@@ -1151,7 +1204,7 @@ impl Lang for LangBs {
         // `cents=False` half of this branch).
         if cents && right != 0 {
             let right_big = BigInt::from(right);
-            let cents_str = self.int_to_word(&right_big);
+            let cents_str = self.int_to_word(&right_big)?;
             let cents_word = Self::select_form(&right_big, &forms.subunit);
             result.push_str(separator);
             result.push_str(&cents_str);
@@ -1233,11 +1286,13 @@ mod tests {
         // Trailing zero preserved: str(Decimal("1.10")) is "1.10", not "1.1".
         assert_eq!(go(&d("1.10")), "jedan zarez jedan nula");
         assert_eq!(go(&d("12.345")), "dvanaest zarez tri četiri pet");
-        // Issue #603's value. The integer part clears 10^9, so bug 2's digit
-        // fallback fires and the left half stays numeric.
+        // Issue #603's value. The integer part clears 10^9, which Python
+        // left numeric (bug 2); spelled out since #147.
         assert_eq!(
             go(&d("98746251323029.99")),
-            "98746251323029 zarez devet devet"
+            "devedeset osam biliona sedamsto četrdeset šest milijardi dvjesto \
+             pedeset jedan miliona tristo dvadeset tri hiljada dvadeset devet \
+             zarez devet devet"
         );
         assert_eq!(go(&d("0.001")), "nula zarez nula nula jedan");
     }
@@ -1286,10 +1341,17 @@ mod tests {
         assert_eq!(py_repr_float(-91334146377350.12), "-91334146377350.12");
         assert_eq!(format!("{}", -91334146377350.12f64), "-91334146377350.13");
 
-        assert_eq!(go(&f(953749603507345.2, 1)), "953749603507345 zarez dva");
+        assert_eq!(
+            go(&f(953749603507345.2, 1)),
+            "devetsto pedeset tri biliona sedamsto četrdeset devet milijardi \
+             šeststo tri miliona petsto sedam hiljada tristo četrdeset pet \
+             zarez dva"
+        );
         assert_eq!(
             go(&f(-91334146377350.12, 2)),
-            "minus 91334146377350 zarez jedan dva"
+            "minus devedeset jedan biliona tristo trideset četiri milijardi \
+             sto četrdeset šest miliona tristo sedamdeset sedam hiljada \
+             tristo pedeset zarez jedan dva"
         );
     }
 
@@ -1335,17 +1397,22 @@ mod tests {
     #[test]
     fn add_dot_0_keeps_integral_floats_on_the_fraction_branch() {
         assert_eq!(py_repr_float(1e15), "1000000000000000.0");
-        assert_eq!(go(&f(1e15, 1)), "1000000000000000 zarez nula");
+        assert_eq!(go(&f(1e15, 1)), "bilijarda zarez nula");
         assert_eq!(py_repr_float(100.0), "100.0");
         assert_eq!(go(&f(100.0, 1)), "sto zarez nula");
     }
 
-    /// Bug 2's digit fallback, reached through the float path.
+    /// Bug 2 (fixed, #147) through the float path: the left half is words
+    /// from 10^9 up, and past maxval it is an OverflowError.
     #[test]
-    fn large_values_fall_back_to_digits_on_the_left() {
-        assert_eq!(go(&f(1000000000.5, 1)), "1000000000 zarez pet");
-        assert_eq!(go(&f(1234567890.5, 1)), "1234567890 zarez pet");
-        assert_eq!(go(&f(-1000000000.5, 1)), "minus 1000000000 zarez pet");
+    fn large_values_are_words_on_the_left() {
+        assert_eq!(go(&f(1000000000.5, 1)), "milijarda zarez pet");
+        assert_eq!(
+            go(&f(1234567890.5, 1)),
+            "milijarda dvjesto trideset četiri miliona petsto šezdeset sedam \
+             hiljada osamsto devedeset zarez pet"
+        );
+        assert_eq!(go(&f(-1000000000.5, 1)), "minus milijarda zarez pet");
         // Just under 10^9: still words.
         assert_eq!(
             go(&f(123456789.25, 2)),
@@ -1355,8 +1422,14 @@ mod tests {
         // Decimal keeps full precision past f64's reach (issue #603).
         assert_eq!(
             go(&d("123456789012345678901.5")),
-            "123456789012345678901 zarez pet"
+            "sto dvadeset tri triliona četiristo pedeset šest bilijardi sedamsto \
+             osamdeset devet biliona dvanaest milijardi tristo četrdeset pet \
+             miliona šeststo sedamdeset osam hiljada devetsto jedan zarez pet"
         );
+        assert!(matches!(
+            LangBs::new().to_cardinal_float(&d("1000000000000000000000000.5"), None),
+            Err(N2WError::Overflow(_))
+        ));
     }
 
     /// Bug 9, message shape 1: no "." survives, so `int(n)` sees the literal.

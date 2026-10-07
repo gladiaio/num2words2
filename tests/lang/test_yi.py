@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -219,11 +221,27 @@ class Num2WordsYITest(TestCase):
             num2words(999999999, lang="yi"),
             "נײַן הונדערט נײַנציק נײַן מיליאָן נײַן הונדערט נײַנציק נײַן טויזנט נײַן הונדערט נײַנציק נײַן",
         )
-        self.assertEqual(num2words(1000000000, lang="yi"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="yi"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="yi"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="yi"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="yi"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="yi"),
+            "איינס מיליאַרד",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="yi"),
+            "איינס מיליאַרד צוויי הונדערט דרײַסיק פיר מיליאָן פינף הונדערט זעכציק זיבן טויזנט אַכט הונדערט נײַנציק",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="yi"),
+            "נײַן מיליאַרד נײַן הונדערט נײַנציק נײַן מיליאָן נײַן הונדערט נײַנציק נײַן טויזנט נײַן הונדערט נײַנציק נײַן",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="yi"),
+            "צען מיליאַרד",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="yi"),
+            "נײַנציק נײַן מיליאַרד נײַן הונדערט נײַנציק נײַן מיליאָן נײַן הונדערט נײַנציק נײַן טויזנט נײַן הונדערט נײַנציק נײַן",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -417,3 +435,9 @@ class Num2WordsYITest(TestCase):
         self.assertEqual(num2words(100, lang="yi"), num2words("100", lang="yi"))
         self.assertEqual(num2words(1000, lang="yi"), num2words("1000", lang="yi"))
 
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**9, lang="yi") == "איינס מיליאַרד"
+    with pytest.raises(OverflowError):
+        num2words(10**12, lang="yi")

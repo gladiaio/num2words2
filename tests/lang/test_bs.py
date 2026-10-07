@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -205,11 +207,27 @@ class Num2WordsBSTest(TestCase):
             num2words(999999999, lang="bs"),
             "devetsto devedeset devet miliona devetsto devedeset devet hiljada devetsto devedeset devet",
         )
-        self.assertEqual(num2words(1000000000, lang="bs"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="bs"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="bs"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="bs"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="bs"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="bs"),
+            "milijarda",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="bs"),
+            "milijarda dvjesto trideset četiri miliona petsto šezdeset sedam hiljada osamsto devedeset",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="bs"),
+            "devet milijardi devetsto devedeset devet miliona devetsto devedeset devet hiljada devetsto devedeset devet",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="bs"),
+            "deset milijardi",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="bs"),
+            "devedeset devet milijardi devetsto devedeset devet miliona devetsto devedeset devet hiljada devetsto devedeset devet",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -417,3 +435,14 @@ def test_teens_issue_216():
     assert [num2words(i, lang="bs") for i in range(11, 20)] == want
     assert num2words(12, lang="bs", to="year") == "dvanaest"
     assert num2words(112, lang="bs") == "sto dvanaest"
+
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="bs") == "bilion"
+    assert num2words(10**15, lang="bs") == "bilijarda"
+    assert num2words(10**18, lang="bs") == "trilion"
+    assert num2words(10**21, lang="bs") == "trilijarda"
+    assert num2words(2 * 10**21, lang="bs") == "dva trilijarde"
+    with pytest.raises(OverflowError):
+        num2words(10**24, lang="bs")

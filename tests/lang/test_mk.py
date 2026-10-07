@@ -210,11 +210,26 @@ class Num2WordsMKTest(TestCase):
             num2words(999999999, lang="mk"),
             "девет сто деведесет девет милион девет сто деведесет девет илјада девет сто деведесет девет",
         )
-        self.assertEqual(num2words(1000000000, lang="mk"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="mk"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="mk"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="mk"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="mk"), "99999999999")
+        self.assertEqual(
+            num2words(1000000000, lang="mk"),
+            "еден милијарда",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="mk"),
+            "еден милијарда два сто триесет четири милион пет сто шеесет седум илјада осум сто деведесет",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="mk"),
+            "девет милијарда девет сто деведесет девет милион девет сто деведесет девет илјада девет сто деведесет девет",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="mk"),
+            "десет милијарда",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="mk"),
+            "деведесет девет милијарда девет сто деведесет девет милион девет сто деведесет девет илјада девет сто деведесет девет",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""

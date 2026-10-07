@@ -7,9 +7,10 @@
 //! `if any(hasattr(self, field) for field in [...])`, so for OC that branch is
 //! skipped entirely: **`self.cards` is never built and `self.MAXVAL` is never
 //! assigned**. `to_cardinal` is overridden outright and drives a recursive
-//! `_int_to_word`. Consequently `cards`/`maxval`/`merge` stay at their trait
-//! defaults here, and **there is no overflow check at any magnitude** — see
-//! bug 1 below for what happens instead.
+//! `_int_to_word`. Consequently `cards`/`merge` stay at their trait
+//! defaults here. Python has **no overflow check at any magnitude** — see
+//! bug 1 below for what it did instead; this port raises `OverflowError`
+//! from 10^15 (`maxval`).
 //!
 //! Inherited from `Num2Word_Base` and *not* overridden by OC: nothing in
 //! scope. OC overrides all four of `to_cardinal`, `to_ordinal`,
@@ -22,13 +23,13 @@
 //! This is a port, not a rewrite. Everything below looks wrong and is exactly
 //! what Python emits, each line confirmed against the frozen corpus:
 //!
-//! 1. **Numbers ≥ 10^9 are not spelled at all.** `_int_to_word`'s final `else`
-//!    is `return str(number)  # Fallback for very large numbers`, so
-//!    `to_cardinal(10**9)` == `"1000000000"` — the decimal digits, verbatim.
-//!    This is not an error path: it returns `Ok`. It composes with everything
-//!    downstream, giving `to_ordinal(10**9)` == `"1000000000-en"` and
-//!    `to_cardinal(-10**9)` == `"mens 1000000000"`. Because there is no
-//!    MAXVAL, this holds for arbitrarily large BigInts (corpus covers 10^21).
+//! 1. **Numbers ≥ 10^9 (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` of `_int_to_word` is `return str(number)  # Fallback for very
+//!    large numbers`, so `to_cardinal(10**9)` was the digit string
+//!    `"1000000000"`. This port continues the `milion` composition with
+//!    miliard (10^9; fr.wiktionary "miliard", Omniglot "Numbers in Occitan")
+//!    and bilion (10^12; oc.wikipedia), so `to_cardinal(10**9)` ==
+//!    `"un miliard"`, and raises `OverflowError` from 10^15 (`maxval`).
 //! 2. **No teens.** `tens[1]` is "dètz" and 11..=19 fall through the generic
 //!    `tens[t] + " " + ones[o]` arm, so 11 == "dètz un", 15 == "dètz cinc",
 //!    19 == "dètz nòu". Real Occitan has "onze"/"quinze"/"dètz-e-nòu".
@@ -51,10 +52,10 @@
 //!
 //! # Error variants
 //!
-//! For integer input, all four cardinal-family modes are total: OC has no
-//! MAXVAL, no dict lookups and no `int()` of a user token, so nothing can
-//! raise. `to_currency` is likewise total (see below — it never raises, not
-//! even for an unknown code). The only raising path in scope is `to_cheque`,
+//! For integer input, the four cardinal-family modes raise only
+//! `OverflowError`, from 10^15 (bug 1, #147): no dict lookups and no `int()`
+//! of a user token. `to_currency` shares that ceiling and otherwise never
+//! raises (see below — not even for an unknown code). The only raising path in scope is `to_cheque`,
 //! which OC inherits unmodified from `Num2Word_Base` and which turns a missing
 //! `CURRENCY_FORMS` key into `NotImplementedError`. The remaining `ok: false`
 //! rows in the corpus for `"oc"` are `fraction` (TypeError) and `w2n_cardinal`
@@ -97,13 +98,14 @@
 //! "euros"). USD uses dolar/dolars with centim/centims. Examples in these docs
 //! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `setup`: `self.negword = "minus "` (English; Occitan "mens " here, bug 6).
@@ -137,6 +139,18 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "cent";
 const THOUSAND: &str = "mil";
 const MILLION: &str = "milion";
+
+/// The scales above `milion` that Python lacks (gladiaio/num2words2#147),
+/// largest first, as `(power of ten, word)`: miliard 10^9 (fr.wiktionary
+/// "miliard", Omniglot "Numbers in Occitan") and bilion 10^12
+/// (oc.wikipedia). Never pluralised, like `milion` (bug 5).
+const HIGH_SCALES: [(u32, &str); 2] = [(12, "bilion"), (9, "miliard")];
+
+/// The exclusive ceiling: no well-attested Occitan word for 10^15 (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(15))
+}
 
 /// `setup`: `self.pointword = "point"` (English; Occitan "virgula" here, bug
 /// 6). Live on the float/Decimal path, where OC interpolates it raw (no
@@ -233,16 +247,17 @@ impl LangOc {
     /// Python's `_int_to_word`.
     ///
     /// Every threshold below is compared against a `BigInt`; the value is
-    /// deliberately never narrowed to a fixed-width int, because the final
-    /// `else` (bug 1) must stringify arbitrarily large inputs. Indices into
+    /// never narrowed to a fixed-width int above 10^9, where Python's final
+    /// `else` stringified it (bug 1) and [`HIGH_SCALES`] take over. Indices into
     /// `ONES`/`TENS` are narrowed only after the surrounding guard has proven
     /// them to be in `0..10`.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         // `if number == 0: return self.ones[0] if self.ones[0] else "zero"`
         // — ones[0] is "" (falsy), so this is unconditionally the zero word
         // (bug 6).
         if number.is_zero() {
-            return ZERO_WORD.to_string();
+            return Ok(ZERO_WORD.to_string());
         }
 
         // `if number < 0: return self.negword + self._int_to_word(abs(number))`.
@@ -252,7 +267,7 @@ impl LangOc {
         // reason a stray negative yields "mens " glued on with no extra space.
 
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
         let ten = BigInt::from(10);
@@ -261,7 +276,7 @@ impl LangOc {
         let million = BigInt::from(1_000_000);
         let billion = BigInt::from(1_000_000_000);
 
-        if number < &ten {
+        Ok(if number < &ten {
             // 1..=9 — narrowing is safe under the guard.
             let i = u32::try_from(number).expect("0 < number < 10") as usize;
             ONES[i].to_string()
@@ -284,33 +299,52 @@ impl LangOc {
             let mut result = format!("{} {}", ONES[hundreds_val], HUNDRED);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
             result
         } else if number < &million {
             let thousands_val = number / &thousand;
             let remainder = number % &thousand;
-            let mut result = format!("{} {}", self.int_to_word(&thousands_val), THOUSAND);
+            let mut result = format!("{} {}", self.int_to_word(&thousands_val)?, THOUSAND);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
             result
         } else if number < &billion {
             let millions_val = number / &million;
             let remainder = number % &million;
             // MILLION is never pluralised (bug 5).
-            let mut result = format!("{} {}", self.int_to_word(&millions_val), MILLION);
+            let mut result = format!("{} {}", self.int_to_word(&millions_val)?, MILLION);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
             result
         } else {
             // `return str(number)  # Fallback for very large numbers` (bug 1).
-            // Not an error — a successful return of the bare decimal digits.
-            number.to_string()
+            // The scales above milion instead, same composition (#147).
+            self.high_scale_words(number)?
+        })
+    }
+
+    /// The `>= 10^9` arm: `N <scale> [rest]` over [`HIGH_SCALES`], the way
+    /// the `milion` arm composes. The maxval check keeps the multiplier
+    /// below 1000 (gladiaio/num2words2#147).
+    fn high_scale_words(&self, number: &BigInt) -> Result<String> {
+        for &(exp, word) in HIGH_SCALES.iter() {
+            let scale = pow10_big(exp);
+            if number >= &scale {
+                let mut result = format!("{} {}", self.int_to_word(&(number / &scale))?, word);
+                let remainder = number % &scale;
+                if !remainder.is_zero() {
+                    result.push(' ');
+                    result.push_str(&self.int_to_word(&remainder)?);
+                }
+                return Ok(result);
+            }
         }
+        unreachable!("every value >= 10^9 and below maxval has a HIGH_SCALES entry")
     }
 
     /// `Num2Word_OC.to_cardinal`, driven by the **string** form of the value
@@ -370,7 +404,7 @@ impl LangOc {
             let mut ret = format!(
                 "{}{} {} ",
                 ret_prefix,
-                self.int_to_word(&python_int(left)?),
+                self.int_to_word(&python_int(left)?)?,
                 POINTWORD
             );
             // `for digit in right: ret += int_to_word(int(digit)) + " "`.
@@ -378,7 +412,7 @@ impl LangOc {
                 // `int(digit)` on a single character: a non-digit (the 'e' of
                 // "1.5e+16") raises ValueError quoting just that character.
                 let d = python_int(&ch.to_string())?;
-                ret.push_str(&self.int_to_word(&d));
+                ret.push_str(&self.int_to_word(&d)?);
                 ret.push(' ');
             }
             // `return ret.strip()`.
@@ -387,7 +421,7 @@ impl LangOc {
             // `return (ret + int_to_word(int(n))).strip()`. Reached by an
             // integral Decimal ("5" -> "cinc") and by exponent-form floats
             // ("1e+16"), where `int(n)` then raises.
-            Ok(format!("{}{}", ret_prefix, self.int_to_word(&python_int(n)?))
+            Ok(format!("{}{}", ret_prefix, self.int_to_word(&python_int(n)?)?)
                 .trim()
                 .to_string())
         }
@@ -606,6 +640,10 @@ fn python_int(s: &str) -> Result<BigInt> {
 }
 
 impl Lang for LangOc {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -692,15 +730,15 @@ impl Lang for LangOc {
         // The trailing `.strip()` is a no-op for integers — `_int_to_word`
         // never pads its result, and NEGWORD's space is interior once
         // concatenated — but it is applied here to match the source exactly.
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.int_to_word(&n)?).trim().to_string())
     }
 
     /// Python: `return self.to_cardinal(number) + "-en"`.
     ///
     /// Unconditional suffix — no agreement, no special-casing of 0 or of
-    /// negatives, and no guard against the bug-1 digit fallback. Hence
-    /// `to_ordinal(0)` == "zèro-en", `to_ordinal(-1)` == "mens un-en" and
-    /// `to_ordinal(10**9)` == "1000000000-en".
+    /// negatives. Hence `to_ordinal(0)` == "zèro-en", `to_ordinal(-1)` ==
+    /// "mens un-en" and `to_ordinal(10**9)` == "un miliard-en" (Python:
+    /// "1000000000-en", bug 1).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}-en", self.to_cardinal(value)?))
     }
@@ -872,7 +910,7 @@ impl Lang for LangOc {
     ///
     /// | value | `str(val)` | Python | here |
     /// |---|---|---|---|
-    /// | `1e15` | `1000000000000000.0` | `"1000000000000000 èuros"` | same |
+    /// | `1e15` | `1000000000000000.0` | `"1000000000000000 èuros"` | OverflowError (#147) |
     /// | `0.0001` | `0.0001` | `"zèro èuros"` | same |
     /// | `1e-05` | `1e-05` | ValueError | `"zèro èuros"` |
     /// | `1e-06` | `1e-06` | ValueError | `"zèro èuros"` |
@@ -966,7 +1004,7 @@ impl Lang for LangOc {
         let (cr1, cr2) = (&forms.unit, &forms.subunit);
 
         // `result = left_str + " " + (cr1[1] if left != 1 else cr1[0])`
-        let left_str = self.int_to_word(&left);
+        let left_str = self.int_to_word(&left)?;
         let mut result = format!(
             "{} {}",
             left_str,
@@ -977,7 +1015,7 @@ impl Lang for LangOc {
         if cents && !right.is_zero() {
             // `result += separator + cents_str + " " + (cr2[1] if right != 1 else cr2[0])`
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right.is_one() { &cr2[0] } else { &cr2[1] });
         }
@@ -1058,7 +1096,7 @@ mod float_tests {
         // at trillion scale. The left part is past 10^9, hence the bare digits.
         assert_eq!(
             d("98746251323029.99").unwrap(),
-            "98746251323029 virgula nòu nòu"
+            "nonanta uèch bilion sèt cent quaranta sièis miliard dos cent cinquanta un milion tres cent vint tres mil vint nòu virgula nòu nòu"
         );
         assert_eq!(d("0.001").unwrap(), "zèro virgula zèro zèro un");
     }
@@ -1080,7 +1118,7 @@ mod float_tests {
     /// 670352580196876.2 is such a value. Live-interpreter verified.
     #[test]
     fn shortest_repr_ties_go_to_even() {
-        assert_eq!(f(670352580196876.2).unwrap(), "670352580196876 virgula dos");
+        assert_eq!(f(670352580196876.2).unwrap(), "sièis cent setanta bilion tres cent cinquanta dos miliard cinc cent ochanta milion un cent nonanta sièis mil uèch cent setanta sièis virgula dos");
     }
 
     /// `str(float)`'s two placement quirks, both observable here.
@@ -1091,11 +1129,13 @@ mod float_tests {
         assert_eq!(f(-1.0).unwrap(), "mens un virgula zèro");
         // repr(-0.0) keeps the sign bit; `value < 0.0` would not.
         assert_eq!(f(-0.0).unwrap(), "mens zèro virgula zèro");
-        // The digit fallback in _int_to_word reaches the float path too.
-        assert_eq!(f(1000000000.5).unwrap(), "1000000000 virgula cinc");
-        assert_eq!(f(1e15).unwrap(), "1000000000000000 virgula zèro");
-        // Just inside the exponent threshold (decpt == 16).
-        assert_eq!(f(9999999999999998.0).unwrap(), "9999999999999998 virgula zèro");
+        // Python's digit fallback reached the float path too; words since
+        // #147, and OverflowError from maxval (10^15) on.
+        assert_eq!(f(1000000000.5).unwrap(), "un miliard virgula cinc");
+        assert!(matches!(f(1e15), Err(N2WError::Overflow(_))));
+        // Just inside the exponent threshold (decpt == 16): still positional,
+        // so it reaches the maxval check rather than int()'s ValueError.
+        assert!(matches!(f(9999999999999998.0), Err(N2WError::Overflow(_))));
         // 1e-4 stays positional (decpt == -3); 1e-5 does not.
         assert_eq!(f(0.0001).unwrap(), "zèro virgula zèro zèro zèro un");
         // A big-but-spellable integral part (< 10^9).

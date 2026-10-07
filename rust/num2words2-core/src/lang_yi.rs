@@ -4,15 +4,14 @@
 //! defines no `high_numwords`/`mid_numwords`/`low_numwords`, so Python never
 //! builds `self.cards` and never sets `MAXVAL`. `to_cardinal` is overridden
 //! outright and drives a recursive `_int_to_word`. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check at all** — `_int_to_word` falls back to `str(number)`
-//! above 10**9 instead of raising (see bug 3 below).
+//! `cards`/`merge` stay at their trait defaults here. Python has **no
+//! overflow check at all** — `_int_to_word` falls back to `str(number)`
+//! above 10**9 (see bug 3 below); this port raises `OverflowError` from
+//! 10**12 (`maxval`).
 //!
-//! Nothing in the four in-scope modes can raise: `to_cardinal` strips the sign
-//! from the *string* before `int()`, every table index is range-guarded by the
-//! `< 10` / `< 100` / `< 1000` cascade, and the `else` arm swallows everything
-//! else. So this port returns `Ok(..)` unconditionally and never constructs an
-//! `N2WError`.
+//! That is the only error the four in-scope integer modes can raise:
+//! `to_cardinal` strips the sign from the *string* before `int()`, and every
+//! table index is range-guarded by the `< 10` / `< 100` / `< 1000` cascade.
 //!
 //! Inherited from `Num2Word_Base` (YI overrides `to_year` but to the same
 //! effect, and does not touch `verify_ordinal`):
@@ -39,11 +38,13 @@
 //!    `< 1000` arm is `self.ones[hundreds_val] + " " + self.hundred` with no
 //!    `if hundreds_val > 1` guard, so 100 == "איינס הונדערט" ("one hundred"),
 //!    and by recursion 1000 == "איינס טויזנט" and 10**6 == "איינס מיליאָן".
-//! 3. **Above 10**9 the converter gives up and returns the digits.** The final
+//! 3. **10**9 and above (fixed, gladiaio/num2words2#147).** Python's final
 //!    `else` arm of `_int_to_word` is literally `return str(number)`, so
-//!    `to_cardinal(10**9)` == "1000000000" — a *digit string*, not words. It
-//!    does not raise OverflowError; there is no `MAXVAL`. `to_ordinal(10**9)`
-//!    therefore yields "1000000000-טער". Modelled by [`LangYi::int_to_word`].
+//!    `to_cardinal(10**9)` was the *digit string* "1000000000". This port
+//!    adds מיליאַרד (10**9, Wiktionary "מיליאַרד"), composed like מיליאָן, so
+//!    `to_cardinal(10**9)` == "איינס מיליאַרד", and raises `OverflowError`
+//!    from 10**12 (`maxval`): the sources disagree on whether ביליאָן is 10**9
+//!    or 10**12. Modelled by [`LangYi::int_to_word`].
 //! 4. **Zero (fixed, gladiaio/num2words2#154).** Python's `_int_to_word`
 //!    opens with `return self.ones[0] if self.ones[0] else "zero"` — `""` is
 //!    falsy, so Python always answered with the *English* "zero". This port
@@ -183,10 +184,10 @@
 //!
 //! ## One more faithfully reproduced Python bug
 //!
-//! 13. **`_int_to_word(int(left))` inherits the `>= 10**9` digit-string
-//!     fallback (bug 3).** The integer part of a large value comes back as bare
-//!     digits: `to_cardinal_float(Decimal("98746251323029.99"))` ==
-//!     "98746251323029 פּונקט נײַן נײַן", not words.
+//! 13. **`_int_to_word(int(left))` inherited the `>= 10**9` digit-string
+//!     fallback (bug 3).** Python returns `Decimal("98746251323029.99")` as
+//!     "98746251323029 פּונקט נײַן נײַן"; since #147 the integer part is words
+//!     below 10**12 and an `OverflowError` from there (as here).
 //!
 //! # Currency nouns (gladiaio/num2words2#222)
 //!
@@ -194,7 +195,7 @@
 //! "euros"). USD uses דאָלאַר / סענט. Examples in these docs that quote
 //! English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -202,6 +203,7 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `_int_to_word(0)`. Python computes `self.ones[0] if self.ones[0] else "zero"`
@@ -254,11 +256,22 @@ const THOUSAND: &str = "טויזנט";
 /// `self.million`.
 const MILLION: &str = "מיליאָן";
 
+/// 10**9, which Python lacks (gladiaio/num2words2#147): מיליאַרד, per
+/// Wiktionary "מיליאַרד" (from French milliard). Composed like [`MILLION`].
+const BILLION: &str = "מיליאַרד";
+
+/// The exclusive ceiling: ביליאָן is 10**12 on Wiktionary but 10**9 on
+/// Omniglot, so no 10**12 word is used (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(12))
+}
+
 /// `to_ordinal`'s suffix, glued on with a literal hyphen. See module bug 6.
 const ORDINAL_SUFFIX: &str = "-טער";
 
 /// The ceiling of `_int_to_word`'s word-producing cascade. At or above this,
-/// Python returns `str(number)`. See module bug 3.
+/// Python returns `str(number)` (module bug 3); [`BILLION`] here (#147).
 const FALLBACK_LIMIT: u64 = 1_000_000_000;
 
 /// `self.__class__.__name__`, for the NotImplementedError `to_cheque` raises.
@@ -511,24 +524,33 @@ impl LangYi {
     ///
     /// The `< 0` arm is dead from every in-scope caller (see module docs) but
     /// is reproduced, including the quirk that `== 0` is tested first.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ZERO.to_string();
+            return Ok(ZERO.to_string());
         }
         if number.is_negative() {
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
-        // Python's final `else: return str(number)`. Hoisted above the u64
-        // narrowing because it is what makes that narrowing sound.
-        if number >= &BigInt::from(FALLBACK_LIMIT) {
-            return number.to_string();
+        // Python's final `else: return str(number)` (bug 3). מיליאַרד instead,
+        // composed like מיליאָן; the maxval check keeps the multiplier below
+        // 1000 (#147).
+        let billion = BigInt::from(FALLBACK_LIMIT);
+        if number >= &billion {
+            let mut result = format!("{} {}", self.int_to_word(&(number / &billion))?, BILLION);
+            let remainder = number % &billion;
+            if !remainder.is_zero() {
+                result.push(' ');
+                result.push_str(&self.int_to_word(&remainder)?);
+            }
+            return Ok(result);
         }
         // Proven bounded: 0 < number < 10**9, so the value fits u64 and the
         // cascade below can use fixed-width arithmetic without truncating.
         let n = number
             .to_u64()
             .expect("0 < number < 10**9 always fits in u64");
-        self.int_to_word_small(n)
+        Ok(self.int_to_word_small(n))
     }
 
     /// The word-producing cascade of `_int_to_word`, for `0 < n < 10**9`.
@@ -610,8 +632,8 @@ impl LangYi {
     /// branches carry the raw `negword` ("מינוס ", not via `parse_minus`).
     /// `split(".", 1)` splits on the first dot only; `int(left)` / `int(digit)`
     /// raise `ValueError` on an exponent-form repr (`"1e+16"`) or a stray `'e'`.
-    /// `int(left)` inherits `int_to_word`'s `>= 10**9` digit-string fallback
-    /// (bug 13). `self.pointword` is used raw — no `title`, matching the inline
+    /// `int(left)` shares `int_to_word`'s `maxval` OverflowError (bug 13,
+    /// #147). `self.pointword` is used raw — no `title`, matching the inline
     /// body (unlike `Num2Word_Base.to_cardinal_float`, which title-cases it).
     fn cardinal_from_repr(&self, n: &str) -> Result<String> {
         // n = str(number).strip(). Python strips its own whitespace set and
@@ -629,20 +651,20 @@ impl LangYi {
             Some((left, right)) => {
                 // ret += int_to_word(int(left)) + " " + pointword + " "
                 let mut out = String::from(ret);
-                out.push_str(&self.int_to_word(&py_int(left)?));
+                out.push_str(&self.int_to_word(&py_int(left)?)?);
                 out.push(' ');
                 out.push_str(self.pointword());
                 out.push(' ');
                 // for digit in right: ret += int_to_word(int(digit)) + " "
                 for digit in right.chars() {
-                    out.push_str(&self.int_to_word(&BigInt::from(py_int_digit(digit)?)));
+                    out.push_str(&self.int_to_word(&BigInt::from(py_int_digit(digit)?))?);
                     out.push(' ');
                 }
                 // return ret.strip()
                 Ok(out.trim().to_string())
             }
             // else: return (ret + int_to_word(int(n))).strip()
-            None => Ok(format!("{}{}", ret, self.int_to_word(&py_int(n)?))
+            None => Ok(format!("{}{}", ret, self.int_to_word(&py_int(n)?)?)
                 .trim()
                 .to_string()),
         }
@@ -656,6 +678,10 @@ impl Default for LangYi {
 }
 
 impl Lang for LangYi {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -744,7 +770,7 @@ impl Lang for LangYi {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -916,7 +942,7 @@ impl Lang for LangYi {
         let one = BigInt::one();
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.int_to_word(&left)?,
             if left == one { &forms.unit[0] } else { &forms.unit[1] }
         );
 
@@ -924,7 +950,7 @@ impl Lang for LangYi {
         // even for a float. This is why 1.0 has no cents. See module bug 9.
         if cents && !right.is_zero() {
             result.push_str(separator_for(separator));
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right == one {
                 &forms.subunit[0]
@@ -1015,12 +1041,12 @@ mod tests {
         // its written scale, which the float 1.1 could never express.
         assert_eq!(d("1.10", 2).unwrap(), "איינס פּונקט איינס נול");
         assert_eq!(d("12.345", 3).unwrap(), "צען צוויי פּונקט דרײַ פיר פינף");
-        // Issue #603: the exact-Decimal arm at trillion scale. The integer
-        // part exceeds 10**9, so bug 3 hands back bare digits (bug 13).
-        assert_eq!(
-            d("98746251323029.99", 2).unwrap(),
-            "98746251323029 פּונקט נײַן נײַן"
-        );
+        // Issue #603: the exact-Decimal arm at trillion scale. Python hands
+        // back bare digits (bugs 3/13); past maxval since #147.
+        assert!(matches!(
+            d("98746251323029.99", 2),
+            Err(N2WError::Overflow(_))
+        ));
         assert_eq!(d("0.001", 3).unwrap(), "נול פּונקט נול נול איינס");
     }
 
@@ -1031,8 +1057,11 @@ mod tests {
             f(1234567.89, 2).unwrap(),
             "איינס מיליאָן צוויי הונדערט דרײַסיק פיר טויזנט פינף הונדערט זעכציק זיבן פּונקט אַכט נײַן"
         );
-        // Integer part >= 10**9: the digit-string fallback (bugs 3/13).
-        assert_eq!(f(1500000000.25, 2).unwrap(), "1500000000 פּונקט צוויי פינף");
+        // Integer part >= 10**9: words since #147 (Python: digits, bugs 3/13).
+        assert_eq!(
+            f(1500000000.25, 2).unwrap(),
+            "איינס מיליאַרד פינף הונדערט מיליאָן פּונקט צוויי פינף"
+        );
         // str(-0.0) == "-0.0": the sign bit survives repr, so negword fires.
         assert_eq!(f(-0.0, 1).unwrap(), "מינוס נול פּונקט נול");
         // A negative Decimal takes the same string-level "-" strip.
@@ -1070,8 +1099,9 @@ mod tests {
     /// with CPython's exact message. Verified against the live interpreter.
     #[test]
     fn exponent_form_repr_raises_value_error() {
-        // 1e15 still prints positionally, so it survives (as digits, by bug 3).
-        assert_eq!(f(1e15, 1).unwrap(), "1000000000000000 פּונקט נול");
+        // 1e15 still prints positionally, so it reaches `_int_to_word` — and
+        // its maxval OverflowError since #147 (Python: digits, bug 3).
+        assert!(matches!(f(1e15, 1), Err(N2WError::Overflow(_))));
         // One decade up, decpt > 16 and repr flips to "1e+16" — no "." at all,
         // so the whole token hits int().
         assert_eq!(

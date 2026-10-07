@@ -222,6 +222,14 @@ class Num2WordsKATest(TestCase):
             num2words(99999999999, lang="ka"),
             "ოთხმოცდაათი ცხრა მილიარდი ცხრა ასი ოთხმოცდაათი ცხრა მილიონი ცხრა ასი ოთხმოცდაათი ცხრა ათასი ცხრა ასი ოთხმოცდაათი ცხრა",
         )
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(num2words(10**12, lang="ka"), "ერთი ტრილიონი")
+        self.assertEqual(
+            num2words(2 * 10**12 + 5, lang="ka"), "ორი ტრილიონი ხუთი"
+        )
+        self.assertEqual(num2words(10**15, lang="ka"), "ერთი კვადრილიონი")
+        with self.assertRaises(OverflowError):
+            num2words(10**18, lang="ka")
 
     def test_negative_numbers(self):
         """Test negative numbers."""

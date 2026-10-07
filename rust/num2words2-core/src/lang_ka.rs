@@ -9,8 +9,9 @@
 //! `Num2Word_Base.__init__` guards the card-building block with
 //! `if any(hasattr(self, field) for field in [...])`, so Python never builds
 //! `self.cards` and **never sets `self.MAXVAL`**. All four in-scope methods are
-//! overridden by KA, so `cards`/`maxval`/`merge` stay at their trait defaults
-//! here and are never consulted. There is no overflow check at all — see bug 3.
+//! overridden by KA, so `cards`/`merge` stay at their trait defaults here and
+//! are never consulted. Python has no overflow check at all — see bug 3; this
+//! port raises `OverflowError` from 10^18 (`maxval`).
 //!
 //! Nothing is inherited from `Num2Word_Base` in scope: KA overrides
 //! `to_cardinal`, `to_ordinal`, `to_ordinal_num` and `to_year`. In particular
@@ -33,13 +34,14 @@
 //!    `to_cardinal(100)` == "ერთი ასი" ("one hundred") rather than plain "ასი".
 //!    The same shape appears at every scale: `to_cardinal(1000)` ==
 //!    "ერთი ათასი", `to_cardinal(10**6)` == "ერთი მილიონი".
-//! 3. **No words above 10^12 — and no `OverflowError`.** The final `else` of
-//!    `_int_to_word` is `return str(number)`, a bare digit fallback. So
-//!    `to_cardinal(10**12)` == "1000000000000" (a numeral, not words) and
-//!    `to_ordinal(10**21)` == "მე-1000000000000000000000". Because `MAXVAL` was
-//!    never set (see above), the base class's overflow guard is unreachable and
-//!    arbitrarily large input silently returns its own digits. This is why
-//!    [`int_to_word`] is infallible: there is no error path.
+//! 3. **10^12 and above (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` of `_int_to_word` is `return str(number)`, so
+//!    `to_cardinal(10**12)` was the digit string "1000000000000". This port
+//!    adds the short-scale ტრილიონი (10^12) and კვადრილიონი (10^15) —
+//!    ka.wikipedia "ტრილიონი" ("ათასი მილიარდი") and "კვადრილიონი" ("ათასი
+//!    ტრილიონი") — composed like მილიარდი, so `to_cardinal(10**12)` ==
+//!    "ერთი ტრილიონი", and [`int_to_word`] raises `OverflowError` from 10^18
+//!    (`maxval`).
 //! 4. **`to_ordinal` prefixes the minus phrase.** It only special-cases 1..=10
 //!    and otherwise returns `"მე-" + to_cardinal(number)`, with no
 //!    `verify_ordinal` call. Hence `to_ordinal(0)` == "მე-ნული" ("th-zero") and
@@ -104,7 +106,7 @@
 //! For integer input every in-scope method is total: `str(number).strip()` of an
 //! int never contains "." (so the `pointword` split is unreachable), `int(n)` on
 //! the resulting digit string never raises, and the `_int_to_word` ladder
-//! terminates in the `str(number)` fallback rather than an exception.
+//! raises only the `maxval` OverflowError from 10^18 (bug 3, #147).
 //!
 //! The float/Decimal path adds one, from the `int()` calls `to_cardinal` makes
 //! on the pieces of `str(number)`:
@@ -132,7 +134,7 @@
 //! after a numeral). Examples in these docs that quote English nouns record
 //! Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -140,6 +142,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `self.negword`. Note the **trailing space** — it is part of the constant,
@@ -204,6 +207,16 @@ const HUNDRED: &str = "ასი";
 const THOUSAND: &str = "ათასი";
 const MILLION: &str = "მილიონი";
 const BILLION: &str = "მილიარდი";
+/// 10^12 and 10^15, which Python lacks (gladiaio/num2words2#147):
+/// ka.wikipedia "ტრილიონი" and "კვადრილიონი" (short scale).
+const TRILLION: &str = "ტრილიონი";
+const QUADRILLION: &str = "კვადრილიონი";
+
+/// The exclusive ceiling: no 10^18 word is used (#147).
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(18))
+}
 
 /// `Num2Word_KA.to_currency`'s own default `separator=" "`, confirmed against
 /// the interpreter: `Num2Word_KA.to_currency.__defaults__` is
@@ -245,16 +258,18 @@ const ORDINAL_PREFIX: &str = "მე-";
 
 /// Port of `Num2Word_KA._int_to_word`.
 ///
-/// Infallible: the ladder's final `else` is `return str(number)`, so there is
-/// no input that escapes without a string (bug 3).
+/// Python's final `else` is `return str(number)` (bug 3); here the ladder
+/// continues to კვადრილიონი and the only error is the `maxval`
+/// OverflowError (#147).
 ///
 /// Python uses `//` and `%` (floor semantics). Every arm below `number < 0`
 /// only ever sees a positive value — the negative arm recurses on `abs(number)`
 /// first — but `div_mod_floor` is used anyway to keep Python's semantics rather
 /// than Rust's truncating `/`.
-fn int_to_word(number: &BigInt) -> String {
+fn int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
     if number.is_zero() {
-        return ZERO_WORD.to_string();
+        return Ok(ZERO_WORD.to_string());
     }
 
     // Dead code for the in-scope entry points: to_cardinal strips the sign
@@ -262,7 +277,7 @@ fn int_to_word(number: &BigInt) -> String {
     // to_cardinal. Ported for fidelity — and it agrees with the to_cardinal
     // path anyway, since negword carries its own trailing space.
     if number.is_negative() {
-        return format!("{}{}", NEGWORD, int_to_word(&number.abs()));
+        return Ok(format!("{}{}", NEGWORD, int_to_word(&number.abs())?));
     }
 
     let ten = BigInt::from(10);
@@ -275,12 +290,12 @@ fn int_to_word(number: &BigInt) -> String {
     // `number < 10` -> ones[number]
     if number < &ten {
         // 1..=9, so the unwrap is total.
-        return ONES[number.to_usize().unwrap()].to_string();
+        return Ok(ONES[number.to_usize().unwrap()].to_string());
     }
 
     // `number < 20` -> teens[number - 10]
     if number < &BigInt::from(20) {
-        return TEENS[(number - &ten).to_usize().unwrap()].to_string();
+        return Ok(TEENS[(number - &ten).to_usize().unwrap()].to_string());
     }
 
     // `number < 100` -> tens[number // 10] (+ " " + ones[number % 10])
@@ -292,7 +307,7 @@ fn int_to_word(number: &BigInt) -> String {
             result.push(' ');
             result.push_str(ONES[rem.to_usize().unwrap()]);
         }
-        return result;
+        return Ok(result);
     }
 
     // `number < 1000` -> ones[number // 100] + " " + hundred (+ recurse)
@@ -303,9 +318,9 @@ fn int_to_word(number: &BigInt) -> String {
         let mut result = format!("{} {}", ONES[div.to_usize().unwrap()], HUNDRED);
         if !rem.is_zero() {
             result.push(' ');
-            result.push_str(&int_to_word(&rem));
+            result.push_str(&int_to_word(&rem)?);
         }
-        return result;
+        return Ok(result);
     }
 
     // The three remaining scales share one shape: recurse on the quotient,
@@ -322,21 +337,26 @@ fn int_to_word(number: &BigInt) -> String {
         return scale(number, &billion, BILLION);
     }
 
-    // `else: return str(number)` -- the bare-numeral fallback (bug 3).
-    number.to_string()
+    // Python: `else: return str(number)` -- the bare-numeral fallback (bug 3).
+    // Two more short-scale arms instead); maxval stops at 10^18 (#147).
+    let quadrillion = pow10_big(15);
+    if number < &quadrillion {
+        return scale(number, &trillion, TRILLION);
+    }
+    scale(number, &quadrillion, QUADRILLION)
 }
 
 /// The shared body of the thousand/million/billion arms:
 /// `_int_to_word(n // unit) + " " + word` then `+ " " + _int_to_word(n % unit)`
 /// when the remainder is non-zero.
-fn scale(number: &BigInt, unit: &BigInt, word: &str) -> String {
+fn scale(number: &BigInt, unit: &BigInt, word: &str) -> Result<String> {
     let (div, rem) = number.div_mod_floor(unit);
-    let mut result = format!("{} {}", int_to_word(&div), word);
+    let mut result = format!("{} {}", int_to_word(&div)?, word);
     if !rem.is_zero() {
         result.push(' ');
-        result.push_str(&int_to_word(&rem));
+        result.push_str(&int_to_word(&rem)?);
     }
-    result
+    Ok(result)
 }
 
 // ---- float / Decimal path ----------------------------------------------
@@ -637,14 +657,14 @@ fn cardinal_from_str(number: &str) -> Result<String> {
 
     let Some(dot) = n.find('.') else {
         // else: return (ret + _int_to_word(int(n))).strip()
-        ret.push_str(&int_to_word(&py_int(n)?));
+        ret.push_str(&int_to_word(&py_int(n)?)?);
         return Ok(ret.trim().to_string());
     };
 
     // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots. '.' is
     // ASCII and `left` is ASCII digits, so byte slicing lands on char bounds.
     let (left, right) = (&n[..dot], &n[dot + 1..]);
-    ret.push_str(&int_to_word(&py_int(left)?));
+    ret.push_str(&int_to_word(&py_int(left)?)?);
     ret.push(' ');
     ret.push_str(POINTWORD);
     ret.push(' ');
@@ -658,7 +678,7 @@ fn cardinal_from_str(number: &str) -> Result<String> {
         }
         first = false;
         let mut buf = [0u8; 4];
-        ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?));
+        ret.push_str(&int_to_word(&py_int(d.encode_utf8(&mut buf))?)?);
     }
     // return ret.strip()
     Ok(ret.trim().to_string())
@@ -732,6 +752,10 @@ impl LangKa {
 }
 
 impl Lang for LangKa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -781,7 +805,7 @@ impl Lang for LangKa {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_KA.to_ordinal`.
@@ -1071,11 +1095,11 @@ impl Lang for LangKa {
 
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`. Note 0 takes the
         // plural: "ნული euros". `_int_to_word` is called directly, not
-        // `to_cardinal`, so a left part >= 10^12 falls back to bare digits
-        // (bug 3) rather than raising.
+        // `to_cardinal`, so a left part >= 10^18 raises the same `maxval`
+        // OverflowError (bug 3, #147).
         let mut result = format!(
             "{} {}",
-            int_to_word(&left),
+            int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 
@@ -1084,7 +1108,7 @@ impl Lang for LangKa {
         // drops it too, with no terse fallback (quirk 12).
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&int_to_word(&right));
+            result.push_str(&int_to_word(&right)?);
             result.push(' ');
             result.push_str(if right != one { &cr2[1] } else { &cr2[0] });
         }
@@ -1161,11 +1185,11 @@ mod float_tests {
         // Trailing zero survives: str(Decimal("1.10")) == "1.10".
         assert_eq!(dec("1.10"), "ერთი წერტილი ერთი ნული");
         assert_eq!(dec("12.345"), "თორმეტი წერტილი სამი ოთხი ხუთი");
-        // Issue #603's value: int part >= 10^12 => bare digits (bug 3), exact
+        // Issue #603's value: int part >= 10^12 is words since #147 (bug 3), exact
         // fraction preserved (no float() cast on the Decimal arm).
         assert_eq!(
             dec("98746251323029.99"),
-            "98746251323029 წერტილი ცხრა ცხრა"
+            "ოთხმოცდაათი რვა ტრილიონი შვიდი ასი ორმოცი ექვსი მილიარდი ორი ასი ორმოცდაათი ერთი მილიონი სამი ასი ოცი სამი ათასი ოცი ცხრა წერტილი ცხრა ცხრა"
         );
         assert_eq!(dec("0.001"), "ნული წერტილი ნული ნული ერთი");
     }
@@ -1237,7 +1261,7 @@ mod float_tests {
     /// Boundaries: largest fixed-notation float, and a pure fraction.
     #[test]
     fn large_and_small_boundaries() {
-        assert_eq!(flt(1e15), "1000000000000000 წერტილი ნული");
+        assert_eq!(flt(1e15), "ერთი კვადრილიონი წერტილი ნული"); // #147
         assert_eq!(flt(0.0001), "ნული წერტილი ნული ნული ნული ერთი");
         assert_eq!(
             dec("0.000001"),

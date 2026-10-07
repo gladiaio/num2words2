@@ -17,6 +17,8 @@
 
 from unittest import TestCase
 
+import pytest
+
 from num2words2 import num2words
 
 
@@ -201,11 +203,27 @@ class Num2WordsOCTest(TestCase):
             num2words(999999999, lang="oc"),
             "nòu cent nonanta nòu milion nòu cent nonanta nòu mil nòu cent nonanta nòu",
         )
-        self.assertEqual(num2words(1000000000, lang="oc"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="oc"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="oc"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="oc"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="oc"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="oc"),
+            "un miliard",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="oc"),
+            "un miliard dos cent trenta quatre milion cinc cent seissanta sèt mil uèch cent nonanta",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="oc"),
+            "nòu miliard nòu cent nonanta nòu milion nòu cent nonanta nòu mil nòu cent nonanta nòu",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="oc"),
+            "dètz miliard",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="oc"),
+            "nonanta nòu miliard nòu cent nonanta nòu milion nòu cent nonanta nòu mil nòu cent nonanta nòu",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -381,3 +399,9 @@ class Num2WordsOCTest(TestCase):
         self.assertEqual(num2words(100, lang="oc"), num2words("100", lang="oc"))
         self.assertEqual(num2words(1000, lang="oc"), num2words("1000", lang="oc"))
 
+
+def test_scales_above_million_issue_147():
+    """Words up to the scale table, then OverflowError -- never digits."""
+    assert num2words(10**12, lang="oc") == "un bilion"
+    with pytest.raises(OverflowError):
+        num2words(10**15, lang="oc")
