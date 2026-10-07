@@ -32,8 +32,9 @@
 //!    fimm", i.e. the thousands part reads "ten two thousand".
 //! 2. **No copula anywhere.** Faroese joins the last two elements with "og"
 //!    ("hundrað og ein"); this module joins every fragment with a bare space,
-//!    so 101 → "ein hundrað ein". Numerals are also never inflected for gender
-//!    ("tvey"/"trý" are the neuter forms, used for everything).
+//!    so 101 → "ein hundrað ein". Numerals are never inflected for gender
+//!    ("tvey"/"trý" are the neuter forms) except before a currency noun
+//!    (#260).
 //! 3. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's
 //!    `_int_to_word` chain stops at `million`, and the final `else` is
 //!    `return str(number)`, so `to_cardinal(10**9)` was the digit string
@@ -136,9 +137,9 @@
 //!
 //! Python's currency table used English nouns here ("dollars", "cents",
 //! "euros"). USD and EUR use dollari/dollarar and evra/evrur with sent. The
-//! numeral does not yet agree with the feminine "evra" ("tvey evrur" for "tvær
-//! evrur"). Examples in these docs that quote English nouns record Python's
-//! output.
+//! numeral agrees with the noun (#260): "tvær evrur", "tríggjar krónur",
+//! "tveir dollarar", "eitt oyra" (was "tvey evrur" etc.). Examples in these
+//! docs that quote English nouns record Python's output.
 
 use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -340,6 +341,49 @@ pub struct LangFo {
     /// the plural and `to_cheque` takes `cr1[-1]`, so both forms must be
     /// present and distinct.
     currency_forms: HashMap<&'static str, CurrencyForms>,
+}
+
+/// Grammatical gender of a currency noun, for numeral agreement (#260).
+#[derive(Clone, Copy)]
+enum Gender {
+    Masculine,
+    Feminine,
+    Neuter,
+    /// No sourced gender ("sent"): the counting forms stay.
+    Unknown,
+}
+
+/// "dollari" is masculine, "króna" and "evra" feminine, "oyra" neuter.
+/// "sent" has no dictionary gender to hand and keeps the counting forms.
+fn noun_gender(singular: &str) -> Gender {
+    match singular {
+        "dollari" => Gender::Masculine,
+        "króna" | "evra" => Gender::Feminine,
+        "oyra" => Gender::Neuter,
+        _ => Gender::Unknown,
+    }
+}
+
+/// The cardinal's last word agreeing with the noun that follows (#260).
+/// 1, 2 and 3 inflect: ein/ein/eitt, tveir/tvær/tvey, tríggir/tríggjar/trý.
+/// The counting forms `_int_to_word` produces are "ein", "tvey", "trý".
+fn agree(words: String, gender: Gender) -> String {
+    let (head, last) = match words.rsplit_once(' ') {
+        Some((h, l)) => (Some(h), l),
+        None => (None, words.as_str()),
+    };
+    let form = match (gender, last) {
+        (Gender::Masculine, "tvey") => "tveir",
+        (Gender::Masculine, "trý") => "tríggir",
+        (Gender::Feminine, "tvey") => "tvær",
+        (Gender::Feminine, "trý") => "tríggjar",
+        (Gender::Neuter, "ein") => "eitt",
+        _ => return words,
+    };
+    match head {
+        Some(h) => format!("{} {}", h, form),
+        None => form.to_string(),
+    }
 }
 
 impl LangFo {
@@ -776,6 +820,16 @@ impl Lang for LangFo {
         self.currency_forms.get(code)
     }
 
+    /// The cheque's amount agrees with the unit noun like `to_currency`'s
+    /// (#260): "TVÆR AND 00/100 EVRUR".
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        Ok(match self.currency_forms.get(currency) {
+            Some(f) => agree(words, noun_gender(&f.unit[0])),
+            None => words,
+        })
+    }
+
     /// Port of `Num2Word_FO.to_currency`.
     ///
     /// ```python
@@ -846,7 +900,7 @@ impl Lang for LangFo {
         };
 
         let one = BigInt::one();
-        let left_str = self.int_to_word(&left)?;
+        let left_str = agree(self.int_to_word(&left)?, noun_gender(&forms.unit[0]));
         let mut result = format!(
             "{} {}",
             left_str,
@@ -856,7 +910,7 @@ impl Lang for LangFo {
         // `if cents and right:` — a truthiness test on the cent count, not on
         // the type of `val`. See bug 11.
         if cents && !right.is_zero() {
-            let cents_str = self.int_to_word(&right)?;
+            let cents_str = agree(self.int_to_word(&right)?, noun_gender(&forms.subunit[0]));
             result.push_str(separator);
             result.push_str(&cents_str);
             result.push(' ');

@@ -298,18 +298,18 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="AUD"),
-            "noll dollar, ett cent",
+            "noll dollar, en cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="AUD"),
             "noll dollar, femtio cent",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="AUD"), "ett dollar"
+            num2words(1, lang="sv", to="currency", currency="AUD"), "en dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="AUD"),
-            "ett dollar, femtio cent",
+            "en dollar, femtio cent",
         )
         # No native noun for this code (gladiaio/num2words2#222).
         with self.assertRaises(NotImplementedError):
@@ -319,18 +319,18 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="CAD"),
-            "noll dollar, ett cent",
+            "noll dollar, en cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="CAD"),
             "noll dollar, femtio cent",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="CAD"), "ett dollar"
+            num2words(1, lang="sv", to="currency", currency="CAD"), "en dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="CAD"),
-            "ett dollar, femtio cent",
+            "en dollar, femtio cent",
         )
         # No native noun for this code (gladiaio/num2words2#222).
         with self.assertRaises(NotImplementedError):
@@ -340,25 +340,25 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="EUR"),
-            "noll euro, ett cent",
+            "noll euro, en cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="EUR"),
             "noll euro, femtio cent",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="EUR"), "ett euro"
+            num2words(1, lang="sv", to="currency", currency="EUR"), "en euro"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="EUR"),
-            "ett euro, femtio cent",
+            "en euro, femtio cent",
         )
         self.assertEqual(
             num2words(0, lang="sv", to="currency", currency="GBP"), "noll pund"
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="GBP"),
-            "noll pund, ett penny",
+            "noll pund, en penny",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="GBP"),
@@ -382,36 +382,36 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="USD"),
-            "noll dollar, ett cent",
+            "noll dollar, en cent",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="USD"),
             "noll dollar, femtio cent",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="USD"), "ett dollar"
+            num2words(1, lang="sv", to="currency", currency="USD"), "en dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="USD"),
-            "ett dollar, femtio cent",
+            "en dollar, femtio cent",
         )
         self.assertEqual(
             num2words(0, lang="sv", to="currency", currency="RUB"), "noll rubel"
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="RUB"),
-            "noll rubel, ett kopek",
+            "noll rubel, en kopek",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="RUB"),
             "noll rubel, femtio kopek",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="RUB"), "ett rubel"
+            num2words(1, lang="sv", to="currency", currency="RUB"), "en rubel"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="RUB"),
-            "ett rubel, femtio kopek",
+            "en rubel, femtio kopek",
         )
         self.assertEqual(
             num2words(0, lang="sv", to="currency", currency="SEK"), "noll kronor"
@@ -425,11 +425,11 @@ class Num2WordsSVTest(TestCase):
             "noll kronor, femtio öre",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="SEK"), "ett krona"
+            num2words(1, lang="sv", to="currency", currency="SEK"), "en krona"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="SEK"),
-            "ett krona, femtio öre",
+            "en krona, femtio öre",
         )
         self.assertEqual(
             num2words(0, lang="sv", to="currency", currency="NOK"), "noll kronor"
@@ -443,11 +443,11 @@ class Num2WordsSVTest(TestCase):
             "noll kronor, femtio öre",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="NOK"), "ett krona"
+            num2words(1, lang="sv", to="currency", currency="NOK"), "en krona"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="NOK"),
-            "ett krona, femtio öre",
+            "en krona, femtio öre",
         )
         # No native noun for this code (gladiaio/num2words2#222).
         with self.assertRaises(NotImplementedError):
@@ -457,18 +457,18 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="MXN"),
-            "noll peso, ett centavo",
+            "noll peso, en centavo",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="MXN"),
             "noll peso, femtio centavos",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="MXN"), "ett peso"
+            num2words(1, lang="sv", to="currency", currency="MXN"), "en peso"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="MXN"),
-            "ett peso, femtio centavos",
+            "en peso, femtio centavos",
         )
         # No native noun for this code (gladiaio/num2words2#222).
         with self.assertRaises(NotImplementedError):
@@ -478,18 +478,18 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="INR"),
-            "noll rupier, ett paisa",
+            "noll rupier, en paisa",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="INR"),
             "noll rupier, femtio paise",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="INR"), "ett rupie"
+            num2words(1, lang="sv", to="currency", currency="INR"), "en rupie"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="INR"),
-            "ett rupie, femtio paise",
+            "en rupie, femtio paise",
         )
         # No native noun for this code (gladiaio/num2words2#222).
         with self.assertRaises(NotImplementedError):
@@ -508,18 +508,18 @@ class Num2WordsSVTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="sv", to="currency", currency="JPY"),
-            "noll yen, ett sen",
+            "noll yen, en sen",
         )
         self.assertEqual(
             num2words(0.5, lang="sv", to="currency", currency="JPY"),
             "noll yen, femtio sen",
         )
         self.assertEqual(
-            num2words(1, lang="sv", to="currency", currency="JPY"), "ett yen"
+            num2words(1, lang="sv", to="currency", currency="JPY"), "en yen"
         )
         self.assertEqual(
             num2words(1.5, lang="sv", to="currency", currency="JPY"),
-            "ett yen, femtio sen",
+            "en yen, femtio sen",
         )
         # No native noun for this code (gladiaio/num2words2#222).
         with self.assertRaises(NotImplementedError):

@@ -107,6 +107,28 @@ use num_bigint::BigInt;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
+/// The neuter (t-word) currency nouns; every other noun in the table is
+/// common gender (en dollar, en euro, en krona, en cent).
+const NEUTER_NOUNS: [&str; 2] = ["pund", "öre"];
+
+/// The cardinal as the numeral before `noun` (#260). A bare 1 agrees with
+/// the noun's gender: "en dollar", "en krona", "ett pund", "ett öre". After
+/// tens Swedish uses "en" whatever the gender ("tjugoen dollar", "trettioen
+/// pund"); "öre" is the exception that keeps "tjugoett öre" (Språkrådet).
+fn attributive(words: String, noun: &str) -> String {
+    if words == "ett" {
+        return if NEUTER_NOUNS.contains(&noun) { words } else { "en".to_string() };
+    }
+    if noun != "öre" {
+        if let Some(stem) = words.strip_suffix("ett") {
+            if stem.ends_with("tjugo") || stem.ends_with("tio") {
+                return format!("{}en", stem);
+            }
+        }
+    }
+    words
+}
+
 /// Port of `Num2Word_EUR.gen_high_numwords`.
 ///
 /// Reimplemented locally rather than imported from `lang_en` so this file
@@ -708,6 +730,25 @@ impl Lang for LangSv {
         self.currency_adjectives.get(code).copied()
     }
 
+    /// The numeral before the unit noun agrees with it (#260): "en dollar",
+    /// "en krona", "ett pund"; see [`attributive`].
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        Ok(match self.currency_forms.get(currency) {
+            Some(f) => attributive(words, &f.unit[0]),
+            None => words,
+        })
+    }
+
+    /// As [`LangSv::money_verbose`], for the subunit: "en cent", "ett öre".
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let words = self.to_cardinal(number)?;
+        Ok(match self.currency_forms.get(currency) {
+            Some(f) => attributive(words, &f.subunit[0]),
+            None => words,
+        })
+    }
+
     /// Port of `Num2Word_EUR.pluralize`: `form = 0 if n == 1 else 1`.
     ///
     /// Reached only from the base float path — SV's own int branch open-codes
@@ -728,8 +769,8 @@ impl Lang for LangSv {
     /// Only true ints take SV's own branch; everything else is handed to
     /// `Num2Word_Base.to_currency` verbatim, which is what Python's
     /// `super().to_currency(...)` does. The int/non-int split is the whole
-    /// point of the override — `1` renders "ett euro" while `1.0` renders
-    /// "ett euro, noll cent".
+    /// point of the override — `1` renders "en euro" while `1.0` renders
+    /// "en euro, noll cent".
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -770,9 +811,9 @@ impl Lang for LangSv {
         // output; see the module docs, bug 5.
         let minus_str = if v.is_negative() { self.negword().trim() } else { "" };
         let abs_val = v.abs();
-        // Python calls to_cardinal directly here, not _money_verbose. Same
-        // result for SV, but kept literal.
-        let money_str = self.to_cardinal(&abs_val)?;
+        // Python called to_cardinal directly here; the numeral now agrees
+        // with the noun through money_verbose (#260).
+        let money_str = self.money_verbose(&abs_val, currency)?;
 
         // Open-coded rather than routed through `pluralize`, mirroring the
         // Python. The isinstance(cr1, tuple) guards are vacuous — every entry

@@ -203,9 +203,30 @@
 //!
 //! Python's currency table used English nouns here ("dollars", "cents",
 //! "euros"). USD and EUR use Dollar / Euro with Cent (capitalised, singular
-//! after a numeral). The numeral "zwou" does not yet agree with these
-//! masculine nouns ("zwee"). Examples in these docs that quote English nouns
+//! after a numeral). All three are masculine, so the numeral before them is
+//! "een"/"zwee", not the standalone "eent"/"zwou" (#260): "een Euro", "zwee
+//! Euro", "zwee Cent". Examples in these docs that quote English nouns
 //! record Python's output.
+
+/// The cardinal's last word as the attributive masculine numeral (#260):
+/// every LB currency noun (Euro, Dollar, Cent) is masculine, which takes
+/// "een" and "zwee" where the module's standalone forms are "eent" and
+/// "zwou".
+fn masculine(words: String) -> String {
+    let (head, last) = match words.rsplit_once(' ') {
+        Some((h, l)) => (Some(h), l),
+        None => (None, words.as_str()),
+    };
+    let form = match last {
+        "eent" => "een",
+        "zwou" => "zwee",
+        _ => return words,
+    };
+    match head {
+        Some(h) => format!("{} {}", h, form),
+        None => form.to_string(),
+    }
+}
 
 use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -942,6 +963,12 @@ impl Lang for LangLb {
         self.currency_forms.get(code)
     }
 
+    /// The cheque's amount agrees with the masculine unit noun like
+    /// `to_currency`'s (#260): "ZWEE AND 00/100 EURO".
+    fn money_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(masculine(self.to_cardinal(number)?))
+    }
+
     /// Python's `Num2Word_LB.to_currency`:
     ///
     /// ```python
@@ -1020,7 +1047,7 @@ impl Lang for LangLb {
             &forms.unit[0]
         };
 
-        let mut result = format!("{} {}", self.int_to_word(&left)?, unit);
+        let mut result = format!("{} {}", masculine(self.int_to_word(&left)?), unit);
 
         // `cents and right`: `right == 0` is falsy in Python, so zero cents
         // suppress the clause even for a float (bug 14), and `cents=False`
@@ -1033,7 +1060,7 @@ impl Lang for LangLb {
                 &forms.subunit[0]
             };
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right)?);
+            result.push_str(&masculine(self.int_to_word(&right)?));
             result.push(' ');
             result.push_str(subunit);
         }

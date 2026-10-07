@@ -338,7 +338,7 @@ class Num2WordsFOTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="fo", to="currency", currency="DKK"),
-            "null krónur ein oyra",
+            "null krónur eitt oyra",
         )
         self.assertEqual(
             num2words(0.5, lang="fo", to="currency", currency="DKK"),

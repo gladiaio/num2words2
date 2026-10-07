@@ -344,36 +344,36 @@ class Num2WordsLBTest(TestCase):
         )
         self.assertEqual(
             num2words(0.01, lang="lb", to="currency", currency="EUR"),
-            "null Euro eent Cent",
+            "null Euro een Cent",
         )
         self.assertEqual(
             num2words(0.5, lang="lb", to="currency", currency="EUR"),
             "null Euro fofzeg Cent",
         )
         self.assertEqual(
-            num2words(1, lang="lb", to="currency", currency="EUR"), "eent Euro"
+            num2words(1, lang="lb", to="currency", currency="EUR"), "een Euro"
         )
         self.assertEqual(
             num2words(1.5, lang="lb", to="currency", currency="EUR"),
-            "eent Euro fofzeg Cent",
+            "een Euro fofzeg Cent",
         )
         self.assertEqual(
             num2words(0, lang="lb", to="currency", currency="USD"), "null Dollar"
         )
         self.assertEqual(
             num2words(0.01, lang="lb", to="currency", currency="USD"),
-            "null Dollar eent Cent",
+            "null Dollar een Cent",
         )
         self.assertEqual(
             num2words(0.5, lang="lb", to="currency", currency="USD"),
             "null Dollar fofzeg Cent",
         )
         self.assertEqual(
-            num2words(1, lang="lb", to="currency", currency="USD"), "eent Dollar"
+            num2words(1, lang="lb", to="currency", currency="USD"), "een Dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="lb", to="currency", currency="USD"),
-            "eent Dollar fofzeg Cent",
+            "een Dollar fofzeg Cent",
         )
 
     def test_year(self):
