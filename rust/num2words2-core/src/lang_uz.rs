@@ -54,7 +54,7 @@
 //!   Python's `int("1e+16")`. Corpus-pinned for 1e+16, 1e+20, `Decimal("1E+2")`
 //!   and `Decimal("1E+20")` across cardinal/ordinal/year.
 //!
-//! `to_ordinal` (cardinal + "-chi", no verify_ordinal) and `to_year`
+//! `to_ordinal` (cardinal + *-(i)nchi*, no verify_ordinal) and `to_year`
 //! (`to_cardinal`, `longval` ignored) inherit all of the above through their
 //! own float entries; `to_ordinal_num` is `str(number) + "."` with no checks,
 //! so floats keep their repr ("5.0.", "-0.0.", "1e+16.").
@@ -98,7 +98,7 @@
 //! 1. **`_int_to_word` gives up at 10^9 and returns the bare digits.** The
 //!    final `else` is `return str(number)  # Fallback for very large numbers`.
 //!    So `to_cardinal(10**9)` == "1000000000" (a numeral, not words) and
-//!    `to_ordinal(10**9)` == "1000000000-chi". Verified against corpus rows
+//!    `to_ordinal(10**9)` == "1000000000-inchi". Verified against corpus rows
 //!    for 10^9, 1234567890, 10^10, 10^12, 10^15, 10^18 and 10^21 — the value
 //!    is unbounded, hence `BigInt` and `to_string()` rather than any cast.
 //!    Negative inputs below -10^9 compose as "minus 1000000000": `to_cardinal`
@@ -108,17 +108,20 @@
 //! 2. **Zero is the English "zero", not an Uzbek word.** `_int_to_word` does
 //!    `return self.ones[0] if self.ones[0] else "zero"`, and `ones[0]` is the
 //!    empty string (falsy), so the fallback always wins: `to_cardinal(0)` ==
-//!    "zero" and `to_ordinal(0)` == "zero-chi". The `self.ones[0]` arm is
+//!    "zero" and `to_ordinal(0)` == "zeronchi". The `self.ones[0]` arm is
 //!    dead code. Uzbek for zero is "nol".
 //! 3. **The hundreds digit is always spelled out**, so 100 == "bir yuz"
 //!    rather than a bare "yuz" ("hundreds_val" is 1..=9 and never suppressed).
 //! 4. **`pointword` is the untranslated English "point"**, not an Uzbek word,
 //!    and is used raw (UZ never titles). Reached only by the float path
 //!    ([`LangUz::to_cardinal_float`]).
-//! 5. **The ordinal suffix is applied to the whole cardinal with a hyphen and
-//!    no agreement logic**: `to_ordinal(n) == to_cardinal(n) + "-chi"`. That
-//!    means the sign leaks in too — `to_ordinal(-1)` == "minus bir-chi" — and
-//!    the suffix lands on the digit fallback for large values (quirk 1).
+//! 5. **Fixed (gladiaio/num2words2#148): the ordinal ending.** Upstream did
+//!    `to_ordinal(n) == to_cardinal(n) + "-chi"`, giving non-words ("bir-chi",
+//!    "uch-chi", "o'n-chi"). The port now puts *-(i)nchi* on the last word —
+//!    "birinchi", "uchinchi", "o'ninchi", "yigirmanchi", "elliginchi",
+//!    "bir yuz yigirma uchinchi" — see [`join_ordinal`]. No `verify_ordinal`
+//!    was added, so the sign still leaks in (`to_ordinal(-1)` == "minus birinchi"), and the
+//!    digit fallback keeps a hyphen ("1000000000-inchi").
 //! 6. **`to_ordinal_num` is `str(number) + "."`**, a period rather than the
 //!    "-chi"/"-inchi" abbreviation an Uzbek reader would expect, and it does
 //!    not reject negatives: `to_ordinal_num(-1)` == "-1.". Note `Num2Word_Base.
@@ -246,8 +249,31 @@ const MILLION: &str = "million";
 /// The "zero" literal from `_int_to_word`'s falsy-`ones[0]` fallback.
 const ZERO_WORD: &str = "zero";
 
-/// The `-chi` suffix `to_ordinal` glues onto the cardinal.
-const ORDINAL_SUFFIX: &str = "-chi";
+/// The ordinal suffix *-(i)nchi* (gladiaio/num2words2#148). Uzbek has no
+/// vowel harmony, so there is one ending with two shapes: "inchi" after a
+/// consonant (bir -> birinchi, o'n -> o'ninchi, yuz -> yuzinchi) and "nchi"
+/// after a vowel (ikki -> ikkinchi, yigirma -> yigirmanchi).
+const ORDINAL_AFTER_CONSONANT: &str = "inchi";
+const ORDINAL_AFTER_VOWEL: &str = "nchi";
+
+/// Attach the ordinal ending to the **last word** of a spelled cardinal:
+/// 123rd is "bir yuz yigirma uchinchi", not every word suffixed. Upstream
+/// glued "-chi" onto the whole cardinal ("bir-chi", "uch-chi"); the forms
+/// here follow uz.wikipedia "Son (tilshunoslik)" (*-(i)nchi*) and the
+/// Wiktionary number table. A polysyllabic stem's final *k* voices to *g*
+/// before the vowel, as in the possessive: ellik -> elliginchi (monosyllabic
+/// qirq keeps its q: qirqinchi). A cardinal that is not a word at all — the
+/// digit fallback above 10^9 — keeps a hyphen so the result stays readable.
+fn join_ordinal(cardinal: &str) -> String {
+    match cardinal.chars().next_back() {
+        Some(c) if c.is_ascii_digit() => format!("{}-{}", cardinal, ORDINAL_AFTER_CONSONANT),
+        Some('a' | 'e' | 'i' | 'o' | 'u') => format!("{}{}", cardinal, ORDINAL_AFTER_VOWEL),
+        Some('k') if cardinal.ends_with("ellik") => {
+            format!("{}g{}", &cardinal[..cardinal.len() - 1], ORDINAL_AFTER_CONSONANT)
+        }
+        _ => format!("{}{}", cardinal, ORDINAL_AFTER_CONSONANT),
+    }
+}
 
 /// `Num2Word_UZ.to_currency`'s own default `separator=" "`. Confirmed against
 /// the interpreter: `Num2Word_UZ.to_currency.__defaults__` is
@@ -513,10 +539,11 @@ impl Lang for LangUz {
             .to_string())
     }
 
-    /// `Num2Word_UZ.to_ordinal`: the cardinal with "-chi" glued on (quirk 5).
+    /// `Num2Word_UZ.to_ordinal`: the cardinal with the *-(i)nchi* ending on
+    /// its last word (quirk 5, fixed).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         let cardinal = self.to_cardinal(value)?;
-        Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
+        Ok(join_ordinal(&cardinal))
     }
 
     /// `Num2Word_UZ.to_ordinal_num`: `str(number) + "."` (quirk 6). No
@@ -716,13 +743,12 @@ impl Lang for LangUz {
         }
     }
 
-    /// `Num2Word_UZ.to_ordinal(float/Decimal)`: the cardinal with "-chi"
-    /// glued on (quirk 5) — **no** `verify_ordinal`, so negatives and
-    /// fractions pass straight through ("minus bir point besh-chi") and the
+    /// `Num2Word_UZ.to_ordinal(float/Decimal)`: the cardinal with the
+    /// *-(i)nchi* ending on its last word — **no** `verify_ordinal`, and the
     /// scientific-repr ValueError propagates before the suffix is reached.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         let cardinal = self.cardinal_float_entry(value, None)?;
-        Ok(format!("{}{}", cardinal, ORDINAL_SUFFIX))
+        Ok(join_ordinal(&cardinal))
     }
 
     /// `Num2Word_UZ.to_ordinal_num(float/Decimal)`: `str(number) + "."` with

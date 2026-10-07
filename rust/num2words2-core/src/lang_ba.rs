@@ -21,7 +21,7 @@
 //! All four in-scope modes are overridden by `Num2Word_BA`; nothing is
 //! inherited from `Num2Word_Base` except the attributes above. In particular
 //! `to_ordinal` does **not** call `verify_ordinal`, so negative ordinals are
-//! accepted rather than raising (`to_ordinal(-1)` == "минус бер-се").
+//! accepted rather than raising (`to_ordinal(-1)` == "минус беренсе").
 //!
 //! # No error paths
 //!
@@ -57,9 +57,11 @@
 //!    `Num2Word_Base.to_cardinal` which does `"%s " % self.negword.strip()`.
 //!    The two happen to agree because `negword` is exactly `"минус "`, but the
 //!    trailing space is load-bearing and is preserved verbatim in [`NEGWORD`].
-//! 3. **`to_ordinal` glues the suffix onto the bare cardinal**, giving the
-//!    invariant suffix "-се" regardless of the final word's phonology —
-//!    "нуль-се", "ун бер-се", "туғыҙ-се". No stem changes, no vowel harmony.
+//! 3. **Fixed (gladiaio/num2words2#148): `to_ordinal` glued "-се" onto the
+//!    bare cardinal** regardless of the final word's phonology — "нуль-се",
+//!    "ун бер-се", "туғыҙ-се". The port harmonises the ending on the last
+//!    word instead: "нуленсе", "ун беренсе", "туғыҙынсы", "өсөнсө"; see
+//!    [`join_ordinal`]. The digit form (`to_ordinal_num`) is unchanged.
 //! 4. **`to_ordinal_num` never validates**, so it emits "0-се" and "-1-се".
 //! 5. **Hundreds are always explicit**: 100 → "бер йөҙ" ("one hundred"), never
 //!    a bare "йөҙ". Likewise 1000 → "бер мең". Same for the recursive scales.
@@ -337,6 +339,47 @@ fn int_to_word(number: &BigInt) -> String {
         out.push_str(&int_to_word(&rem));
     }
     out
+}
+
+/// Attach the ordinal ending to the **last word** of a spelled cardinal
+/// (gladiaio/num2words2#148). Upstream glued a fixed "-се" onto the whole
+/// cardinal ("бер-се", "өс-се", "ун-се"). Bashkir ordinals take
+/// *-(ы)нсы/-(е)нсе*, harmonised for backness, and rounded to *-(ө)нсө*
+/// after a stem whose last vowel is ө (Wiktionary,
+/// `Module:number_list/data/ba` and the entry өсөнсө):
+///
+/// * back stem (last vowel а ы о у): *-ынсы* / *-нсы* — унынсы, алтынсы, and
+///   the loan миллионынсы (attested on ba.wikipedia), so о does not round;
+/// * front stem (ә е и ү э): *-енсе* / *-нсе* — беренсе, икенсе, дүртенсе;
+/// * ө: *-өнсө* — өсөнсө, йөҙөнсө;
+/// * a final soft sign is dropped and the stem counts as front: нуль ->
+///   нуленсе ("Нуленсе меридиан", ba.wikipedia).
+///
+/// 123rd is therefore "бер йөҙ егерме өсөнсө". A cardinal that is not a word
+/// at all keeps the old hyphenated "-се".
+fn join_ordinal(cardinal: &str) -> String {
+    const VOWELS: &str = "аыоуяюёәеиөүэ";
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal),
+    };
+    if let Some(soft) = stem.strip_suffix('ь') {
+        return format!("{}{}енсе", head, soft);
+    }
+    let last = match stem.chars().filter(|c| VOWELS.contains(*c)).last() {
+        Some(v) => v,
+        None => return format!("{}-се", cardinal),
+    };
+    let (link, ending) = match last {
+        'а' | 'ы' | 'о' | 'у' | 'я' | 'ю' | 'ё' => ("ы", "нсы"),
+        'ө' => ("ө", "нсө"),
+        _ => ("е", "нсе"),
+    };
+    if stem.ends_with(|c: char| VOWELS.contains(c)) {
+        format!("{}{}{}", head, stem, ending)
+    } else {
+        format!("{}{}{}{}", head, stem, link, ending)
+    }
 }
 
 /// `Num2Word_BA.to_cardinal` restricted to integer input.
@@ -831,9 +874,10 @@ impl Lang for LangBa {
         cardinal_from_str(&n)
     }
 
-    /// `return self.to_cardinal(number) + "-се"`
+    /// `return self.to_cardinal(number) + "-се"` upstream; the ending is now
+    /// harmonised on the last word (bug 3, fixed — see [`join_ordinal`]).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}-се", cardinal(value)?))
+        Ok(join_ordinal(&cardinal(value)?))
     }
 
     /// `return str(number) + "-се"` — no validation, so "-1-се" is expected.
@@ -854,11 +898,11 @@ impl Lang for LangBa {
     // does: the ordinal suffix / year word wraps the *full* decimal phrase
     // (or, for `to_ordinal_num`, the raw `str(number)`).
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-се"` —
-    /// "биш өтөр нуль-се" for 5.0; the exponential-form ValueError from the
+    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number)` + the ordinal
+    /// ending — "биш өтөр нуленсе" for 5.0; the exponential-form ValueError from the
     /// cardinal propagates unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}-се", self.cardinal_float_entry(value, None)?))
+        Ok(join_ordinal(&self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "-се"` — no `int()`,
@@ -1258,6 +1302,6 @@ mod tests {
         let l = LangBa::new();
         assert_eq!(l.to_cardinal(&BigInt::from(0)).unwrap(), "нуль");
         assert_eq!(l.to_cardinal(&BigInt::from(-12)).unwrap(), "минус ун ике");
-        assert_eq!(l.to_ordinal(&BigInt::from(11)).unwrap(), "ун бер-се");
+        assert_eq!(l.to_ordinal(&BigInt::from(11)).unwrap(), "ун беренсе");
     }
 }

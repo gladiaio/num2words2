@@ -13,7 +13,8 @@
 //! in-scope methods is overridden by TT, so nothing is inherited from
 //! `Num2Word_Base` on the in-scope paths:
 //!   * `to_cardinal`    — overridden (below)
-//!   * `to_ordinal`     — overridden: `to_cardinal(n) + "-нче"`
+//!   * `to_ordinal`     — overridden: `to_cardinal(n)` + a harmonised ending
+//!     (upstream: a fixed "-нче"; fixed, see bug 5)
 //!   * `to_ordinal_num` — overridden: `str(n) + "."` (the base returns `n`
 //!     bare, so the trait default is *not* correct here)
 //!   * `to_year`        — overridden: `to_cardinal(val)`, ignoring `longval`
@@ -32,7 +33,7 @@
 //!    is the empty string (a placeholder so the list can be indexed by
 //!    digit), which is falsy, so Python always answered with the English
 //!    "zero". This port says the Tatar "нуль" (as the Bashkir module does):
-//!    `to_cardinal(0)` == "нуль" and `to_ordinal(0)` == "нуль-нче".
+//!    `to_cardinal(0)` == "нуль" and `to_ordinal(0)` == "нуленче".
 //! 2. **Numbers >= 10^9 come back as digits.** The `elif` ladder in
 //!    `_int_to_word` stops at `number < 1000000000` and the trailing `else`
 //!    is `return str(number)` — a "fallback for very large numbers" that
@@ -51,10 +52,11 @@
 //!    self.hundred` with no `hundreds_val == 1` special case. Likewise
 //!    `to_cardinal(1000)` == "бер мең" and `to_cardinal(10**6)` ==
 //!    "бер миллион". Idiomatic or not, it is what ships.
-//! 5. **Ordinals are cardinal + a hyphenated suffix, unconditionally.** No
-//!    stem changes, no vowel harmony, no special-casing of the digit-fallback
-//!    range — `to_ordinal` is a bare string concatenation, so the digit
-//!    fallback of bug 2 flows straight through it.
+//! 5. **Ordinals (fixed, gladiaio/num2words2#148).** Python glued "-нче" onto
+//!    the cardinal unconditionally ("бер-нче", "ун-нче", "өч-нче"). The port
+//!    harmonises the ending on the last word instead ("беренче", "унынчы",
+//!    "өченче", "кырыгынчы"); see [`join_ordinal`]. The digit fallback of
+//!    bug 2 still flows through, hyphenated ("1000000000-нче").
 //!
 //! # Error variants
 //!
@@ -181,6 +183,46 @@ const POINTWORD: &str = "өтер";
 
 /// What `_int_to_word(0)` returns. Python's English "zero"; Tatar here (#154).
 const ZERO_WORD: &str = "нуль";
+
+/// Attach the ordinal ending to the **last word** of a spelled cardinal
+/// (gladiaio/num2words2#148). Upstream glued a fixed "-нче" onto the whole
+/// cardinal ("бер-нче", "ун-нче"). Tatar ordinals take *-(ы)нчы/-(е)нче*,
+/// harmonised for backness only — no rounding, so өч gives өченче
+/// (Wiktionary, `Module:number_list/data/tt`):
+///
+/// * back stem (last vowel а ы о у): *-ынчы* after a consonant, *-нчы* after
+///   a vowel — унынчы, алтынчы, миллионынчы;
+/// * front stem (ә е и ө ү э): *-енче* / *-нче* — беренче, икенче, йөзенче;
+/// * a final soft sign is dropped and the stem counts as front: нуль ->
+///   нуленче;
+/// * кырык voices its final к: кырыгынчы.
+///
+/// 123rd is therefore "бер йөз егерме өченче". A cardinal that is not a word
+/// at all — the digit fallback above 10^9 — keeps a hyphen
+/// ("1000000000-нче").
+fn join_ordinal(cardinal: &str) -> String {
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal),
+    };
+    if let Some(soft) = stem.strip_suffix('ь') {
+        return format!("{}{}енче", head, soft);
+    }
+    let last = match stem.chars().filter(|c| "аыоуяюёәеиөүэ".contains(*c)).last() {
+        Some(v) => v,
+        None => return format!("{}-нче", cardinal),
+    };
+    let back = "аыоуяюё".contains(last);
+    let after_vowel = stem.ends_with(|c: char| "аыоуяюёәеиөүэ".contains(c));
+    let stem = if stem == "кырык" { "кырыг" } else { stem };
+    let ending = match (back, after_vowel) {
+        (true, true) => "нчы",
+        (true, false) => "ынчы",
+        (false, true) => "нче",
+        (false, false) => "енче",
+    };
+    format!("{}{}{}", head, stem, ending)
+}
 
 /// `Num2Word_TT.to_currency`'s own default: `separator=" "`. Note this is
 /// *not* `Num2Word_Base`'s `","` — see [`BASE_DEFAULT_SEPARATOR`].
@@ -607,7 +649,7 @@ impl Lang for LangTt {
     /// Python's `to_ordinal`: cardinal plus a hyphenated suffix, no stem
     /// change. See bug 5.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}-нче", self.to_cardinal(value)?))
+        Ok(join_ordinal(&self.to_cardinal(value)?))
     }
 
     /// Python's `to_ordinal_num`: `str(number) + "."`.
@@ -646,11 +688,11 @@ impl Lang for LangTt {
         self.to_cardinal_float(value, precision_override)
     }
 
-    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number) + "-нче"`, no
-    /// type guard — floats get the full decimal phrase plus the suffix
-    /// ("биш өтер нуль-нче"); the exponential-form ValueError propagates.
+    /// `to_ordinal(float/Decimal)`: `self.to_cardinal(number)` + the ordinal
+    /// ending, no type guard — floats get the full decimal phrase plus the
+    /// ending ("биш өтер нуленче"); the exponential-form ValueError propagates.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}-нче", self.cardinal_float_entry(value, None)?))
+        Ok(join_ordinal(&self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "."` — no `int()`, so

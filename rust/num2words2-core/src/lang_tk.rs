@@ -11,7 +11,8 @@
 //! All four in-scope methods are overridden by the Python class, so nothing is
 //! inherited from `Num2Word_Base` on the integer path:
 //!   * `to_cardinal(number)`   → sign-strip, then `_int_to_word`
-//!   * `to_ordinal(number)`    → `to_cardinal(number) + "-nji"`
+//!   * `to_ordinal(number)`    → `to_cardinal(number)` + a harmonised ending
+//!     (upstream glued a fixed "-nji"; fixed, see quirk 4)
 //!   * `to_ordinal_num(number)`→ `str(number) + "."`  (base returns `value`
 //!     *unchanged*; TK's override appends a period, hence "0." not "0")
 //!   * `to_year(val, longval=True)` → `self.to_cardinal(val)`, discarding
@@ -40,15 +41,16 @@
 //! 2. **`ones[0]` is the empty string**, so `_int_to_word(0)` hits
 //!    `return self.ones[0] if self.ones[0] else "zero"` — the guard always
 //!    fails, and zero is the untranslated English "zero", not a Turkmen word.
-//!    Hence `to_cardinal(0)` == "zero" and `to_ordinal(0)` == "zero-nji".
+//!    Hence `to_cardinal(0)` == "zero" and `to_ordinal(0)` == "zeronjy".
 //! 3. **Hundreds always carry an explicit "bir"**: `_int_to_word` builds
 //!    `self.ones[hundreds_val] + " " + self.hundred` with no `> 1` guard, so
 //!    100 → "bir ýüz", never the idiomatic bare "ýüz".
-//! 4. **`to_ordinal` is suffix-only** — it appends "-nji" to the *cardinal*
-//!    with no stem change and no vowel harmony, so every ordinal ends "-nji"
-//!    regardless of the preceding vowel (real Turkmen alternates -njy/-nji).
-//!    It also happily ordinalises negatives ("minus bir-nji") and the 10^9
-//!    numeral fallback, where most ports raise. Unlike `lang_PL`, **nothing on
+//! 4. **Fixed (gladiaio/num2words2#148): `to_ordinal` was suffix-only** — it
+//!    appended "-nji" to the cardinal with no harmony ("bir-nji", "on-nji").
+//!    The ending is now harmonised on the last word ("birinji", "onunjy",
+//!    "altynjy", "dördünji", "bir ýüz ýigrimi üçünji"); see [`join_ordinal`].
+//!    It still ordinalises negatives ("minus birinji") and the 10^9 numeral
+//!    fallback ("1000000000-nji"), where most ports raise. Unlike `lang_PL`, **nothing on
 //!    TK's integer surface raises** — no Index/Key/Value crash sites exist
 //!    there. (The currency surface does raise; see quirk 6 and `to_currency`'s
 //!    Errors section.)
@@ -93,7 +95,7 @@
 //! — exactly as the wholefloat corpus pins (`cardinal 1e+16` → ValueError,
 //! `Decimal("1E+20")` → ValueError, string `"1e3"` → ValueError). The other
 //! three modes follow `to_cardinal`: `to_ordinal(float)` is the cardinal plus
-//! "-nji" ("bäş point zero-nji"), `to_year(float)` is the cardinal, and both
+//! the harmonised ending ("bäş point zeronjy"), `to_year(float)` is the cardinal, and both
 //! propagate the ValueError; `to_ordinal_num(float)` is `str(number) + "."`
 //! and never raises ("1e+16.").
 //!
@@ -194,6 +196,49 @@ const MILLION: &str = "million";
 /// `self.negword` — note the trailing space, which Python relies on for
 /// "minus bir" and then trims off any dangling remainder with `.strip()`.
 const NEGWORD: &str = "minus ";
+
+/// Attach the ordinal ending to the **last word** of a spelled cardinal
+/// (gladiaio/num2words2#148). Upstream glued a fixed "-nji" onto the whole
+/// cardinal ("bir-nji", "on-nji"). Turkmen ordinals take *-(V)njy/-(V)nji*
+/// (enedilim.com, "Sanlar"; Wiktionary's Turkmen number table):
+///
+/// * the suffix vowel follows backness — *-njy* after a back stem (a o u y),
+///   *-nji* after a front one (ä e i ö ü): altynjy, ýedinji;
+/// * after a consonant a linking vowel is inserted — *y*/*i*, rounded to
+///   *u*/*ü* only in a **one-syllable** stem whose vowel is rounded: onunjy,
+///   üçünji, ýüzünji, but dokuzynjy, otuzynjy, millionynjy;
+/// * dört voices its final t: dördünji.
+///
+/// 123rd is therefore "bir ýüz ýigrimi üçünji". A cardinal that is not a word
+/// at all — the digit fallback above 10^9 — keeps a hyphen ("1000000000-nji").
+fn join_ordinal(cardinal: &str) -> String {
+    let (head, stem) = match cardinal.rfind(' ') {
+        Some(i) => cardinal.split_at(i + 1),
+        None => ("", cardinal),
+    };
+    let vowels: Vec<char> = stem
+        .chars()
+        .filter(|c| "aouyäeiöü".contains(*c))
+        .collect();
+    let last = match vowels.last() {
+        Some(v) => *v,
+        None => return format!("{}-nji", cardinal),
+    };
+    let back = "aouy".contains(last);
+    let ending = if back { "njy" } else { "nji" };
+    if stem.ends_with(|c: char| "aouyäeiöü".contains(c)) {
+        return format!("{}{}{}", head, stem, ending);
+    }
+    let rounded = vowels.len() == 1 && "ouöü".contains(last);
+    let link = match (back, rounded) {
+        (true, true) => 'u',
+        (true, false) => 'y',
+        (false, true) => 'ü',
+        (false, false) => 'i',
+    };
+    let stem = if stem == "dört" { "dörd" } else { stem };
+    format!("{}{}{}{}", head, stem, link, ending)
+}
 
 /// The ceiling of `_int_to_word`'s word-producing branches. At or above this,
 /// Python falls through to `str(number)` (quirk 1).
@@ -562,9 +607,10 @@ impl Lang for LangTk {
         Ok(format!("{}{}", ret, int_to_word(&n)).trim().to_string())
     }
 
-    /// Python's `to_ordinal`: cardinal + a fixed "-nji" suffix (quirk 4).
+    /// Python's `to_ordinal`: the cardinal with the harmonised ending on its
+    /// last word (quirk 4, fixed — see [`join_ordinal`]).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        Ok(format!("{}-nji", self.to_cardinal(value)?))
+        Ok(join_ordinal(&self.to_cardinal(value)?))
     }
 
     /// Python's `to_ordinal_num`: `str(number) + "."` — note this overrides
@@ -614,12 +660,12 @@ impl Lang for LangTk {
     }
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
-    /// `self.to_cardinal(number) + "-nji"` with no type check, so floats get
-    /// the full decimal grammar plus the suffix ("bäş point zero-nji") and the
+    /// `self.to_cardinal(number)` + the ordinal ending with no type check, so
+    /// floats get the full decimal grammar plus the ending and the
     /// cardinal's ValueError on exponent-form reprs propagates before the
     /// suffix is appended (`to_ordinal(1e16)` → ValueError).
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
-        Ok(format!("{}-nji", self.cardinal_float_entry(value, None)?))
+        Ok(join_ordinal(&self.cardinal_float_entry(value, None)?))
     }
 
     /// `to_ordinal_num(float/Decimal)`: `str(number) + "."`, same as the
@@ -939,7 +985,7 @@ mod float_tests {
         );
     }
 
-    /// `to_ordinal` on floats: cardinal + "-nji", ValueErrors propagating;
+    /// `to_ordinal` on floats: cardinal + ending, ValueErrors propagating;
     /// `to_ordinal_num` is repr + "." and never raises; `to_year` follows the
     /// cardinal.
     #[test]
@@ -947,21 +993,21 @@ mod float_tests {
         let l = LangTk::new();
         assert_eq!(
             l.ordinal_float_entry(&fv_f(1.0, 1)).unwrap(),
-            "bir point zero-nji"
+            "bir point zeronjy"
         );
         assert_eq!(
             l.ordinal_float_entry(&fv_f(-0.0, 1)).unwrap(),
-            "minus zero point zero-nji"
+            "minus zero point zeronjy"
         );
-        assert_eq!(l.ordinal_float_entry(&fv_d("0", 0)).unwrap(), "zero-nji");
-        assert_eq!(l.ordinal_float_entry(&fv_d("5", 0)).unwrap(), "bäş-nji");
+        assert_eq!(l.ordinal_float_entry(&fv_d("0", 0)).unwrap(), "zeronjy");
+        assert_eq!(l.ordinal_float_entry(&fv_d("5", 0)).unwrap(), "bäşinji");
         assert_eq!(
             l.ordinal_float_entry(&fv_d("100", 0)).unwrap(),
-            "bir ýüz-nji"
+            "bir ýüzünji"
         );
         assert_eq!(
             l.ordinal_float_entry(&fv_f(3.25, 2)).unwrap(),
-            "üç point iki bäş-nji"
+            "üç point iki bäşinji"
         );
         assert!(matches!(
             l.ordinal_float_entry(&fv_f(1e16, 16)),
