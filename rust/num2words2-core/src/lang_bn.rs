@@ -52,12 +52,14 @@
 //!    `9999999999999999999999999999 * 10**279` (the largest value that is
 //!    already 28-significant and stays under 10^307).
 //!
-//! 3. **`to_ordinal_num` and `to_year` silently discard the sign.** Both do
-//!    `self.to_cardinal(int(abs(number)))`, so the negword is never applied:
-//!    `to_ordinal_num(-1)` == "একতম" (not "ঋণাত্মক একতম") and
-//!    `to_year(-500)` == "পাঁচশত সাল". Corpus-confirmed. Note `to_ordinal`
-//!    is a bare alias for `to_cardinal` and *does* keep the sign, so
-//!    `to_ordinal(-1)` == "ঋণাত্মক এক" while `to_ordinal_num(-1)` == "একতম".
+//! 3. ~~**`to_ordinal_num` and `to_year` silently discard the sign.**~~
+//!    Both did `self.to_cardinal(int(abs(number)))`, so `to_year(-44)` ==
+//!    `to_year(44)`, and `to_ordinal` was a bare alias for `to_cardinal`.
+//!    Fixed (gladiaio/num2words2#250): `to_ordinal` returns the ordinal
+//!    word (প্রথম … দশম, then cardinal + "তম"), `to_ordinal_num` the
+//!    abbreviation (১ম, ২য়, ৩য়, ৪র্থ, ৬ষ্ঠ, ১১তম, …), both reject a
+//!    negative with Base's TypeError, and a negative year reads
+//!    "খ্রিস্টপূর্ব … সাল".
 //!
 //! 4. **`DOSOK[61]` is `"একাত্তর "` with a stray trailing space** where every
 //!    other entry has none. It is invisible in practice: the tens branch is
@@ -67,12 +69,9 @@
 //!    later edit ever appends after the tens branch, the space becomes
 //!    observable exactly as it would in Python.
 //!
-//! 5. **`to_ordinal_num` picks its suffix by a bare `endswith("ত")` test**,
-//!    which is orthographic happenstance rather than grammar:
-//!    `to_ordinal_num(-7)` == "সাতম" (সাত ends in ত → "ম"), but
-//!    `to_ordinal_num(11)` == "এগারোতম" ("তম"). Also `to_ordinal_num(0)` is
-//!    "শূন্যতম" — 0 is outside `range(1, 11)`, so it falls to the generic
-//!    path instead of hitting `RANKING`.
+//! 5. ~~**The ordinal suffix was picked by a bare `endswith("ত")` test**~~,
+//!    so 100 read "একশতম" for একশততম. Fixed (#250): every ordinal past
+//!    দশম takes "তম".
 //!
 //! # The currency surface
 //!
@@ -205,22 +204,24 @@
 //!     happens between `str_to_number` and that `int()`, so
 //!     [`float_str_to_number`] raises them up front. Verified.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{strictly_negative, verify_ordinal, verify_ordinal_float, Lang, N2WError, Result};
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{One, Signed, Zero};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::str::FromStr;
 use std::sync::OnceLock;
 
+/// NFC spelling: য় is য + nukta (U+09AF U+09BC), as in the cardinal tables;
+/// the precomposed U+09DF is a composition exclusion that NFC never emits.
 const RANKING: &[&str] = &[
     "", // 0 — unreachable: `number in range(1, 11)` excludes 0
     "প্রথম", // 1
-    "দ্বিতীয়", // 2
-    "তৃতীয়", // 3
+    "দ্বিতীয়", // 2
+    "তৃতীয়", // 3
     "চতুর্থ", // 4
     "পঞ্চম", // 5
     "ষষ্ঠ", // 6
@@ -344,6 +345,12 @@ const SHATA: &str = "শত ";
 const ZERO_WORD: &str = "শূন্য";
 const NEGWORD: &str = "ঋণাত্মক";
 const SHAL: &str = " সাল";
+
+/// The era word for a negative year: খ্রিস্টপূর্ব, "before Christ" (#250).
+const BCE: &str = "খ্রিস্টপূর্ব ";
+
+/// Bengali digits ০..৯, for `to_ordinal_num`.
+const BN_DIGITS: [char; 10] = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
 /// দশমিক — the fractional separator, interpolated as `f" দশমিক{...}"`. BN's
 /// stand-in for `pointword`, which it does not define (the trait default
 /// "(.)" is therefore unreachable here).
@@ -835,83 +842,70 @@ impl Lang for LangBn {
         self.cardinal_inner(value, value.is_negative())
     }
 
+    /// The ordinal word: প্রথম … দশম for 1..=10, then the cardinal + "তম"
+    /// (এগারোতম, একুশতম, একশততম). Python's `to_ordinal` was a bare alias
+    /// for `to_cardinal` and its `to_ordinal_num` held these words
+    /// (gladiaio/num2words2#250).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        // Python: `def to_ordinal(self, number): return self.to_cardinal(number)`
-        // — a bare alias, so the negword survives here.
-        self.to_cardinal(value)
-    }
-
-    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
-        // Guard runs on the RAW signed value, so any negative trivially passes
-        // (MAX_NUMBER >= negative). The real ceiling check happens inside
-        // to_cardinal below, on the rounded magnitude.
+        verify_ordinal(value)?;
         self.check_max(value)?;
-
-        // Python: `if number in range(1, 11)` → 1..=10.
         if *value >= BigInt::one() && *value <= BigInt::from(10u8) {
             let idx = usize::try_from(value).expect("1..=10 here");
             return Ok(RANKING[idx].to_string());
         }
+        // Always "তম": Python glued a bare "ম" onto a cardinal ending in ত,
+        // so 100 read "একশতম" for একশততম (শত + তম, as in শততম).
+        Ok(format!("{}তম", self.cardinal_inner(value, false)?))
+    }
 
-        // `int(abs(number))` — the sign is dropped, so no negword (bug 3).
-        let rank = self.cardinal_inner(&value.abs(), false)?;
-        // Python: `if rank.endswith("ত")`. Plain suffix test on the Bengali
-        // letter ত (U+09A4); byte-wise suffix compare is equivalent for UTF-8.
-        if rank.ends_with('ত') {
-            Ok(format!("{}ম", rank))
-        } else {
-            Ok(format!("{}তম", rank))
-        }
+    /// Bengali digits + the written ordinal suffix: ১ম, ২য়, ৩য়, ৪র্থ, ৫ম,
+    /// ৬ষ্ঠ, ৭ম … ১০ম, then ১১তম, ২১তম, … (#250; Python returned the words).
+    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
+        self.check_max(value)?;
+        let digits: String = value
+            .to_string()
+            .chars()
+            .map(|c| BN_DIGITS[c.to_digit(10).expect("decimal digit") as usize])
+            .collect();
+        let suffix = match value.to_u8() {
+            Some(2) | Some(3) => "য়",
+            Some(4) => "র্থ",
+            Some(6) => "ষ্ঠ",
+            Some(1..=10) => "ম",
+            _ => "তম",
+        };
+        Ok(format!("{}{}", digits, suffix))
     }
 
     fn to_year(&self, value: &BigInt) -> Result<String> {
-        // Same raw-value guard, then `to_cardinal(int(abs(number)))` — the
-        // sign is dropped here too (bug 3).
+        // Same raw-value guard, then `to_cardinal(int(abs(number)))`. Python
+        // dropped the sign; a negative year now carries the era word
+        // খ্রিস্টপূর্ব ("before Christ") in front, as en adds "BC" (#250).
         self.check_max(value)?;
         let words = self.cardinal_inner(&value.abs(), false)?;
+        if value.is_negative() {
+            return Ok(format!("{}{}{}", BCE, words, SHAL));
+        }
         Ok(format!("{}{}", words, SHAL))
     }
 
     // ---- float / Decimal entry routing --------------------------------
 
-    /// `to_ordinal_num(float/Decimal)` — Python's body with a non-int:
-    ///
-    /// ```python
-    /// self._is_smaller_than_max_number(number)   # raw value vs MAX_NUMBER
-    /// if number in range(1, 11):                 # True iff whole and 1..=10
-    ///     return RANKING[number]                 # TypeError: bad list index!
-    /// rank = self.to_cardinal(int(abs(number)))  # truncate toward zero
-    /// return rank + ("ম" if rank.endswith("ত") else "তম")
-    /// ```
-    ///
-    /// `5.0 in range(1, 11)` is True (numeric equality), and `RANKING[5.0]`
-    /// then raises `TypeError: list indices must be integers or slices, not
-    /// float` — `not decimal.Decimal` for a Decimal. Every other value
-    /// (fractional, negative, zero, or > 10) truncates and ordinalises:
-    /// `2.5` -> "দুইতম", `-21.0` -> "একুশতম", `-0.0` -> "শূন্যতম".
+    /// `to_ordinal(float/Decimal)` / `to_ordinal_num(float/Decimal)`: a
+    /// whole, non-negative value reads like the integer; anything else raises
+    /// Base's ordinal `TypeError`. (Python's `to_ordinal_num` truncated, and
+    /// raised a "list indices" TypeError for 1.0..=10.0.)
+    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        self.check_max_float(value)?;
+        let i = verify_ordinal_float(value)?;
+        self.to_ordinal(&i)
+    }
+
     fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
         self.check_max_float(value)?;
-
-        if let Some(i) = value.as_whole_int() {
-            if i >= BigInt::one() && i <= BigInt::from(10u8) {
-                return Err(N2WError::Type(match value {
-                    FloatValue::Float { .. } => {
-                        "list indices must be integers or slices, not float".to_string()
-                    }
-                    FloatValue::Decimal { .. } => {
-                        "list indices must be integers or slices, not decimal.Decimal"
-                            .to_string()
-                    }
-                }));
-            }
-        }
-
-        let rank = self.cardinal_inner(&fv_trunc_abs(value)?, false)?;
-        if rank.ends_with('ত') {
-            Ok(format!("{}ম", rank))
-        } else {
-            Ok(format!("{}তম", rank))
-        }
+        let i = verify_ordinal_float(value)?;
+        self.to_ordinal_num(&i)
     }
 
     /// `to_year(float/Decimal)`: the raw-value guard, then
@@ -920,6 +914,9 @@ impl Lang for LangBn {
     fn year_float_entry(&self, value: &FloatValue) -> Result<String> {
         self.check_max_float(value)?;
         let words = self.cardinal_inner(&fv_trunc_abs(value)?, false)?;
+        if strictly_negative(value) {
+            return Ok(format!("{}{}{}", BCE, words, SHAL));
+        }
         Ok(format!("{}{}", words, SHAL))
     }
 

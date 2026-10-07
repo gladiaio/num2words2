@@ -92,7 +92,9 @@ def test_issue_213_examples():
             == num2words(1999, lang="ms", to="year"))
     assert (num2words(Decimal("1999"), lang="ta", to="year")
             == num2words(1999, lang="ta", to="year"))
-    assert num2words("5", lang="bn", to="ordinal_num") == "পঞ্চম"
+    # #250: the word is to='ordinal'; ordinal_num is the abbreviation.
+    assert num2words("5", lang="bn", to="ordinal") == "পঞ্চম"
+    assert num2words("5", lang="bn", to="ordinal_num") == "৫ম"
     assert (num2words(1999.0, lang="uk", to="ordinal")
             == num2words(1999, lang="uk", to="ordinal"))
     assert (num2words(Decimal("1999.0"), lang="hi", to="ordinal_num")

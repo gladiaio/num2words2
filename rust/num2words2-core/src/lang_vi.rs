@@ -11,8 +11,9 @@
 //!
 //! Call graph (all four in-scope entry points):
 //!   * `to_cardinal(n)`    → `number_to_text(n)`
-//!   * `to_ordinal(n)`     → `to_cardinal(n)` — Vietnamese ordinals are just
-//!     cardinals here; there is no ordinal morphology whatsoever.
+//!   * `to_ordinal(n)`     → `"thứ " + to_cardinal(n)`, with "thứ nhất" (1)
+//!     and "thứ tư" (4). Python returned the bare cardinal (fixed,
+//!     gladiaio/num2words2#250); negatives raise Base's ordinal TypeError.
 //!   * `to_ordinal_num(n)` → `"thứ " + str(n)` — pure string concat, no words.
 //!   * `to_year(n)`        → `"năm " + to_cardinal(|n|)` (+ `" trước Công nguyên"`
 //!     when `n < 0`).
@@ -139,7 +140,9 @@
 //!     no fraction rules, so it now raises NotImplementedError like every
 //!     language without them, and "1/0" ZeroDivisionError (#217).
 
-use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
+use crate::base::{
+    check_maxval, pow10_big, verify_ordinal, verify_ordinal_float, Lang, N2WError, Result,
+};
 use std::sync::OnceLock;
 use crate::currency::CurrencyValue;
 use crate::floatpath::FloatValue;
@@ -606,9 +609,25 @@ impl Lang for LangVi {
         self.number_to_text(value)
     }
 
-    /// `to_ordinal` is `return self.to_cardinal(number)` — identical output.
+    /// "thứ" + the cardinal, with the suppletive forms "thứ nhất" (1st)
+    /// and "thứ tư" (4th). Python's `to_ordinal` returned the bare cardinal
+    /// (gladiaio/num2words2#250).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        self.to_cardinal(value)
+        verify_ordinal(value)?;
+        if *value == BigInt::from(1) {
+            return Ok("thứ nhất".to_string());
+        }
+        if *value == BigInt::from(4) {
+            return Ok("thứ tư".to_string());
+        }
+        Ok(format!("thứ {}", self.to_cardinal(value)?))
+    }
+
+    /// A whole, non-negative float/Decimal reads like the integer; anything
+    /// else raises Base's ordinal `TypeError`.
+    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        let i = verify_ordinal_float(value)?;
+        self.to_ordinal(&i)
     }
 
     /// `to_ordinal_num` is `"thứ " + str(number)` — the raw digits, never words.

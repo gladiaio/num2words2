@@ -117,6 +117,16 @@ class Num2WordsVITest(TestCase):
             num2words(1000101017, lang="vi"), "một tỷ một trăm lẻ một nghìn lẻ mười bảy"
         )
 
+    def test_ordinal_250(self):
+        # to='ordinal' returned the cardinal (#250).
+        for value, word in [(1, "thứ nhất"), (2, "thứ hai"), (3, "thứ ba"),
+                            (4, "thứ tư"), (5, "thứ năm"), (10, "thứ mười"),
+                            (14, "thứ mười bốn"), (21, "thứ hai mươi mốt"),
+                            (100, "thứ một trăm"), (4.0, "thứ tư")]:
+            self.assertEqual(num2words(value, lang="vi", to="ordinal"), word)
+        with self.assertRaises(TypeError):
+            num2words(-1, lang="vi", to="ordinal")
+
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4
         self.assertEqual(num2words(-0.4, lang="vi"), "âm không phẩy bốn mươi")
