@@ -201,11 +201,27 @@ class Num2WordsMYTest(TestCase):
             num2words(999999999, lang="my"),
             "ကိုးဆယ့်ကိုး ကုဋေ ကိုးသန်း ကိုးသိန်း ကိုးသောင်း ကိုးထောင့်ကိုးရာ့ကိုးဆယ့်ကိုး",
         )
-        self.assertEqual(num2words(1000000000, lang="my"), "1000000000")
-        self.assertEqual(num2words(1234567890, lang="my"), "1234567890")
-        self.assertEqual(num2words(9999999999, lang="my"), "9999999999")
-        self.assertEqual(num2words(10000000000, lang="my"), "10000000000")
-        self.assertEqual(num2words(99999999999, lang="my"), "99999999999")
+        # gladiaio/num2words2#147: words (or OverflowError), not digits.
+        self.assertEqual(
+            num2words(1000000000, lang="my"),
+            "တစ်ရာ ကုဋေ",
+        )
+        self.assertEqual(
+            num2words(1234567890, lang="my"),
+            "တစ်ရာ့နှစ်ဆယ့်သုံး ကုဋေ လေးသန်း ငါးသိန်း ခြောက်သောင်း ခုနစ်ထောင့်ရှစ်ရာ့ကိုးဆယ်",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="my"),
+            "ကိုးရာ့ကိုးဆယ့်ကိုး ကုဋေ ကိုးသန်း ကိုးသိန်း ကိုးသောင်း ကိုးထောင့်ကိုးရာ့ကိုးဆယ့်ကိုး",
+        )
+        self.assertEqual(
+            num2words(10000000000, lang="my"),
+            "တစ်ထောင် ကုဋေ",
+        )
+        self.assertEqual(
+            num2words(99999999999, lang="my"),
+            "ကိုးထောင့်ကိုးရာ့ကိုးဆယ့်ကိုး ကုဋေ ကိုးသန်း ကိုးသိန်း ကိုးသောင်း ကိုးထောင့်ကိုးရာ့ကိုးဆယ့်ကိုး",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""

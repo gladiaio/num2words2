@@ -8,8 +8,9 @@
 //! `Num2Word_Base.__init__` never builds `self.cards` and never assigns
 //! `self.MAXVAL`. `to_cardinal` is overridden outright and delegates to
 //! `_int_to_word`, a hand-written cascade of magnitude branches. Consequently
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check at all** — see bug 1 below for what happens instead.
+//! `cards`/`merge` stay at their trait defaults here. Python has **no
+//! overflow check at all** — see bug 1 below for what it did instead; this
+//! port raises `OverflowError` from 10^18 (`maxval`).
 //!
 //! `setup()` sets only `negword = "ដក "` and `pointword = "ចំណុច"` plus the
 //! `ones`/`tens` tables. `pointword` is unreachable for *integer* input (the
@@ -53,8 +54,9 @@
 //! * **`-0.0` renders as negative.** `str(-0.0) == "-0.0"` starts with `"-"`,
 //!   so the negword is prefixed. `value.is_sign_negative()` catches this f64
 //!   negative zero, which `value < 0.0` would miss.
-//! * **The million-space / digit-fallback bugs of `_int_to_word` carry over**
-//!   because the whole part is rendered through the very same function.
+//! * **The million-space bug of `_int_to_word` carries over** (and so does
+//!   the 10^18 ceiling) because the whole part is rendered through the very
+//!   same function.
 //!
 //! ## Float routing: every float/Decimal goes through the string surgery
 //!
@@ -107,14 +109,15 @@
 //! This is a port, not a rewrite. All of the following look wrong but are
 //! exactly what Python emits, verified against the frozen corpus:
 //!
-//! 1. **Numbers >= 10^9 are not converted at all.** The final `else` of
-//!    `_int_to_word` is `return str(number)`, a "fallback for very large
-//!    numbers". So `to_cardinal(10**9)` == `"1000000000"` and
-//!    `to_cardinal(10**21)` == `"1000000000000000000000"` — bare ASCII
-//!    digits, no Khmer, and no `OverflowError`. Corpus rows confirm this for
-//!    10^9, 10^12, 10^15 and 10^21. This is why the value must stay a
-//!    `BigInt`: the fallback is reached by arbitrarily large input and the
-//!    digits are echoed verbatim.
+//! 1. **Numbers >= 10^9 (fixed, gladiaio/num2words2#147).** Python's final
+//!    `else` of `_int_to_word` is `return str(number)`, so `to_cardinal(10**9)`
+//!    was the bare digit string `"1000000000"`. Khmer says 10^9 as ពាន់លាន
+//!    "thousand million" and 10^12 as លានលាន "million million" (Wikipedia
+//!    "Khmer numerals"; Wiktionary ពាន់លាន, លានលាន), so the million branch
+//!    now takes any multiplier below 10^12 — 10^9 == `"មួយពាន់ លាន"`,
+//!    10^12 == `"មួយ លាន លាន"` — and `OverflowError` is raised from 10^18.
+//!    កោដិ (10^7) is deliberately not used: it is ambiguous with 10^9
+//!    colloquially.
 //! 2. **Inconsistent spacing around the "million" word.** Every other
 //!    magnitude word is glued to its multiplier with no space
 //!    (`"មួយ" + "រយ"` -> `"មួយរយ"`), but the million branch is
@@ -124,9 +127,8 @@
 //! 3. **`to_ordinal` prefixes the negword-bearing cardinal**, giving
 //!    `to_ordinal(-1)` == `"ទីដក មួយ"` — the ordinal marker "ទី" lands in
 //!    front of the minus word rather than the number. Likewise
-//!    `to_ordinal(10**9)` == `"ទី1000000000"`, i.e. identical to
-//!    `to_ordinal_num(10**9)`, because bug 1 makes the cardinal a digit
-//!    string.
+//!    `to_ordinal(10**9)` was `"ទី1000000000"` because of bug 1; it is
+//!    `"ទីមួយពាន់ លាន"` now.
 //! 4. **`to_year` ignores its `longval` argument entirely** and is just
 //!    `"ឆ្នាំ " + to_cardinal(val)`. There is no BC/AD handling and no
 //!    two-chunk year reading: `to_year(1984)` reads as the plain cardinal.
@@ -182,7 +184,7 @@
 //! The stateless Rust translation is therefore exact. The currency forms table
 //! is built once in `new()` and only ever read.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -190,6 +192,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// `self.negword`, set in `setup()`. Note the **trailing space** — it is part
 /// of the literal and is what separates it from the number, since KM's
@@ -294,9 +297,10 @@ impl LangKm {
     /// produces a negative. The `number < 0` arm below is therefore dead for
     /// the four in-scope modes; it is kept because it is dead in Python too,
     /// and reproducing the cascade verbatim keeps the branch bounds honest.
-    fn int_to_word(&self, number: &BigInt) -> String {
+    fn int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
         if number.is_zero() {
-            return ONES[0].to_string();
+            return Ok(ONES[0].to_string());
         }
 
         if number.is_negative() {
@@ -305,7 +309,7 @@ impl LangKm {
             // before it ever slices digits out, so both operands it derives are
             // non-negative. Mirrors `self.negword + self._int_to_word(abs(n))`,
             // and is dead in Python for the same reasons.
-            return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
+            return Ok(format!("{}{}", NEGWORD, self.int_to_word(&number.abs())?));
         }
 
         // Each guard below bounds `number`, so the digit extracted for an
@@ -324,17 +328,16 @@ impl LangKm {
         let ten_thousand = BigInt::from(10_000);
         let hundred_thousand = BigInt::from(100_000);
         let million = BigInt::from(1_000_000);
-        let billion = BigInt::from(1_000_000_000);
 
         if *number < ten {
-            return ONES[small!(number)].to_string();
+            return Ok(ONES[small!(number)].to_string());
         }
         if *number == ten {
-            return TENS[1].to_string();
+            return Ok(TENS[1].to_string());
         }
         if *number < twenty {
             // `self.tens[1] + self.ones[number - 10]`; number-10 is 1..=9.
-            return format!("{}{}", TENS[1], ONES[small!(number - &ten)]);
+            return Ok(format!("{}{}", TENS[1], ONES[small!(number - &ten)]));
         }
         if *number < hundred {
             // Python's `//` and `%` are floor-based, but `number` is positive
@@ -343,9 +346,9 @@ impl LangKm {
             let tens_val = number / &ten;
             let ones_val = number % &ten;
             if ones_val.is_zero() {
-                return TENS[small!(&tens_val)].to_string();
+                return Ok(TENS[small!(&tens_val)].to_string());
             }
-            return format!("{}{}", TENS[small!(&tens_val)], ONES[small!(&ones_val)]);
+            return Ok(format!("{}{}", TENS[small!(&tens_val)], ONES[small!(&ones_val)]));
         }
 
         // The four "glued" magnitudes share one shape: ONES[digit] + word,
@@ -364,23 +367,21 @@ impl LangKm {
             return self.glued(number, &hundred_thousand, HUNDRED_THOUSAND);
         }
 
-        if *number < billion {
-            // The one branch that *recurses* on the multiplier (it can be up
-            // to 999) and the one that puts a space before its magnitude word.
+        {
+            // The one branch that *recurses* on the multiplier and the one
+            // that puts a space before its magnitude word. Python stopped at
+            // a multiplier of 999 and returned `str(number)` beyond (bug 1);
+            // the multiplier now runs up to the maxval check's 10^12 - 1, so
+            // 10^9 reads "thousand million" and 10^12 "million million" (#147).
             let millions_val = number / &million;
             let remainder = number % &million;
-            let mut result = format!("{}{}", self.int_to_word(&millions_val), MILLION);
+            let mut result = format!("{}{}", self.int_to_word(&millions_val)?, MILLION);
             if !remainder.is_zero() {
                 result.push(' ');
-                result.push_str(&self.int_to_word(&remainder));
+                result.push_str(&self.int_to_word(&remainder)?);
             }
-            return result;
+            Ok(result)
         }
-
-        // "Fallback for very large numbers" — bug 1. `str(number)` on a Python
-        // int is plain decimal with no separators, which BigInt's Display
-        // matches exactly, at any width.
-        number.to_string()
     }
 
     /// The shared body of the hundred / thousand / ten-thousand /
@@ -390,7 +391,7 @@ impl LangKm {
     /// The caller's guard bounds `n // unit` to 1..=9, so the ONES index is
     /// always valid — unlike the million branch, this never recurses on the
     /// multiplier.
-    fn glued(&self, number: &BigInt, unit: &BigInt, word: &str) -> String {
+    fn glued(&self, number: &BigInt, unit: &BigInt, word: &str) -> Result<String> {
         let digit = number / unit;
         let remainder = number % unit;
         let mut result = format!(
@@ -400,9 +401,9 @@ impl LangKm {
         );
         if !remainder.is_zero() {
             result.push(' ');
-            result.push_str(&self.int_to_word(&remainder));
+            result.push_str(&self.int_to_word(&remainder)?);
         }
-        result
+        Ok(result)
     }
 
     /// The body of `Num2Word_KM.to_cardinal`, run on a rebuilt `str(number)`.
@@ -435,7 +436,7 @@ impl LangKm {
 
         if let Some((left, right)) = n.split_once('.') {
             let mut out = String::from(ret);
-            out.push_str(&self.int_to_word(&Self::py_int(left)?));
+            out.push_str(&self.int_to_word(&Self::py_int(left)?)?);
             out.push(' ');
             out.push_str(self.pointword());
             out.push(' ');
@@ -444,13 +445,13 @@ impl LangKm {
             // when `right` holds a non-digit (exponential mantissa's 'e').
             for ch in right.chars() {
                 let d = Self::py_int(&ch.to_string())?;
-                out.push_str(&self.int_to_word(&d));
+                out.push_str(&self.int_to_word(&d)?);
                 out.push(' ');
             }
             Ok(out.trim().to_string())
         } else {
             // `else:` branch — `(ret + self._int_to_word(int(n))).strip()`.
-            Ok(format!("{}{}", ret, self.int_to_word(&Self::py_int(n)?))
+            Ok(format!("{}{}", ret, self.int_to_word(&Self::py_int(n)?)?)
                 .trim()
                 .to_string())
         }
@@ -519,7 +520,19 @@ impl Default for LangKm {
     }
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147): the million branch
+/// composes 10^9 as "thousand million" and 10^12 as "million million"; a
+/// multiplier of 10^12 would stack a third លាន, which no source attests.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(18))
+}
+
 impl Lang for LangKm {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -556,7 +569,7 @@ impl Lang for LangKm {
     /// applied anyway to keep the shape of the original.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         let ret = if value.is_negative() { NEGWORD } else { "" };
-        let out = format!("{}{}", ret, self.int_to_word(&value.abs()));
+        let out = format!("{}{}", ret, self.int_to_word(&value.abs())?);
         Ok(out.trim().to_string())
     }
 
@@ -780,11 +793,11 @@ impl Lang for LangKm {
 
         // `cr1[0]`/`cr2[0]`: always the first form, never pluralized. Both
         // entries are 2-tuples built in `new()`, so the index is provably safe.
-        let mut result = format!("{} {}", self.int_to_word(&left), forms.unit[0]);
+        let mut result = format!("{} {}", self.int_to_word(&left)?, forms.unit[0]);
 
         if cents && !right.is_zero() {
             result.push_str(separator);
-            result.push_str(&self.int_to_word(&right));
+            result.push_str(&self.int_to_word(&right)?);
             result.push(' ');
             result.push_str(&forms.subunit[0]);
         }
@@ -833,14 +846,14 @@ mod float_tests {
             "ប្រាំ ចំណុច សូន្យ សូន្យ"
         );
         assert_eq!(km.cardinal_float_entry(&dec("5"), None).unwrap(), "ប្រាំ");
-        // >= 10^9 whole part hits _int_to_word's digit fallback (bug 1).
+        // >= 10^9 whole part reads "thousand million" (#147, was digits).
         assert_eq!(
             km.cardinal_float_entry(
                 &FloatValue::Float { value: 1_000_000_000.0, precision: 1 },
                 None
             )
             .unwrap(),
-            "1000000000 ចំណុច សូន្យ"
+            "មួយពាន់ លាន ចំណុច សូន្យ"
         );
     }
 
