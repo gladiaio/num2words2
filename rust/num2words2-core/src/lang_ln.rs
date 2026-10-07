@@ -113,7 +113,7 @@
 //!    back to `_cents_terse` and print "34"; LN has no `else`, so the cents
 //!    simply vanish.
 //! 10. **Zero takes the plural.** `cr1[1] if left != 1 else cr1[0]` keys off
-//!     `!= 1`, so `0` renders "libúngútulú euros".
+//!     `!= 1`, so `0` renders "libúngútulú faranga" (CDF).
 //!
 //! # Currency nouns (gladiaio/num2words2#222)
 //!
@@ -897,7 +897,7 @@ impl Lang for LangLn {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`. Note that this
         // is `self._int_to_word(left)`, *not* `self.to_cardinal(left)` — so the
         // 10^9 digit fallback applies here too. Zero takes the plural
-        // ("libúngútulú euros", quirk 10).
+        // ("libúngútulú faranga", quirk 10).
         let mut result = format!(
             "{} {}",
             checked_int_to_word(&left)?,
