@@ -499,6 +499,14 @@ impl Lang for LangAf {
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
         let mut outword = self.to_cardinal(value)?;
+        // "een miljoen" -> "miljoenste", not "een miljoenste" (which reads
+        // as the fraction 1/10**6); likewise "honderdste", "duisendste",
+        // "miljardste" — as nl does (#252, #259).
+        if let Some(rest) = outword.strip_prefix("een ") {
+            if !rest.contains(' ') {
+                outword = rest.to_string();
+            }
+        }
 
         // First matching suffix wins, then `break` — see ORDS on why order matters.
         for (key, rep) in ORDS.iter() {

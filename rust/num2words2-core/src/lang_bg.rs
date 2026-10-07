@@ -98,11 +98,14 @@
 //!    it. Modelled in [`LangBg::int_to_cardinal`].
 //! 2. **Ordinals are formed by gluing a suffix onto the cardinal**, so
 //!    non-table values read as run-ons rather than real Bulgarian:
-//!    `to_ordinal(0)` == "нулати", `to_ordinal(200)` == "двестати",
-//!    `to_ordinal(2000)` == "две хилядити", `to_ordinal(10**12)` ==
-//!    "хиляда милиардати". Only the 28 keys in `ordinals` (1..=20, 30..=90
-//!    by ten, 100, 1000) get a genuine ordinal word, plus 10**6
-//!    "милионен" (was "един милионти", gladiaio/num2words2#252).
+//!    `to_ordinal(0)` == "нулати", `to_ordinal(10**12)` == "хиляда
+//!    милиардати", `to_ordinal(2*10**6)` == "два милионати". Only the 28
+//!    keys in `ordinals` (1..=20, 30..=90 by ten, 100, 1000) get a genuine
+//!    ordinal word, plus 10**6 "милионен" (was "един милионти",
+//!    gladiaio/num2words2#252), a final hundreds word ("двестотен",
+//!    "хиляда петстотен"; was "двестати") and round thousands with a
+//!    one-word multiplier ("двехиляден", "десетхиляден"; was "две
+//!    хилядити", #259).
 //! 3. **`to_ordinal_num` uses Python's floor modulo on negatives**, which
 //!    flips the suffix versus a truncating `%`. `-999 % 10 == 1` in Python
 //!    (not `-9`), so `to_ordinal_num(-999)` == "-999-ви"; `-42 % 10 == 8`, so
@@ -625,6 +628,33 @@ impl LangBg {
         // "хиляден".
         if cardinal == "един милион" {
             return Ok("милионен".to_string());
+        }
+
+        // A round number of thousands is one compound word on the
+        // multiplier: "двехиляден", "петхиляден", "десетхиляден"; Python
+        // glued "ти" onto the cardinal, "две хилядити" (#259).
+        if let Some(mult) = cardinal.strip_suffix(" хиляди") {
+            if !mult.contains(' ') {
+                return Ok(format!("{}хиляден", mult));
+            }
+        }
+        // A final hundreds word takes its own ordinal: "двестотен",
+        // "петстотен", "хиляда двестотен" — not "двестати" (#259).
+        let (head, last) = match cardinal.rsplit_once(' ') {
+            Some((h, l)) => (Some(h), l),
+            None => (None, cardinal.as_str()),
+        };
+        let hundreds = match last {
+            "сто" => Some("стотен".to_string()),
+            "двеста" => Some("двестотен".to_string()),
+            "триста" => Some("тристотен".to_string()),
+            _ => last.strip_suffix("стотин").map(|m| format!("{}стотен", m)),
+        };
+        if let Some(word) = hundreds {
+            return Ok(match head {
+                Some(h) => format!("{} {}", h, word),
+                None => word,
+            });
         }
 
         // Python slices `cardinal[:-4]` / `[:-3]` *by character*. Since the

@@ -34,20 +34,18 @@
 //!    `to_ordinal` walks `ords_pl` in dict *insertion* order, takes the first
 //!    key that is a suffix of the cardinal, and `break`s; then it walks
 //!    `ords_sg` (`{"en": "første"}`) the same way. The `ords_sg` pass is not
-//!    guarded by whether the `ords_pl` pass already fired, and the source
-//!    comment claims splitting the tables "needs to be done separately to not
-//!    block 13-19 to_ordinal" — but it does not achieve that:
-//!    - `to_ordinal(13)`: "tretten" matches no `ords_pl` key, then hits the
-//!      `ords_sg` key "en" → **"trettførste"** (not "trettende").
-//!    - `to_ordinal(21)`: "tjueen" → **"tjueførste"**; likewise 31, 71, 81, 91.
+//!    guarded by whether the `ords_pl` pass already fired. Python's `ords_pl`
+//!    had no "tretten" key, so 13 fell through to "en" and read
+//!    **"trettførste"**; the port adds the key ("trettende", #259). The
+//!    second pass is what gives the correct "tjueførste" for 21.
 //!    Insertion order is therefore load-bearing and [`LangNb::ords_pl`] is a
 //!    `Vec`, never a `HashMap`. E.g. "to" precedes "tre"/"tolv", so
-//!    `to_ordinal(42)` = "førtito" → **"førtiandre"**.
-//! 2. **Ordinals silently pass through above 10^6.** `ords_pl` stops at
-//!    "million", and the plural forms "millioner"/"milliarder" that `merge`
-//!    produces match no key at all, so `to_ordinal(10**7)` == "ti millioner"
-//!    and `to_ordinal(10**9)` == "en milliard" — plain cardinals, no ordinal
-//!    marking whatsoever.
+//!    `to_ordinal(42)` = "førtito" → "førtiandre".
+//! 2. ~~**Ordinals silently passed through above 10^6.**~~ `ords_pl` stopped
+//!    at "million", and the plurals "millioner"/"milliarder" matched no key,
+//!    so `to_ordinal(2*10**6)` was "to millioner" and `to_ordinal(10**9)`
+//!    "en milliard". Fixed (#259): a trailing scale word takes "te" on its
+//!    singular stem — "to millionte", "milliardte", "ti milliardte".
 //! 3. **`merge` discards `ltext` at exactly 100000.** The `lnum == 100 and
 //!    rnum == 1000` arm returns the hard-coded `("hundre tusen", 100000)`,
 //!    throwing away the "ett hundre" its own recursion just built. 200000
@@ -450,6 +448,9 @@ impl LangNb {
             ("ti", "tiende"),
             ("elleve", "ellevte"),
             ("tolv", "tolvte"),
+            // Missing in Python, so 13 fell through to the "en" -> "første"
+            // pass: "trettførste" (#259).
+            ("tretten", "trettende"),
             ("fjorten", "fjortende"),
             ("femten", "femtende"),
             ("seksten", "sekstende"),
@@ -459,7 +460,6 @@ impl LangNb {
             ("tjue", "tjuende"),
             ("hundre", "hundrede"),
             ("tusen", "tusende"),
-            ("million", "millionte"),
         ];
         let ords_sg: Vec<(&'static str, &'static str)> = vec![("en", "f\u{f8}rste")];
 
@@ -664,9 +664,22 @@ impl Lang for LangNb {
         self.verify_ordinal(value)?;
         let mut outword = self.to_cardinal(value)?;
         // 10**6 is "millionte", not "en millionte", which reads as the
-        // fraction 1/10**6 (#252).
-        if outword == "en million" {
-            outword = "million".to_string();
+        // fraction 1/10**6 (#252); likewise "milliardte".
+        if let Some(rest) = outword.strip_prefix("en ") {
+            if !rest.contains(' ') && (rest.ends_with("illion") || rest.ends_with("illiard")) {
+                outword = rest.to_string();
+            }
+        }
+        // A trailing scale word is ordinalised on its singular stem: "to
+        // millionte", "milliardte". The plurals "millioner"/"milliarder"
+        // matched no `ords_pl` key and stayed cardinal (#259).
+        for plural in ["illioner", "illiarder"] {
+            if outword.ends_with(plural) {
+                outword.truncate(outword.len() - 2);
+            }
+        }
+        if outword.ends_with("illion") || outword.ends_with("illiard") {
+            return Ok(outword + "te");
         }
 
         // Python: outword[: len(outword) - len(key)] + ords_pl[key], then break.

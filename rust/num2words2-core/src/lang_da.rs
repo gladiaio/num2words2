@@ -74,8 +74,9 @@
 //!    30, 40 and 100 had no `ords` stem: "tredivete", "fyrreende",
 //!    "ethundredete", "ettusindte". Fixed (gladiaio/num2words2#252):
 //!    "tredivte", "fyrrende", "hundrede", "tusinde" ("tohundrede",
-//!    "totusinde"). 50..=90 already read as the short forms
-//!    ("halvtredsende"), except that 60 builds on the cardinal's "treds".
+//!    "totusinde"). 50..=90 read as the short forms ("halvtredsende");
+//!    60 built on the cardinal's "treds" ("tredsende") until #259 gave it
+//!    the "tress" stem: "tressende", "enogtressende".
 //! 5. **The `ords` lookup is a suffix scan over a dict, so insertion order is
 //!    load-bearing.** `for key in self.ords: if outword.endswith(key): ...
 //!    break` takes the *first* insertion-ordered hit, not the longest. Ported
@@ -563,6 +564,12 @@ impl LangDa {
             // "fyrreende" (gladiaio/num2words2#252).
             ("tredive", "trediv"),
             ("fyrre", "fyrr"),
+            // 60th is "tressende" (short form, like "halvtredsende") or
+            // "tresindstyvende"; the cardinal's "treds" gave "tredsende"
+            // (#259). "halvtreds" (50) ends in "treds" too and must keep
+            // its stem, so it is tested first.
+            ("halvtreds", "halvtreds"),
+            ("treds", "tress"),
         ];
 
         LangDa {

@@ -599,6 +599,15 @@ impl LangIt {
                     cardinal = rest.to_string();
                 }
             }
+            // "due milioni" -> "duemilionesimo": a round multiple of a scale
+            // word is one word, like "duemillesimo" (#259).
+            if let Some((mult, scale)) = cardinal.split_once(' ') {
+                if !scale.contains(' ') && (scale.ends_with("ioni") || scale.ends_with("iardi")) {
+                    // The compound drops the accent: "ventitremilionesimo".
+                    let mult = mult.strip_suffix("tré").map_or(mult.to_string(), |m| format!("{}tre", m));
+                    cardinal = format!("{}{}", mult, scale);
+                }
+            }
             let mut string = drop_last_chars(&cardinal, 1);
             // "duemila" -> "duemil" -> "duemill" -> "duemillesimo".
             if last_chars(&string, 3) == "mil" {

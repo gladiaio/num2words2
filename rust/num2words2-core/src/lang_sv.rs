@@ -21,11 +21,13 @@
 //!    the probe tries 5 chars first, so 20 is "tjugonde" and 120
 //!    "etthundratjugonde".
 //!
-//! 2. **Plural mega/giga words get ordinalised as-is.** The cards store the
-//!    *plural* "miljoner"/"miljarder", and `merge` only singularises them on
-//!    the `lnum == 1` path ("en miljon"). So `to_ordinal(10**7)` →
-//!    "tio miljonerde" and `to_ordinal(10**10)` → "tio miljarderde". Only
-//!    10**6 itself is fixed (#252): "miljonte", not "en miljonde".
+//! 2. ~~**Plural mega/giga words got ordinalised as-is.**~~ The cards store
+//!    the *plural* "miljoner"/"miljarder", and `merge` only singularises them
+//!    on the `lnum == 1` path ("en miljon"). So `to_ordinal(2*10**6)` was
+//!    "två miljonerde" and `to_ordinal(10**9)` "en miljardde". Fixed (#252,
+//!    #259): a trailing scale word takes "te" on its singular stem, and a
+//!    bare scale ordinal is one word — "miljonte", "tvåmiljonte",
+//!    "miljardte", "tiobiljonte".
 //!
 //! 3. **`merge` returns `lnum + rnum` where a product is meant.** The
 //!    `rnum >= 1000000` branches precede the `rnum > lnum` multiply branch, so
@@ -505,9 +507,26 @@ impl Lang for LangSv {
         // Probe ords by the last 4 chars, then the last 3. Python swallows the
         // KeyErrors; the final fallback is the generic "de" suffix with
         // ending_length left at its initial 0.
-        // 10**6 is "miljonte", without the "en" of "en miljon" (#252).
-        if cardinal == "en miljon" {
-            return Ok("miljonte".to_string());
+        // A trailing scale word is ordinalised on its singular stem, without
+        // the "en" of "en miljon": "miljonte" (#252), "tvåmiljonte",
+        // "miljardte" — Python glued "de" onto it: "två miljonerde", "en
+        // miljardde" (#259).
+        let stem = lastword
+            .strip_suffix("er")
+            .filter(|s| s.ends_with("jon") || s.ends_with("jard"))
+            .unwrap_or(&lastword);
+        if stem.ends_with("jon") || stem.ends_with("jard") {
+            let n = outwords.len();
+            outwords[n - 1] = format!("{}te", stem);
+            // A bare scale ordinal is one word, like "tvåtusende":
+            // "tvåmiljonte", and "miljonte" without the "en".
+            if n == 2 {
+                if outwords[0] == "en" {
+                    outwords.remove(0);
+                }
+                return Ok(outwords.concat());
+            }
+            return Ok(outwords.join(" "));
         }
         // Python probed only 4 and 3 chars, so "tjugo" never matched and
         // 20 read "tjugode"; probe 5 first (#252).

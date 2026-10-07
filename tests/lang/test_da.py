@@ -311,7 +311,7 @@ class Num2WordsDATest(TestCase):
         self.assertEqual(num2words(30, lang="da", ordinal=True), "tredivte")  # 252
         self.assertEqual(num2words(40, lang="da", ordinal=True), "fyrrende")  # 252
         self.assertEqual(num2words(50, lang="da", ordinal=True), "halvtredsende")
-        self.assertEqual(num2words(60, lang="da", ordinal=True), "tredsende")
+        self.assertEqual(num2words(60, lang="da", ordinal=True), "tressende")
         self.assertEqual(num2words(70, lang="da", ordinal=True), "halvfjerdsende")
         self.assertEqual(num2words(80, lang="da", ordinal=True), "firsende")
         self.assertEqual(num2words(90, lang="da", ordinal=True), "halvfemsende")

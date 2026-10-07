@@ -86,9 +86,13 @@
 //!    (`self.ones[hundreds_val] + "sto"`). Collapsed below — the two arms are
 //!    textually the same expression, so this cannot change output — but noted
 //!    here so a reader diffing against Python does not think a case was lost.
-//! 5. **`to_ordinal` is barely an ordinal.** Only 1/2/3 get real ordinal words
-//!    ("prvi"/"drugi"/"treći"); every other value is just the cardinal with a
-//!    "." glued on, including 0 ("nula.") and negatives ("minus jedan.").
+//! 5. **`to_ordinal` was barely an ordinal.** Only 1/2/3 got real ordinal
+//!    words ("prvi"/"drugi"/"treći"); every other value was the cardinal with
+//!    a "." glued on ("dvanaest.", "nula.", "minus jedan."). Fixed (#259) as
+//!    in `lang_hr.rs`: "nulti", "dvanaesti", "dvadeset prvi", "dvjestoti",
+//!    "hiljaditi", "milioniti", "minus treći". Other round thousands and
+//!    millions ("dva hiljade.", "dva miliona.") still take the old "."
+//!    fallback, as does the float path ("pet zarez nula.").
 //! 6. **`to_currency` silently accepts any currency code; `to_cheque` does
 //!    not.** `to_currency` does `CURRENCY_FORMS.get(currency,
 //!    CURRENCY_FORMS["BAM"])`, so an unknown code is *not* an error — it is
@@ -174,6 +178,51 @@ use std::sync::OnceLock;
 /// bare `ret + word` concatenation with no separator and relies on it. The
 /// final `.strip()` is what keeps it from leaking when the word is empty.
 const NEGWORD: &str = "minus ";
+
+/// Ordinal words for 0..=20, the round tens, 100, 1000 and 10^6 (#259), as
+/// in `lang_hr.rs` but with the Bosnian "hiljaditi", "milioniti".
+fn ordinal_word(n: u64) -> Option<&'static str> {
+    Some(match n {
+        0 => "nulti",
+        1 => "prvi",
+        2 => "drugi",
+        3 => "treći",
+        4 => "četvrti",
+        5 => "peti",
+        6 => "šesti",
+        7 => "sedmi",
+        8 => "osmi",
+        9 => "deveti",
+        10 => "deseti",
+        11 => "jedanaesti",
+        12 => "dvanaesti",
+        13 => "trinaesti",
+        14 => "četrnaesti",
+        15 => "petnaesti",
+        16 => "šesnaesti",
+        17 => "sedamnaesti",
+        18 => "osamnaesti",
+        19 => "devetnaesti",
+        20 => "dvadeseti",
+        30 => "trideseti",
+        40 => "četrdeseti",
+        50 => "pedeseti",
+        60 => "šezdeseti",
+        70 => "sedamdeseti",
+        80 => "osamdeseti",
+        90 => "devedeseti",
+        100 => "stoti",
+        1000 => "hiljaditi",
+        1_000_000 => "milioniti",
+        _ => return None,
+    })
+}
+
+/// Ordinal hundreds 100..=900 (#259). Index 0 is unused.
+const HUNDREDS_ORD: [&str; 10] = [
+    "", "stoti", "dvjestoti", "tristoti", "četiristoti", "petstoti", "šeststoti", "sedamstoti",
+    "osamstoti", "devetstoti",
+];
 
 /// `self.pointword`. `to_cardinal` splices it in raw (`+ " " + self.pointword
 /// + " "`), *not* through `self.title(...)` the way
@@ -1030,21 +1079,32 @@ impl Lang for LangBs {
         Ok(format!("{}{}", ret, self.int_to_word(&n)?).trim().to_string())
     }
 
-    /// Port of `Num2Word_BS.to_ordinal`.
+    /// Port of `Num2Word_BS.to_ordinal`, with real ordinal words (#259).
     ///
-    /// Only 1/2/3 have real ordinal words; everything else — 0, negatives, and
-    /// 10^9 and up alike — is the cardinal plus ".". See bug 5.
+    /// Python had words for 1/2/3 only and glued "." onto every other
+    /// cardinal ("dvanaest."). As in `lang_hr.rs`, the table covers
+    /// 0..=20, the round tens, 100 and 1000, and a compound inflects its
+    /// last word: "dvadeset prvi", "sto dvanaesti", "dvjestoti". See bug 5
+    /// for the round values still on the old fallback.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        if value == &BigInt::from(1) {
-            return Ok("prvi".to_string());
+        if value.is_negative() {
+            return Ok(format!("{}{}", NEGWORD, self.to_ordinal(&value.abs())?));
         }
-        if value == &BigInt::from(2) {
-            return Ok("drugi".to_string());
+        if let Some(word) = value.to_u64().and_then(ordinal_word) {
+            return Ok(word.to_string());
         }
-        if value == &BigInt::from(3) {
-            return Ok("treći".to_string());
+        let cardinal = self.to_cardinal(value)?;
+        if let Some(n) = value.to_u64() {
+            if let Some(word) = crate::compound_ordinal::last_word_ordinal(
+                n,
+                &cardinal,
+                ordinal_word,
+                Some(&HUNDREDS_ORD),
+            ) {
+                return Ok(word);
+            }
         }
-        Ok(format!("{}.", self.to_cardinal(value)?))
+        Ok(format!("{}.", cardinal))
     }
 
     /// Port of `Num2Word_BS.to_ordinal_num`: `str(number) + "."`.

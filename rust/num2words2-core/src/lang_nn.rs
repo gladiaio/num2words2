@@ -45,7 +45,7 @@
 //!    `return self.ones[0] if self.ones[0] else "zero"`. `ones[0]` is `""` —
 //!    always falsy — so in Python every zero renders as the English "zero".
 //!    This port says the Nynorsk "null": `0 -> "null"`,
-//!    `to_ordinal(0) -> "null-de"`.
+//!    `to_ordinal(0) -> "null"`.
 //! 2. **Teens (fixed, #216).** Python's `< 100` branch was a plain
 //!    tens/ones split with no 11..19 case, so 11 was "ti ein" and 12 "ti to".
 //!    This port uses the Nynorsk teens from [`TEENS`] (elleve, tolv, tretten,
@@ -65,11 +65,16 @@
 //!    (ordbokene.no), which has no "trilliard" — so `10^9 -> "ein milliard"`
 //!    (never pluralised, like bug 4), and raises `OverflowError` from 10^21
 //!    (`maxval`). See [`int_to_word`].
-//! 6. **The ordinal is cardinal + "-de", unconditionally.** No stem changes,
-//!    no agreement, and the suffix binds to the last token only, so
-//!    `to_ordinal(1234567)` ends "...seksti sju-de". Negatives are *not*
-//!    rejected (base's `errmsg_negord` guard is bypassed by the override):
-//!    `to_ordinal(-1) -> "minus ein-de"`.
+//! 6. ~~**The ordinal was cardinal + "-de", unconditionally.**~~ No stem
+//!    changes and no agreement: 11 read "elleve-de", 1234567 ended
+//!    "...seksti sju-de". Fixed (#259): the last word takes its Nynorsk
+//!    ordinal ("ellevte", "sjuande", "trettande", "tjue første", "to
+//!    hundrede", "millionte"), and a bare scale word drops its "ein"
+//!    ("hundrede", "tusende"). 0 has no attested ordinal and stays "null".
+//!    Negatives are *not* rejected (base's `errmsg_negord` guard is
+//!    bypassed by the override): `to_ordinal(-1) -> "minus første"`. The
+//!    float/Decimal path still appends "-de" to the decimal reading
+//!    ("fem komma null-de").
 //! 7. **An unknown currency code silently becomes kroner.** `to_currency`
 //!    looks the code up with `CURRENCY_FORMS.get(currency, <first value>)`
 //!    instead of indexing, so anything outside NOK/USD/EUR renders with NOK's
@@ -168,6 +173,30 @@ const HIGH_SCALES: [(u32, &str); 4] = [
     (12, "billion"),
     (9, "milliard"),
 ];
+
+/// The ordinal of one cardinal word (#259): "første", "sjuande",
+/// "trettande", "tjuande", "hundrede", "tusende", "millionte". `None` for
+/// "null".
+fn ordinal_word(word: &str) -> Option<String> {
+    Some(match word {
+        "ein" => "første".to_string(),
+        "to" => "andre".to_string(),
+        "tre" => "tredje".to_string(),
+        "fire" => "fjerde".to_string(),
+        "fem" => "femte".to_string(),
+        "seks" => "sjette".to_string(),
+        "elleve" => "ellevte".to_string(),
+        "tolv" => "tolvte".to_string(),
+        HUNDRED => "hundrede".to_string(),
+        THOUSAND => "tusende".to_string(),
+        // sju, åtte, ni, ti, tretten..nitten ("trettande"), tjue..nitti.
+        w if ["sju", "åtte", "ni", "ti"].contains(&w) => format!("{}ande", w.trim_end_matches('e')),
+        w if TEENS.contains(&w) => format!("{}ande", w.trim_end_matches("en")),
+        w if TENS[2..].contains(&w) => format!("{}ande", w.trim_end_matches('e')),
+        w if w == MILLION || HIGH_SCALES.iter().any(|(_, s)| *s == w) => format!("{}te", w),
+        _ => return None,
+    })
+}
 
 /// The exclusive ceiling: Nynorskordboka has no word for 10^21 (#147).
 fn maxval_ceiling() -> &'static BigInt {
@@ -494,8 +523,25 @@ impl Lang for LangNn {
     }
 
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
-        // bug 6: unconditional suffix on the cardinal, negatives included.
-        Ok(format!("{}-de", self.to_cardinal(value)?))
+        // bug 6 (#259): the last word takes its ordinal form; negatives are
+        // still accepted, as Python accepted them.
+        let cardinal = self.to_cardinal(value)?;
+        let (head, last) = match cardinal.rsplit_once(' ') {
+            Some((h, l)) => (Some(h), l),
+            None => (None, cardinal.as_str()),
+        };
+        let word = match ordinal_word(last) {
+            Some(w) => w,
+            // "null" has no attested Nynorsk ordinal; it stays as is.
+            None => return Ok(cardinal),
+        };
+        Ok(match head {
+            // A bare scale word drops its "ein": "hundrede", "millionte".
+            Some("ein") if [HUNDRED, THOUSAND, MILLION].contains(&last)
+                || HIGH_SCALES.iter().any(|(_, w)| *w == last) => word,
+            Some(h) => format!("{} {}", h, word),
+            None => word,
+        })
     }
 
     fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {

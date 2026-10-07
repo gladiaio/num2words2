@@ -21,7 +21,7 @@ CASES = {
     "tt": ("нуль", "бер өтер биш", "минус бер", "нуленче"),
     "yi": ("נול", "איינס פּונקט פינף", "מינוס איינס", "נול-טער"),
     "gl": ("cero", "un coma cinco", "menos un", "cero-o"),
-    "nn": ("null", "ein komma fem", "minus ein", "null-de"),
+    "nn": ("null", "ein komma fem", "minus ein", "null"),
     "fo": ("null", "ein komma fimm", "minus ein", "null-ti"),
     "lb": ("null", "eent Komma fënnef", "minus eent", "null-ten"),
     "oc": ("zèro", "un virgula cinc", "mens un", "zèro-en"),

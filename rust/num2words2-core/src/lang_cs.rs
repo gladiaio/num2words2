@@ -66,10 +66,12 @@
 //! | 10^6  | `miliontý`                 |
 //! | -1    | `mínus první`              |
 //!
-//! Thousands with a multiplier above 9 keep that multiplier as a cardinal
-//! when a lower part follows ("dvanáct tisíc první"). Round values the
-//! tables do not reach (10 000, 2·10^6, …) still take Python's
-//! `to_cardinal(n) + "ý"` fallback; that remains a known gap.
+//! Thousands with a multiplier of 10..=19, a round ten or 100 compound on
+//! its combining form ("desetitisící", "dvanáctitisící první",
+//! "stotisící"; was "deset tisícý", #259). Other multipliers keep the
+//! cardinal when a lower part follows ("dvacet jedna tisíc první"), and
+//! the round values the tables do not reach (21 000, 2·10^6, …) still take
+//! Python's `to_cardinal(n) + "ý"` fallback; that remains a known gap.
 //!
 //! Two further quirks worth naming:
 //!
@@ -236,6 +238,33 @@ const HUNDREDS_ORD: [&str; 10] = [
 const MULT_PREFIX: [&str; 10] = [
     "", "", "dvou", "tří", "čtyř", "pěti", "šesti", "sedmi", "osmi", "devíti",
 ];
+
+/// The combining (genitive) form of a multiplier above 9 in a compound
+/// ordinal: "desetitisící", "dvacetitisící", "stotisící" (#259).
+fn thousands_prefix(n: u64) -> Option<&'static str> {
+    Some(match n {
+        10 => "deseti",
+        11 => "jedenácti",
+        12 => "dvanácti",
+        13 => "třinácti",
+        14 => "čtrnácti",
+        15 => "patnácti",
+        16 => "šestnácti",
+        17 => "sedmnácti",
+        18 => "osmnácti",
+        19 => "devatenácti",
+        20 => "dvaceti",
+        30 => "třiceti",
+        40 => "čtyřiceti",
+        50 => "padesáti",
+        60 => "šedesáti",
+        70 => "sedmdesáti",
+        80 => "osmdesáti",
+        90 => "devadesáti",
+        100 => "sto",
+        _ => return None,
+    })
+}
 
 fn ordinal_table(n: u64) -> Option<&'static str> {
     ORDINALS.iter().find(|(k, _)| u64::from(*k) == n).map(|(_, w)| *w)
@@ -736,7 +765,8 @@ impl Lang for LangCs {
         let high_ord = match thousands {
             1 => Some("tisící".to_string()),
             2..=9 => Some(format!("{}tisící", MULT_PREFIX[thousands as usize])),
-            _ => None,
+            // Python read 10^4 as "deset tisícý" (#259).
+            _ => thousands_prefix(thousands).map(|p| format!("{}tisící", p)),
         };
         if low == 0 {
             return Ok(match (high_ord, n) {

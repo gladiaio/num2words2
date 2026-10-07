@@ -314,11 +314,11 @@ class Num2WordsBGTest(TestCase):
         self.assertEqual(num2words(90, lang="bg", ordinal=True), "деветдесети")
         self.assertEqual(num2words(100, lang="bg", ordinal=True), "стотен")
         self.assertEqual(num2words(101, lang="bg", ordinal=True), "сто първи")
-        self.assertEqual(num2words(200, lang="bg", ordinal=True), "двестати")
-        self.assertEqual(num2words(500, lang="bg", ordinal=True), "петстотинти")
+        self.assertEqual(num2words(200, lang="bg", ordinal=True), "двестотен")
+        self.assertEqual(num2words(500, lang="bg", ordinal=True), "петстотен")
         self.assertEqual(num2words(1000, lang="bg", ordinal=True), "хиляден")
         self.assertEqual(num2words(1001, lang="bg", ordinal=True), "хиляда първи")
-        self.assertEqual(num2words(10000, lang="bg", ordinal=True), "десет хилядити")
+        self.assertEqual(num2words(10000, lang="bg", ordinal=True), "десетхиляден")
 
     def test_currency(self):
         """Test currency conversion."""
