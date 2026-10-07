@@ -22,28 +22,23 @@
 //! This is a port, not a rewrite. Both of the following look wrong but are
 //! exactly what Python emits, verified against the interpreter:
 //!
-//! 1. **`_int_to_word` falls off the end at 10^9 and returns the bare digit
-//!    string.** The band ladder stops at `number < 1000000000`; the final
-//!    `return str(number)` then hands back raw ASCII digits rather than words,
-//!    with no exception. So `to_cardinal(10**9) == "1000000000"` and
-//!    `to_cardinal(10**21) == "1000000000000000000000"`. Negatives compose with
-//!    it: `to_cardinal(-10**9) == "ūna 1000000000"` — the Pali negative word
-//!    prefixed to Arabic numerals. `to_ordinal` then suffixes it, giving
-//!    `to_ordinal(10**9) == "1000000000ma"`, which coincidentally equals
-//!    `to_ordinal_num(10**9)`. All confirmed against the frozen corpus.
-//!    This is why `int_to_word` below is infallible and returns `String`, not
-//!    `Result<String>`: PLI has no reachable raise on any integer input, of any
-//!    size, in any of the four modes.
-//! 2. **`tens[1] == "dasa"` is unreachable dead data.** The `number < 20` teens
-//!    band intercepts 10..=19 before the `number < 100` band can ever compute
-//!    `t == 1`. `TENS[1]` is preserved verbatim regardless.
+//! 1. **`_int_to_word` fell off the end at 10^9 (fixed,
+//!    gladiaio/num2words2#147).** The band ladder stopped at
+//!    `number < 1000000000` and returned `str(number)`, so 10^9 was
+//!    `"1000000000"` and `to_ordinal(10**9)` `"1000000000ma"`. The port adds
+//!    a koṭi band (10^7) whose count is spelled out — 10^9 is "eka sata
+//!    koṭi" — and raises `OverflowError` from 10^14 ([`maxval_ceiling`]).
+//! 2. **Tens and units were joined with " ca " (fixed,
+//!    gladiaio/num2words2#247).** 23 was "vīsati ca ti"; Pali compounds it,
+//!    tevīsati. See [`BELOW_HUNDRED`]. (Python's unreachable `tens[1]` went
+//!    with the table.)
 //!
 //! # Non-bug quirks worth not "fixing"
 //!
 //! * `negword` is `"ūna "` — with a **trailing space** baked into the word, not
 //!    supplied by the caller. `to_cardinal` concatenates then `.strip()`s.
-//! * The `" ca "` infix joins tens↔ones and hundreds↔remainder, but the
-//!   thousands and millions bands join with a **plain space** instead
+//! * The `" ca "` infix joins hundreds↔remainder, but the thousands,
+//!   millions and koṭi bands join with a **plain space** instead
 //!   (`"eka sahassa eka"`, not `"eka sahassa ca eka"`). Asymmetric, and correct
 //!   per the corpus.
 //! * `million` is spelled `"dasa-lakkha"` (literally "ten lakh"), hyphen and
@@ -112,7 +107,7 @@
 //!     non-numeric token. Unreachable for any value `str()` renders in plain
 //!     decimal notation; see the exponent-notation note on [`LangPli::to_currency`].
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -121,6 +116,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `self.negword` — note the trailing space, which is part of the Python value.
@@ -141,34 +137,25 @@ const ONES: [&str; 10] = [
     "", "eka", "dvi", "ti", "catu", "pañca", "cha", "satta", "aṭṭha", "nava",
 ];
 
-/// `self.teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "dasa",
-    "ekādasa",
-    "dvādasa",
-    "terasa",
-    "cuddasa",
-    "pannarasa",
-    "soḷasa",
-    "sattarasa",
-    "aṭṭhārasa",
-    "ekūnavīsati",
-];
-
-/// `self.tens`, indexed by the tens digit. Index 0 is `""` (unreachable: the
-/// band requires `number >= 20`); index 1 is `"dasa"` (unreachable dead data,
-/// see bug 2 in the module docs). Both kept verbatim.
-const TENS: [&str; 10] = [
-    "",
-    "dasa",
-    "vīsati",
-    "tiṃsa",
-    "cattāḷīsa",
-    "paññāsa",
-    "saṭṭhi",
-    "sattati",
-    "asīti",
-    "navuti",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247; Pali
+/// was not in that issue's list but had the same bug). Python joined tens
+/// and units with " ca " ("vīsati ca ti" for 23); Pali writes each as one
+/// compound, unit first: ekavīsati, tevīsati, ekūnatiṃsa. From the Pali
+/// number tables of Ānandajoti (ancient-buddhist-texts.net, also reproduced
+/// on obo.genaud.net) and Duroiselle's grammar (tipitaka.net, ch. 8), in the
+/// module's -a stem spellings (tiṃsa, cattāḷīsa); 1..=19 and the round tens
+/// are the module's own words. Index 0 is never read.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "eka", "dvi", "ti", "catu", "pañca", "cha", "satta", "aṭṭha", "nava", // 0..9
+    "dasa", "ekādasa", "dvādasa", "terasa", "cuddasa", "pannarasa", "soḷasa", "sattarasa", "aṭṭhārasa", "ekūnavīsati", // 10..19
+    "vīsati", "ekavīsati", "dvāvīsati", "tevīsati", "catuvīsati", "pañcavīsati", "chabbīsati", "sattavīsati", "aṭṭhavīsati", "ekūnatiṃsa", // 20..29
+    "tiṃsa", "ekatiṃsa", "dvattiṃsa", "tettiṃsa", "catuttiṃsa", "pañcatiṃsa", "chattiṃsa", "sattatiṃsa", "aṭṭhatiṃsa", "ekūnacattāḷīsa", // 30..39
+    "cattāḷīsa", "ekacattāḷīsa", "dvecattāḷīsa", "tecattāḷīsa", "catucattāḷīsa", "pañcacattāḷīsa", "chacattāḷīsa", "sattacattāḷīsa", "aṭṭhacattāḷīsa", "ekūnapaññāsa", // 40..49
+    "paññāsa", "ekapaññāsa", "dvepaññāsa", "tepaññāsa", "catupaññāsa", "pañcapaññāsa", "chappaññāsa", "sattapaññāsa", "aṭṭhapaññāsa", "ekūnasaṭṭhi", // 50..59
+    "saṭṭhi", "ekasaṭṭhi", "dvesaṭṭhi", "tesaṭṭhi", "catusaṭṭhi", "pañcasaṭṭhi", "chasaṭṭhi", "sattasaṭṭhi", "aṭṭhasaṭṭhi", "ekūnasattati", // 60..69
+    "sattati", "ekasattati", "dvesattati", "tesattati", "catusattati", "pañcasattati", "chasattati", "sattasattati", "aṭṭhasattati", "ekūnāsīti", // 70..79
+    "asīti", "ekāsīti", "dvāsīti", "tiyāsīti", "caturāsīti", "pañcāsīti", "chāsīti", "sattāsīti", "aṭṭhāsīti", "ekūnanavuti", // 80..89
+    "navuti", "ekanavuti", "dvenavuti", "tenavuti", "catunavuti", "pañcanavuti", "channavuti", "sattanavuti", "aṭṭhanavuti", "ekūnasata", // 90..99
 ];
 
 /// `self.hundred`.
@@ -177,6 +164,11 @@ const HUNDRED: &str = "sata";
 const THOUSAND: &str = "sahassa";
 /// `self.million` — "ten lakh", hyphenated, exactly as Python spells it.
 const MILLION: &str = "dasa-lakkha";
+/// 10^7 (gladiaio/num2words2#147). Python stopped at 10^9 and returned the
+/// digits; koṭi is the Pali ten million, and the Pali tables build the next
+/// steps from it (koṭisata 10^9, koṭisahassa 10^10, koṭisatasahassa
+/// 10^12), so the port spells the koṭi count from 10^7 up.
+const KOTI: &str = "koṭi";
 
 /// The Python class name, for `to_cheque`'s `NotImplementedError` message.
 const LANG_NAME: &str = "Num2Word_PLI";
@@ -255,6 +247,14 @@ impl LangPli {
         }
     }
 
+    /// `int_to_word` behind [`maxval_ceiling`]. Every entry point that hands
+    /// over a caller-supplied integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
+
     /// Port of `Num2Word_PLI._int_to_word`.
     ///
     /// Infallible by construction — see bug 1 in the module docs: the ladder's
@@ -274,33 +274,17 @@ impl LangPli {
 
         // Band guards make every index below provably in range, so the
         // `to_usize` unwraps cannot fire. Bands are checked in Python's order.
-        if number < &BigInt::from(10) {
-            let i = number.to_usize().expect("guarded: number < 10");
-            return ONES[i].to_string();
-        }
-
-        if number < &BigInt::from(20) {
-            let i = number.to_usize().expect("guarded: number < 20");
-            return TEENS[i - 10].to_string();
-        }
-
         if number < &BigInt::from(100) {
-            let (t, o) = number.div_mod_floor(&BigInt::from(10));
-            let t = t.to_usize().expect("guarded: number < 100 => t < 10");
-            let o = o.to_usize().expect("remainder mod 10 < 10");
-            // Python: self.tens[t] + (" ca " + self.ones[o] if o else "")
-            return if o != 0 {
-                format!("{} ca {}", TENS[t], ONES[o])
-            } else {
-                TENS[t].to_string()
-            };
+            // Python: teens, then `tens[t] + " ca " + ones[o]` (fixed, #247).
+            let i = number.to_usize().expect("guarded: number < 100");
+            return BELOW_HUNDRED[i].to_string();
         }
 
         if number < &BigInt::from(1000) {
             let (h, r) = number.div_mod_floor(&BigInt::from(100));
             let h = h.to_usize().expect("guarded: number < 1000 => h < 10");
             // Python: base = self.ones[h] + " " + self.hundred
-            let base = format!("{} {}", ONES[h], HUNDRED);
+            let base = format!("{} {}", BELOW_HUNDRED[h], HUNDRED);
             // Python: base + (" ca " + self._int_to_word(r) if r else "")
             return if !r.is_zero() {
                 format!("{} ca {}", base, self.int_to_word(&r))
@@ -320,7 +304,7 @@ impl LangPli {
             };
         }
 
-        if number < &BigInt::from(1_000_000_000) {
+        if number < &BigInt::from(10_000_000) {
             let (m, r) = number.div_mod_floor(&BigInt::from(1_000_000));
             let base = format!("{} {}", self.int_to_word(&m), MILLION);
             return if !r.is_zero() {
@@ -330,9 +314,16 @@ impl LangPli {
             };
         }
 
-        // Python: return str(number) — bare digits, no words, no raise.
-        // See bug 1 in the module docs.
-        number.to_string()
+        // Python: dasa-lakkha up to 10^9, then `return str(number)` (bug 1,
+        // fixed in #147). From 10^7 the koṭi count is spelled out, up to the
+        // 10^14 ceiling that `checked_int_to_word` enforces.
+        let (k, r) = number.div_mod_floor(&BigInt::from(10_000_000));
+        let base = format!("{} {}", self.int_to_word(&k), KOTI);
+        if !r.is_zero() {
+            format!("{} {}", base, self.int_to_word(&r))
+        } else {
+            base
+        }
     }
 
     /// The string-processing core of `Num2Word_PLI.to_cardinal`, driven by a
@@ -379,7 +370,7 @@ impl LangPli {
             let left = BigInt::from_str(left).map_err(|e| N2WError::Value(e.to_string()))?;
 
             // ret = self._int_to_word(int(left)) + " " + self.pointword
-            let mut ret = format!("{} {}", self.int_to_word(&left), POINTWORD);
+            let mut ret = format!("{} {}", self.checked_int_to_word(&left)?, POINTWORD);
 
             // for digit in right: ret += " " + (self.ones[int(digit)] or "suñña")
             // ONES[0] is "" (falsy), so Python's `or` swaps in ZERO_WORD; every
@@ -400,7 +391,7 @@ impl LangPli {
         // the corpus (str(number) here always contains "."), but kept for parity
         // with Python, which would reach it if str(number) ever lacked a dot.
         let bi = BigInt::from_str(n).map_err(|e| N2WError::Value(e.to_string()))?;
-        Ok(self.int_to_word(&bi))
+        self.checked_int_to_word(&bi)
     }
 }
 
@@ -500,7 +491,20 @@ fn python_str_decimal(bd: &BigDecimal) -> String {
     format!("{}{}{}{}", sign, intpart, fracpart, exp)
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147). The next Pali step after
+/// koṭi is pakoṭi (10^14, koṭi of koṭis), which the port does not use; from
+/// there the koṭi count would itself need koṭi, so it raises
+/// `OverflowError`.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangPli {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -548,7 +552,7 @@ impl Lang for LangPli {
             let inner = self.to_cardinal(&value.abs())?;
             return Ok(format!("{}{}", NEGWORD, inner).trim().to_string());
         }
-        Ok(self.int_to_word(value))
+        self.checked_int_to_word(value)
     }
 
     /// Port of `Num2Word_PLI.to_ordinal`.
@@ -885,7 +889,7 @@ impl Lang for LangPli {
         // `self._int_to_word(left) + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             if left.is_one() { &cr1[0] } else { &cr1[1] }
         );
 

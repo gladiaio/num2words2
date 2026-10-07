@@ -10,8 +10,8 @@
 //! `self.cards` is never created and **`self.MAXVAL` is never assigned**.
 //! `to_cardinal` is overridden outright and drives a hand-written
 //! `_int_to_word` recursion, so `cards`/`maxval`/`merge` stay at their trait
-//! defaults here and are never consulted. There is no overflow check of any
-//! kind — see bug 4 below for what happens instead.
+//! defaults here and are never consulted. Python has no overflow check; the
+//! port's `maxval` is 10^14 (bug 4).
 //!
 //! The numbering system is Indic: units of **lakh** (10^5) and **crore**
 //! (10^7) rather than million/billion.
@@ -40,18 +40,19 @@
 //!    first arm — the empty string is falsy. The conditional is dead and zero
 //!    is always [`ZERO_WORD`]. Reproduced as an unconditional return.
 //! 3. **Bare/independent word forms are concatenated with no combining
-//!    forms**, which is not how Sinhala actually builds numerals. The output
-//!    reads as a digit-by-digit gloss: 11 → "දහය එක" ("ten one"), 1100 →
-//!    "දහස සියය" ("thousand hundred"), 2000 → "දෙක දහස" ("two thousand"
-//!    using the free form දෙක rather than the attributive දෙ). Kept verbatim.
-//! 4. **No overflow guard — large values leak raw ASCII digits.** The final
-//!    `else` of `_int_to_word` is `return str(number)` ("Fallback for very
-//!    large numbers"), reached for every `number >= 1_000_000_000`. So
-//!    `to_cardinal(10**9)` == "1000000000" — decimal digits, not words — and
-//!    `to_ordinal(10**9)` == "1000000000 වැනි", a bare numeral with a Sinhala
-//!    ordinal suffix glued on. This module therefore **never raises**: no
-//!    input reaches an `OverflowError`, so there is no `N2WError` path here at
-//!    all. Corpus-confirmed up to 10^21.
+//!    forms**, which is not how Sinhala actually builds numerals. Below a
+//!    hundred this is fixed (gladiaio/num2words2#247): 11 was "දහය එක"
+//!    ("ten one") and is now එකොළහ, 23 was "විස්ස තුන" and is now විසිතුන
+//!    (see [`BELOW_HUNDRED`]). Above it the gloss remains: 1100 → "දහස
+//!    සියය" ("thousand hundred"), 2000 → "දෙක දහස" ("two thousand" using
+//!    the free form දෙක rather than the attributive දෙ).
+//! 4. **Large values leaked raw ASCII digits (fixed,
+//!    gladiaio/num2words2#147).** Python's final `else` is `return
+//!    str(number)`, reached for every `number >= 1_000_000_000`, so 10^9 came
+//!    out as "1000000000". Sinhala has no single word above කෝටිය; the port
+//!    spells the crore count instead, as everyday Sinhala does: 10^9 is
+//!    "සියය කෝටිය" (hundred crore). From 10^14, where that count would itself
+//!    need කෝටිය, it raises `OverflowError` ([`maxval_ceiling`]).
 //! 5. **`to_ordinal_num` skips `verify_ordinal`**, so negatives pass straight
 //!    through the `str(number) + "."` template: `to_ordinal_num(-1)` == "-1."
 //!    rather than the `TypeError` (`errmsg_negord`) that `verify_ordinal`
@@ -160,7 +161,7 @@
 //! still open. Examples in these docs that quote English nouns record Python's
 //! output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, python_decimal_str, ParsedNumber};
@@ -168,6 +169,7 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `setup(): self.negword = "minus "`, here in Sinhala (#154), trailing space
@@ -194,13 +196,26 @@ const ONES: [&str; 10] = [
     "", "එක", "දෙක", "තුන", "හතර", "පහ", "හය", "හත", "අට", "නවය",
 ];
 
-/// `setup(): self.tens`. Index 0 is `""` and unreachable: the tens arm runs
-/// only for `10 <= number < 100`, so `number // 10` is 1..=9.
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
 ///
-/// Index 1 is "දහය" — the standalone word for *ten*, which is why 11 comes out
-/// as "දහය එක" rather than a fused teen (bug 3).
-const TENS: [&str; 10] = [
-    "", "දහය", "විස්ස", "තිහ", "හතළිහ", "පනහ", "හැට", "හැත්තෑව", "අසූව", "අනූව",
+/// Python had a `tens` table of free-standing words and juxtaposed them with
+/// the unit: 11 was "දහය එක" ("ten one"), 23 "විස්ස තුන". Sinhala has its own
+/// words for 11..=19 (එකොළහ, දොළහ, ...) and builds 21..=99 from the
+/// *combining* form of the ten (විසි-, තිස්-, හතළිස්-, පනස්-, හැට-, හැත්තෑ-,
+/// අසූ-, අනූ-) plus the unit: 23 is විසිතුන. Written joined as in Wikibooks
+/// Sinhala/1.10; Omniglot gives the same forms with a space (විසි තුන). The
+/// round tens are the module's own words. Index 0 is never read.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "එක", "දෙක", "තුන", "හතර", "පහ", "හය", "හත", "අට", "නවය", // 0..9
+    "දහය", "එකොළහ", "දොළහ", "දහතුන", "දහහතර", "පහළොව", "දහසය", "දහහත", "දහඅට", "දහනවය", // 10..19
+    "විස්ස", "විසිඑක", "විසිදෙක", "විසිතුන", "විසිහතර", "විසිපහ", "විසිහය", "විසිහත", "විසිඅට", "විසිනවය", // 20..29
+    "තිහ", "තිස්එක", "තිස්දෙක", "තිස්තුන", "තිස්හතර", "තිස්පහ", "තිස්හය", "තිස්හත", "තිස්අට", "තිස්නවය", // 30..39
+    "හතළිහ", "හතළිස්එක", "හතළිස්දෙක", "හතළිස්තුන", "හතළිස්හතර", "හතළිස්පහ", "හතළිස්හය", "හතළිස්හත", "හතළිස්අට", "හතළිස්නවය", // 40..49
+    "පනහ", "පනස්එක", "පනස්දෙක", "පනස්තුන", "පනස්හතර", "පනස්පහ", "පනස්හය", "පනස්හත", "පනස්අට", "පනස්නවය", // 50..59
+    "හැට", "හැටඑක", "හැටදෙක", "හැටතුන", "හැටහතර", "හැටපහ", "හැටහය", "හැටහත", "හැටඅට", "හැටනවය", // 60..69
+    "හැත්තෑව", "හැත්තෑඑක", "හැත්තෑදෙක", "හැත්තෑතුන", "හැත්තෑහතර", "හැත්තෑපහ", "හැත්තෑහය", "හැත්තෑහත", "හැත්තෑඅට", "හැත්තෑනවය", // 70..79
+    "අසූව", "අසූඑක", "අසූදෙක", "අසූතුන", "අසූහතර", "අසූපහ", "අසූහය", "අසූහත", "අසූඅට", "අසූනවය", // 80..89
+    "අනූව", "අනූඑක", "අනූදෙක", "අනූතුන", "අනූහතර", "අනූපහ", "අනූහය", "අනූහත", "අනූඅට", "අනූනවය", // 90..99
 ];
 
 /// `setup(): self.hundred` (10^2).
@@ -287,6 +302,14 @@ impl LangSi {
             .expect("new() always installs CURRENCY_FORMS[\"LKR\"] as the fallback")
     }
 
+    /// `int_to_word` behind [`maxval_ceiling`], checked before the first
+    /// recursive step. Every entry point that hands over a caller-supplied
+    /// integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
     /// Port of `Num2Word_SI._int_to_word`.
     ///
     /// The `number >= 1_000_000_000` fallback (bug 4) is the only place a
@@ -308,12 +331,12 @@ impl LangSi {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
         }
 
-        match number.to_u64() {
-            // Every worded arm of the Python cascade lives below 10^9.
-            Some(n) if n < 1_000_000_000 => self.bounded_to_word(n),
-            // Python's `else: return str(number)  # Fallback for very large numbers`
-            _ => number.to_string(),
-        }
+        // Python's `else: return str(number)` from 10^9 up (bug 4, fixed):
+        // the crore arm now takes any count below a crore instead.
+        let n = number
+            .to_u64()
+            .expect("checked_int_to_word keeps number below 10^14");
+        self.bounded_to_word(n)
     }
 
     /// The `1 <= number < 1_000_000_000` arms of `_int_to_word`.
@@ -326,19 +349,13 @@ impl LangSi {
     ///     the quotient is `>= 2`;
     ///   * the remainder recursions are all guarded by `if remainder:`.
     ///
-    /// So `ONES[0]`/`TENS[0]` (both `""`) are never read.
+    /// So `ONES[0]`/`BELOW_HUNDRED[0]` (both `""`) are never read.
     fn bounded_to_word(&self, n: u64) -> String {
         if n < 10 {
             // Python: `elif number < 10: return self.ones[number]`
             ONES[n as usize].to_string()
         } else if n < 100 {
-            let tens_val = (n / 10) as usize;
-            let ones_val = (n % 10) as usize;
-            if ones_val == 0 {
-                TENS[tens_val].to_string()
-            } else {
-                format!("{} {}", TENS[tens_val], ONES[ones_val])
-            }
+            BELOW_HUNDRED[n as usize].to_string()
         } else if n < 1_000 {
             let hundreds_val = (n / 100) as usize;
             let remainder = n % 100;
@@ -383,7 +400,8 @@ impl LangSi {
             }
             result
         } else {
-            // 10^7 .. 10^9: crore_val is 1..=99. 10^8 -> "දහය කෝටිය".
+            // 10^7 .. 10^14: crore_val is 1..10^7. 10^8 -> "දහය කෝටිය",
+            // 10^9 -> "සියය කෝටිය" (hundred crore).
             let crore_val = n / 10_000_000;
             let remainder = n % 10_000_000;
             let mut result = if crore_val == 1 {
@@ -497,7 +515,21 @@ fn parse_int(token: &str) -> Result<BigInt> {
     })
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147). The scale stops at
+/// කෝටිය (10^7); above it the crore count is spelled out (the everyday
+/// "hundred crore", "lakh crore") until that count
+/// would itself need කෝටිය at 10^14. Python returned the digits from
+/// 10^9 up; this raises `OverflowError` from 10^14 instead.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangSi {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -557,7 +589,7 @@ impl Lang for LangSi {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&n)).trim().to_string())
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&n)?).trim().to_string())
     }
 
     /// Port of `Num2Word_SI.to_ordinal`: `to_cardinal(number) + " වැනි"`.
@@ -675,7 +707,7 @@ impl Lang for LangSi {
         if let Some((left, right)) = n.split_once('.') {
             // ret += self._int_to_word(int(left)) + " " + self.pointword + " "
             let mut ret = String::from(neg_prefix);
-            ret.push_str(&self.int_to_word(&parse_int(left)?));
+            ret.push_str(&self.checked_int_to_word(&parse_int(left)?)?);
             ret.push(' ');
             ret.push_str(POINTWORD);
             ret.push(' ');
@@ -693,7 +725,7 @@ impl Lang for LangSi {
             // Decimal such as Decimal("5") (str "5"); non-exponential floats
             // always carry at least one fractional digit.
             let val = parse_int(&n)?;
-            Ok(format!("{}{}", neg_prefix, self.int_to_word(&val))
+            Ok(format!("{}{}", neg_prefix, self.checked_int_to_word(&val)?)
                 .trim()
                 .to_string())
         }
@@ -732,7 +764,7 @@ impl Lang for LangSi {
         };
         // Python: `return (ret + self._int_to_word(int(n))).strip()`
         let val = parse_int(&text)?;
-        Ok(format!("{}{}", neg_prefix, self.int_to_word(&val))
+        Ok(format!("{}{}", neg_prefix, self.checked_int_to_word(&val)?)
             .trim()
             .to_string())
     }

@@ -46,14 +46,12 @@
 //! This is a port, not a rewrite. All of the following look wrong but are
 //! exactly what Python emits, and each is pinned by the frozen corpus:
 //!
-//! 1. **`_int_to_word` gives up at 10^9 and returns the decimal digits.** The
-//!    `elif` ladder stops at `number < 1000000000`; the final `else` is
-//!    literally `return str(number)  # Fallback for very large numbers`. So
-//!    `to_cardinal(10**9)` == `"1000000000"` and `to_cardinal(1234567890)` ==
-//!    `"1234567890"` — digits, not words, with no error raised. This holds all
-//!    the way up (corpus pins 10^21 → `"1000000000000000000000"`), which is why
-//!    the value must stay a `BigInt`: it is unbounded on this path. See
-//!    [`LangSa::int_to_word`].
+//! 1. **`_int_to_word` gave up at 10^9 (fixed, gladiaio/num2words2#147).**
+//!    Python's ladder stopped at `number < 1000000000` and the final `else`
+//!    returned `str(number)`, so 10^9 was `"1000000000"`. The port spells
+//!    the कोटिः count instead (10^9 is "एकम् शतम् कोटिः") and raises
+//!    `OverflowError` from 10^14 — see [`maxval_ceiling`] for why no word
+//!    above कोटिः is used.
 //! 2. **Zero, minus and the decimal word (fixed, gladiaio/num2words2#154).**
 //!    Python's `self.ones[0]` is `""`, so
 //!    `return self.ones[0] if self.ones[0] else "zero"` always answered with
@@ -64,13 +62,16 @@
 //!    `Num2Word_Base` does it (base uses `"%s " % self.negword.strip()`; SA
 //!    just concatenates `self.negword`). The trailing space in `"ऋण "` is
 //!    what separates it from the number, so `to_cardinal(-1)` == `"ऋण एकम्"`.
-//! 4. **Teens are compounds, not distinct words.** `tens[1]` is "दश" (ten) and
-//!    11 renders as `"दश एकम्"` (ten one), because the `number < 100` branch
-//!    has no teen special-case. Likewise 21 == `"विंशति एकम्"`.
+//! 4. **Teens were not compounded (fixed, gladiaio/num2words2#247).**
+//!    Python built 11 as `"दश एकम्"` (ten one) and 21 as `"विंशति एकम्"`; the
+//!    port reads [`BELOW_HUNDRED`]: एकादश, एकविंशति.
 //! 5. **Hundreds/thousands/millions always carry an explicit multiplier**, so
 //!    100 == `"एकम् शतम्"` (one hundred), never bare `"शतम्"`.
-//! 6. **`million` is "दशलक्षम्"** — literally *ten lakh*. Correct value
-//!    (10^6), but the word is built on the Indian scale. Kept verbatim.
+//! 6. **`million` was "दशलक्षम्" (fixed, gladiaio/num2words2#247)** — ten
+//!    lakh, applied at 10^6 in a Western grouping, so 10^5 came out as
+//!    "एकम् शतम् सहस्रम्" (one hundred thousand). The port groups by
+//!    सहस्रम्, लक्षम् and कोटिः: 10^5 is "एकम् लक्षम्", 10^6
+//!    "दश लक्षम्", 10^7 "एकम् कोटिः".
 //! 7. **`to_ordinal` does not call `verify_ordinal`**, so negatives and zero
 //!    are accepted rather than raising `TypeError`: `to_ordinal(0)` ==
 //!    `"शून्यम्-मः"`, `to_ordinal(-1)` == `"ऋण एकम्-मः"`. The suffix is glued
@@ -80,7 +81,7 @@
 //!    minus sign survives.
 //! 9. **`to_year` ignores its `longval` parameter** and is a bare alias for
 //!    `to_cardinal`, so negative years get `"ऋण "` rather than an era
-//!    suffix: `to_year(-44)` == `"ऋण चत्वारिंशत् चत्वारि"`.
+//!    suffix: `to_year(-44)` == `"ऋण चतुश्चत्वारिंशत्"`.
 //!
 //! 10. **`to_currency` reads the cents off the decimal *string*, not the
 //!     number.** It does `str(val).split(".")` and then
@@ -149,7 +150,7 @@
 //! EUR raise NotImplementedError. Examples in these docs that quote English
 //! nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
@@ -157,6 +158,7 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::str::FromStr;
 
 /// `self.negword`, in Sanskrit (Python: English `"minus "`, #154). Note the
@@ -186,29 +188,36 @@ const ONES: [&str; 10] = [
     "नव",
 ];
 
-/// `self.tens`, keys 0..=9. Index 0 is `""` and unreachable (the `number < 100`
-/// branch is only entered for `number >= 10`, so `number // 10 >= 1`).
-const TENS: [&str; 10] = [
-    "",
-    "दश",
-    "विंशति",
-    "त्रिंशत्",
-    "चत्वारिंशत्",
-    "पञ्चाशत्",
-    "षष्टि",
-    "सप्तति",
-    "अशीति",
-    "नवति",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`tens` and no teens, so 11 was "दश एकम्" (ten one) and
+/// 23 "विंशति त्रीणि". Sanskrit has a compound for every number below a
+/// hundred: एकादश, त्रयोविंशति, षण्णवति. Stems as the module's own `tens`
+/// table writes them (विंशति, त्रिंशत्; the nominatives add visarga,
+/// त्रयोविंशतिः). Sources: sanskritgyan.in, deepawali.info and mycoaching.in
+/// 1-100 lists, learnsanskrit.org. Lower confidence: 82 (द्वयशीति as the
+/// lists give it; grammars द्व्यशीति). Index 0 is never read.
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "एकम्", "द्वे", "त्रीणि", "चत्वारि", "पञ्च", "षट्", "सप्त", "अष्ट", "नव", // 0..9
+    "दश", "एकादश", "द्वादश", "त्रयोदश", "चतुर्दश", "पञ्चदश", "षोडश", "सप्तदश", "अष्टादश", "एकोनविंशति", // 10..19
+    "विंशति", "एकविंशति", "द्वाविंशति", "त्रयोविंशति", "चतुर्विंशति", "पञ्चविंशति", "षड्विंशति", "सप्तविंशति", "अष्टाविंशति", "एकोनत्रिंशत्", // 20..29
+    "त्रिंशत्", "एकत्रिंशत्", "द्वात्रिंशत्", "त्रयस्त्रिंशत्", "चतुस्त्रिंशत्", "पञ्चत्रिंशत्", "षट्त्रिंशत्", "सप्तत्रिंशत्", "अष्टात्रिंशत्", "एकोनचत्वारिंशत्", // 30..39
+    "चत्वारिंशत्", "एकचत्वारिंशत्", "द्विचत्वारिंशत्", "त्रिचत्वारिंशत्", "चतुश्चत्वारिंशत्", "पञ्चचत्वारिंशत्", "षट्चत्वारिंशत्", "सप्तचत्वारिंशत्", "अष्टचत्वारिंशत्", "एकोनपञ्चाशत्", // 40..49
+    "पञ्चाशत्", "एकपञ्चाशत्", "द्विपञ्चाशत्", "त्रिपञ्चाशत्", "चतुःपञ्चाशत्", "पञ्चपञ्चाशत्", "षट्पञ्चाशत्", "सप्तपञ्चाशत्", "अष्टपञ्चाशत्", "एकोनषष्टि", // 50..59
+    "षष्टि", "एकषष्टि", "द्विषष्टि", "त्रिषष्टि", "चतुःषष्टि", "पञ्चषष्टि", "षट्षष्टि", "सप्तषष्टि", "अष्टषष्टि", "एकोनसप्तति", // 60..69
+    "सप्तति", "एकसप्तति", "द्विसप्तति", "त्रिसप्तति", "चतुःसप्तति", "पञ्चसप्तति", "षट्सप्तति", "सप्तसप्तति", "अष्टसप्तति", "एकोनाशीति", // 70..79
+    "अशीति", "एकाशीति", "द्वयशीति", "त्र्यशीति", "चतुरशीति", "पञ्चाशीति", "षडशीति", "सप्ताशीति", "अष्टाशीति", "एकोननवति", // 80..89
+    "नवति", "एकनवति", "द्विनवति", "त्रिनवति", "चतुर्नवति", "पञ्चनवति", "षण्णवति", "सप्तनवति", "अष्टनवति", "नवनवति", // 90..99
 ];
 
 const HUNDRED: &str = "शतम्";
 const THOUSAND: &str = "सहस्रम्";
-/// `self.million` — "ten lakh" by etymology, 10^6 by value (quirk 6).
-const MILLION: &str = "दशलक्षम्";
-
-/// The ceiling of the `_int_to_word` word ladder. At or above this, Python
-/// returns `str(number)` (quirk 1).
-const FALLBACK_LIMIT: u64 = 1_000_000_000;
+/// 10^5 and 10^7 (quirk 6, fixed in #247). Python grouped by thousand and
+/// "दशलक्षम्" (ten lakh) millions, so 10^5 was "एकम् शतम् सहस्रम्"; the
+/// Indian grouping is लक्षम् (10^5) and कोटिः (10^7), on which every
+/// Sanskrit list agrees (Wikipedia "South Asian numbering system").
+const LAKH: &str = "लक्षम्";
+const CRORE: &str = "कोटिः";
 
 /// `Num2Word_SA.to_currency`'s own `separator=" "` default.
 ///
@@ -285,36 +294,32 @@ impl LangSa {
             return format!("{}{}", NEGWORD, self.int_to_word(&number.abs()));
         }
 
-        // The `else` arm of Python's ladder: values >= 10^9 stringify. This is
-        // the only unbounded path, and it is exactly why `number` is a BigInt.
-        let limit = BigInt::from(FALLBACK_LIMIT);
-        if *number >= limit {
-            return number.to_string();
-        }
-
-        // Proven bounded: 0 < number < 10^9, so u64 is safe here (and only
-        // here). Everything below mirrors Python's `//` and `%`, which agree
+        // Proven bounded: 0 < number < 10^14 (`checked_int_to_word`), so
+        // u64 is safe. Everything below mirrors Python's `//` and `%`, which agree
         // with Rust's on non-negative operands.
         let n = number
             .to_u64()
-            .expect("0 < number < 10^9 was just proven, so u64 conversion is total");
+            .expect("checked_int_to_word keeps number below 10^14");
         self.int_to_word_small(n)
     }
 
-    /// The bounded tail of `_int_to_word`, for `0 < n < 10^9`.
+    /// `int_to_word` behind [`maxval_ceiling`], checked before the first
+    /// recursive step. Every entry point that hands over a caller-supplied
+    /// integer goes through here.
+    fn checked_int_to_word(&self, number: &BigInt) -> Result<String> {
+        check_maxval(number, maxval_ceiling())?;
+        Ok(self.int_to_word(number))
+    }
+
+    /// The bounded tail of `_int_to_word`, for `0 < n < 10^14`.
     fn int_to_word_small(&self, n: u64) -> String {
         if n < 10 {
             return ONES[n as usize].to_string();
         }
 
         if n < 100 {
-            let tens_val = (n / 10) as usize;
-            let ones_val = (n % 10) as usize;
-            if ones_val == 0 {
-                return TENS[tens_val].to_string();
-            }
-            // No teen special-case: 11 -> "दश एकम्" (quirk 4).
-            return format!("{} {}", TENS[tens_val], ONES[ones_val]);
+            // No teens and no compounds in Python (quirk 4, fixed in #247).
+            return BELOW_HUNDRED[n as usize].to_string();
         }
 
         if n < 1_000 {
@@ -329,24 +334,20 @@ impl LangSa {
             return result;
         }
 
-        if n < 1_000_000 {
-            let thousands_val = n / 1_000;
-            let remainder = n % 1_000;
-            let mut result = format!("{} {}", self.int_to_word_small(thousands_val), THOUSAND);
-            if remainder != 0 {
-                result.push(' ');
-                result.push_str(&self.int_to_word_small(remainder));
-            }
-            return result;
-        }
-
-        // n < 10^9 is guaranteed by the caller, so this is the last arm.
-        let millions_val = n / 1_000_000;
-        let remainder = n % 1_000_000;
-        let mut result = format!("{} {}", self.int_to_word_small(millions_val), MILLION);
-        if remainder != 0 {
+        // Python: thousands below 10^6, then "दशलक्षम्" millions to 10^9
+        // (quirk 6). Now thousand, lakh, and crore, whose count is spelled
+        // out up to the 10^14 ceiling (quirk 1).
+        let (divisor, word) = if n < 100_000 {
+            (1_000, THOUSAND)
+        } else if n < 10_000_000 {
+            (100_000, LAKH)
+        } else {
+            (10_000_000, CRORE)
+        };
+        let mut result = format!("{} {}", self.int_to_word_small(n / divisor), word);
+        if n % divisor != 0 {
             result.push(' ');
-            result.push_str(&self.int_to_word_small(remainder));
+            result.push_str(&self.int_to_word_small(n % divisor));
         }
         result
     }
@@ -466,7 +467,21 @@ fn py_int(s: &str) -> Result<BigInt> {
     Ok(if negative { -n } else { n })
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147). Above कोटिः the Sanskrit
+/// lists disagree on both the words and their values (अर्बुदम् is 10^8 in
+/// one, 10^9 in another), so the port uses none of them: the crore count is
+/// spelled out until it would itself need कोटिः at 10^14, and that raises
+/// `OverflowError`. Python returned the digits from 10^9 up.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(14))
+}
+
 impl Lang for LangSa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
     /// This language's own `to_currency(currency=...)` default,
     /// read from the live Python signature. Only 44 of 156 use EUR.
     fn default_currency(&self) -> &str {
@@ -506,7 +521,7 @@ impl Lang for LangSa {
         } else {
             ("", value.clone())
         };
-        Ok(format!("{}{}", ret, self.int_to_word(&magnitude))
+        Ok(format!("{}{}", ret, self.checked_int_to_word(&magnitude)?)
             .trim()
             .to_string())
     }
@@ -623,7 +638,7 @@ impl Lang for LangSa {
 
         if let Some((left, right)) = n.split_once('.') {
             // `ret += _int_to_word(int(left)) + " " + self.pointword + " "`
-            ret.push_str(&self.int_to_word(&py_int(left)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(left)?)?);
             ret.push(' ');
             ret.push_str(self.pointword());
             ret.push(' ');
@@ -639,7 +654,7 @@ impl Lang for LangSa {
         } else {
             // The integer branch: `(ret + _int_to_word(int(n))).strip()` —
             // exponent forms ("1e+16", "1E+2") raise ValueError here.
-            ret.push_str(&self.int_to_word(&py_int(n)?));
+            ret.push_str(&self.checked_int_to_word(&py_int(n)?)?);
             Ok(ret.trim().to_string())
         }
     }
@@ -907,7 +922,7 @@ impl Lang for LangSa {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`
         let mut result = format!(
             "{} {}",
-            self.int_to_word(&left),
+            self.checked_int_to_word(&left)?,
             if left != one { &cr1[1] } else { &cr1[0] }
         );
 

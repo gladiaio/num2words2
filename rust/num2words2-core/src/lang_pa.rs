@@ -6,16 +6,15 @@
 //! `self.cards` and never sets `self.MAXVAL`. `to_cardinal`, `to_ordinal`,
 //! `to_ordinal_num` and `to_year` are all overridden outright, so the
 //! `splitnum`/`clean`/`merge` engine is entirely unreachable. Accordingly
-//! `cards`/`maxval`/`merge` stay at their trait defaults here, and there is
-//! **no overflow check** — see the "digit fallback" note below for what happens
-//! past 10^9 instead.
+//! `cards`/`merge` stay at their trait defaults here. Python has no overflow
+//! check; the port's `maxval` is 10^22, where the multiplier of ਖਰਬ (10^11)
+//! would itself need ਖਰਬ (quirk 1).
 //!
 //! Numbering is the Indian system: hundred / thousand / lakh (10^5) /
-//! crore (10^7).
+//! crore (10^7) / arab (10^9) / kharab (10^11).
 //!
 //! No cross-call mutable state: all four integer methods are pure functions of
-//! their argument, and none of them can fail. PA has no error paths at all for
-//! *integer* input.
+//! their argument. Their only error is `OverflowError` at or past `maxval`.
 //!
 //! # The float / Decimal path
 //!
@@ -68,16 +67,17 @@
 //! These all look wrong but are exactly what Python emits (each is pinned by a
 //! corpus row):
 //!
-//! 1. **The digit fallback.** `_int_to_word` handles values below 10^9 and then
-//!    gives up: `else: return str(number)`. So `to_cardinal(10**9)` is the
-//!    literal ASCII string `"1000000000"`, not Punjabi words — and
-//!    `to_ordinal(10**9)` is `"1000000000ਵਾਂ"`, digits with a Gurmukhi ordinal
-//!    suffix glued on. This is PA's de facto ceiling: it degrades to digits
-//!    rather than raising `OverflowError`. Corpus confirms this up to 10^21.
-//!    Modelled by the final `n.to_string()` arm of [`int_to_word`].
-//! 2. **No tens/units copula.** 21 is "ਵੀਹ ਇੱਕ" (literally "twenty one"),
-//!    where idiomatic Punjabi would be "ਇੱਕੀ". The module just juxtaposes
-//!    `tens[n // 10]` and `ones[n % 10]`. Likewise 99 → "ਨੱਬੇ ਨੌ". Preserved.
+//! 1. **The digit fallback (fixed, gladiaio/num2words2#147).** Python's
+//!    `_int_to_word` handled values below 10^9 and then gave up with
+//!    `return str(number)`, so 10^9 came out as the ASCII string
+//!    "1000000000". The port adds ਅਰਬ (10^9) and ਖਰਬ (10^11) and recurses on
+//!    the ਖਰਬ quotient: `to_cardinal(10**9)` == "ਇੱਕ ਅਰਬ",
+//!    `to_ordinal(10**9)` == "ਇੱਕ ਅਰਬਵਾਂ". From 10^22 it raises
+//!    `OverflowError`.
+//! 2. **No tens/units words (fixed, gladiaio/num2words2#247).** Python
+//!    juxtaposed `tens[n // 10]` and `ones[n % 10]`, so 21 was "ਵੀਹ ਇੱਕ"
+//!    (literally "twenty one"). The port reads [`BELOW_HUNDRED`]: 21 is
+//!    "ਇੱਕੀ", 99 "ਨੜਿੰਨਵੇਂ".
 //! 3. **Ordinals 6+ are cardinal + suffix, with no sandhi and no negative
 //!    guard.** `to_ordinal` special-cases only 1..=5 and otherwise appends
 //!    "ਵਾਂ" to the cardinal. Since it never calls `verify_ordinal`, negatives
@@ -90,7 +90,7 @@
 //! 5. **`to_year` prefixes the ASCII string "BC "** (not a Punjabi era marker)
 //!    for negatives, and its `longval` parameter is accepted but never read —
 //!    there is no year-pairing logic at all, so `to_year(1999)` is just
-//!    `to_cardinal(1999)` == "ਇੱਕ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੱਬੇ ਨੌ" ("one thousand nine
+//!    `to_cardinal(1999)` == "ਇੱਕ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ" ("one thousand nine
 //!    hundred ninety nine"), never "nineteen ninety-nine".
 //!
 //! # Dead code carried over
@@ -144,7 +144,7 @@
 //! "euros"). USD and EUR use ਡਾਲਰ / ਯੂਰੋ with ਸੈਂਟ. Examples in these docs
 //! that quote English nouns record Python's output.
 
-use crate::base::{Lang, N2WError, Result};
+use crate::base::{check_maxval, pow10_big, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
@@ -152,6 +152,7 @@ use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 const NEGWORD: &str = "ਮਾਇਨਸ ";
 const POINTWORD: &str = "ਦਸ਼ਮਲਵ";
@@ -160,23 +161,34 @@ const HUNDRED: &str = "ਸੌ";
 const THOUSAND: &str = "ਹਜ਼ਾਰ";
 const LAKH: &str = "ਲੱਖ";
 const CRORE: &str = "ਕਰੋੜ";
+/// 10^9 and 10^11 (gladiaio/num2words2#147): Python stopped at ਕਰੋੜ and
+/// returned the digits. ਅਰਬ is the word Punjabi news uses for 10^9 (Punjabi
+/// Tribune); ਖਰਬ (10^11) is listed with it in punjabikids.org's number table,
+/// as in Hindi. Nothing above ਖਰਬ is in everyday use, so its quotient recurses:
+/// 10^13 is "ਇੱਕ ਸੌ ਖਰਬ".
+const ARAB: &str = "ਅਰਬ";
+const KHARAB: &str = "ਖਰਬ";
 
-/// `ones`; index 0 is "" and is never read (0 short-circuits to `zero`, and the
-/// `number % 10` / `number // 100` lookups are guarded by non-zero checks).
-const ONES: [&str; 10] = [
-    "", "ਇੱਕ", "ਦੋ", "ਤਿੰਨ", "ਚਾਰ", "ਪੰਜ", "ਛੇ", "ਸੱਤ", "ਅੱਠ", "ਨੌ",
-];
-
-/// `tens`, indexed by the tens digit. Indices 0 and 1 are unreachable from the
-/// `20 <= n < 100` branch that reads this table; note that index 1 duplicates
-/// `TEENS[0]` ("ਦਸ" / ten) in the Python source.
-const TENS: [&str; 10] = [
-    "", "ਦਸ", "ਵੀਹ", "ਤੀਹ", "ਚਾਲੀ", "ਪੰਜਾਹ", "ਸੱਠ", "ਸੱਤਰ", "ਅੱਸੀ", "ਨੱਬੇ",
-];
-
-/// `teens`, indexed by `number - 10` for 10..=19.
-const TEENS: [&str; 10] = [
-    "ਦਸ", "ਗਿਆਰਾਂ", "ਬਾਰਾਂ", "ਤੇਰਾਂ", "ਚੌਦਾਂ", "ਪੰਦਰਾਂ", "ਸੋਲਾਂ", "ਸਤਾਰਾਂ", "ਅਠਾਰਾਂ", "ਉੱਨੀ",
+/// The cardinals 1..=99, indexed by value (gladiaio/num2words2#247).
+///
+/// Python had `ones`/`teens`/`tens` and juxtaposed a ten and a unit ("ਵੀਹ
+/// ਇੱਕ" for 21), but Punjabi has its own word for every number below a
+/// hundred. Index 0 is never read (0 short-circuits to `zero`). 21..=99 are
+/// from the Punjabi qualifying-paper 1-100 list (panjaabstudy.com),
+/// cross-checked against Wiktionary's Gurmukhi number entries,
+/// trendpunjabi.com and indiannames.in; 1..=20 are the module's own words
+/// (9 keeps the module's ਨੌ, Wiktionary writes ਨੌਂ).
+const BELOW_HUNDRED: [&str; 100] = [
+    "", "ਇੱਕ", "ਦੋ", "ਤਿੰਨ", "ਚਾਰ", "ਪੰਜ", "ਛੇ", "ਸੱਤ", "ਅੱਠ", "ਨੌ", // 0..9
+    "ਦਸ", "ਗਿਆਰਾਂ", "ਬਾਰਾਂ", "ਤੇਰਾਂ", "ਚੌਦਾਂ", "ਪੰਦਰਾਂ", "ਸੋਲਾਂ", "ਸਤਾਰਾਂ", "ਅਠਾਰਾਂ", "ਉੱਨੀ", // 10..19
+    "ਵੀਹ", "ਇੱਕੀ", "ਬਾਈ", "ਤੇਈ", "ਚੌਵੀ", "ਪੱਚੀ", "ਛੱਬੀ", "ਸਤਾਈ", "ਅਠਾਈ", "ਉਣੱਤੀ", // 20..29
+    "ਤੀਹ", "ਇਕੱਤੀ", "ਬੱਤੀ", "ਤੇਤੀ", "ਚੌਂਤੀ", "ਪੈਂਤੀ", "ਛੱਤੀ", "ਸੈਂਤੀ", "ਅਠੱਤੀ", "ਉਣਤਾਲੀ", // 30..39
+    "ਚਾਲੀ", "ਇਕਤਾਲੀ", "ਬਿਆਲੀ", "ਤਰਤਾਲੀ", "ਚੁਤਾਲੀ", "ਪੰਤਾਲੀ", "ਛਿਆਲੀ", "ਸੰਤਾਲੀ", "ਅਠਤਾਲੀ", "ਉਣੰਜਾ", // 40..49
+    "ਪੰਜਾਹ", "ਇਕਵੰਜਾ", "ਬਵੰਜਾ", "ਤਰਵੰਜਾ", "ਚੁਰੰਜਾ", "ਪਚਵੰਜਾ", "ਛਪੰਜਾ", "ਸਤਵੰਜਾ", "ਅਠਵੰਜਾ", "ਉਣਾਹਠ", // 50..59
+    "ਸੱਠ", "ਇਕਾਹਠ", "ਬਾਹਠ", "ਤ੍ਰੇਹਠ", "ਚੌਂਹਠ", "ਪੈਂਹਠ", "ਛਿਆਹਠ", "ਸਤਾਹਠ", "ਅਠਾਹਠ", "ਉਣੱਤਰ", // 60..69
+    "ਸੱਤਰ", "ਇਕਹੱਤਰ", "ਬਹੱਤਰ", "ਤਿਹੱਤਰ", "ਚੌਹੱਤਰ", "ਪੰਝੱਤਰ", "ਛਿਹੱਤਰ", "ਸਤੱਤਰ", "ਅਠੱਤਰ", "ਉਣਾਸੀ", // 70..79
+    "ਅੱਸੀ", "ਇਕਾਸੀ", "ਬਿਆਸੀ", "ਤਿਰਾਸੀ", "ਚੁਰਾਸੀ", "ਪਚਾਸੀ", "ਛਿਆਸੀ", "ਸਤਾਸੀ", "ਅਠਾਸੀ", "ਉਣਾਨਵੇਂ", // 80..89
+    "ਨੱਬੇ", "ਇਕਾਨਵੇਂ", "ਬਾਨਵੇਂ", "ਤਰਾਨਵੇਂ", "ਚੁਰਾਨਵੇਂ", "ਪਚਾਨਵੇਂ", "ਛਿਆਨਵੇਂ", "ਸਤਾਨਵੇਂ", "ਅਠਾਨਵੇਂ", "ਨੜਿੰਨਵੇਂ", // 90..99
 ];
 
 /// The generic ordinal suffix appended to the cardinal for every value outside
@@ -202,6 +214,23 @@ fn to_usize(n: &BigInt) -> usize {
     n.to_usize().expect("caller proved this value is < 1000")
 }
 
+/// The exclusive ceiling (gladiaio/num2words2#147, #203): the largest scale word is
+/// ਖਰਬ (10^11), so from 10^22 its multiplier would itself need ਖਰਬ.
+/// Without it the recursion never ends and a large enough integer overflows
+/// the native stack, killing the Python process with SIGSEGV.
+fn maxval_ceiling() -> &'static BigInt {
+    static M: OnceLock<BigInt> = OnceLock::new();
+    M.get_or_init(|| pow10_big(22))
+}
+
+/// `int_to_word` behind [`maxval_ceiling`], checked before the first recursive
+/// step. Every entry point that hands over a caller-supplied integer goes
+/// through here.
+fn checked_int_to_word(number: &BigInt) -> Result<String> {
+    check_maxval(number, maxval_ceiling())?;
+    Ok(int_to_word(number))
+}
+
 /// Port of `Num2Word_PA._int_to_word`.
 ///
 /// Recursion depth is bounded by the fixed ladder (crore → lakh → thousand →
@@ -218,30 +247,15 @@ fn int_to_word(n: &BigInt) -> String {
     }
 
     // From here n >= 1, so Python's `//` and `%` agree with div_mod_floor.
-    if n < &BigInt::from(10) {
-        return ONES[to_usize(n)].to_string();
-    }
-
-    if n < &BigInt::from(20) {
-        return TEENS[to_usize(n) - 10].to_string();
-    }
-
     if n < &BigInt::from(100) {
-        let v = to_usize(n);
-        let mut result = TENS[v / 10].to_string();
-        // Python: `if number % 10:` — append the unit only when non-zero.
-        if v % 10 != 0 {
-            result.push(' ');
-            result.push_str(ONES[v % 10]);
-        }
-        return result;
+        return BELOW_HUNDRED[to_usize(n)].to_string();
     }
 
     if n < &BigInt::from(1000) {
         let v = to_usize(n);
         // NB: the hundreds digit indexes ONES directly rather than recursing,
         // so this arm is only correct because v // 100 is always 1..=9 here.
-        let mut result = format!("{} {}", ONES[v / 100], HUNDRED);
+        let mut result = format!("{} {}", BELOW_HUNDRED[v / 100], HUNDRED);
         let remainder = v % 100;
         if remainder != 0 {
             result.push(' ');
@@ -258,6 +272,7 @@ fn int_to_word(n: &BigInt) -> String {
         (100_000u64, 1_000u64, THOUSAND),
         (10_000_000u64, 100_000u64, LAKH),
         (1_000_000_000u64, 10_000_000u64, CRORE),
+        (100_000_000_000u64, 1_000_000_000u64, ARAB),
     ] {
         if n < &BigInt::from(limit) {
             let (quotient, remainder) = n.div_mod_floor(&BigInt::from(divisor));
@@ -270,8 +285,15 @@ fn int_to_word(n: &BigInt) -> String {
         }
     }
 
-    // `else: return str(number)` — the digit fallback. See quirk 1.
-    n.to_string()
+    // Python's `else: return str(number)` (quirk 1, fixed): ਖਰਬ, with its
+    // quotient spelled recursively however large it is.
+    let (quotient, remainder) = n.div_mod_floor(&BigInt::from(100_000_000_000u64));
+    let mut result = format!("{} {}", int_to_word(&quotient), KHARAB);
+    if !remainder.is_zero() {
+        result.push(' ');
+        result.push_str(&int_to_word(&remainder));
+    }
+    result
 }
 
 /// Shortest round-trip decimal digits of a **non-negative, finite** f64, plus
@@ -538,13 +560,13 @@ fn cardinal_from_str(number: &str) -> Result<String> {
 
     let Some(dot) = n.find('.') else {
         // else: (ret + self._int_to_word(int(n))).strip()
-        ret.push_str(&int_to_word(&py_int(n)?));
+        ret.push_str(&checked_int_to_word(&py_int(n)?)?);
         return Ok(ret.trim().to_string());
     };
 
     // n.split(".", 1) — maxsplit=1, so `right` keeps any further dots.
     let (left, right) = (&n[..dot], &n[dot + 1..]);
-    ret.push_str(&int_to_word(&py_int(left)?));
+    ret.push_str(&checked_int_to_word(&py_int(left)?)?);
     ret.push(' ');
     ret.push_str(POINTWORD);
     ret.push(' ');
@@ -680,6 +702,10 @@ impl LangPa {
 }
 
 impl Lang for LangPa {
+    fn maxval(&self) -> &BigInt {
+        maxval_ceiling()
+    }
+
 
     fn cardinal_float_entry(
         &self,
@@ -752,7 +778,7 @@ impl Lang for LangPa {
     /// Kept regardless, to mirror Python.
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         let ret = if value.is_negative() { NEGWORD } else { "" };
-        Ok(format!("{}{}", ret, int_to_word(&value.abs()))
+        Ok(format!("{}{}", ret, checked_int_to_word(&value.abs())?)
             .trim()
             .to_string())
     }
@@ -921,7 +947,7 @@ impl Lang for LangPa {
         } else {
             &forms.unit[1]
         };
-        let mut result = format!("{} {}", int_to_word(&left), unit);
+        let mut result = format!("{} {}", checked_int_to_word(&left)?, unit);
 
         // `if cents and right:` — a zero `right` is falsy and skips the whole
         // segment, no matter how the value was written.
@@ -990,9 +1016,9 @@ mod float_tests {
         assert_eq!(flt(0.99), "ਸਿਫਰ ਦਸ਼ਮਲਵ ਨੌ ਨੌ");
         assert_eq!(flt(1.01), "ਇੱਕ ਦਸ਼ਮਲਵ ਸਿਫਰ ਇੱਕ");
         assert_eq!(flt(12.34), "ਬਾਰਾਂ ਦਸ਼ਮਲਵ ਤਿੰਨ ਚਾਰ");
-        assert_eq!(flt(99.99), "ਨੱਬੇ ਨੌ ਦਸ਼ਮਲਵ ਨੌ ਨੌ");
+        assert_eq!(flt(99.99), "ਨੜਿੰਨਵੇਂ ਦਸ਼ਮਲਵ ਨੌ ਨੌ");
         assert_eq!(flt(100.5), "ਇੱਕ ਸੌ ਦਸ਼ਮਲਵ ਪੰਜ");
-        assert_eq!(flt(1234.56), "ਇੱਕ ਹਜ਼ਾਰ ਦੋ ਸੌ ਤੀਹ ਚਾਰ ਦਸ਼ਮਲਵ ਪੰਜ ਛੇ");
+        assert_eq!(flt(1234.56), "ਇੱਕ ਹਜ਼ਾਰ ਦੋ ਸੌ ਚੌਂਤੀ ਦਸ਼ਮਲਵ ਪੰਜ ਛੇ");
         assert_eq!(flt(-0.5), "ਮਾਇਨਸ ਸਿਫਰ ਦਸ਼ਮਲਵ ਪੰਜ");
         assert_eq!(flt(-1.5), "ਮਾਇਨਸ ਇੱਕ ਦਸ਼ਮਲਵ ਪੰਜ");
         assert_eq!(flt(-12.34), "ਮਾਇਨਸ ਬਾਰਾਂ ਦਸ਼ਮਲਵ ਤਿੰਨ ਚਾਰ");
@@ -1010,8 +1036,8 @@ mod float_tests {
         assert_eq!(dec("1.10"), "ਇੱਕ ਦਸ਼ਮਲਵ ਇੱਕ ਸਿਫਰ");
         assert_eq!(dec("12.345"), "ਬਾਰਾਂ ਦਸ਼ਮਲਵ ਤਿੰਨ ਚਾਰ ਪੰਜ");
         // Issue #603's value: exact at trillion scale, no float() cast. The
-        // integer part overflows PA's ladder and degrades to ASCII digits.
-        assert_eq!(dec("98746251323029.99"), "98746251323029 ਦਸ਼ਮਲਵ ਨੌ ਨੌ");
+        // integer part takes the arab/kharab words (#147).
+        assert_eq!(dec("98746251323029.99"), "ਨੌ ਸੌ ਸਤਾਸੀ ਖਰਬ ਛਿਆਲੀ ਅਰਬ ਪੱਚੀ ਕਰੋੜ ਤੇਰਾਂ ਲੱਖ ਤੇਈ ਹਜ਼ਾਰ ਉਣੱਤੀ ਦਸ਼ਮਲਵ ਨੌ ਨੌ");
         assert_eq!(dec("0.001"), "ਸਿਫਰ ਦਸ਼ਮਲਵ ਸਿਫਰ ਸਿਫਰ ਇੱਕ");
     }
 
@@ -1023,10 +1049,10 @@ mod float_tests {
     }
 
     /// repr() ties round half-to-even like Gay's dtoa, not half-up. The integer
-    /// part overflows the ladder and degrades to digits; the fraction is "12".
+    /// part takes the kharab ladder (#147); the fraction is "12".
     #[test]
     fn repr_tie_to_even() {
-        assert_eq!(flt(-78198386800398.125), "ਮਾਇਨਸ 78198386800398 ਦਸ਼ਮਲਵ ਇੱਕ ਦੋ");
+        assert_eq!(flt(-78198386800398.125), "ਮਾਇਨਸ ਸੱਤ ਸੌ ਇਕਾਸੀ ਖਰਬ ਅਠਾਨਵੇਂ ਅਰਬ ਅਠੱਤੀ ਕਰੋੜ ਅਠਾਹਠ ਲੱਖ ਤਿੰਨ ਸੌ ਅਠਾਨਵੇਂ ਦਸ਼ਮਲਵ ਇੱਕ ਦੋ");
     }
 
     /// A value whose str() is exponent notation raises ValueError with Python's

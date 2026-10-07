@@ -9,12 +9,12 @@ class TestOR(LangTest, TestCase):
 
     cardinal_tests = [
         (0, "ଶୂନ୍ୟ"),
-        # Teens are lexicalised; 20..99 are composed as tens + ଓ + units.
+        # Every number below a hundred has its own word (#247).
         (11, "ଏଗାର"),
         (17, "ସତର"),
         (20, "କୋଡ଼ିଏ"),
-        (21, "କୋଡ଼ିଏ ଓ ଏକ"),
-        (42, "ଚାଳିଶ ଓ ଦୁଇ"),
+        (21, "ଏକୋଇଶି"),
+        (42, "ବୟାଳିଶି"),
         (100, "ଏକ ଶହ"),
         (101, "ଏକ ଶହ ଓ ଏକ"),
         (1000, "ଏକ ହଜାର"),
@@ -25,7 +25,7 @@ class TestOR(LangTest, TestCase):
     seventy_tests = [
         (17, "ସତର"),
         (70, "ସତୁରୀ"),
-        (77, "ସତୁରୀ ଓ ସାତ"),
+        (77, "ସତସ୍ତରୀ"),
     ]
 
     # 1..10 are suppletive Sanskrit-derived forms; 11 and up take ମ.
@@ -66,18 +66,18 @@ class TestOR(LangTest, TestCase):
 
     currency_tests = [
         # cents=False keeps the cents as digits (#220).
-        (38.4, "ତିରିଶ ଓ ଆଠ ଟଙ୍କା 40 ପଇସା", {"cents": False, "currency": "INR"}),
+        (38.4, "ଅଠତିରିଶି ଟଙ୍କା 40 ପଇସା", {"cents": False, "currency": "INR"}),
         ("0", "ଶୂନ୍ୟ ଟଙ୍କା", {"cents": True, "currency": "INR"}),
         ("1.50", "ଏକ ଟଙ୍କା ପଚାଶ ପଇସା", {"cents": True, "currency": "INR"}),
-        (12.34, "ବାର ଡଲାର ତିରିଶ ଓ ଚାରି ସେଣ୍ଟ", {"currency": "USD"}),
-        (12.34, "ବାର ୟୁରୋ ତିରିଶ ଓ ଚାରି ସେଣ୍ଟ", {"currency": "EUR"}),
+        (12.34, "ବାର ଡଲାର ଚଉତିରିଶି ସେଣ୍ଟ", {"currency": "USD"}),
+        (12.34, "ବାର ୟୁରୋ ଚଉତିରିଶି ସେଣ୍ଟ", {"currency": "EUR"}),
     ]
 
     # to_year ignores longval and delegates to to_cardinal — no year pairing.
     year_tests = [
         (1990, "ଏକ ହଜାର ନଅ ଶହ ଓ ନବେ"),
         (2017, "ଦୁଇ ହଜାର ସତର"),
-        (1066, "ଏକ ହଜାର ଷାଠିଏ ଓ ଛଅ"),
+        (1066, "ଏକ ହଜାର ଛଅଷଠି"),
     ]
 
     def test_cardinal(self):
