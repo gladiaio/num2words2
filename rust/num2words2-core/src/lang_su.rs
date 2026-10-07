@@ -216,7 +216,9 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "ratus";
 /// `self.thousand`.
 const THOUSAND: &str = "rebu";
-/// `self.million`.
+/// `self.million`. Wiktionary spells it "yuta" (from Old Sundanese); both are
+/// attested and "juta" is the more frequent in modern prose, so it is kept
+/// (#258).
 const MILLION: &str = "juta";
 
 /// Python's `CURRENCY_FORMS` **insertion order**. Load-bearing: `to_currency`

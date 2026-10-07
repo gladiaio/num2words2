@@ -32,11 +32,15 @@
 //!    stops at `number < 1000000000`; anything `>= 10**9` hit the final
 //!    `return str(number)`, so `to_cardinal(10**9)` was "1000000000" — a
 //!    *string of digits*, silently. No published source gives a Mizo word
-//!    for 10^9, and the module's "million" is itself wrong: Wiktionary has
-//!    `nuai` as 10^5 (lakh) and `maktaduai` as 10^6, so this table's `nuai`
-//!    already under-counts by ten (an open problem, not touched here).
-//!    Rather than stack a new word on that, this port reports `maxval` ==
-//!    10^9 and raises `OverflowError` there, on every path (`miz` too).
+//!    for 10^9, so this port reports `maxval` == 10^9 and raises
+//!    `OverflowError` there, on every path (`miz` too).
+//! 1a. **"nuai" for million (fixed, #258).** Python's million word was
+//!    "nuai", which is 10^5 (lakh), so every value from 10^6 up read as a
+//!    tenth of itself. The port uses "maktaduai" (10^6): `10**6` ==
+//!    "pakhat maktaduai". The module still groups by thousands with the
+//!    multiplier first; the native lakh/crore words (sîng 10^4, nuai 10^5,
+//!    vaibêlchhia 10^7) and the scale-first order ("maktaduai hnih") are
+//!    not adopted.
 //! 2. **The digit fallback leaked into the ordinal and the negative forms.**
 //!    `to_ordinal` is `to_cardinal(n) + "-na"` with no guard, so Python's
 //!    `to_ordinal(10**21)` was "1000000000000000000000-na" and
@@ -134,7 +138,7 @@ const TENS: [&str; 10] = [
 
 const HUNDRED: &str = "za";
 const THOUSAND: &str = "sang";
-const MILLION: &str = "nuai";
+const MILLION: &str = "maktaduai";
 
 /// The zero phrase. Python spells this inline in `_int_to_word`.
 const ZERO_WORD: &str = "a awmlo";
@@ -355,7 +359,7 @@ fn int_to_word(number: &BigInt) -> Result<String> {
 }
 
 /// The exclusive ceiling (gladiaio/num2words2#147): no attested Mizo word for
-/// 10^9, and the module's million word is itself off by ten (bug 1).
+/// 10^9 (bug 1).
 fn maxval_ceiling() -> &'static BigInt {
     static M: OnceLock<BigInt> = OnceLock::new();
     M.get_or_init(|| pow10_big(9))

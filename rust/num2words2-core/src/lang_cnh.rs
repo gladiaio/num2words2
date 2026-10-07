@@ -263,6 +263,11 @@ const TENS: [&str; 10] = [
 
 const HUNDRED: &str = "phazar";
 const THOUSAND: &str = "thawngkhat";
+/// Doubtful but kept (#258): "milin" is unattested, and "milian" is a "rich
+/// person" in chin-dictionary.com. The Hakha Bible (HCL06) counts with
+/// za 100, thong 10^3, sang 10^4, sing 10^5 and nuai 10^6 ("nuai khat le
+/// sing khat" = 1,100,000), which this module's scale does not follow; one
+/// source was not enough to switch.
 const MILLION: &str = "milin";
 
 /// `self.negword`, trailing space included exactly as Python spells it.

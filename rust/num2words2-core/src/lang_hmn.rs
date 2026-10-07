@@ -27,22 +27,21 @@
 //!    `if number < ...` guards stops at `1000000000`, and the final statement
 //!    is a bare `return str(number)`, so `to_cardinal(10**9)` returned the
 //!    *digit string* `"1000000000"` silently. Wikipedia's Hmong numeral table
-//!    gives "kem" for 10^9, but on top of "roob" for 10^6 — the module's
-//!    million word "tawm rau" (bug 3) is itself unattested, and composing a
-//!    real 10^9 word on it would compound the error. So instead this port
+//!    gives "kem" for 10^9 on top of "roob" for 10^6 (the million word since
+//!    #258, bug 3), but no second source confirms "kem", so this port
 //!    reports `maxval` == 10^9 and raises `OverflowError` there, on the
-//!    integer, float and currency paths alike. Fixing the million word is a
-//!    separate open problem.
+//!    integer, float and currency paths alike.
 //!
 //! 2. **The tens table mixes two spellings of the same morpheme.** 30–50 use
 //!    "caug" ("peb caug", "plaub caug", "tsib caug") while 60–90 use "caum"
 //!    ("rau caum", "xya caum", "yim caum", "cuaj caum"). Preserved verbatim.
 //!
-//! 3. **"tawm rau" for million, "lab" for the decimal point.** `self.million`
-//!    is "tawm rau" (literally "out six"), while "lab" — the actual Hmong
-//!    word for a million — is used as `pointword` instead. Both are kept as
-//!    written; only `million` is in scope here. (Wikipedia "Hmong language"
-//!    gives the native "roob" and the Lao loan "lab" for 10^6; still open.)
+//! 3. **"tawm rau" for million (fixed, #258), "lab" for the decimal point.**
+//!    Python's `self.million` was "tawm rau" (literally "out six"), which no
+//!    source attests. The port uses "roob", the 10^6 word of Omniglot,
+//!    Wikivoyage's Hmong phrasebook and Wikipedia's Pahawh Hmong numeral
+//!    table: `10**6` == "ib roob". "lab" (a Lao loan for 10^6) is still
+//!    used as `pointword`, as written in Python.
 //!
 //! 4. **Inconsistent joiners.** Hundreds glue their remainder with `" thiab "`
 //!    ("and"), but thousands and millions glue theirs with a plain space. So
@@ -210,8 +209,8 @@ const TENS: [&str; 10] = [
 const HUNDRED: &str = "puas";
 /// `self.thousand`.
 const THOUSAND: &str = "txhiab";
-/// `self.million` — "tawm rau", see bug 3.
-const MILLION: &str = "tawm rau";
+/// `self.million` — "roob" (Python: "tawm rau"), see bug 3.
+const MILLION: &str = "roob";
 
 /// Zero, produced by `_int_to_word` rather than living in `ones`.
 const ZERO_WORD: &str = "xoom";
@@ -991,7 +990,7 @@ mod currency_tests {
             assert_eq!(cur("1", code).unwrap(), format!("ib {}", unit));
             assert_eq!(cur("2", code).unwrap(), format!("ob {}", unit));
             assert_eq!(cur("100", code).unwrap(), format!("ib puas {}", unit));
-            assert_eq!(cur("1000000", code).unwrap(), format!("ib tawm rau {}", unit));
+            assert_eq!(cur("1000000", code).unwrap(), format!("ib roob {}", unit));
             assert_eq!(
                 cur("12.34", code).unwrap(),
                 format!("kaum thiab ob {} peb caug thiab plaub {}", unit, sub)
@@ -1034,7 +1033,7 @@ mod currency_tests {
             assert_eq!(cur("1", code).unwrap(), "ib nyiaj kub");
             assert_eq!(cur("2", code).unwrap(), "ob nyiaj kub");
             assert_eq!(cur("100", code).unwrap(), "ib puas nyiaj kub");
-            assert_eq!(cur("1000000", code).unwrap(), "ib tawm rau nyiaj kub");
+            assert_eq!(cur("1000000", code).unwrap(), "ib roob nyiaj kub");
             // KWD/BHD do *not* get divisor 1000 and JPY does *not* get divisor
             // 1: CURRENCY_PRECISION is empty, so all three behave like USD.
             assert_eq!(
@@ -1338,7 +1337,7 @@ mod float_tests {
         assert!(matches!(d("1000000000.5"), Err(N2WError::Overflow(_))));
         assert_eq!(
             d("999999999.5").unwrap(),
-            "cuaj puas thiab cuaj caum thiab cuaj tawm rau cuaj puas thiab cuaj caum \
+            "cuaj puas thiab cuaj caum thiab cuaj roob cuaj puas thiab cuaj caum \
              thiab cuaj txhiab cuaj puas thiab cuaj caum thiab cuaj lab tsib"
         );
     }

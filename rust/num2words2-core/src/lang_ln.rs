@@ -161,6 +161,9 @@ const TENS: [&str; 10] = [
 
 const HUNDRED: &str = "nkama";
 const THOUSAND: &str = "nkóto";
+/// "milio" and "milioni" are both attested loans (ln.wikipedia uses "milio"
+/// more often); the native word is "efúku" (dic.lingala.be, Omniglot). Kept
+/// as is (#258).
 const MILLION: &str = "milio";
 
 /// `self.pointword`, interpolated raw between the integer part and the digits
