@@ -129,23 +129,19 @@
 //! This is a port, not a rewrite. Every item below is wrong-looking but is
 //! exactly what CPython emits; each was verified against the interpreter.
 //!
-//! 1. **Latin homoglyphs in the tables.** `ords_adjective["дзевяць"]` is
-//!    `"дзевяц" + U+0069 LATIN SMALL LETTER I` (not Cyrillic `і` U+0456), so
-//!    `to_ordinal(900) == "дзевяцiсоты"` carries a Latin `i`. Likewise
-//!    `TWENTIES_ORD[4][1]` is `"ш" + U+0061 LATIN SMALL LETTER A + "сцідзясяці"`
-//!    (not Cyrillic `а` U+0430), so `to_ordinal(60000) ==
-//!    "шaсцідзясяцітысячны"` carries a Latin `a`. Both are preserved byte for
-//!    byte below via explicit escapes — do not "clean up" the escapes.
-//! 2. **`to_ordinal(80) == "сямідзясяты"`** ("seventieth"), not
-//!    "васьмідзясяты". The `lastword[-9:] == "семдзесят"` test matches the
-//!    *tail* of "восемдзесят", which happens to be exactly "семдзесят", so 80
-//!    is folded onto 70's ordinal. Corpus-confirmed.
-//! 3. **`TWENTIES_ORD` substring shadowing.** `next(x for x in TWENTIES_ORD if
-//!    x[0] in _w)` scans in table order, and `"семдзесят"` (index 5) is a
-//!    substring of `"восемдзесят"` (index 6), so index 5 always wins for 80s:
-//!    `to_ordinal(80000) == "восямідзесяцітысячны"`. Table order is therefore
-//!    load-bearing — [`TWENTIES_ORD`] must stay a `Vec`-like ordered scan, not
-//!    a map.
+//! 1. ~~**Latin homoglyphs in the tables.**~~ `ords_adjective["дзевяць"]`
+//!    ended in a Latin `i` (U+0069) and `TWENTIES_ORD[4][1]` held a Latin
+//!    `a` (U+0061), so `to_ordinal(900)` and `to_ordinal(60000)` mixed
+//!    scripts. Fixed (gladiaio/num2words2#251): both are Cyrillic.
+//! 2. ~~**`to_ordinal(80) == "сямідзясяты"`** ("seventieth").~~ The
+//!    `lastword[-9:] == "семдзесят"` tail test also matched "восемдзесят".
+//!    Fixed (#251): the tens 50..=90 are whole-word `ords` entries
+//!    (пяцідзясяты, шасцідзясяты, сямідзясяты, васьмідзясяты, дзевяносты)
+//!    and the tail arm is gone.
+//! 3. ~~**`TWENTIES_ORD` substring shadowing.**~~ `"семдзесят"` is a
+//!    substring of `"восемдзесят"` and the scan takes the first hit, so
+//!    `to_ordinal(80000)` read "восямідзесяцітысячны". Fixed (#251): 80 is
+//!    listed before 70. The scan order is still load-bearing.
 //! 4. **Big scales lose their ordinal suffix.** The `except KeyError` chain
 //!    has no arm matching a `"...даў"` tail (`[-1]` is `ў`, `[-2]` is `а`, and
 //!    the `[-3:] == "наў"` test sees `"даў"`), so `"мільярдаў"` falls through
@@ -157,12 +153,12 @@
 //!    (`[-1]` is `ў`, `[-2]` is `а`), so the `"наў"` arm *is* live for
 //!    `"мільёнаў"` → `"мільённы"`. Kept in place; noted because the ordering
 //!    reads as if it were unreachable.
-//! 6. **`to_ordinal(1234567890)` returns the cardinal verbatim.** The final
-//!    word is "дзевяноста", which matches no `ords` key and no `except` arm,
-//!    so it is emitted unchanged. Corpus-confirmed.
-//! 7. **`to_ordinal(50/60/90)` are no-ops** for the same reason:
-//!    "пяцьдзясят", "шэсцьдзясят" and "дзевяноста" survive every arm.
-//!    Corpus-confirmed.
+//! 6. ~~**`to_ordinal(1234567890)` returned the cardinal verbatim**~~ and
+//! 7. ~~**`to_ordinal(50/60/90)` were no-ops**~~: "пяцьдзясят",
+//!    "шэсцьдзясят" and "дзевяноста" matched no arm. Fixed with 2 (#251).
+//!    Also fixed there: the penultimate word took its oblique stem in every
+//!    compound ("ста пяты" for 105); it now does so only before a scale
+//!    word it fuses with ("двухтысячны"), so 105 is "сто пяты".
 //! 8. `ONES_FEMININE` is defined at module scope in Python and never read
 //!    (the class uses `ONES["f"]`). It is omitted here as dead data.
 //!
@@ -280,20 +276,18 @@ const TWENTIES: [&str; 10] = [
 /// `TWENTIES_ORD` — an ordered tuple of `(cardinal, oblique)` pairs.
 ///
 /// **Order is load-bearing**: `to_ordinal` takes the *first* pair whose `.0` is
-/// a substring of the word, and index 5 ("семдзесят") shadows index 6
-/// ("восемдзесят"). See bug 3 in the module docs.
-///
-/// Index 4's oblique form embeds a **Latin** `a` (U+0061) where Cyrillic `а`
-/// (U+0430) belongs — a genuine typo in `lang_BE.py`, escaped here so it
-/// survives any well-meaning editor. See bug 1.
+/// a substring of the word, so "восемдзесят" sits ahead of "семдзесят", which
+/// it contains (bug 3, fixed).
 const TWENTIES_ORD: [(&str, &str); 8] = [
     ("дваццаць", "дваццаці"),
     ("трыццаць", "трыццаці"),
     ("сорак", "сарака"),
     ("пяцьдзясят", "пяцідзясяці"),
-    ("шэсцьдзясят", "ш\u{0061}сцідзясяці"), // sic — Latin 'a', Python typo
-    ("семдзесят", "сямідзесяці"),
+    ("шэсцьдзясят", "шасцідзясяці"),
+    // "восемдзесят" contains "семдзесят", and the scan takes the first hit,
+    // so 80 must come before 70 (#251).
     ("восемдзесят", "васьмідзесяці"),
+    ("семдзесят", "сямідзесяці"),
     ("дзевяноста", "дзевяноста"),
 ];
 
@@ -876,6 +870,14 @@ impl LangBe {
             ("сем", "сёмы"),
             ("восем", "восьмы"),
             ("дзевяць", "дзявяты"),
+            // The tens 50..=90 had no entry and fell through the tail
+            // matching below: 50/60/90 came back as the cardinal and 80 as
+            // 70's "сямідзясяты" (gladiaio/num2words2#251).
+            ("пяцьдзясят", "пяцідзясяты"),
+            ("шэсцьдзясят", "шасцідзясяты"),
+            ("семдзесят", "сямідзясяты"),
+            ("восемдзесят", "васьмідзясяты"),
+            ("дзевяноста", "дзевяносты"),
             ("сто", "соты"),
             ("тысяча", "тысячны"),
         ] {
@@ -893,9 +895,7 @@ impl LangBe {
             ("шэсць", "шасці"),
             ("сем", "сямі"),
             ("восем", "васьмі"),
-            // sic — Latin 'i' (U+0069), not Cyrillic 'і' (U+0456). Python typo;
-            // surfaces in to_ordinal(900) == "дзевяцiсоты". See bug 1.
-            ("дзевяць", "дзевяц\u{0069}"),
+            ("дзевяць", "дзевяці"),
             ("сто", "ста"),
         ] {
             ords_adjective.insert(k, v);
@@ -1079,7 +1079,7 @@ impl LangBe {
     /// `lastword` is not a key of `self.ords`.
     ///
     /// Returns `lastword` **unchanged** when no arm matches; that is not an
-    /// oversight but the source of bugs 4, 6 and 7 (see module docs).
+    /// oversight but the source of bug 4 (see module docs).
     fn ordinal_fallback(&self, lastword: &str) -> Result<String> {
         let lw: Vec<char> = lastword.chars().collect();
 
@@ -1092,11 +1092,6 @@ impl LangBe {
 
         if last_n(&lw, 7) == "дзесяць" {
             return Ok("дзясяты".to_string());
-        }
-
-        // Matches the tail of "восемдзесят" too — see bug 2.
-        if last_n(&lw, 9) == "семдзесят" {
-            return Ok("сямідзясяты".to_string());
         }
 
         let m1 = char_from_end(&lw, 1)?;
@@ -1139,7 +1134,7 @@ impl LangBe {
             return Ok(format!("{}ны", keep_through_last(&lw, 'д')));
         }
 
-        // No arm matched — Python leaves `lastword` as-is. Bugs 4/6/7.
+        // No arm matched — Python leaves `lastword` as-is. Bug 4.
         Ok(lastword.to_string())
     }
 
@@ -1175,7 +1170,13 @@ impl LangBe {
         // Python wraps the next three statements in one `try`. Only
         // `self.ords[lastword]` can raise KeyError, so these two mutations
         // always land, whether or not the lookup succeeds.
-        if outwords.len() > 1 {
+        // Only a scale word fuses with the words before it ("двухтысячны"),
+        // so only then does the penultimate word take its oblique stem. In
+        // a plain compound only the last word is ordinal: 105 is "сто пяты",
+        // not "ста пяты" (#251).
+        let is_scale = (1..=10).any(|i| lastword.contains(THOUSANDS[i][0]))
+            || lastword.contains("тысяч");
+        if outwords.len() > 1 && is_scale {
             let i2 = outwords.len() - 2;
             if let Some(adj) = self.ords_adjective.get(outwords[i2].as_str()) {
                 outwords[i2] = adj.to_string();
@@ -1226,13 +1227,13 @@ impl LangBe {
         }
 
         // `any(...)` is order-independent, so a plain scan of THOUSANDS[1..=10]
-        // is faithful. The *inner* TWENTIES_ORD scan below is not — see bug 3.
+        // is faithful. The *inner* TWENTIES_ORD scan below is not (bug 3).
         let last = outwords[outwords.len() - 1].clone();
         let scale_tail = (1..=10).any(|i| last.contains(THOUSANDS[i][0])) || last.contains("тысяч");
         if outwords.len() > 1 && scale_tail {
             let mut new_outwords: Vec<String> = Vec::new();
             for w in outwords.iter() {
-                // First match wins; "семдзесят" shadows "восемдзесят".
+                // First match wins, hence 80 is listed before 70.
                 let replacement = TWENTIES_ORD.iter().find(|x| w.contains(x.0));
                 match replacement {
                     Some((from, to)) => new_outwords.push(w.replace(from, to)),

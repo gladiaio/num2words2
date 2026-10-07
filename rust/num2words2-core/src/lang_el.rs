@@ -36,28 +36,16 @@
 //! Everything below is wrong-looking Greek but is exactly what the Python
 //! emits, and every item is pinned by a row in `bench/corpus.jsonl`.
 //!
-//! 1. **`to_ordinal`'s "εκατό"/"είκοσι" prefix rules silently truncate the
-//!    number.** The `parts[0] == "εκατό" and parts[1] in self.ordinals` arm
-//!    returns `"εκατοστός " + ordinals[parts[1]]` and drops `parts[2:]`
-//!    entirely. So `to_ordinal(123456)` == `to_ordinal(123456789)` ==
-//!    `to_ordinal(120)` == `"εκατοστός εικοστός"`.
-//! 2. **The default suffix rule is applied to the whole multi-word string**,
-//!    not to the last word, whenever the compound rules fall through. Hence
-//!    `to_ordinal(115)` == `"εκατό δεκαπέντεος"`, `to_ordinal(2000)` ==
-//!    `"δύο χιλιάδεςος"`, `to_ordinal(10**9)` == `"ένα δισεκατομμύριος"`.
-//! 3. **`endswith("α")` is byte-for-byte alpha (U+03B1), not alpha-with-tonos
-//!    (ά, U+03AC).** So `to_ordinal(19)` ("δεκαεννέα", plain α) strips the α →
-//!    `"δεκαεννέος"`, but `to_ordinal(17)` ("δεκαεπτά", tonos ά) misses every
-//!    branch and lands in the `else` → `"δεκαεπτάος"`. Preserved by matching
-//!    on the exact chars.
-//! 4. **`"δεκατρίτος"`** is the hard-coded ordinal for 13 (the regular form
-//!    would be δέκατος τρίτος). Kept verbatim.
-//! 5. **`"έννατος"`** (9) is the table's spelling of ένατος. Kept verbatim.
-//! 6. **`to_ordinal(100001)`** == `"εκατοστός χιλιάδες πρώτος"` — the
-//!    "make only the last part ordinal" arm *also* rewrites `parts[0]`
-//!    ("εκατό" → "εκατοστός") while leaving "χιλιάδες" alone.
-//! 7. **`to_ordinal(0)`** == `"μηδένος"` — "μηδέν" ends in ν, so the `else`
-//!    arm appends "ος". (Unlike Polish, Greek does not crash here.)
+//! 1–7. ~~**`to_ordinal` glued "ος" onto the cardinal**~~ and kept only
+//!    the first two words of a compound: 121..=129 all read "εκατοστός
+//!    εικοστός", 30 "τριάντος", 1001 "χίλια πρώτος", 2000 "δύο
+//!    χιλιάδεςος", 13 "δεκατρίτος", 9 "έννατος". Fixed
+//!    (gladiaio/num2words2#251): every component takes its own ordinal
+//!    (121 "εκατοστός εικοστός πρώτος", 13 "δέκατος τρίτος", 9 "ένατος",
+//!    2000 "δισχιλιοστός"), sourced up to 9999 plus the round 10**4,
+//!    10**5, 10**6 and 10**9; other values from 10000 up raise
+//!    OverflowError. Only
+//!    `to_ordinal(0)` == `"μηδένος"` survives from the old rule.
 //! 8. Mixed-gender agreement in `merge`: hundreds go feminine before
 //!    χιλιάδες ("διακόσιες χιλιάδες") but stay neuter before εκατομμύρια
 //!    ("διακόσια τριάντα τέσσερα εκατομμύρια"), and the *tens/units* are never
@@ -117,30 +105,30 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 
-/// `Num2Word_EL.ordinals` — cardinal word → ordinal word.
-///
-/// Used three ways by `to_ordinal`: exact whole-string match, `in` membership
-/// on `parts[1]` / `parts[-1]`, and lookup. Python iterates it in insertion
-/// order for the first (equality) scan, but keys are unique so the order is
-/// not observable — a `HashMap` is equivalent.
-const ORDINALS: [(&str, &str); 16] = [
-    ("ένα", "πρώτος"),
-    ("δύο", "δεύτερος"),
-    ("τρία", "τρίτος"),
-    ("τέσσερα", "τέταρτος"),
-    ("πέντε", "πέμπτος"),
-    ("έξι", "έκτος"),
-    ("επτά", "έβδομος"),
-    ("οκτώ", "όγδοος"),
-    // "έννατος" (not "ένατος") is the module's spelling. Kept verbatim.
-    ("εννέα", "έννατος"),
-    ("δέκα", "δέκατος"),
-    ("έντεκα", "ενδέκατος"),
-    ("δώδεκα", "δωδέκατος"),
-    ("είκοσι", "εικοστός"),
-    ("εκατό", "εκατοστός"),
-    ("χίλια", "χιλιοστός"),
-    ("εκατομμύριο", "εκατομμυριοστός"),
+/// Ordinals 1..=9 (masculine), for [`LangEl::to_ordinal`] (#251).
+const UNITS_ORD: [&str; 9] = [
+    "πρώτος", "δεύτερος", "τρίτος", "τέταρτος", "πέμπτος", "έκτος", "έβδομος",
+    "όγδοος", "ένατος",
+];
+
+/// Ordinals 10, 20, …, 90.
+const TENS_ORD: [&str; 9] = [
+    "δέκατος", "εικοστός", "τριακοστός", "τεσσαρακοστός", "πεντηκοστός",
+    "εξηκοστός", "εβδομηκοστός", "ογδοηκοστός", "ενενηκοστός",
+];
+
+/// Ordinals 100, 200, …, 900.
+const HUNDREDS_ORD: [&str; 9] = [
+    "εκατοστός", "διακοσιοστός", "τριακοσιοστός", "τετρακοσιοστός",
+    "πεντακοσιοστός", "εξακοσιοστός", "επτακοσιοστός", "οκτακοσιοστός",
+    "εννιακοσιοστός",
+];
+
+/// Ordinals 1000, 2000, …, 9000.
+const THOUSANDS_ORD: [&str; 9] = [
+    "χιλιοστός", "δισχιλιοστός", "τρισχιλιοστός", "τετρακισχιλιοστός",
+    "πεντακισχιλιοστός", "εξακισχιλιοστός", "επτακισχιλιοστός",
+    "οκτακισχιλιοστός", "εννεακισχιλιοστός",
 ];
 
 /// `Num2Word_EL.low_numwords`, 20 down to 0.
@@ -277,14 +265,6 @@ fn build_currency_adjectives() -> HashMap<&'static str, &'static str> {
     .collect()
 }
 
-/// Python's `word[:-1]`: drop the last **character**, not the last byte.
-/// Every Greek numword here is multi-byte, so byte slicing would panic.
-fn strip_last_char(s: &str) -> String {
-    let mut chars: Vec<char> = s.chars().collect();
-    chars.pop();
-    chars.into_iter().collect()
-}
-
 fn is(n: &BigInt, k: i64) -> bool {
     *n == BigInt::from(k)
 }
@@ -292,7 +272,6 @@ fn is(n: &BigInt, k: i64) -> bool {
 pub struct LangEl {
     cards: Cards,
     maxval: BigInt,
-    ordinals: HashMap<&'static str, &'static str>,
     exclude_title: Vec<String>,
     currency_forms: HashMap<&'static str, CurrencyForms>,
     currency_adjectives: HashMap<&'static str, &'static str>,
@@ -320,12 +299,9 @@ impl LangEl {
         // MAXVAL therefore == 10**15.
         let maxval = cards.highest().cloned().unwrap_or_else(BigInt::zero) * BigInt::from(1000);
 
-        let ordinals: HashMap<&'static str, &'static str> = ORDINALS.into_iter().collect();
-
         LangEl {
             cards,
             maxval,
-            ordinals,
             // is_title is False for EL, so exclude_title is never consulted;
             // carried for fidelity with setup().
             exclude_title: vec!["και".into(), "κόμμα".into(), "μείον".into()],
@@ -531,88 +507,67 @@ impl Lang for LangEl {
         }
     }
 
-    /// Port of `Num2Word_EL.to_ordinal`. See the module docs for the four
-    /// distinct bugs preserved here.
+    /// Greek ordinals: every component of the number takes its own ordinal
+    /// form — 121 is "εκατοστός εικοστός πρώτος", 1001 "χιλιοστός πρώτος",
+    /// 2345 "δισχιλιοστός τριακοσιοστός τεσσαρακοστός πέμπτος".
+    ///
+    /// Python glued "ος" onto the cardinal and dropped words past the
+    /// second (gladiaio/num2words2#251). The forms are sourced up to 9999
+    /// and for the round δεκακισχιλιοστός (10**4), εκατοντακισχιλιοστός
+    /// (10**5), εκατομμυριοστός (10**6) and δισεκατομμυριοστός (10**9);
+    /// other values from 10000 up raise OverflowError — compounds of the
+    /// higher thousands have competing forms (δεκακισχιλιοστός /
+    /// δεκαχιλιοστός / μυριοστός, …). 0 keeps Python's "μηδένος".
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
-        let word = self.to_cardinal(value)?;
-
-        // Whole-string hits from the ordinals table (1..12, 20, 100, 1000,
-        // 10**6). Python scans dict items and compares for equality; keys are
-        // unique so a direct lookup is equivalent.
-        if let Some(o) = self.ordinals.get(word.as_str()) {
-            return Ok(o.to_string());
+        if value.is_zero() {
+            return Ok(format!("{}ος", self.to_cardinal(value)?));
         }
-
-        // Hard-coded compound specials.
-        if word == "δεκατέσσερα" {
-            return Ok("δεκατέταρτος".to_string());
-        } else if word == "δεκατρία" {
-            // Verbatim from the source: "δεκατρίτος".
-            return Ok("δεκατρίτος".to_string());
-        } else if word == "ένα εκατομμύριο" {
-            // This is the arm that actually fires for 10**6: the ordinals
-            // table is keyed "εκατομμύριο" but the cardinal is "ένα
-            // εκατομμύριο", so the table lookup above misses. (The
-            // "εκατομμύριο" table entry is therefore dead.)
+        if is(value, 10_000) {
+            return Ok("δεκακισχιλιοστός".to_string());
+        }
+        if is(value, 100_000) {
+            return Ok("εκατοντακισχιλιοστός".to_string());
+        }
+        if is(value, 1_000_000) {
             return Ok("εκατομμυριοστός".to_string());
         }
-
-        // Python: word.split() — split on runs of whitespace.
-        let mut parts: Vec<String> = word.split_whitespace().map(String::from).collect();
-        if parts.len() > 1 {
-            // NOTE: these four arms discard parts[2..] entirely. That is the
-            // truncation bug — to_ordinal(123456) == "εκατοστός εικοστός".
-            if parts[0] == "είκοσι" && parts[1] == "ένα" {
-                return Ok("εικοστός πρώτος".to_string());
-            } else if parts[0] == "είκοσι" {
-                if let Some(o) = self.ordinals.get(parts[1].as_str()) {
-                    return Ok(format!("εικοστός {}", o));
-                }
+        if is(value, 1_000_000_000) {
+            return Ok("δισεκατομμυριοστός".to_string());
+        }
+        let n = match value.to_u32() {
+            Some(n) if n < 10_000 => n as usize,
+            _ => {
+                // Still raise the cardinal's own OverflowError past maxval.
+                self.to_cardinal(value)?;
+                return Err(N2WError::Overflow(format!(
+                    "lang='el' spells ordinals up to 9999 and for 10**4, 10**5, 10**6, 10**9; \
+                     {} has no ordinal form",
+                    value
+                )));
             }
-            if parts[0] == "εκατό" && parts[1] == "ένα" {
-                return Ok("εκατοστός πρώτος".to_string());
-            } else if parts[0] == "εκατό" {
-                if let Some(o) = self.ordinals.get(parts[1].as_str()) {
-                    return Ok(format!("εκατοστός {}", o));
+        };
+        let mut parts: Vec<&str> = Vec::new();
+        if n >= 1000 {
+            parts.push(THOUSANDS_ORD[n / 1000 - 1]);
+        }
+        if n % 1000 >= 100 {
+            parts.push(HUNDREDS_ORD[n % 1000 / 100 - 1]);
+        }
+        match n % 100 {
+            0 => {}
+            11 => parts.push("ενδέκατος"),
+            12 => parts.push("δωδέκατος"),
+            r => {
+                if r >= 10 {
+                    parts.push(TENS_ORD[r / 10 - 1]);
                 }
-            }
-
-            // "make only the last part ordinal" — but it also rewrites
-            // parts[0], leaving everything between untouched. Hence
-            // to_ordinal(100001) == "εκατοστός χιλιάδες πρώτος".
-            let last_part = parts[parts.len() - 1].clone();
-            if let Some(o) = self.ordinals.get(last_part.as_str()) {
-                let o = o.to_string();
-                if parts[0] == "είκοσι" {
-                    parts[0] = "εικοστός".to_string();
-                } else if parts[0] == "εκατό" {
-                    parts[0] = "εκατοστός".to_string();
+                if r % 10 > 0 {
+                    parts.push(UNITS_ORD[r % 10 - 1]);
                 }
-                let n = parts.len();
-                parts[n - 1] = o;
-                return Ok(parts.join(" "));
-            } else if last_part == "τέσσερα" {
-                let n = parts.len();
-                parts[n - 1] = "τέταρτος".to_string();
-                return Ok(parts.join(" "));
             }
         }
-
-        // Default ordinal formation — applied to the WHOLE string, however
-        // many words it has. 'α' is U+03B1 (plain alpha); 'ά' (U+03AC, alpha
-        // with tonos) does NOT match, which is why "δεκαεπτά" → "δεκαεπτάος"
-        // while "δεκαεννέα" → "δεκαεννέος".
-        if word.ends_with('α') {
-            Ok(format!("{}ος", strip_last_char(&word)))
-        } else if word.ends_with('ο') {
-            Ok(format!("{}ος", strip_last_char(&word)))
-        } else if word.ends_with('ι') {
-            // Python appends without stripping in this arm.
-            Ok(format!("{}ος", word))
-        } else {
-            Ok(format!("{}ος", word))
-        }
+        Ok(parts.join(" "))
     }
 
     /// Port of `Num2Word_EL.to_ordinal_num`: `str(value) + "ος"`.

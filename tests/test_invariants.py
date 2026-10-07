@@ -150,6 +150,23 @@ def _currency_code_failures(lang):
     return out
 
 
+def _ordinal_unique_failures(lang):
+    """Two different numbers never share an ordinal (#251: be 80th read
+    like 70th, el 121st..129th all read "εκατοστός εικοστός"). Values that
+    raise are skipped."""
+    seen = {}
+    out = []
+    for x in range(1, 2001):
+        r, err = _call(x, lang, "ordinal")
+        if err is not None:
+            continue
+        if r in seen:
+            out.append(("ordinal", seen[r], x, r))
+        else:
+            seen[r] = x
+    return out
+
+
 CHECKS = {
     "exceptions": _exception_failures,
     "hygiene": _hygiene_failures,
@@ -158,6 +175,7 @@ CHECKS = {
     "maxval": _maxval_failures,
     "ordinal_rejects_fraction": _ordinal_fraction_failures,
     "currency_code_respected": _currency_code_failures,
+    "ordinal_unique_1_2000": _ordinal_unique_failures,
 }
 
 # Languages whose own decimal word is spelled "point".
@@ -178,6 +196,8 @@ ALLOW = {
     "maxval": set(),
     "ordinal_rejects_fraction": set(),
     "currency_code_respected": set(),
+    # Only be and el failed this when it was added; both fixed in #251.
+    "ordinal_unique_1_2000": set(),
 }
 
 
