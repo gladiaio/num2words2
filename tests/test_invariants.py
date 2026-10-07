@@ -267,11 +267,7 @@ ALLOW = {
     "ordinal_unique_1_2000": set(),
     "currency_nouns_native": set(),
     # gladiaio/num2words2#147
-    "no_digit_output": {
-        # fixed on sibling branch fix/a5-latin
-        "br", "cnh", "haw", "ht", "jv", "jw", "ky", "ln", "mg", "mi", "mt",
-        "so", "su", "tk", "tl", "tt", "uz", "wo", "yo",
-    },
+    "no_digit_output": set(),
 }
 
 
