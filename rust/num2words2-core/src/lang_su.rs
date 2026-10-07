@@ -1,5 +1,13 @@
 //! Port of `lang_SU.py` (Sundanese).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "koma" (decimal) — best candidate: Sundanese is written
+//!   in Indonesia, which uses a decimal comma read "koma"; CLDR su.xml says
+//!   "titik" instead.
+//! UNVERIFIED (#154): "mineus" (minus) — best candidate: CLDR su.xml rbnf rule
+//!   "-x: mineus".
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -36,9 +44,8 @@
 //! 1. **Zero (fixed, gladiaio/num2words2#154).** `_int_to_word` opens with
 //!    `return self.ones[0] if self.ones[0] else "zero"` and `ones[0]` is the
 //!    empty string, so Python always said the English "zero". The port says
-//!    the Sundanese "nol". The decimal word is still the English "point":
-//!    CLDR's Sundanese rules say "titik", Indonesian usage "koma", and no
-//!    Sundanese source settles it.
+//!    the Sundanese "nol". The decimal word and negword are the
+//!    best candidates "koma" and "mineus" (see UNVERIFIED above).
 //! 2. **The teens are built compositionally and come out wrong.** 11..19 go
 //!    through the generic `tens[1] + " " + ones[n]` path, yielding
 //!    "sapuluh hiji" (lit. "ten one") for 11 and "sapuluh dua" for 12. Real
@@ -57,7 +64,7 @@
 //!    sign in numeric form: `to_ordinal_num(-1)` == "-1.".
 //! 5. **`to_ordinal` is cardinal + "-na" with no linguistic agreement**, and
 //!    the suffix binds to the whole phrase, sign included:
-//!    `to_ordinal(-1)` == "minus hiji-na".
+//!    `to_ordinal(-1)` == "mineus hiji-na".
 //! 6. `negword` is `"minus "` — with a **trailing space** baked into the
 //!    attribute. `to_cardinal` concatenates it raw and relies on the final
 //!    `.strip()` to tidy up. [`LangSu::negword`] returns the attribute
@@ -175,9 +182,9 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 /// `self.negword`. The trailing space is part of the Python attribute.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "mineus ";
 /// `self.pointword`.
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "koma";
 
 /// The `"zero"` fallback in `_int_to_word`. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""`, so this is
@@ -504,7 +511,7 @@ impl Lang for LangSu {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "koma"
     }
 
     /// Port of `Num2Word_SU.to_cardinal`, integer path only.
@@ -557,7 +564,7 @@ impl Lang for LangSu {
     ///
     /// Python's `to_cardinal` is string-driven: `"." in str(number)` picks the
     /// decimal grammar, and `str(5.0)` is `"5.0"`, so **whole floats keep
-    /// their ".0" tail** ("lima point nol") instead of taking Base's
+    /// their ".0" tail** ("lima koma nol") instead of taking Base's
     /// whole-value integer route. Without a visible point the sign-free string
     /// lands in `int(n)`:
     ///   * `Decimal("5")` -> `"5"` -> the integer path ("lima");
@@ -591,7 +598,7 @@ impl Lang for LangSu {
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + "-na"` with no type guard, so floats get
-    /// the full decimal phrase plus the suffix ("lima point nol-na") and the
+    /// the full decimal phrase plus the suffix ("lima koma nol-na") and the
     /// exponential-form ValueError propagates unchanged.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!("{}-na", self.cardinal_float_entry(value, None)?))
@@ -658,15 +665,15 @@ impl Lang for LangSu {
     ///
     /// Consequences reproduced:
     ///
-    /// * `1.005` → "hiji point nol nol lima" and `2.675` → "dua point genep
+    /// * `1.005` → "hiji koma nol nol lima" and `2.675` → "dua point genep
     ///   tujuh lima": the repr digits are taken verbatim, so the f64 artefacts
     ///   (`674.9999…`) never arise — there is no `abs(value-pre)*10**p` here.
-    /// * Trailing repr zeros survive: `str(1.0)` == "1.0" → "hiji point nol",
-    ///   and the Decimal `1.10` → "hiji point hiji nol".
+    /// * Trailing repr zeros survive: `str(1.0)` == "1.0" → "hiji koma nol",
+    ///   and the Decimal `1.10` → "hiji koma hiji nol".
     /// * Bug 3 leaks in: a `left` ≥ 10^9 is emitted as bare digits, so the
-    ///   Decimal `98746251323029.99` → "98746251323029 point salapan salapan".
+    ///   Decimal `98746251323029.99` → "98746251323029 koma salapan salapan".
     /// * The sign is peeled off `str(number)` exactly as Python does, so
-    ///   `str(-0.0)` == "-0.0" would yield "minus nol point nol" (Rust's
+    ///   `str(-0.0)` == "-0.0" would yield "mineus nol koma nol" (Rust's
     ///   fixed formatting preserves the negative-zero sign, matching repr).
     fn to_cardinal_float(
         &self,

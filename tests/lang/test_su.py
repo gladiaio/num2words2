@@ -232,55 +232,55 @@ class Num2WordsSUTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="su"), "minus hiji")
-        self.assertEqual(num2words(-2, lang="su"), "minus dua")
-        self.assertEqual(num2words(-5, lang="su"), "minus lima")
-        self.assertEqual(num2words(-10, lang="su"), "minus sapuluh")
-        self.assertEqual(num2words(-11, lang="su"), "minus sapuluh hiji")
-        self.assertEqual(num2words(-20, lang="su"), "minus dua puluh")
-        self.assertEqual(num2words(-50, lang="su"), "minus lima puluh")
-        self.assertEqual(num2words(-99, lang="su"), "minus salapan puluh salapan")
-        self.assertEqual(num2words(-100, lang="su"), "minus hiji ratus")
-        self.assertEqual(num2words(-101, lang="su"), "minus hiji ratus hiji")
-        self.assertEqual(num2words(-200, lang="su"), "minus dua ratus")
+        self.assertEqual(num2words(-1, lang="su"), "mineus hiji")
+        self.assertEqual(num2words(-2, lang="su"), "mineus dua")
+        self.assertEqual(num2words(-5, lang="su"), "mineus lima")
+        self.assertEqual(num2words(-10, lang="su"), "mineus sapuluh")
+        self.assertEqual(num2words(-11, lang="su"), "mineus sapuluh hiji")
+        self.assertEqual(num2words(-20, lang="su"), "mineus dua puluh")
+        self.assertEqual(num2words(-50, lang="su"), "mineus lima puluh")
+        self.assertEqual(num2words(-99, lang="su"), "mineus salapan puluh salapan")
+        self.assertEqual(num2words(-100, lang="su"), "mineus hiji ratus")
+        self.assertEqual(num2words(-101, lang="su"), "mineus hiji ratus hiji")
+        self.assertEqual(num2words(-200, lang="su"), "mineus dua ratus")
         self.assertEqual(
-            num2words(-999, lang="su"), "minus salapan ratus salapan puluh salapan"
+            num2words(-999, lang="su"), "mineus salapan ratus salapan puluh salapan"
         )
-        self.assertEqual(num2words(-1000, lang="su"), "minus hiji rebu")
-        self.assertEqual(num2words(-1001, lang="su"), "minus hiji rebu hiji")
-        self.assertEqual(num2words(-10000, lang="su"), "minus sapuluh rebu")
-        self.assertEqual(num2words(-100000, lang="su"), "minus hiji ratus rebu")
-        self.assertEqual(num2words(-1000000, lang="su"), "minus hiji juta")
+        self.assertEqual(num2words(-1000, lang="su"), "mineus hiji rebu")
+        self.assertEqual(num2words(-1001, lang="su"), "mineus hiji rebu hiji")
+        self.assertEqual(num2words(-10000, lang="su"), "mineus sapuluh rebu")
+        self.assertEqual(num2words(-100000, lang="su"), "mineus hiji ratus rebu")
+        self.assertEqual(num2words(-1000000, lang="su"), "mineus hiji juta")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="su"), "nol point hiji")
-        self.assertEqual(num2words(0.5, lang="su"), "nol point lima")
-        self.assertEqual(num2words(0.9, lang="su"), "nol point salapan")
-        self.assertEqual(num2words(1.1, lang="su"), "hiji point hiji")
-        self.assertEqual(num2words(1.5, lang="su"), "hiji point lima")
-        self.assertEqual(num2words(2.5, lang="su"), "dua point lima")
-        self.assertEqual(num2words(3.14, lang="su"), "tilu point hiji opat")
-        self.assertEqual(num2words(10.5, lang="su"), "sapuluh point lima")
-        self.assertEqual(num2words(11.11, lang="su"), "sapuluh hiji point hiji hiji")
-        self.assertEqual(num2words(20.2, lang="su"), "dua puluh point dua")
+        self.assertEqual(num2words(0.1, lang="su"), "nol koma hiji")
+        self.assertEqual(num2words(0.5, lang="su"), "nol koma lima")
+        self.assertEqual(num2words(0.9, lang="su"), "nol koma salapan")
+        self.assertEqual(num2words(1.1, lang="su"), "hiji koma hiji")
+        self.assertEqual(num2words(1.5, lang="su"), "hiji koma lima")
+        self.assertEqual(num2words(2.5, lang="su"), "dua koma lima")
+        self.assertEqual(num2words(3.14, lang="su"), "tilu koma hiji opat")
+        self.assertEqual(num2words(10.5, lang="su"), "sapuluh koma lima")
+        self.assertEqual(num2words(11.11, lang="su"), "sapuluh hiji koma hiji hiji")
+        self.assertEqual(num2words(20.2, lang="su"), "dua puluh koma dua")
         self.assertEqual(
-            num2words(99.99, lang="su"), "salapan puluh salapan point salapan salapan"
+            num2words(99.99, lang="su"), "salapan puluh salapan koma salapan salapan"
         )
-        self.assertEqual(num2words(100.01, lang="su"), "hiji ratus point nol hiji")
-        self.assertEqual(num2words(100.5, lang="su"), "hiji ratus point lima")
+        self.assertEqual(num2words(100.01, lang="su"), "hiji ratus koma nol hiji")
+        self.assertEqual(num2words(100.5, lang="su"), "hiji ratus koma lima")
         self.assertEqual(
-            num2words(123.45, lang="su"), "hiji ratus dua puluh tilu point opat lima"
+            num2words(123.45, lang="su"), "hiji ratus dua puluh tilu koma opat lima"
         )
-        self.assertEqual(num2words(1000.5, lang="su"), "hiji rebu point lima")
+        self.assertEqual(num2words(1000.5, lang="su"), "hiji rebu koma lima")
         self.assertEqual(
             num2words(1234.56, lang="su"),
-            "hiji rebu dua ratus tilu puluh opat point lima genep",
+            "hiji rebu dua ratus tilu puluh opat koma lima genep",
         )
-        self.assertEqual(num2words(10000.01, lang="su"), "sapuluh rebu point nol hiji")
-        self.assertEqual(num2words(-0.5, lang="su"), "minus nol point lima")
-        self.assertEqual(num2words(-1.5, lang="su"), "minus hiji point lima")
-        self.assertEqual(num2words(-10.5, lang="su"), "minus sapuluh point lima")
+        self.assertEqual(num2words(10000.01, lang="su"), "sapuluh rebu koma nol hiji")
+        self.assertEqual(num2words(-0.5, lang="su"), "mineus nol koma lima")
+        self.assertEqual(num2words(-1.5, lang="su"), "mineus hiji koma lima")
+        self.assertEqual(num2words(-10.5, lang="su"), "mineus sapuluh koma lima")
 
     def test_ordinal(self):
         """Test ordinal numbers."""

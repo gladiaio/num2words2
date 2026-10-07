@@ -1,5 +1,13 @@
 //! Port of `lang_WO.py` (Wolof).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "tus" (zero) — best candidate:
+//!   afronum.blogspot.com/p/wolof.html (also "neen", "dara", "sero").
+//! UNVERIFIED (#154): "virgule" (decimal) and "moins" (minus) — best
+//!   candidates: the French words of Senegalese school mathematics; no Wolof
+//!   reading found.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. No
@@ -52,9 +60,9 @@
 //!   sibling `lang_bm.rs`, which is the same shape.
 //! * **The fraction digits go through `_int_to_word`, not a bare `ones[]`
 //!   lookup** (this is where WO differs from BM). `_int_to_word(0)` is `"zero"`
-//!   (bug 3), so `0.01` → `"zero point zero benn"`, not `"... <empty> benn"`.
+//!   (bug 3), so `0.01` → `"tus virgule tus benn"`, not `"... <empty> benn"`.
 //! * **Trailing zeros are significant** — they are characters, not a computed
-//!   remainder: `Decimal("1.10")` → `"benn point benn zero"`.
+//!   remainder: `Decimal("1.10")` → `"benn virgule benn tus"`.
 //! * **Exponent notation raises `ValueError`**, since `int()` chokes on the
 //!   literal — the same hole [`parse_int`] documents for currency. `1e16` →
 //!   `"1e+16"` → no `"."` → `int("1e+16")` raises quoting the whole literal;
@@ -144,7 +152,7 @@
 //!    the fallback has to render arbitrarily large inputs verbatim.
 //! 2. **`to_ordinal` has no negative/zero guard.** It is a blind
 //!    `to_cardinal(number) + "-eel"`, so `to_ordinal(0)` == "zero-eel" and
-//!    `to_ordinal(-1)` == "minus benn-eel" — the suffix lands on the *last word*
+//!    `to_ordinal(-1)` == "moins benn-eel" — the suffix lands on the *last word*
 //!    of a multi-word cardinal, e.g. `to_ordinal(100)` == "benn téeméer-eel".
 //!    Combined with bug 1, `to_ordinal(10**9)` == "1000000000-eel".
 //! 3. **`_int_to_word(0)` is a tautology.** Python writes
@@ -187,12 +195,12 @@ use std::sync::OnceLock;
 
 /// `self.negword` — note the trailing space, which is load-bearing: `to_cardinal`
 /// concatenates it directly onto the magnitude with no separator.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "moins ";
 
 /// `self.pointword`. Live on the float path, where WO interpolates it raw
 /// (with a space on either side) between the integral part and the spelled-out
 /// fraction digits: `int(left) + " " + pointword + " " + digits…`.
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "virgule";
 
 /// `self.ones`. Index 0 is `""` and is only ever reached via the dead
 /// `ones[0]` arm of the zero check (bug 3).
@@ -286,7 +294,7 @@ fn int_to_word(number: &BigInt) -> String {
     // `if number == 0: return self.ones[0] if self.ones[0] else "zero"`.
     // ones[0] is "" (falsy), so this is unconditionally "zero" (bug 3).
     if number.is_zero() {
-        return "zero".to_string();
+        return "tus".to_string();
     }
 
     // Unreachable from to_cardinal/to_ordinal/to_year (bug 4) — mirrored anyway.
@@ -626,7 +634,7 @@ impl Lang for LangWo {
 
     /// `to_ordinal(float/Decimal)`. WO's `to_ordinal` is
     /// `self.to_cardinal(number) + "-eel"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "juróom point zero-eel".
+    /// entry is the float cardinal plus the suffix — "juróom virgule tus-eel".
     /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
     /// ValueError inside the cardinal, before the suffix is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -676,7 +684,7 @@ impl Lang for LangWo {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "virgule"
     }
 
     /// Python:
@@ -732,7 +740,7 @@ impl Lang for LangWo {
     /// Python: `def to_year(self, val, longval=True): return self.to_cardinal(val)`
     /// — `longval` is accepted and ignored, there is no two-digit-pair year
     /// idiom, and negative years get no "BC" treatment, just the negword:
-    /// `to_year(-500)` == "minus juróom téeméer".
+    /// `to_year(-500)` == "moins juróom téeméer".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -934,42 +942,42 @@ mod float_tests {
     /// Every `cardinal` corpus row with a dot in `arg` (float input).
     #[test]
     fn corpus_float() {
-        assert_eq!(f(0.0), "zero point zero");
-        assert_eq!(f(0.5), "zero point juróom");
-        assert_eq!(f(1.0), "benn point zero");
-        assert_eq!(f(1.5), "benn point juróom");
-        assert_eq!(f(2.25), "ñaar point ñaar juróom");
-        assert_eq!(f(3.14), "ñett point benn ñeent");
-        assert_eq!(f(0.01), "zero point zero benn");
-        assert_eq!(f(0.1), "zero point benn");
-        assert_eq!(f(0.99), "zero point juróom-ñeent juróom-ñeent");
-        assert_eq!(f(1.01), "benn point zero benn");
-        assert_eq!(f(12.34), "fukk ñaar point ñett ñeent");
+        assert_eq!(f(0.0), "tus virgule tus");
+        assert_eq!(f(0.5), "tus virgule juróom");
+        assert_eq!(f(1.0), "benn virgule tus");
+        assert_eq!(f(1.5), "benn virgule juróom");
+        assert_eq!(f(2.25), "ñaar virgule ñaar juróom");
+        assert_eq!(f(3.14), "ñett virgule benn ñeent");
+        assert_eq!(f(0.01), "tus virgule tus benn");
+        assert_eq!(f(0.1), "tus virgule benn");
+        assert_eq!(f(0.99), "tus virgule juróom-ñeent juróom-ñeent");
+        assert_eq!(f(1.01), "benn virgule tus benn");
+        assert_eq!(f(12.34), "fukk ñaar virgule ñett ñeent");
         assert_eq!(
             f(99.99),
-            "juróom-ñeent-fukk juróom-ñeent point juróom-ñeent juróom-ñeent"
+            "juróom-ñeent-fukk juróom-ñeent virgule juróom-ñeent juróom-ñeent"
         );
-        assert_eq!(f(100.5), "benn téeméer point juróom");
+        assert_eq!(f(100.5), "benn téeméer virgule juróom");
         assert_eq!(
             f(1234.56),
-            "benn junni ñaar téeméer ñett-fukk ñeent point juróom juróom-benn"
+            "benn junni ñaar téeméer ñett-fukk ñeent virgule juróom juróom-benn"
         );
-        assert_eq!(f(-0.5), "minus zero point juróom");
-        assert_eq!(f(-1.5), "minus benn point juróom");
-        assert_eq!(f(-12.34), "minus fukk ñaar point ñett ñeent");
+        assert_eq!(f(-0.5), "moins tus virgule juróom");
+        assert_eq!(f(-1.5), "moins benn virgule juróom");
+        assert_eq!(f(-12.34), "moins fukk ñaar virgule ñett ñeent");
         // The f64-artefact cases: repr is shortest-round-trip, so WO's string
         // path gets "1.005"/"2.675" for free — no rescue heuristic needed.
-        assert_eq!(f(1.005), "benn point zero zero juróom");
-        assert_eq!(f(2.675), "ñaar point juróom-benn juróom-ñaar juróom");
+        assert_eq!(f(1.005), "benn virgule tus tus juróom");
+        assert_eq!(f(2.675), "ñaar virgule juróom-benn juróom-ñaar juróom");
     }
 
     /// Every `cardinal_dec` corpus row (Decimal input) — trailing zeros and the
     /// >10^9 bare-digit fallback in the integral part both exercised.
     #[test]
     fn corpus_decimal() {
-        assert_eq!(dec("0.01"), "zero point zero benn");
-        assert_eq!(dec("1.10"), "benn point benn zero");
-        assert_eq!(dec("12.345"), "fukk ñaar point ñett ñeent juróom");
+        assert_eq!(dec("0.01"), "tus virgule tus benn");
+        assert_eq!(dec("1.10"), "benn virgule benn tus");
+        assert_eq!(dec("12.345"), "fukk ñaar virgule ñett ñeent juróom");
         // Past 10^9 the left part raises OverflowError (#147), not digits.
         let big = FloatValue::Decimal {
             value: BigDecimal::from_str("98746251323029.99").unwrap(),
@@ -979,20 +987,20 @@ mod float_tests {
             LangWo::new().to_cardinal_float(&big, None),
             Err(N2WError::Overflow(_))
         ));
-        assert_eq!(dec("0.001"), "zero point zero zero benn");
+        assert_eq!(dec("0.001"), "tus virgule tus tus benn");
     }
 
     /// Not corpus rows; captured from the live interpreter.
     #[test]
     fn float_edges() {
         // -0.0 keeps its sign bit, so the negword survives.
-        assert_eq!(f(-0.0), "minus zero point zero");
+        assert_eq!(f(-0.0), "moins tus virgule tus");
         // A tie CPython breaks to even: repr is "670352580196876.2". (The
         // integer part is past the 10^9 ceiling, so only the repr is checked.)
         assert_eq!(python_float_repr(670352580196876.25), "670352580196876.2");
         // Decimal with no fractional part takes the else branch.
         assert_eq!(dec("5"), "juróom");
-        assert_eq!(dec("-5"), "minus juróom");
+        assert_eq!(dec("-5"), "moins juróom");
     }
 
     /// Exponent notation makes `int()` choke — the failure keeps ValueError's
@@ -1054,6 +1062,6 @@ mod float_tests {
                 Some(1),
             )
             .unwrap();
-        assert_eq!(full, "ñaar point juróom-benn juróom-ñaar juróom");
+        assert_eq!(full, "ñaar virgule juróom-benn juróom-ñaar juróom");
     }
 }

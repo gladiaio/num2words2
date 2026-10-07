@@ -228,51 +228,51 @@ class Num2WordsYOTest(TestCase):
 
     def test_negative_numbers(self):
         """Test negative numbers."""
-        self.assertEqual(num2words(-1, lang="yo"), "minus ọkan")
-        self.assertEqual(num2words(-2, lang="yo"), "minus méjì")
-        self.assertEqual(num2words(-5, lang="yo"), "minus marun")
-        self.assertEqual(num2words(-10, lang="yo"), "minus mẹwa")
-        self.assertEqual(num2words(-11, lang="yo"), "minus mẹwa ọkan")
-        self.assertEqual(num2words(-20, lang="yo"), "minus ogún")
-        self.assertEqual(num2words(-50, lang="yo"), "minus àádọta")
-        self.assertEqual(num2words(-99, lang="yo"), "minus àádọrún mẹsan")
-        self.assertEqual(num2words(-100, lang="yo"), "minus ọkan ọgọrun")
-        self.assertEqual(num2words(-101, lang="yo"), "minus ọkan ọgọrun ọkan")
-        self.assertEqual(num2words(-200, lang="yo"), "minus méjì ọgọrun")
-        self.assertEqual(num2words(-999, lang="yo"), "minus mẹsan ọgọrun àádọrún mẹsan")
-        self.assertEqual(num2words(-1000, lang="yo"), "minus ọkan ẹgbẹrun")
-        self.assertEqual(num2words(-1001, lang="yo"), "minus ọkan ẹgbẹrun ọkan")
-        self.assertEqual(num2words(-10000, lang="yo"), "minus mẹwa ẹgbẹrun")
-        self.assertEqual(num2words(-100000, lang="yo"), "minus ọkan ọgọrun ẹgbẹrun")
-        self.assertEqual(num2words(-1000000, lang="yo"), "minus ọkan miliọnu")
+        self.assertEqual(num2words(-1, lang="yo"), "òdì ọkan")
+        self.assertEqual(num2words(-2, lang="yo"), "òdì méjì")
+        self.assertEqual(num2words(-5, lang="yo"), "òdì marun")
+        self.assertEqual(num2words(-10, lang="yo"), "òdì mẹwa")
+        self.assertEqual(num2words(-11, lang="yo"), "òdì mẹwa ọkan")
+        self.assertEqual(num2words(-20, lang="yo"), "òdì ogún")
+        self.assertEqual(num2words(-50, lang="yo"), "òdì àádọta")
+        self.assertEqual(num2words(-99, lang="yo"), "òdì àádọrún mẹsan")
+        self.assertEqual(num2words(-100, lang="yo"), "òdì ọkan ọgọrun")
+        self.assertEqual(num2words(-101, lang="yo"), "òdì ọkan ọgọrun ọkan")
+        self.assertEqual(num2words(-200, lang="yo"), "òdì méjì ọgọrun")
+        self.assertEqual(num2words(-999, lang="yo"), "òdì mẹsan ọgọrun àádọrún mẹsan")
+        self.assertEqual(num2words(-1000, lang="yo"), "òdì ọkan ẹgbẹrun")
+        self.assertEqual(num2words(-1001, lang="yo"), "òdì ọkan ẹgbẹrun ọkan")
+        self.assertEqual(num2words(-10000, lang="yo"), "òdì mẹwa ẹgbẹrun")
+        self.assertEqual(num2words(-100000, lang="yo"), "òdì ọkan ọgọrun ẹgbẹrun")
+        self.assertEqual(num2words(-1000000, lang="yo"), "òdì ọkan miliọnu")
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="yo"), "òdo point ọkan")
-        self.assertEqual(num2words(0.5, lang="yo"), "òdo point marun")
-        self.assertEqual(num2words(0.9, lang="yo"), "òdo point mẹsan")
-        self.assertEqual(num2words(1.1, lang="yo"), "ọkan point ọkan")
-        self.assertEqual(num2words(1.5, lang="yo"), "ọkan point marun")
-        self.assertEqual(num2words(2.5, lang="yo"), "méjì point marun")
-        self.assertEqual(num2words(3.14, lang="yo"), "mẹta point ọkan mẹrin")
-        self.assertEqual(num2words(10.5, lang="yo"), "mẹwa point marun")
-        self.assertEqual(num2words(11.11, lang="yo"), "mẹwa ọkan point ọkan ọkan")
-        self.assertEqual(num2words(20.2, lang="yo"), "ogún point méjì")
-        self.assertEqual(num2words(99.99, lang="yo"), "àádọrún mẹsan point mẹsan mẹsan")
-        self.assertEqual(num2words(100.01, lang="yo"), "ọkan ọgọrun point òdo ọkan")
-        self.assertEqual(num2words(100.5, lang="yo"), "ọkan ọgọrun point marun")
+        self.assertEqual(num2words(0.1, lang="yo"), "òdo ẹsẹ ọkan")
+        self.assertEqual(num2words(0.5, lang="yo"), "òdo ẹsẹ marun")
+        self.assertEqual(num2words(0.9, lang="yo"), "òdo ẹsẹ mẹsan")
+        self.assertEqual(num2words(1.1, lang="yo"), "ọkan ẹsẹ ọkan")
+        self.assertEqual(num2words(1.5, lang="yo"), "ọkan ẹsẹ marun")
+        self.assertEqual(num2words(2.5, lang="yo"), "méjì ẹsẹ marun")
+        self.assertEqual(num2words(3.14, lang="yo"), "mẹta ẹsẹ ọkan mẹrin")
+        self.assertEqual(num2words(10.5, lang="yo"), "mẹwa ẹsẹ marun")
+        self.assertEqual(num2words(11.11, lang="yo"), "mẹwa ọkan ẹsẹ ọkan ọkan")
+        self.assertEqual(num2words(20.2, lang="yo"), "ogún ẹsẹ méjì")
+        self.assertEqual(num2words(99.99, lang="yo"), "àádọrún mẹsan ẹsẹ mẹsan mẹsan")
+        self.assertEqual(num2words(100.01, lang="yo"), "ọkan ọgọrun ẹsẹ òdo ọkan")
+        self.assertEqual(num2words(100.5, lang="yo"), "ọkan ọgọrun ẹsẹ marun")
         self.assertEqual(
-            num2words(123.45, lang="yo"), "ọkan ọgọrun ogún mẹta point mẹrin marun"
+            num2words(123.45, lang="yo"), "ọkan ọgọrun ogún mẹta ẹsẹ mẹrin marun"
         )
-        self.assertEqual(num2words(1000.5, lang="yo"), "ọkan ẹgbẹrun point marun")
+        self.assertEqual(num2words(1000.5, lang="yo"), "ọkan ẹgbẹrun ẹsẹ marun")
         self.assertEqual(
             num2words(1234.56, lang="yo"),
-            "ọkan ẹgbẹrun méjì ọgọrun ọgbọn mẹrin point marun mẹfa",
+            "ọkan ẹgbẹrun méjì ọgọrun ọgbọn mẹrin ẹsẹ marun mẹfa",
         )
-        self.assertEqual(num2words(10000.01, lang="yo"), "mẹwa ẹgbẹrun point òdo ọkan")
-        self.assertEqual(num2words(-0.5, lang="yo"), "minus òdo point marun")
-        self.assertEqual(num2words(-1.5, lang="yo"), "minus ọkan point marun")
-        self.assertEqual(num2words(-10.5, lang="yo"), "minus mẹwa point marun")
+        self.assertEqual(num2words(10000.01, lang="yo"), "mẹwa ẹgbẹrun ẹsẹ òdo ọkan")
+        self.assertEqual(num2words(-0.5, lang="yo"), "òdì òdo ẹsẹ marun")
+        self.assertEqual(num2words(-1.5, lang="yo"), "òdì ọkan ẹsẹ marun")
+        self.assertEqual(num2words(-10.5, lang="yo"), "òdì mẹwa ẹsẹ marun")
 
     def test_ordinal(self):
         """Test ordinal numbers."""

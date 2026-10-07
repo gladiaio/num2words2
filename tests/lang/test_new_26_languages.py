@@ -14,7 +14,7 @@ EXPECTED_BASICS = {
     "bm": ("fu", "kelen", "tan"),
     "ceb": ("siro", "usa", "napulo"),
     "ckb": ("سفر", "یەک", "دە"),
-    "cnh": ("zero", "pakhat", "pahra"),
+    "cnh": ("pakpalawng", "pakhat", "pahra"),
     "ff": ("sufri", "go'o", "sappo"),
     "fil": ("sero", "isa", "sampu"),
     "hmn": ("xoom", "ib", "kaum"),

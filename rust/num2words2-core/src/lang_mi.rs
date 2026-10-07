@@ -1,5 +1,11 @@
 //! Port of `lang_MI.py` (Maori / te reo Māori).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "tōraro" (minus) — best candidate: "negative" in Te Aka
+//!   (maoridictionary.co.nz, "tau tōraro" = negative number); no source reads a
+//!   negative number aloud.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -38,7 +44,7 @@
 //! 2. **`to_ordinal` does not reject negatives**, unlike most languages (which
 //!    raise on `errmsg_negord`). It falls through to `"tua " + to_cardinal(n)`,
 //!    and `to_cardinal` prefixes its own negword, yielding the self-
-//!    contradictory `to_ordinal(-1) == "tua minus tahi"` ("the minus-first").
+//!    contradictory `to_ordinal(-1) == "tua tōraro tahi"` ("the tōraro-first").
 //!    Corpus-confirmed for -1, -7, -21, -42, -100, -999, -1000, -1000000.
 //! 3. **`to_ordinal` has special forms only for 1..=5**; 0 and everything from
 //!    6 up take the generic `"tua " + cardinal` path, so `to_ordinal(0)` is
@@ -49,8 +55,8 @@
 //!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
 //!    so it always answered the English "zero", and `pointword` was "point".
 //!    The port says "kore" and "ira" (Te Aka: ira = decimal point):
-//!    1.5 == "tahi ira rima". "minus" is kept — no source shows how a
-//!    negative number is read aloud.
+//!    1.5 == "tahi ira rima". The negword is the best
+//!    candidate "tōraro " (see UNVERIFIED above).
 //! 5. **`negword` carries a trailing space** (`"minus "`), which is why
 //!    `to_cardinal` ends with `.strip()`. Kept verbatim, trailing space and
 //!    all, with the matching trim.
@@ -81,7 +87,7 @@
 //! `int()` calls inside `to_cardinal`. The routing itself is
 //! `"." in str(number)`, so whole floats keep their ".0"
 //! (`to_cardinal(5.0)` == "rima ira kore", `str(-0.0)` keeps the sign ->
-//! "minus kore ira kore"), only point-free string forms (integer-valued
+//! "tōraro kore ira kore"), only point-free string forms (integer-valued
 //! Decimals) take the bare integer grammar, and exponent-form shapes
 //! (`str(1e16)` == "1e+16", `str(Decimal("1E+2"))` == "1E+2") plus the
 //! special Decimals ("Infinity"/"NaN") die in `int()` with
@@ -139,7 +145,7 @@ const ZERO: &str = "kore";
 
 /// `self.negword`. The trailing space is in the Python and is load-bearing:
 /// `to_cardinal` concatenates it directly and relies on `.strip()` after.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "tōraro ";
 
 /// `self.ones`. Index 0 is `""` and is never used as a word — the zero case
 /// returns early, and the hundreds branch only indexes 1..=9.
@@ -434,7 +440,7 @@ impl Lang for LangMi {
 
     /// Python's `to_year(val, longval=True)` ignores `longval` entirely and
     /// just delegates to `to_cardinal`. No BC/AD handling, no two-digit pairing:
-    /// `to_year(-500)` is `"minus rima rau"`, not "rima rau BC".
+    /// `to_year(-500)` is `"tōraro rima rau"`, not "rima rau BC".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -456,7 +462,7 @@ impl Lang for LangMi {
     ///   enters the `"."` branch instead and dies in the digit loop at
     ///   `int('e')` — same type, message `'e'` (`'E'` for Decimals).
     /// * **-0.0 keeps its sign** — `str(-0.0)` is `"-0.0"`, sign detached as
-    ///   a string, hence `"minus kore ira kore"`.
+    ///   a string, hence `"tōraro kore ira kore"`.
     ///
     /// The bridge converts a signed-zero `Decimal("-0.0")` to
     /// `Float { -0.0 }` (BigDecimal cannot carry the sign), so the Float arm

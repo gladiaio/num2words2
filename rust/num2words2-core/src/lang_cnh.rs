@@ -1,5 +1,14 @@
 //! Port of `lang_CNH.py` (Hakha Chin).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "pakpalawng" (zero) — best candidate: Van Bik Hakha-
+//!   English dictionary, "nought: pakpalawng" (chin-dictionary.com).
+//! UNVERIFIED (#154): "deh" (decimal) — best candidate: "deh" = dot in the
+//!   same dictionary; no source reads a decimal with it.
+//! UNVERIFIED (#154): "zuh" (minus) — best candidate: the subtraction word
+//!   ("Paruk ah pahnih zuh"); no source reads a negative number.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. No
@@ -42,15 +51,16 @@
 //!    The asymmetry is in the source (`" le " + ...` vs `" " + ...`) and is
 //!    preserved verbatim.
 //! 3. **`to_ordinal` accepts negatives and zero.** `Num2Word_Base.verify_ordinal`
-//!    is never called, so `to_ordinal(-1)` == `"minus pakhat-nak"` and
+//!    is never called, so `to_ordinal(-1)` == `"zuh pakhat-nak"` and
 //!    `to_ordinal(0)` == `"zero-nak"` rather than raising `TypeError`. The
 //!    `-nak` suffix attaches to the *whole* phrase, so `to_ordinal(-999)` ==
-//!    `"minus pakua phazar le pakua kip le pakua-nak"`.
+//!    `"zuh pakua phazar le pakua kip le pakua-nak"`.
 //! 4. **`to_ordinal_num` does not go through `to_cardinal`,** so it keeps the
 //!    minus sign as a digit prefix: `to_ordinal_num(-42)` == `"-42-nak"`.
 //! 5. **`tens[1]` breaks the pattern.** 20..90 are `"<unit> kip"`, but 10 is
 //!    `"pahra"`, not `"pakhat kip"`. Kept as-is.
-//! 6. **English words survive in a Hakha Chin table:** `_int_to_word(0)` is
+//! 6. **English words survived in a Hakha Chin table (replaced by the
+//!    best candidates above, #154):** `_int_to_word(0)` is
 //!    `"zero"` (not a Chin numeral), and `setup` sets `pointword = "decimal"`
 //!    and `negword = "minus "`. Not our problem to fix.
 //! 7. **`exclude_title` / `is_title` are dead config.** `setup` populates
@@ -59,7 +69,7 @@
 //!    list can never take effect. Mirrored on the trait anyway for fidelity.
 //! 8. **`to_year` ignores its `longval` parameter** entirely — the body is just
 //!    `return self.to_cardinal(val)`, so years get no era/pairing treatment
-//!    and negatives come out as `"minus panga phazar"` for -500.
+//!    and negatives come out as `"zuh panga phazar"` for -500.
 //!
 //! # The currency surface
 //!
@@ -172,14 +182,14 @@
 //!     loop is `ret += " " + (self.ones[int(digit)] or "zero")`, so `0` becomes
 //!     `"zero"` (because `ones[0]` is the falsy `""`) and `1..9` become the bare
 //!     unit word — never the tens/hundreds machinery. `0.01` is
-//!     `"zero decimal zero pakhat"`, digit by digit.
+//!     `"pakpalawng deh pakpalawng pakhat"`, digit by digit.
 //! 19. **The integer part still goes through `_int_to_word(int(left))`,** so it
 //!     inherits every integer quirk, including bug 1: the Decimal
 //!     `98746251323029.99` renders its left part as bare digits
-//!     `"98746251323029"` (past 10^9) followed by `"decimal pakua pakua"`.
+//!     `"98746251323029"` (past 10^9) followed by `"deh pakua pakua"`.
 //! 20. **Sign is detected from the *text*, `str(number).startswith("-")`,** not
 //!     a numeric `< 0`. That matters only for negative zero: `str(-0.0)` is
-//!     `"-0.0"`, so `to_cardinal(-0.0)` is `"minus zero decimal zero"`. The
+//!     `"-0.0"`, so `to_cardinal(-0.0)` is `"zuh pakpalawng deh pakpalawng"`. The
 //!     Float arm below uses `f64::is_sign_negative()` (the sign *bit*) to match,
 //!     deliberately **not** `FloatValue::is_negative()` (a `< 0.0` test, which
 //!     reads `-0.0` as positive). No corpus row exercises `-0.0`; this keeps the
@@ -190,8 +200,8 @@
 //!     zero"` — never Base's whole-value integer route. `Decimal("5")` (str
 //!     `"5"`, no dot) *does* take the integer path. `cardinal_float_entry`
 //!     carries this routing; `ordinal`/`year` inherit it by composition
-//!     (`to_ordinal(5.0)` == `"panga decimal zero-nak"`, `to_year(5.0)` ==
-//!     `"panga decimal zero"`), and `to_ordinal_num(5.0)` suffixes the raw
+//!     (`to_ordinal(5.0)` == `"panga deh pakpalawng-nak"`, `to_year(5.0)` ==
+//!     `"panga deh pakpalawng"`), and `to_ordinal_num(5.0)` suffixes the raw
 //!     repr: `"5.0-nak"`.
 //! 22. **Exponential string forms raise ValueError.** `str(1e16)` ==
 //!     `"1e+16"` and `str(Decimal("1E+2"))` == `"1E+2"` contain no `"."`, so
@@ -256,13 +266,13 @@ const THOUSAND: &str = "thawngkhat";
 const MILLION: &str = "milin";
 
 /// `self.negword`, trailing space included exactly as Python spells it.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "zuh ";
 
 /// `self.pointword`.
-const POINTWORD: &str = "decimal";
+const POINTWORD: &str = "deh";
 
 /// What `_int_to_word` returns for 0 — an English word, see bug 6.
-const ZERO_WORD: &str = "zero";
+const ZERO_WORD: &str = "pakpalawng";
 
 /// The `-nak` ordinal suffix, appended to the whole rendered phrase.
 const ORDINAL_SUFFIX: &str = "-nak";
@@ -486,7 +496,7 @@ impl LangCnh {
     /// in Python), but `BigDecimal::from_str("1e-05")` and
     /// `BigDecimal::from_str("0.00001")` are the *same* value with the *same*
     /// scale 5, so the notation Python used is already lost by the time we are
-    /// called. This returns `(0, 0)` -> `"zero kyat"` where Python raises. It
+    /// called. This returns `(0, 0)` -> `"pakpalawng kyat"` where Python raises. It
     /// needs the original string across the binding to fix, and no corpus row
     /// exercises it. Flagged in the report.
     fn split_currency(&self, val: &BigDecimal) -> Result<(BigInt, BigInt)> {
@@ -696,7 +706,7 @@ impl Lang for LangCnh {
     }
 
     fn pointword(&self) -> &str {
-        "decimal"
+        "deh"
     }
 
     /// `self.exclude_title` from `setup`. Dead config — see bug 7.
@@ -704,8 +714,8 @@ impl Lang for LangCnh {
         static EXCL: OnceLock<Vec<String>> = OnceLock::new();
         EXCL.get_or_init(|| {
             vec![
-                "minus".to_string(),
-                "decimal".to_string(),
+                "zuh".to_string(),
+                "deh".to_string(),
                 "le".to_string(),
             ]
         })
@@ -811,7 +821,7 @@ impl Lang for LangCnh {
     ///
     /// Python's `to_cardinal` is string-driven: `"." in str(number)` picks the
     /// decimal grammar, and `str(5.0)` is `"5.0"`, so **whole floats keep
-    /// their ".0" tail** ("panga decimal zero") instead of taking Base's
+    /// their ".0" tail** ("panga deh pakpalawng") instead of taking Base's
     /// whole-value integer route. Without a visible point the sign-free string
     /// lands in `int(n)`:
     ///   * `Decimal("5")` -> `"5"` -> the integer path (`"panga"`);
@@ -841,7 +851,7 @@ impl Lang for LangCnh {
 
     /// `to_ordinal(float/Decimal)`: Python's `to_ordinal` is
     /// `self.to_cardinal(number) + "-nak"` with no type guard, so floats get
-    /// the full decimal phrase plus the suffix ("panga decimal zero-nak") and
+    /// the full decimal phrase plus the suffix ("panga deh pakpalawng-nak") and
     /// bug 22's ValueError propagates unchanged for exponential forms.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
         Ok(format!(
@@ -1069,37 +1079,37 @@ mod float_tests {
     /// Every `"to": "cardinal"` float row for cnh in bench/corpus.jsonl.
     #[test]
     fn corpus_floats() {
-        assert_eq!(f(0.0, 1), "zero decimal zero");
-        assert_eq!(f(0.5, 1), "zero decimal panga");
-        assert_eq!(f(1.0, 1), "pakhat decimal zero");
-        assert_eq!(f(1.5, 1), "pakhat decimal panga");
-        assert_eq!(f(2.25, 2), "pahnih decimal pahnih panga");
-        assert_eq!(f(3.14, 2), "pathum decimal pakhat pali");
-        assert_eq!(f(0.01, 2), "zero decimal zero pakhat");
-        assert_eq!(f(0.1, 1), "zero decimal pakhat");
-        assert_eq!(f(0.99, 2), "zero decimal pakua pakua");
-        assert_eq!(f(1.01, 2), "pakhat decimal zero pakhat");
-        assert_eq!(f(12.34, 2), "pahra le pahnih decimal pathum pali");
-        assert_eq!(f(99.99, 2), "pakua kip le pakua decimal pakua pakua");
-        assert_eq!(f(100.5, 1), "pakhat phazar decimal panga");
+        assert_eq!(f(0.0, 1), "pakpalawng deh pakpalawng");
+        assert_eq!(f(0.5, 1), "pakpalawng deh panga");
+        assert_eq!(f(1.0, 1), "pakhat deh pakpalawng");
+        assert_eq!(f(1.5, 1), "pakhat deh panga");
+        assert_eq!(f(2.25, 2), "pahnih deh pahnih panga");
+        assert_eq!(f(3.14, 2), "pathum deh pakhat pali");
+        assert_eq!(f(0.01, 2), "pakpalawng deh pakpalawng pakhat");
+        assert_eq!(f(0.1, 1), "pakpalawng deh pakhat");
+        assert_eq!(f(0.99, 2), "pakpalawng deh pakua pakua");
+        assert_eq!(f(1.01, 2), "pakhat deh pakpalawng pakhat");
+        assert_eq!(f(12.34, 2), "pahra le pahnih deh pathum pali");
+        assert_eq!(f(99.99, 2), "pakua kip le pakua deh pakua pakua");
+        assert_eq!(f(100.5, 1), "pakhat phazar deh panga");
         assert_eq!(
             f(1234.56, 2),
-            "pakhat thawngkhat pahnih phazar le pathum kip le pali decimal panga paruk"
+            "pakhat thawngkhat pahnih phazar le pathum kip le pali deh panga paruk"
         );
-        assert_eq!(f(-0.5, 1), "minus zero decimal panga");
-        assert_eq!(f(-1.5, 1), "minus pakhat decimal panga");
-        assert_eq!(f(-12.34, 2), "minus pahra le pahnih decimal pathum pali");
+        assert_eq!(f(-0.5, 1), "zuh pakpalawng deh panga");
+        assert_eq!(f(-1.5, 1), "zuh pakhat deh panga");
+        assert_eq!(f(-12.34, 2), "zuh pahra le pahnih deh pathum pali");
         // The f64-artefact cases: raw repr digits, NO float2tuple rescue.
-        assert_eq!(f(1.005, 3), "pakhat decimal zero zero panga");
-        assert_eq!(f(2.675, 3), "pahnih decimal paruk parih panga");
+        assert_eq!(f(1.005, 3), "pakhat deh pakpalawng pakpalawng panga");
+        assert_eq!(f(2.675, 3), "pahnih deh paruk parih panga");
     }
 
     /// Every `"to": "cardinal_dec"` row for cnh in bench/corpus.jsonl.
     #[test]
     fn corpus_decimals() {
-        assert_eq!(d("0.01", 2), "zero decimal zero pakhat");
-        assert_eq!(d("1.10", 2), "pakhat decimal pakhat zero");
-        assert_eq!(d("12.345", 3), "pahra le pahnih decimal pathum pali panga");
+        assert_eq!(d("0.01", 2), "pakpalawng deh pakpalawng pakhat");
+        assert_eq!(d("1.10", 2), "pakhat deh pakhat pakpalawng");
+        assert_eq!(d("12.345", 3), "pahra le pahnih deh pathum pali panga");
         // Left part past 10^9 raises OverflowError (#147), not digits.
         let big = FloatValue::Decimal {
             value: BigDecimal::from_str("98746251323029.99").unwrap(),
@@ -1109,7 +1119,7 @@ mod float_tests {
             LangCnh::new().to_cardinal_float(&big, None),
             Err(N2WError::Overflow(_))
         ));
-        assert_eq!(d("0.001", 3), "zero decimal zero zero pakhat");
+        assert_eq!(d("0.001", 3), "pakpalawng deh pakpalawng pakpalawng pakhat");
     }
 
     /// The float-entry routing rows of bench/corpus_wholefloat.jsonl and
@@ -1119,16 +1129,16 @@ mod float_tests {
         let l = LangCnh::new();
         let f5 = FloatValue::Float { value: 5.0, precision: 1 };
         // Whole float keeps its ".0" tail through every worded mode.
-        assert_eq!(l.cardinal_float_entry(&f5, None).unwrap(), "panga decimal zero");
-        assert_eq!(l.ordinal_float_entry(&f5).unwrap(), "panga decimal zero-nak");
-        assert_eq!(l.year_float_entry(&f5).unwrap(), "panga decimal zero");
+        assert_eq!(l.cardinal_float_entry(&f5, None).unwrap(), "panga deh pakpalawng");
+        assert_eq!(l.ordinal_float_entry(&f5).unwrap(), "panga deh pakpalawng-nak");
+        assert_eq!(l.year_float_entry(&f5).unwrap(), "panga deh pakpalawng");
         // ordinal_num echoes the Python repr and suffixes it.
         assert_eq!(l.ordinal_num_float_entry(&f5, "5.0").unwrap(), "5.0-nak");
         // Negative zero: sign bit -> "minus".
         assert_eq!(
             l.ordinal_float_entry(&FloatValue::Float { value: -0.0, precision: 1 })
                 .unwrap(),
-            "minus zero decimal zero-nak"
+            "zuh pakpalawng deh pakpalawng-nak"
         );
         // Decimal without a point takes the integer path.
         let d5 = FloatValue::Decimal {
@@ -1176,18 +1186,18 @@ mod float_tests {
             assert_eq!(
                 l.to_cardinal_float(&FloatValue::Float { value: 2.675, precision: 3 }, p)
                     .unwrap(),
-                "pahnih decimal paruk parih panga"
+                "pahnih deh paruk parih panga"
             );
         }
         // Negative zero: str(-0.0) == "-0.0" -> the sign bit surfaces "minus".
-        assert_eq!(f(-0.0, 1), "minus zero decimal zero");
+        assert_eq!(f(-0.0, 1), "zuh pakpalawng deh pakpalawng");
         // Large-ish float, million branch in the integer part.
-        assert_eq!(f(1_000_000.25, 2), "pakhat milin decimal pahnih panga");
+        assert_eq!(f(1_000_000.25, 2), "pakhat milin deh pahnih panga");
         // Decimals keep every trailing zero.
-        assert_eq!(d("1.100", 3), "pakhat decimal pakhat zero zero");
-        assert_eq!(d("5.00", 2), "panga decimal zero zero");
-        assert_eq!(d("10.0", 1), "pahra decimal zero");
-        assert_eq!(d("-0.5", 1), "minus zero decimal panga");
-        assert_eq!(d("-12.34", 2), "minus pahra le pahnih decimal pathum pali");
+        assert_eq!(d("1.100", 3), "pakhat deh pakhat pakpalawng pakpalawng");
+        assert_eq!(d("5.00", 2), "panga deh pakpalawng pakpalawng");
+        assert_eq!(d("10.0", 1), "pahra deh pakpalawng");
+        assert_eq!(d("-0.5", 1), "zuh pakpalawng deh panga");
+        assert_eq!(d("-12.34", 2), "zuh pahra le pahnih deh pathum pali");
     }
 }

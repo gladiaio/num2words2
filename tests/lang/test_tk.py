@@ -219,30 +219,30 @@ class Num2WordsTKTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="tk"), "nol point bir")
-        self.assertEqual(num2words(0.5, lang="tk"), "nol point bäş")
-        self.assertEqual(num2words(0.9, lang="tk"), "nol point dokuz")
-        self.assertEqual(num2words(1.1, lang="tk"), "bir point bir")
-        self.assertEqual(num2words(1.5, lang="tk"), "bir point bäş")
-        self.assertEqual(num2words(2.5, lang="tk"), "iki point bäş")
-        self.assertEqual(num2words(3.14, lang="tk"), "üç point bir dört")
-        self.assertEqual(num2words(10.5, lang="tk"), "on point bäş")
-        self.assertEqual(num2words(11.11, lang="tk"), "on bir point bir bir")
-        self.assertEqual(num2words(20.2, lang="tk"), "ýigrimi point iki")
-        self.assertEqual(num2words(99.99, lang="tk"), "togsan dokuz point dokuz dokuz")
-        self.assertEqual(num2words(100.01, lang="tk"), "bir ýüz point nol bir")
-        self.assertEqual(num2words(100.5, lang="tk"), "bir ýüz point bäş")
+        self.assertEqual(num2words(0.1, lang="tk"), "nol otur bir")
+        self.assertEqual(num2words(0.5, lang="tk"), "nol otur bäş")
+        self.assertEqual(num2words(0.9, lang="tk"), "nol otur dokuz")
+        self.assertEqual(num2words(1.1, lang="tk"), "bir otur bir")
+        self.assertEqual(num2words(1.5, lang="tk"), "bir otur bäş")
+        self.assertEqual(num2words(2.5, lang="tk"), "iki otur bäş")
+        self.assertEqual(num2words(3.14, lang="tk"), "üç otur bir dört")
+        self.assertEqual(num2words(10.5, lang="tk"), "on otur bäş")
+        self.assertEqual(num2words(11.11, lang="tk"), "on bir otur bir bir")
+        self.assertEqual(num2words(20.2, lang="tk"), "ýigrimi otur iki")
+        self.assertEqual(num2words(99.99, lang="tk"), "togsan dokuz otur dokuz dokuz")
+        self.assertEqual(num2words(100.01, lang="tk"), "bir ýüz otur nol bir")
+        self.assertEqual(num2words(100.5, lang="tk"), "bir ýüz otur bäş")
         self.assertEqual(
-            num2words(123.45, lang="tk"), "bir ýüz ýigrimi üç point dört bäş"
+            num2words(123.45, lang="tk"), "bir ýüz ýigrimi üç otur dört bäş"
         )
-        self.assertEqual(num2words(1000.5, lang="tk"), "bir müň point bäş")
+        self.assertEqual(num2words(1000.5, lang="tk"), "bir müň otur bäş")
         self.assertEqual(
-            num2words(1234.56, lang="tk"), "bir müň iki ýüz otuz dört point bäş alty"
+            num2words(1234.56, lang="tk"), "bir müň iki ýüz otuz dört otur bäş alty"
         )
-        self.assertEqual(num2words(10000.01, lang="tk"), "on müň point nol bir")
-        self.assertEqual(num2words(-0.5, lang="tk"), "minus nol point bäş")
-        self.assertEqual(num2words(-1.5, lang="tk"), "minus bir point bäş")
-        self.assertEqual(num2words(-10.5, lang="tk"), "minus on point bäş")
+        self.assertEqual(num2words(10000.01, lang="tk"), "on müň otur nol bir")
+        self.assertEqual(num2words(-0.5, lang="tk"), "minus nol otur bäş")
+        self.assertEqual(num2words(-1.5, lang="tk"), "minus bir otur bäş")
+        self.assertEqual(num2words(-10.5, lang="tk"), "minus on otur bäş")
 
     def test_ordinal(self):
         """Test ordinal numbers."""

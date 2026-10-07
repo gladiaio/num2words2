@@ -1,5 +1,11 @@
 //! Port of `lang_SO.py` (Somali).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "taban" (minus) — best candidate: "negative"
+//!   ("tirooyinka taban" = negative numbers, Somali grade-7 maths material); no
+//!   source reads a negative number aloud.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -66,8 +72,8 @@
 //!    "1000000000000000000000". All four are corpus rows. This is why
 //!    [`LangSo::int_to_word`] takes a `BigInt`: the fallback must render
 //!    arbitrarily large values, so the input is genuinely unbounded.
-//! 3. **The negword is "minus ".** Kept: no source shows how a negative
-//!    number is read aloud in Somali.
+//! 3. **The negword was the English "minus ".** It is now the best
+//!    candidate "taban " (see UNVERIFIED above).
 //! 4. **Teens and compounds are bare juxtaposition.** 11 is "toban kow"
 //!    ("ten one"), not the idiomatic "kow iyo toban"; 100 is "kow boqol"
 //!    ("one hundred"), never a bare "boqol". No conjunction is ever inserted
@@ -136,7 +142,7 @@ const THOUSAND: &str = "kun";
 const MILLION: &str = "milyan";
 
 /// `setup`: `self.negword`. English, and kept that way — see bug 3.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "taban ";
 
 /// The literal in `_int_to_word`'s zero guard — see bug 1.
 const ZERO_WORD: &str = "eber";
@@ -376,7 +382,7 @@ impl LangSo {
     ///
     /// * The sign is stripped off the *string*, then `ret` (the negword) prefixes
     ///   both branches — so a negative with zero integer part still prints
-    ///   `"minus eber ..."` (`int_to_word(0)` is "zero", bug 1), and the "."
+    ///   `"taban eber ..."` (`int_to_word(0)` is "zero", bug 1), and the "."
     ///   branch keeps its negword too.
     /// * `int(digit)` runs per **character**, so a malformed fraction character
     ///   raises `ValueError` quoting that one char, where a malformed whole `n`
@@ -521,7 +527,7 @@ impl Lang for LangSo {
     }
 
     /// `return cardinal + "-aad"`. Applied to the whole string, so the suffix
-    /// lands on the last word only: `to_ordinal(-1)` == "minus kow-aad" and
+    /// lands on the last word only: `to_ordinal(-1)` == "taban kow-aad" and
     /// `to_ordinal(10**9)` == "1000000000-aad" (bug 2).
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         Ok(format!("{}-aad", self.to_cardinal(value)?))

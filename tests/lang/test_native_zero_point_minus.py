@@ -26,31 +26,42 @@ CASES = {
     "lb": ("null", "eent Komma fënnef", "minus eent", "null-ten"),
     "oc": ("zèro", "un virgula cinc", "mens un", "zèro-en"),
     "br": ("mann", "unan skej pemp", "lei unan", "mann-vet"),
-    "haw": ("'ole", "'ekahi kiko 'elima", "minus 'ekahi", "ka 'ole"),
+    "haw": ("'ole", "'ekahi kiko 'elima", "'i'o 'ole 'ekahi", "ka 'ole"),
     "ht": ("zewo", "en vigil senk", "mwens en", "zewo-yèm"),
     "jv": ("nol", "siji koma lima", "minus siji", "nol-e"),
     "jw": ("nol", "siji koma lima", "minus siji", "nol-e"),
-    "mg": ("aotra", "iray faingo dimy", "minus iray", "faha-aotra"),
-    "mi": ("kore", "tahi ira rima", "minus tahi", "tua kore"),
+    "mg": ("aotra", "iray faingo dimy", "miiba iray", "faha-aotra"),
+    "mi": ("kore", "tahi ira rima", "tōraro tahi", "tua kore"),
     "mt": ("żero", "wieħed punt ħamsa", "minus wieħed", "l-żero"),
-    "so": ("eber", "kow dhibic shan", "minus kow", "eber-aad"),
+    "so": ("eber", "kow dhibic shan", "taban kow", "eber-aad"),
     "tl": ("sero", "isa punto lima", "minus isa", "ika-sero"),
     "uz": ("nol", "bir vergul besh", "minus bir", "nolinchi"),
 }
 
 
-@pytest.mark.parametrize("lang,zero", [("tk", "nol"), ("yo", "òdo"),
-                                       ("su", "nol")])
-def test_native_zero_english_decimal_word_kept(lang, zero):
-    # Zero is native now; the decimal word is still "point" because no
-    # reliable source gives one (see the module headers, #154).
-    assert num2words(0, lang=lang) == zero
-    assert num2words(1.05, lang=lang).split()[2] == zero
+UNVERIFIED = {
+    # Best-candidate words, flagged UNVERIFIED in the module headers (#154).
+    "su": ("nol", "hiji koma lima", "mineus hiji", "nol-na"),
+    "yo": ("òdo", "ọkan ẹsẹ marun", "òdì ọkan", "òdo-kẹta"),
+    "tk": ("nol", "bir otur bäş", "minus bir", "nolunjy"),
+    "cnh": ("pakpalawng", "pakhat deh panga", "zuh pakhat", "pakpalawng-nak"),
+    "ln": ("libúngútulú", "moko virgule mítáno", "moins moko", "libúngútulú-e"),
+    "wo": ("tus", "benn virgule juróom", "moins benn", "tus-eel"),
+}
 
 
 @pytest.mark.parametrize("lang", sorted(CASES))
 def test_native_words(lang):
     zero, one_and_half, minus_one, ordinal_zero = CASES[lang]
+    assert num2words(0, lang=lang) == zero
+    assert num2words(1.5, lang=lang) == one_and_half
+    assert num2words(-1, lang=lang) == minus_one
+    assert num2words(0, lang=lang, to="ordinal") == ordinal_zero
+
+
+@pytest.mark.parametrize("lang", sorted(UNVERIFIED))
+def test_best_candidate_words(lang):
+    zero, one_and_half, minus_one, ordinal_zero = UNVERIFIED[lang]
     assert num2words(0, lang=lang) == zero
     assert num2words(1.5, lang=lang) == one_and_half
     assert num2words(-1, lang=lang) == minus_one

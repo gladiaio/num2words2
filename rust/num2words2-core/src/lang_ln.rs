@@ -1,5 +1,13 @@
 //! Port of `lang_LN.py` (Lingala).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "libúngútulú" (zero) — best candidate:
+//!   dic.lingala.be/en/libungutulu.
+//! UNVERIFIED (#154): "virgule" (decimal) and "moins" (minus) — best
+//!   candidates: the French words of DR Congo / Congo school mathematics, which
+//!   Lingala borrows; no Lingala reading found.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -46,7 +54,7 @@
 //!    all; 10^9 is simply where wording stops (see 1).
 //! 3. **`to_ordinal` is cardinal + "-e", unconditionally.** No negative guard
 //!    (Python's `errmsg_negord` is never consulted), so `to_ordinal(-1)` ==
-//!    "minus moko-e", and the suffix lands on the *last word* with no space:
+//!    "moins moko-e", and the suffix lands on the *last word* with no space:
 //!    `to_ordinal(11)` == "zómi moko-e". It also glues onto the digit
 //!    fallback, hence "1000000000-e".
 //! 4. **`to_ordinal_num` ignores the language entirely** and is `str(number)
@@ -105,7 +113,7 @@
 //!    back to `_cents_terse` and print "34"; LN has no `else`, so the cents
 //!    simply vanish.
 //! 10. **Zero takes the plural.** `cr1[1] if left != 1 else cr1[0]` keys off
-//!     `!= 1`, so `0` renders "zero euros".
+//!     `!= 1`, so `0` renders "libúngútulú euros".
 //!
 //! # Currency nouns (gladiaio/num2words2#222)
 //!
@@ -128,7 +136,7 @@ use std::sync::OnceLock;
 
 /// `self.negword` — note the trailing space; `to_cardinal` concatenates it
 /// directly onto the worded magnitude and `.strip()`s the result.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "moins ";
 
 /// `self.ones`. Index 0 is `""` in Python and is only ever reached through
 /// the dead `_int_to_word(0)` branch documented above.
@@ -158,7 +166,7 @@ const MILLION: &str = "milio";
 /// `self.pointword`, interpolated raw between the integer part and the digits
 /// on the float path: `... + " " + self.pointword + " "`. LN never calls
 /// `self.title()`, so it is emitted verbatim (mirrors [`LangLn::pointword`]).
-const POINTWORD: &str = "point";
+const POINTWORD: &str = "virgule";
 
 /// `Num2Word_LN.to_currency`'s own default `separator=" "`, confirmed against
 /// the interpreter: `Num2Word_LN.to_currency.__defaults__` is
@@ -185,7 +193,7 @@ const BASE_DEFAULT_SEPARATOR: &str = ",";
 /// The value `_int_to_word(0)` returns. Python writes
 /// `self.ones[0] if self.ones[0] else "zero"`; `ones[0]` is `""`, so the
 /// conditional always takes the `else`.
-const ZERO_WORD: &str = "zero";
+const ZERO_WORD: &str = "libúngútulú";
 
 /// Narrow a `BigInt` to a table index.
 ///
@@ -574,7 +582,7 @@ impl Lang for LangLn {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "virgule"
     }
 
     /// Python:
@@ -638,16 +646,16 @@ impl Lang for LangLn {
     /// `str()` does.
     ///
     /// Faithfully reproduced quirks:
-    ///   * `1.0` (float) -> `"moko point zero"`: `str(1.0)` is `"1.0"`, so the
+    ///   * `1.0` (float) -> `"moko virgule libúngútulú"`: `str(1.0)` is `"1.0"`, so the
     ///     `"."` branch fires and the trailing `"0"` digit -> `"zero"`.
-    ///   * `Decimal("1.10")` -> `"moko point moko zero"`: the trailing zero is a
+    ///   * `Decimal("1.10")` -> `"moko virgule moko libúngútulú"`: the trailing zero is a
     ///     real fractional digit (unlike the float `1.1`).
     ///   * `Decimal("98746251323029.99")` -> `"98746251323029 point libwá
     ///     libwá"`: the >=10^9 integer part falls off `int_to_word`'s cliff to
     ///     bare digits (issue #603 value), but the fraction is still spelled.
     ///   * A negative with a zero integer part keeps its sign because the sign
     ///     lives in the *string* (`"-0.5"`), not in a truncated int:
-    ///     `-0.5` -> `"minus zero point mítáno"`.
+    ///     `-0.5` -> `"moins libúngútulú virgule mítáno"`.
     fn to_cardinal_float(
         &self,
         value: &FloatValue,
@@ -658,8 +666,8 @@ impl Lang for LangLn {
 
     /// `to_cardinal(float/Decimal)` — the FULL entry. Python routes *every*
     /// float/Decimal through the `str(number)` algorithm, so a whole value
-    /// keeps its visible point: `5.0` -> "mítáno point zero", `-0.0` ->
-    /// "minus zero point zero", `Decimal("5.00")` -> "mítáno point zero zero".
+    /// keeps its visible point: `5.0` -> "mítáno virgule libúngútulú", `-0.0` ->
+    /// "moins libúngútulú virgule libúngútulú", `Decimal("5.00")` -> "mítáno virgule libúngútulú libúngútulú".
     /// The base default's whole-value integer shortcut must not fire here.
     /// Exponent-form values (`1e16`, `Decimal("1E+2")`) raise `int()`'s
     /// ValueError from inside the string algorithm, exactly as Python.
@@ -889,7 +897,7 @@ impl Lang for LangLn {
         // `left_str + " " + (cr1[1] if left != 1 else cr1[0])`. Note that this
         // is `self._int_to_word(left)`, *not* `self.to_cardinal(left)` — so the
         // 10^9 digit fallback applies here too. Zero takes the plural
-        // ("zero euros", quirk 10).
+        // ("libúngútulú euros", quirk 10).
         let mut result = format!(
             "{} {}",
             checked_int_to_word(&left)?,

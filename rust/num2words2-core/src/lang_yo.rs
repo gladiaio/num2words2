@@ -1,5 +1,13 @@
 //! Port of `lang_YO.py` (Yoruba).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "ẹsẹ" (decimal) — best candidate: the only source is the
+//!   Yoruba science maths dictionary (yoruba-scipedia.wikidot.com, "Òdo ẹsẹ òdo
+//!   ìkan" = 0.01), a proposal.
+//! UNVERIFIED (#154): "òdì" (minus) — best candidate: used for "negative" in
+//!   the same dictionary's negative exponents.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -19,8 +27,8 @@
 //! `_int_to_word` has a `str(number)` fallback instead of a ceiling (bug 1).
 //!
 //! `setup()` supplies `negword = "minus "` (note the trailing space) and
-//! `pointword = "point"` — still English: the only decimal word found
-//! ("ẹsẹ") comes from a single proposal dictionary (gladiaio/num2words2#154). Every in-scope entry point is overridden by
+//! `pointword = "point"`; the port uses the best candidates "òdì " and "ẹsẹ"
+//! (see UNVERIFIED above). Every in-scope entry point is overridden by
 //! `Num2Word_YO`, so nothing is inherited from `Num2Word_Base` except the
 //! attributes above:
 //!   * `to_cardinal`    — overridden (see below)
@@ -44,7 +52,7 @@
 //!    full precision for arbitrarily large input, hence the `BigInt`
 //!    `to_string()` in [`LangYo::int_to_word`] — the corpus exercises 10^21.
 //!    Because `to_cardinal` strips the sign *before* recursing, a large
-//!    negative renders as `"minus 1000000000"`.
+//!    negative renders as `"òdì 1000000000"`.
 //!
 //! 2. **Hundreds are formed as `ones[h] + " " + hundred`,** so 100 is
 //!    `"ọkan ọgọrun"` ("one hundred") rather than a bare `"ọgọrun"`. Kept.
@@ -54,7 +62,7 @@
 //!    "<n>-third": `to_ordinal(1)` == `"ọkan-kẹta"`, `to_ordinal(0)` ==
 //!    `"òdo-kẹta"`. It is a fixed suffix, not agreement, and unlike most
 //!    modules it neither rejects 0 nor rejects negatives:
-//!    `to_ordinal(-1)` == `"minus ọkan-kẹta"`. No exception path exists.
+//!    `to_ordinal(-1)` == `"òdì ọkan-kẹta"`. No exception path exists.
 //!
 //! 4. **`_int_to_word(0)` is written `self.ones[0] if self.ones[0] else "zero"`.**
 //!    `ones[0]` is `""` — falsy — so Python always returned the English
@@ -164,8 +172,8 @@
 //! `str(Decimal)` via [`decimal_str_abs`] — then runs the string algorithm.
 //! The base-path traps (banker's rounding, the `< 0.01` float2tuple rescue)
 //! do not apply here: for Yoruba the decimal *string* is the spec, so `2.675`
-//! reads its repr digits verbatim (`"méjì point mẹfa meje marun"`) and `1.005`
-//! keeps its leading zeros (`"ọkan point òdo òdo marun"`).
+//! reads its repr digits verbatim (`"méjì ẹsẹ mẹfa meje marun"`) and `1.005`
+//! keeps its leading zeros (`"ọkan ẹsẹ òdo òdo marun"`).
 //!
 //! # Faithfully reproduced Python bugs / oddities — float cardinal
 //!
@@ -184,21 +192,21 @@
 //!     the text. Base-path languages honour it; Yoruba ignores it, so
 //!     `precision_override` is deliberately discarded. Verified live:
 //!     `to_cardinal(3.14)` with `precision=5` is still
-//!     `"mẹta point ọkan mẹrin"`.
+//!     `"mẹta ẹsẹ ọkan mẹrin"`.
 //!
 //! 15. **A whole float keeps its fractional clause**: `repr(1.0)` is `"1.0"`,
-//!     so Python renders `"ọkan point òdo"`, never bare `"ọkan"` (corpus rows
+//!     so Python renders `"ọkan ẹsẹ òdo"`, never bare `"ọkan"` (corpus rows
 //!     `0.0`/`1.0` pin this). The dispatcher routes whole floats to the Python
 //!     converter, so the Rust hook only ever *receives* non-whole values — but
 //!     the reconstruction appends `repr`'s `".0"` anyway, so both sides agree
 //!     even on a direct call.
 //!
 //! 16. **Float noise is spelled out digit by digit.** There is no rounding
-//!     rescue anywhere, so `0.30000000000000004` becomes `"òdo point mẹta"`
+//!     rescue anywhere, so `0.30000000000000004` becomes `"òdo ẹsẹ mẹta"`
 //!     followed by fifteen `"zero"`s and a `"mẹrin"` — 17 fraction words,
 //!     exactly the repr digits. Similarly the `>= 10**9` fallback (bug 1)
 //!     applies to the integer part: `Decimal("98746251323029.99")` is
-//!     `"98746251323029 point mẹsan mẹsan"` (corpus-pinned).
+//!     `"98746251323029 ẹsẹ mẹsan mẹsan"` (corpus-pinned).
 //!
 //! # Error variants
 //!
@@ -242,7 +250,7 @@ const ZERO: &str = "òdo";
 /// `setup()`: `self.negword = "minus "` — the trailing space is load-bearing.
 /// `to_cardinal` concatenates it directly (`ret + word`) rather than joining,
 /// then `.strip()`s the result.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "òdì ";
 
 /// `self.ones`, indices 0..=9. Index 0 is `""` (see [`ZERO`] and bug 4); it is
 /// never selected by the `number < 10` arm, which is guarded by `number != 0`.
@@ -693,7 +701,7 @@ impl Lang for LangYo {
 
     /// `to_ordinal(float/Decimal)`. YO's `to_ordinal` is
     /// `self.to_cardinal(number) + "-kẹta"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "marun point òdo-kẹta".
+    /// entry is the float cardinal plus the suffix — "marun ẹsẹ òdo-kẹta".
     /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
     /// ValueError inside the cardinal, before the suffix is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -750,7 +758,7 @@ impl Lang for LangYo {
     /// `setup()`: `"point"`. Consumed by the float branch of `to_cardinal`
     /// ([`LangYo::to_cardinal_float`] here).
     fn pointword(&self) -> &str {
-        "point"
+        "ẹsẹ"
     }
 
     /// Port of `Num2Word_YO.to_cardinal`, integer path only.
@@ -1084,44 +1092,44 @@ mod tests {
     #[test]
     fn corpus_float_rows() {
         for (v, p, want) in [
-            (0.0, 1, "òdo point òdo"),
-            (0.5, 1, "òdo point marun"),
-            (1.0, 1, "ọkan point òdo"),
-            (1.5, 1, "ọkan point marun"),
-            (2.25, 2, "méjì point méjì marun"),
-            (3.14, 2, "mẹta point ọkan mẹrin"),
-            (0.01, 2, "òdo point òdo ọkan"),
-            (0.1, 1, "òdo point ọkan"),
-            (0.99, 2, "òdo point mẹsan mẹsan"),
-            (1.01, 2, "ọkan point òdo ọkan"),
-            (12.34, 2, "mẹwa méjì point mẹta mẹrin"),
-            (99.99, 2, "àádọrún mẹsan point mẹsan mẹsan"),
-            (100.5, 1, "ọkan ọgọrun point marun"),
+            (0.0, 1, "òdo ẹsẹ òdo"),
+            (0.5, 1, "òdo ẹsẹ marun"),
+            (1.0, 1, "ọkan ẹsẹ òdo"),
+            (1.5, 1, "ọkan ẹsẹ marun"),
+            (2.25, 2, "méjì ẹsẹ méjì marun"),
+            (3.14, 2, "mẹta ẹsẹ ọkan mẹrin"),
+            (0.01, 2, "òdo ẹsẹ òdo ọkan"),
+            (0.1, 1, "òdo ẹsẹ ọkan"),
+            (0.99, 2, "òdo ẹsẹ mẹsan mẹsan"),
+            (1.01, 2, "ọkan ẹsẹ òdo ọkan"),
+            (12.34, 2, "mẹwa méjì ẹsẹ mẹta mẹrin"),
+            (99.99, 2, "àádọrún mẹsan ẹsẹ mẹsan mẹsan"),
+            (100.5, 1, "ọkan ọgọrun ẹsẹ marun"),
             (
                 1234.56,
                 2,
-                "ọkan ẹgbẹrun méjì ọgọrun ọgbọn mẹrin point marun mẹfa",
+                "ọkan ẹgbẹrun méjì ọgọrun ọgbọn mẹrin ẹsẹ marun mẹfa",
             ),
-            (-0.5, 1, "minus òdo point marun"),
-            (-1.5, 1, "minus ọkan point marun"),
-            (-12.34, 2, "minus mẹwa méjì point mẹta mẹrin"),
+            (-0.5, 1, "òdì òdo ẹsẹ marun"),
+            (-1.5, 1, "òdì ọkan ẹsẹ marun"),
+            (-12.34, 2, "òdì mẹwa méjì ẹsẹ mẹta mẹrin"),
             // The f64-artefact values: for yo the repr digits are the spec —
             // no float2tuple, no rounding, leading zeros kept.
-            (1.005, 3, "ọkan point òdo òdo marun"),
-            (2.675, 3, "méjì point mẹfa meje marun"),
-            (0.0001, 4, "òdo point òdo òdo òdo ọkan"),
+            (1.005, 3, "ọkan ẹsẹ òdo òdo marun"),
+            (2.675, 3, "méjì ẹsẹ mẹfa meje marun"),
+            (0.0001, 4, "òdo ẹsẹ òdo òdo òdo ọkan"),
             // Float noise spelled digit by digit (bug 16).
             (
                 0.30000000000000004,
                 17,
-                "òdo point mẹta òdo òdo òdo òdo òdo òdo òdo òdo \
+                "òdo ẹsẹ mẹta òdo òdo òdo òdo òdo òdo òdo òdo \
                  òdo òdo òdo òdo òdo òdo òdo mẹrin",
             ),
             (
                 123456789.12345679,
                 8,
                 "ọkan ọgọrun ogún mẹta miliọnu mẹrin ọgọrun àádọta mẹfa \
-                 ẹgbẹrun meje ọgọrun ọgọrin mẹsan point ọkan méjì mẹta \
+                 ẹgbẹrun meje ọgọrun ọgọrin mẹsan ẹsẹ ọkan méjì mẹta \
                  mẹrin marun mẹfa meje mẹsan",
             ),
         ] {
@@ -1133,11 +1141,11 @@ mod tests {
     #[test]
     fn corpus_decimal_rows() {
         for (s, want) in [
-            ("0.01", "òdo point òdo ọkan"),
-            ("1.10", "ọkan point ọkan òdo"),
-            ("12.345", "mẹwa méjì point mẹta mẹrin marun"),
-            ("0.001", "òdo point òdo òdo ọkan"),
-            ("-12.345", "minus mẹwa méjì point mẹta mẹrin marun"),
+            ("0.01", "òdo ẹsẹ òdo ọkan"),
+            ("1.10", "ọkan ẹsẹ ọkan òdo"),
+            ("12.345", "mẹwa méjì ẹsẹ mẹta mẹrin marun"),
+            ("0.001", "òdo ẹsẹ òdo òdo ọkan"),
+            ("-12.345", "òdì mẹwa méjì ẹsẹ mẹta mẹrin marun"),
         ] {
             assert_eq!(card_d(s).unwrap(), want, "value {}", s);
         }
@@ -1193,7 +1201,7 @@ mod tests {
         let got = LangYo::new()
             .to_cardinal_float(&FloatValue::Float { value: 3.14, precision: 2 }, Some(5))
             .unwrap();
-        assert_eq!(got, "mẹta point ọkan mẹrin");
+        assert_eq!(got, "mẹta ẹsẹ ọkan mẹrin");
     }
 
     /// The text reconstructions match CPython spellings on the layout

@@ -1,5 +1,11 @@
 //! Port of `lang_MG.py` (Malagasy).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "miiba" (minus) — best candidate: "negative"
+//!   (mg.wikipedia "Isa miiba" = negative number); no source reads a negative
+//!   number aloud.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -37,10 +43,10 @@
 //!    `BigInt` all the way to the fallback: the arbitrary-precision decimal
 //!    rendering *is* the output. See [`int_to_word`].
 //!
-//! 2. **`to_ordinal` prefixes the negative word, producing "faha-minus …".**
+//! 2. **`to_ordinal` prefixes the negative word, producing "faha-miiba …".**
 //!    `to_ordinal` only special-cases `number == 1`; every other value is
 //!    `"faha-" + self.to_cardinal(number)`, and `to_cardinal` renders the sign
-//!    itself. So `to_ordinal(-1)` == `"faha-minus iray"`. Unlike most modules,
+//!    itself. So `to_ordinal(-1)` == `"faha-miiba iray"`. Unlike most modules,
 //!    MG never raises `errmsg_negord` — there is no negative guard at all.
 //!
 //! 3. **`to_ordinal(0)` == `"faha-aotra"`**, since `_int_to_word(0)` returns
@@ -87,7 +93,7 @@
 //!
 //! Because the routing itself is `"." in str(number)`, whole values are NOT
 //! collapsed onto the integer path (the base default): `to_cardinal(5.0)` is
-//! `"dimy faingo aotra"`, `to_cardinal(-0.0)` is `"minus aotra faingo aotra"`
+//! `"dimy faingo aotra"`, `to_cardinal(-0.0)` is `"miiba aotra faingo aotra"`
 //! (str(-0.0) keeps the sign), and only a point-free string form — an
 //! integer-valued `Decimal` like `Decimal("5")` — takes the bare integer
 //! grammar. `cardinal_float_entry` below carries that routing, and it also
@@ -174,7 +180,7 @@ use std::sync::OnceLock;
 
 /// `self.negword`. Note the **trailing space** — MG uses it raw rather than
 /// going through `Num2Word_Base.parse_minus`, which would `.strip()` it.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "miiba ";
 
 /// `self.ones`. Index 0 is `""`; it is read only as the hundreds/thousands
 /// multiplier (always 1..=9) and in the dead `ones[0]` test on zero.
@@ -474,7 +480,7 @@ impl Lang for LangMg {
     /// else:
     ///     return "faha-" + self.to_cardinal(number)
     /// ```
-    /// No negative guard and no float guard — hence "faha-minus iray" for -1
+    /// No negative guard and no float guard — hence "faha-miiba iray" for -1
     /// and "faha-zero" for 0.
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         if value == &BigInt::from(1u32) {
@@ -491,7 +497,7 @@ impl Lang for LangMg {
 
     /// Python: `def to_year(self, val, longval=True): return self.to_cardinal(val)`
     /// — `longval` is accepted and ignored, and negative years get no "BC"
-    /// treatment, just the negword: `to_year(-500)` == "minus dimy zato".
+    /// treatment, just the negword: `to_year(-500)` == "miiba dimy zato".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -513,7 +519,7 @@ impl Lang for LangMg {
     ///   enters the `"."` branch instead and dies in the digit loop at
     ///   `int('e')` — same type, message `'e'` (`'E'` for Decimals).
     /// * **-0.0 keeps its sign** — `str(-0.0)` is `"-0.0"`, sign detached as
-    ///   a string, hence `"minus aotra faingo aotra"`.
+    ///   a string, hence `"miiba aotra faingo aotra"`.
     ///
     /// The bridge converts a signed-zero `Decimal("-0.0")` to
     /// `Float { -0.0 }` (BigDecimal cannot carry the sign), so the Float arm
@@ -681,7 +687,7 @@ impl Lang for LangMg {
     /// * `zero` is emitted for every `0` digit, so `0.01` -> `"zero point zero
     ///   iray"` and `1.005` -> `"iray point zero zero dimy"`.
     /// * A negative fraction keeps the negword and prints `int_to_word(0)`:
-    ///   `-0.5` -> `"minus aotra faingo dimy"`. There is no `pre == 0` sign rescue
+    ///   `-0.5` -> `"miiba aotra faingo dimy"`. There is no `pre == 0` sign rescue
     ///   like the base path — the `"-"` is stripped lexically from the string.
     ///
     /// # Errors
@@ -744,7 +750,7 @@ impl Lang for LangMg {
         // Build `ret` exactly as Python concatenates, then `.strip()`.
         let mut ret = String::new();
         if is_negative {
-            ret.push_str(NEGWORD); // "minus " — trailing space is load-bearing.
+            ret.push_str(NEGWORD); // "miiba " — trailing space is load-bearing.
         }
         ret.push_str(&checked_int_to_word(&int_left)?);
 

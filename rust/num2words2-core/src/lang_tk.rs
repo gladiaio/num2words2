@@ -1,5 +1,14 @@
 //! Port of `lang_TK.py` (Turkmen).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "otur" (decimal) — best candidate: the name of the
+//!   comma, which Turkmen writes as decimal separator (enedilim.com); the
+//!   standard reading is a fraction ("bitin ... -dan"), which the digit-by-digit
+//!   path cannot produce.
+//! UNVERIFIED (#154): "minus" is kept: it is Turkmen usage ("minus san",
+//!   negative number).
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -50,10 +59,8 @@
 //! 2. **Zero (fixed, gladiaio/num2words2#154).** `ones[0]` is the empty
 //!    string, so Python's `return self.ones[0] if self.ones[0] else "zero"`
 //!    always said the English "zero". The port says "nol": `to_cardinal(0)`
-//!    == "nol", `to_ordinal(0)` == "nolunjy". The decimal word is still the
-//!    English "point": Turkmen reads decimals as a fraction ("iki bitin ondan
-//!    ýedi", 2 whole and 7 of ten), which the digit-by-digit float path
-//!    cannot produce, and no source reads the comma ("otur") between digits.
+//!    == "nol", `to_ordinal(0)` == "nolunjy". The decimal word is the best
+//!    candidate "otur" (see UNVERIFIED above).
 //! 3. **Hundreds always carry an explicit "bir"**: `_int_to_word` builds
 //!    `self.ones[hundreds_val] + " " + self.hundred` with no `> 1` guard, so
 //!    100 → "bir ýüz", never the idiomatic bare "ýüz".
@@ -90,7 +97,7 @@
 //! This reads the fractional **digits straight out of the decimal repr** rather
 //! than reconstructing them from `base.float2tuple`'s binary arithmetic, and it
 //! runs for *every* float/Decimal, whole values included: `str(5.0)` is
-//! `"5.0"`, so `to_cardinal(5.0)` == "bäş point nol", never the integer
+//! `"5.0"`, so `to_cardinal(5.0)` == "bäş otur nol", never the integer
 //! path's bare "bäş" — the base's whole-value routing is therefore overridden
 //! at [`Lang::cardinal_float_entry`]. `str(number)` is reconstructed exactly:
 //!   * float: [`python_float_repr`] — CPython's shortest-round-trip repr,
@@ -107,7 +114,7 @@
 //! — exactly as the wholefloat corpus pins (`cardinal 1e+16` → ValueError,
 //! `Decimal("1E+20")` → ValueError, string `"1e3"` → ValueError). The other
 //! three modes follow `to_cardinal`: `to_ordinal(float)` is the cardinal plus
-//! the harmonised ending ("bäş point nolunjy"), `to_year(float)` is the cardinal, and both
+//! the harmonised ending ("bäş otur nolunjy"), `to_year(float)` is the cardinal, and both
 //! propagate the ValueError; `to_ordinal_num(float)` is `str(number) + "."`
 //! and never raises ("1e+16.").
 //!
@@ -385,7 +392,7 @@ fn int_to_word(n: &BigInt) -> String {
 /// and appends `.0` to anything that would otherwise look like an integer.
 /// Rust's `{}` does none of this, so both `1e16` and `1.0` would come out
 /// wrong in opposite directions. Both matter to TK: `str(1.0)` is `"1.0"` →
-/// "bir point nol", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
+/// "bir otur nol", and `str(1e16)` is `"1e+16"` → `int("1e+16")` raises
 /// `ValueError`.
 ///
 /// The `precision` that `FloatValue::Float` carries is deliberately *not* used
@@ -403,7 +410,7 @@ fn python_float_repr(v: f64) -> String {
         return (if v.is_sign_negative() { "-inf" } else { "inf" }).to_string();
     }
     // The sign bit, not `v < 0.0`: repr(-0.0) is "-0.0", and TK renders that
-    // "minus nol point nol".
+    // "minus nol otur nol".
     let sign = if v.is_sign_negative() { "-" } else { "" };
     let a = v.abs();
 
@@ -633,7 +640,7 @@ impl Lang for LangTk {
     }
 
     fn pointword(&self) -> &str {
-        "point"
+        "otur"
     }
 
     /// Python's `to_cardinal`.
@@ -679,7 +686,7 @@ impl Lang for LangTk {
 
     /// `to_cardinal(float/Decimal)` — the **full** routing, whole values
     /// included. TK's `to_cardinal` reads `str(number)`, so a whole-valued
-    /// float keeps its ".0" tail ("bäş point nol") and an exponent-form repr
+    /// float keeps its ".0" tail ("bäş otur nol") and an exponent-form repr
     /// raises ValueError; the base default's whole → integer-path route would
     /// get both wrong. See the module docs' float section.
     fn cardinal_float_entry(
@@ -921,25 +928,25 @@ mod float_tests {
         // Every "cardinal" row with a float arg from bench/corpus.jsonl, with
         // the precision the binding derives from Python's repr.
         let cases: &[(f64, u32, &str)] = &[
-            (0.0, 1, "nol point nol"),
-            (0.5, 1, "nol point bäş"),
-            (1.0, 1, "bir point nol"),
-            (1.5, 1, "bir point bäş"),
-            (2.25, 2, "iki point iki bäş"),
-            (3.14, 2, "üç point bir dört"),
-            (0.01, 2, "nol point nol bir"),
-            (0.1, 1, "nol point bir"),
-            (0.99, 2, "nol point dokuz dokuz"),
-            (1.01, 2, "bir point nol bir"),
-            (12.34, 2, "on iki point üç dört"),
-            (99.99, 2, "togsan dokuz point dokuz dokuz"),
-            (100.5, 1, "bir ýüz point bäş"),
-            (1234.56, 2, "bir müň iki ýüz otuz dört point bäş alty"),
-            (-0.5, 1, "minus nol point bäş"),
-            (-1.5, 1, "minus bir point bäş"),
-            (-12.34, 2, "minus on iki point üç dört"),
-            (1.005, 3, "bir point nol nol bäş"),
-            (2.675, 3, "iki point alty ýedi bäş"),
+            (0.0, 1, "nol otur nol"),
+            (0.5, 1, "nol otur bäş"),
+            (1.0, 1, "bir otur nol"),
+            (1.5, 1, "bir otur bäş"),
+            (2.25, 2, "iki otur iki bäş"),
+            (3.14, 2, "üç otur bir dört"),
+            (0.01, 2, "nol otur nol bir"),
+            (0.1, 1, "nol otur bir"),
+            (0.99, 2, "nol otur dokuz dokuz"),
+            (1.01, 2, "bir otur nol bir"),
+            (12.34, 2, "on iki otur üç dört"),
+            (99.99, 2, "togsan dokuz otur dokuz dokuz"),
+            (100.5, 1, "bir ýüz otur bäş"),
+            (1234.56, 2, "bir müň iki ýüz otuz dört otur bäş alty"),
+            (-0.5, 1, "minus nol otur bäş"),
+            (-1.5, 1, "minus bir otur bäş"),
+            (-12.34, 2, "minus on iki otur üç dört"),
+            (1.005, 3, "bir otur nol nol bäş"),
+            (2.675, 3, "iki otur alty ýedi bäş"),
         ];
         for (v, p, want) in cases {
             assert_eq!(&card_float(*v, *p), want, "float {}", v);
@@ -950,11 +957,11 @@ mod float_tests {
     fn corpus_decimals() {
         // Every "cardinal_dec" row from bench/corpus.jsonl.
         let cases: &[(&str, &str)] = &[
-            ("0.01", "nol point nol bir"),
-            ("1.10", "bir point bir nol"),
-            ("12.345", "on iki point üç dört bäş"),
-            ("98746251323029.99", "togsan sekiz trillion ýedi ýüz kyrk alty milliard iki ýüz elli bir million üç ýüz ýigrimi üç müň ýigrimi dokuz point dokuz dokuz"),
-            ("0.001", "nol point nol nol bir"),
+            ("0.01", "nol otur nol bir"),
+            ("1.10", "bir otur bir nol"),
+            ("12.345", "on iki otur üç dört bäş"),
+            ("98746251323029.99", "togsan sekiz trillion ýedi ýüz kyrk alty milliard iki ýüz elli bir million üç ýüz ýigrimi üç müň ýigrimi dokuz otur dokuz dokuz"),
+            ("0.001", "nol otur nol nol bir"),
         ];
         for (s, want) in cases {
             assert_eq!(&card_dec(s), want, "decimal {}", s);
@@ -970,7 +977,7 @@ mod float_tests {
                 Some(1),
             )
             .unwrap();
-        assert_eq!(got, "iki point alty ýedi bäş");
+        assert_eq!(got, "iki otur alty ýedi bäş");
     }
 
     fn fv_f(value: f64, precision: u32) -> FloatValue {
@@ -993,32 +1000,32 @@ mod float_tests {
         // Whole floats keep their ".0" (str(5.0) == "5.0").
         assert_eq!(
             l.cardinal_float_entry(&fv_f(5.0, 1), None).unwrap(),
-            "bäş point nol"
+            "bäş otur nol"
         );
         // str(-0.0) == "-0.0": the sign bit alone earns the negword.
         assert_eq!(
             l.cardinal_float_entry(&fv_f(-0.0, 1), None).unwrap(),
-            "minus nol point nol"
+            "minus nol otur nol"
         );
         assert_eq!(
             l.cardinal_float_entry(&fv_f(1234.0, 1), None).unwrap(),
-            "bir müň iki ýüz otuz dört point nol"
+            "bir müň iki ýüz otuz dört otur nol"
         );
         // Above 10^9 the integer field degrades to bare digits (quirk 1).
         assert_eq!(
             l.cardinal_float_entry(&fv_f(1e9, 1), None).unwrap(),
-            "bir milliard point nol"
+            "bir milliard otur nol"
         );
         // Decimal without a visible point takes the integer words...
         assert_eq!(l.cardinal_float_entry(&fv_d("5", 0), None).unwrap(), "bäş");
         // ...while trailing zeros survive str(Decimal).
         assert_eq!(
             l.cardinal_float_entry(&fv_d("5.00", 2), None).unwrap(),
-            "bäş point nol nol"
+            "bäş otur nol nol"
         );
         assert_eq!(
             l.cardinal_float_entry(&fv_d("12345.000", 3), None).unwrap(),
-            "on iki müň üç ýüz kyrk bäş point nol nol nol"
+            "on iki müň üç ýüz kyrk bäş otur nol nol nol"
         );
         // Exponent-form float reprs: str(1e16) == "1e+16" — no ".", so
         // int() raises ValueError (the dispatcher never sends these here,
@@ -1043,11 +1050,11 @@ mod float_tests {
         let l = LangTk::new();
         assert_eq!(
             l.ordinal_float_entry(&fv_f(1.0, 1)).unwrap(),
-            "bir point nolunjy"
+            "bir otur nolunjy"
         );
         assert_eq!(
             l.ordinal_float_entry(&fv_f(-0.0, 1)).unwrap(),
-            "minus nol point nolunjy"
+            "minus nol otur nolunjy"
         );
         assert_eq!(l.ordinal_float_entry(&fv_d("0", 0)).unwrap(), "nolunjy");
         assert_eq!(l.ordinal_float_entry(&fv_d("5", 0)).unwrap(), "bäşinji");
@@ -1057,7 +1064,7 @@ mod float_tests {
         );
         assert_eq!(
             l.ordinal_float_entry(&fv_f(3.25, 2)).unwrap(),
-            "üç point iki bäşinji"
+            "üç otur iki bäşinji"
         );
         assert!(matches!(
             l.ordinal_float_entry(&fv_f(1e16, 16)),
@@ -1073,7 +1080,7 @@ mod float_tests {
         );
         assert_eq!(
             l.year_float_entry(&fv_f(5.0, 1)).unwrap(),
-            "bäş point nol"
+            "bäş otur nol"
         );
         assert_eq!(
             l.year_float_entry(&fv_d("1E+2", 0)).unwrap(),

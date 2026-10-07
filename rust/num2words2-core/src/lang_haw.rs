@@ -1,5 +1,11 @@
 //! Port of `lang_HAW.py` (Hawaiian).
 //!
+//! # Best-candidate words (gladiaio/num2words2#154)
+//!
+//! UNVERIFIED (#154): "'i'o 'ole" (minus) — best candidate: "negative" in
+//!   Pukui-Elbert (wehe.hilo.hawaii.edu/?q=negative, "kaha ʻiʻo ʻole" = negative
+//!   sign); no source reads a negative number aloud.
+//!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
 //! Upstream stopped at a million and returned `str(number)` from 10^9 up. The
@@ -20,8 +26,8 @@
 //! `setup()` assigns `negword = "minus "` (trailing space is load-bearing —
 //! `to_cardinal` concatenates then `.strip()`s) and the English
 //! `pointword = "point"`; the port says "kiko" (Pukui-Elbert, "kiko
-//! kekimala" = decimal point), gladiaio/num2words2#154. "minus" is kept: no
-//! source shows how a negative number is read aloud in Hawaiian.
+//! kekimala" = decimal point), gladiaio/num2words2#154. The negword is the
+//! best candidate "'i'o 'ole " (see UNVERIFIED above).
 //!
 //! Every method in scope is overridden by HAW, so nothing is inherited from
 //! `Num2Word_Base` here except the class scaffolding:
@@ -45,7 +51,7 @@
 //!    Corpus: `{"arg": "1000000000", "out": "1000000000"}`. See [`one_billion`].
 //! 2. **Negatives leak the negword into ordinals.** `to_ordinal` prefixes a
 //!    literal `"ka "` onto whatever `to_cardinal` returns, with no sign
-//!    handling, so `to_ordinal(-1)` == `"ka minus 'ekahi"`. Corpus confirms.
+//!    handling, so `to_ordinal(-1)` == `"ka 'i'o 'ole 'ekahi"`. Corpus confirms.
 //!    Combined with (1), `to_ordinal(10**9)` == `"ka 1000000000"`.
 //! 3. **Zero (fixed, gladiaio/num2words2#154).** The zero guard reads
 //!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
@@ -117,7 +123,7 @@ use std::sync::OnceLock;
 
 /// `setup`: `self.negword = "minus "`. The trailing space matters — see
 /// [`LangHaw::to_cardinal`], which concatenates it then trims.
-const NEGWORD: &str = "minus ";
+const NEGWORD: &str = "'i'o 'ole ";
 
 /// `self.ones`. Index 0 is `""` and is never read as a word — see quirk 3.
 const ONES: [&str; 10] = [
@@ -483,7 +489,7 @@ impl Lang for LangHaw {
     /// The `longval=True` kwarg is accepted and ignored, so years get no
     /// century splitting: 1776 == "'ekahi kaukani 'ehiku haneli kanahiku
     /// 'eono" (one thousand seven hundred seventy six), and negative years get
-    /// no BC marker — `to_year(-44)` == "minus kanahā 'ehā".
+    /// no BC marker — `to_year(-44)` == "'i'o 'ole kanahā 'ehā".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -539,7 +545,7 @@ impl Lang for LangHaw {
     ///   `"'ole kiko 'ole 'ekahi"` and `1.005` -> `"'ekahi point zero zero
     ///   'elima"`.
     /// * A negative fraction keeps the negword and prints `int_to_word(0)`:
-    ///   `-0.5` -> `"minus 'ole kiko 'elima"` (there is no `pre == 0` sign
+    ///   `-0.5` -> `"'i'o 'ole 'ole kiko 'elima"` (there is no `pre == 0` sign
     ///   rescue like the base path — the `"-"` is stripped lexically).
     ///
     /// # Errors
@@ -603,7 +609,7 @@ impl Lang for LangHaw {
         // Build `ret` exactly as Python concatenates, then `.strip()`.
         let mut ret = String::new();
         if is_negative {
-            ret.push_str(NEGWORD); // "minus " — trailing space is load-bearing.
+            ret.push_str(NEGWORD); // "'i'o 'ole " — trailing space is load-bearing.
         }
         ret.push_str(&checked_int_to_word(&int_left)?);
 
