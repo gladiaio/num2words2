@@ -16,7 +16,7 @@ FIRST_NEW_SCALE = [
     ("bs", 1000000000, "milijarda"),
     ("ceb", 1000000000, "usa bilyon"),
     ("ckb", 1000000000, "یەک ملیار"),
-    ("ff", 1000000000, "go'o miliyaar"),
+    ("ff", 1000000000, "miliyaar go'o"),  # count follows the noun (#263)
     ("fil", 1000000000, "isa bilyon"),
     ("fo", 1000000000, "ein milliard"),
     ("gl", 1000000000, "un mil millón"),

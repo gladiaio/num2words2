@@ -47,7 +47,7 @@
 //! and 77 came out as "satara o sāta" — "seventeen and seven". The module
 //! header already called this out as wrong ("Odia for 70 is sattari; satara
 //! is 17") and kept it only because the frozen corpus pinned it. Since the
-//! whole lexicon is being rewritten anyway, `TENS[7]` is now ସତୁରୀ (70) and
+//! whole lexicon is being rewritten anyway, `TENS[7]` is now ସତୁରି (70) and
 //! `TEENS[7]` stays ସତର (17).
 //!
 //! This is a value fix, not a spelling fix: it changes which number the
@@ -85,12 +85,12 @@
 //!    spells the crore count — 10^9 is "ଏକ ଶହ କୋଟି" — and raises
 //!    `OverflowError` from 10^14, where that count would itself need କୋଟି.
 //! 2. ~~`tens[7]` collides with `teens[7]`~~ — **fixed**, see divergence 2
-//!    above. 70 is ସତୁରୀ, 17 ସତର.
+//!    above. 70 is ସତୁରି, 17 ସତର.
 //! 3. **Tens and units were composed, not lexicalised (fixed,
 //!    gladiaio/num2words2#247).** Odia has a distinct word for each of
 //!    21..=99, but Python built them as `tens[t] + " ଓ " + ones[o]`, so 42
 //!    was "ଚାଳିଶ ଓ ଦୁଇ" ("forty and two"). The port reads [`BELOW_HUNDRED`]:
-//!    42 is ବୟାଳିଶି, 77 ସତସ୍ତରୀ.
+//!    42 is ବୟାଳିଶି, 77 ସତସ୍ତରି.
 //! 4. **`million` was the string "ଦଶ ଲକ୍ଷ" (fixed, gladiaio/num2words2#247)**,
 //!    literally "ten lakh", applied at 10^6 in a Western 10^3/10^6 grouping:
 //!    10^6 was "ଏକ ଦଶ ଲକ୍ଷ" ("one ten-lakh") and 10^7 "ଦଶ ଦଶ ଲକ୍ଷ". The
@@ -215,8 +215,12 @@ const ONES: [&str; 10] = [
 /// (42 is ବୟାଳିଶି). 21..=99 from Omniglot's Odia list (also
 /// languagesandnumbers.com and dimasathairili.com), checked against the
 /// romanised forms in Wikipedia "Odia numerals"; 1..=20 and the round tens
-/// are the module's own words. Lower confidence: 71..=78 (-ସ୍ତରୀ, some lists
-/// -ସ୍ତର) and 99 ଅନେଶତ. Index 0 is never read.
+/// are the module's own words. 70..=78 follow the Purnachandra Odia
+/// Bhashakosha (Praharaj; DSAL) and Wiktionary's Odia number list, which
+/// agree on a short final -ି (ସତୁରି, ଏକସ୍ତରି, ... ଅଠସ୍ତରି) except for 73,
+/// which both spell ତେସ୍ତରୀ; 72 is Praharaj's alternative form ବାସ୍ତରି
+/// (headword ବାଆସ୍ତରି). Omniglot and CLDR write -ରୀ throughout (#263).
+/// Lower confidence: 99 ଅନେଶତ. Index 0 is never read.
 const BELOW_HUNDRED: [&str; 100] = [
     "", "ଏକ", "ଦୁଇ", "ତିନି", "ଚାରି", "ପାଞ୍ଚ", "ଛଅ", "ସାତ", "ଆଠ", "ନଅ", // 0..9
     "ଦଶ", "ଏଗାର", "ବାର", "ତେର", "ଚଉଦ", "ପନ୍ଦର", "ଷୋହଳ", "ସତର", "ଅଠର", "ଉଣେଇଶ", // 10..19
@@ -225,7 +229,7 @@ const BELOW_HUNDRED: [&str; 100] = [
     "ଚାଳିଶ", "ଏକଚାଳିଶି", "ବୟାଳିଶି", "ତେୟାଳିଶି", "ଚଉରାଳିଶି", "ପଞ୍ଚଚାଳିଶି", "ଛୟାଳିଶି", "ସତଚାଳିଶି", "ଅଠଚାଳିଶି", "ଅଣଚାଶ", // 40..49
     "ପଚାଶ", "ଏକାବନ", "ବାଉନ", "ତେପନ", "ଚଉବନ", "ପଞ୍ଚାବନ", "ଛପନ", "ସତାବନ", "ଅଠାବନ", "ଅଣଷଠି", // 50..59
     "ଷାଠିଏ", "ଏକଷଠି", "ବାଷଠି", "ତେଷଠି", "ଚଉଷଠି", "ପଞ୍ଚଷଠି", "ଛଅଷଠି", "ସତଷଠି", "ଅଠଷଠି", "ଅଣସ୍ତରୀ", // 60..69
-    "ସତୁରୀ", "ଏକସ୍ତରୀ", "ବାସ୍ତରୀ", "ତେସ୍ତରୀ", "ଚଉସ୍ତରୀ", "ପଞ୍ଚସ୍ତରୀ", "ଛଅସ୍ତରୀ", "ସତସ୍ତରୀ", "ଅଠସ୍ତରୀ", "ଅଣାଅଶୀ", // 70..79
+    "ସତୁରି", "ଏକସ୍ତରି", "ବାସ୍ତରି", "ତେସ୍ତରୀ", "ଚଉସ୍ତରି", "ପଞ୍ଚସ୍ତରି", "ଛଅସ୍ତରି", "ସତସ୍ତରି", "ଅଠସ୍ତରି", "ଅଣାଅଶୀ", // 70..79
     "ଅଶୀ", "ଏକାଅଶୀ", "ବୟାଅଶୀ", "ତେୟାଅଶୀ", "ଚଉରାଅଶୀ", "ପଞ୍ଚାଅଶୀ", "ଛୟାଅଶୀ", "ସତାଅଶୀ", "ଅଠାଅଶୀ", "ଅଣାନବେ", // 80..89
     "ନବେ", "ଏକାନବେ", "ବୟାନବେ", "ତେୟାନବେ", "ଚଉରାନବେ", "ପଞ୍ଚାନବେ", "ଛୟାନବେ", "ସତାନବେ", "ଅଠାନବେ", "ଅନେଶତ", // 90..99
 ];
@@ -1038,7 +1042,7 @@ mod float_tests {
             (d("12.345", 3), "ବାର ଦଶମିକ ତିନି ଚାରି ପାଞ୍ଚ"),
             (
                 d("98746251323029.99", 2),
-                "ଅଠାନବେ ଲକ୍ଷ ଚଉସ୍ତରୀ ହଜାର ଛଅ ଶହ ଓ ପଚିଶି କୋଟି ତେର ଲକ୍ଷ ତେଇଶି ହଜାର ଅଣତିରିଶି ଦଶମିକ ନଅ ନଅ",
+                "ଅଠାନବେ ଲକ୍ଷ ଚଉସ୍ତରି ହଜାର ଛଅ ଶହ ଓ ପଚିଶି କୋଟି ତେର ଲକ୍ଷ ତେଇଶି ହଜାର ଅଣତିରିଶି ଦଶମିକ ନଅ ନଅ",
             ),
             (d("0.001", 3), "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଶୂନ୍ୟ ଏକ"),
         ];

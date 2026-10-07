@@ -35,7 +35,7 @@
 //!    adds miliyaar (10^9; Pulaar usage, e.g. "138 miliyaar" at
 //!    https://pulaar.org/2015/05/05/kariim-wad-kasoo-duu%C9%93i-6-e-138-miliyaar-2/),
 //!    composed exactly like the million branch: `cardinal(10**9)` ==
-//!    `"go'o miliyaar"`. No 10^12 word is attested, so 10^12 raises
+//!    `"miliyaar go'o"`. No 10^12 word is attested, so 10^12 raises
 //!    `OverflowError` (`maxval`).
 //! 2. **`negword` is the English word "less "**, not a Fulah word, and it is
 //!    concatenated *without* a separating join — the trailing space in the
@@ -45,15 +45,22 @@
 //!    reproduced anyway.
 //! 3. **The millions branch has no `m > 1` guard**, unlike the hundreds and
 //!    thousands branches. `100` → `"teemerre"` and `1000` → `"ujunere"` (bare,
-//!    no "go'o"), but `1000000` → `"go'o miliyon"` (with "go'o"). Corpus
-//!    confirms all three. The asymmetry is deliberate-looking enough that it
+//!    no "go'o"), but `1000000` → `"miliyon go'o"` (with "go'o"). Corpus
+//!    confirms all three (the word order since changed, see bug 4). The asymmetry is deliberate-looking enough that it
 //!    may be intended, but it is preserved verbatim regardless.
-//! 4. **Multiplier words precede their multiplicand**: `200` is
-//!    `"teemerre ɗiɗi"` (literally "hundred two") and `10000` is
-//!    `"ujunere sappo"` ("thousand ten") — the count follows the unit. But
-//!    the millions branch (bug 3) puts the count *first*: `"go'o miliyon"`.
-//!    Both orders coexist in one output: `cardinal(123456789)` begins
-//!    `"teemerre e noogaas e tati miliyon e ujunere teemerre nayi ..."`.
+//! 4. **The millions branch put the count first (fixed,
+//!    gladiaio/num2words2#263).** `200` is `"teemerre ɗiɗi"` (literally
+//!    "hundred two") and `10000` is `"ujunere sappo"` ("thousand ten") — the
+//!    count follows the unit — but Python's millions branch wrote
+//!    `"go'o miliyon"`, so both orders coexisted in one output. Fula numerals
+//!    follow the noun they count, scale nouns included: CLDR's Fula
+//!    spell-out rules (`common/rbnf/ff.xml`: `miliyo <<`, `miliyaari <<`)
+//!    and Pulaar press usage ("miliyaaruuji ɗiɗi", pulaar.org) put the count
+//!    after miliyon/miliyaar. So 10^6 is `"miliyon go'o"`, 10^9
+//!    `"miliyaar go'o"`, and `cardinal(123456789)` begins
+//!    `"miliyon teemerre e noogaas e tati e ujunere teemerre nayi ..."`.
+//!    The scale noun stays singular after numbers above one, as CLDR has it
+//!    and as `ujunere ɗiɗi` already was.
 //!
 //! # Float / Decimal routing
 //!
@@ -331,10 +338,11 @@ fn int_to_word(number: &BigInt) -> Result<String> {
     if *number < BigInt::from(1_000_000_000) {
         let (m, r) = number.div_rem(&BigInt::from(1_000_000));
         // NB: no `m > 1` guard here, unlike the two branches above — this is
-        // why 10**6 is "go'o miliyon" but 10**3 is bare "ujunere".
-        let mut s = int_to_word(&m)?;
+        // why 10**6 is "miliyon go'o" but 10**3 is bare "ujunere". The count
+        // follows the scale noun, as it does for ujunere/teemerre (#263).
+        let mut s = MILLION.to_string();
         s.push(' ');
-        s.push_str(MILLION);
+        s.push_str(&int_to_word(&m)?);
         if !r.is_zero() {
             s.push_str(" e ");
             s.push_str(&int_to_word(&r)?);
@@ -347,9 +355,9 @@ fn int_to_word(number: &BigInt) -> Result<String> {
     // The 10^9 cliff in Python (bug 1). The miliyaar branch instead, composed
     // like the million one (#147); the maxval check above keeps `m` < 1000.
     let (m, r) = number.div_rem(&BigInt::from(1_000_000_000));
-    let mut s = int_to_word(&m)?;
+    let mut s = BILLION.to_string();
     s.push(' ');
-    s.push_str(BILLION);
+    s.push_str(&int_to_word(&m)?);
     if !r.is_zero() {
         s.push_str(" e ");
         s.push_str(&int_to_word(&r)?);

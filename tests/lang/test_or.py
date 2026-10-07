@@ -24,8 +24,20 @@ class TestOR(LangTest, TestCase):
     # rendered as ସତର. These three pin the fix.
     seventy_tests = [
         (17, "ସତର"),
-        (70, "ସତୁରୀ"),
-        (77, "ସତସ୍ତରୀ"),
+        (70, "ସତୁରି"),
+        (77, "ସତସ୍ତରି"),
+    ]
+
+    # 70..78 end in short -ି per the Purnachandra Odia Bhashakosha and
+    # Wiktionary, except 73 ତେସ୍ତରୀ, which both spell long (#263).
+    seventies_tests = [
+        (71, "ଏକସ୍ତରି"),
+        (72, "ବାସ୍ତରି"),
+        (73, "ତେସ୍ତରୀ"),
+        (74, "ଚଉସ୍ତରି"),
+        (75, "ପଞ୍ଚସ୍ତରି"),
+        (76, "ଛଅସ୍ତରି"),
+        (78, "ଅଠସ୍ତରି"),
     ]
 
     # 1..10 are suppletive Sanskrit-derived forms; 11 and up take ମ.
@@ -103,6 +115,11 @@ class TestOR(LangTest, TestCase):
 
     def test_seventy_is_distinct_from_seventeen(self):
         for num, expected in self.seventy_tests:
+            with self.subTest(num=num):
+                self.assertEqual(num2words(num, lang="or"), expected)
+
+    def test_seventies_short_final_vowel(self):
+        for num, expected in self.seventies_tests:
             with self.subTest(num=num):
                 self.assertEqual(num2words(num, lang="or"), expected)
 
