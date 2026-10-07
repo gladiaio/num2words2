@@ -2,6 +2,8 @@
 name = "num2words2-core"
 version.workspace = true
 edition.workspace = true
+# The licence text ships in the crate as COPYING, a copy of the repo-root
+# file: cargo only packages files inside the crate directory.
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true

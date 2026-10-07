@@ -324,7 +324,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ## License
 
-This project is licensed under the GNU Lesser General Public License v2.1 - see the LICENSE file for details.
+This project is licensed under the GNU Lesser General Public License v2.1 - see the COPYING file for details.
 
 ## Credits
 

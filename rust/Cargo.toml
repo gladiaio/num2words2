@@ -5,7 +5,9 @@ resolver = "2"
 [workspace.package]
 version = "0.1.3"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+# Same licence as the Python package (pyproject.toml) and upstream num2words:
+# the core is a port of that LGPL engine (gladiaio/num2words2#242).
+license = "LGPL-2.1-only"
 repository = "https://github.com/gladiaio/num2words2"
 homepage = "https://github.com/gladiaio/num2words2"
 authors = ["jqueguiner"]
