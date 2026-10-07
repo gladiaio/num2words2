@@ -2,7 +2,8 @@
 """S'gaw Karen (ksw), in the S'gaw Karen script (gladiaio/num2words2#143).
 
 Words from Omniglot "Numbers in Sgaw Karen" and Wiktionary's S'gaw Karen
-numerals; composition after Gilmore, A Grammar of the Sgaw Karen (1898).
+numerals; composition after Gilmore, A Grammar of the Sgaw Karen (1898),
+written as one word like the S'gaw Karen Common Bible (#263).
 10^4 and 10^5 from Wiktionary and the S'gaw Karen Common Bible (#262).
 Only whole numbers 1..999999 have verified words; the rest raises.
 """
@@ -45,13 +46,16 @@ class Num2WordsKSWTest(TestCase):
         self.assertEqual(num2words(50, lang="ksw"), "ယဲၢ်ဆံ")
         self.assertEqual(num2words(100, lang="ksw"), "တကယၤ")
         self.assertEqual(num2words(200, lang="ksw"), "ခံကယၤ")
-        self.assertEqual(num2words(101, lang="ksw"), "တကယၤ တၢ")
+        # #263: places are written as one word, as in the KSWC Bible
+        # (Genesis 5:6 တကယၤယဲၢ် = 105, Genesis 50:26 တကယၤတဆံ = 110).
+        self.assertEqual(num2words(101, lang="ksw"), "တကယၤတၢ")
+        self.assertEqual(num2words(105, lang="ksw"), "တကယၤယဲၢ်")
+        self.assertEqual(num2words(110, lang="ksw"), "တကယၤတဆံ")
+        self.assertEqual(num2words(162, lang="ksw"), "တကယၤဃုဆံခံ")
         self.assertEqual(num2words(1000, lang="ksw"), "တကထိ")
-        self.assertEqual(num2words(2024, lang="ksw"), "ခံကထိ ခံဆံလွံၢ်")
-        self.assertEqual(num2words(9999, lang="ksw"), "ခွံကထိ ခွံကယၤ ခွံဆံခွံ")
-        self.assertEqual(
-            num2words(1984, lang="ksw", to="year"), "တကထိ ခွံကယၤ ဃိးဆံလွံၢ်"
-        )
+        self.assertEqual(num2words(2024, lang="ksw"), "ခံကထိခံဆံလွံၢ်")
+        self.assertEqual(num2words(9999, lang="ksw"), "ခွံကထိခွံကယၤခွံဆံခွံ")
+        self.assertEqual(num2words(1984, lang="ksw", to="year"), "တကထိခွံကယၤဃိးဆံလွံၢ်")
         self.assertEqual(num2words(Decimal("5"), lang="ksw"), "ယဲၢ်")
 
     def test_ten_and_hundred_thousand(self):
@@ -60,12 +64,12 @@ class Num2WordsKSWTest(TestCase):
         self.assertEqual(num2words(10000, lang="ksw"), "တကလး")
         self.assertEqual(num2words(20000, lang="ksw"), "ခံကလး")
         self.assertEqual(num2words(100000, lang="ksw"), "တကလီၢ်")
-        self.assertEqual(num2words(603550, lang="ksw"), "ဃုကလီၢ် သၢကထိ ယဲၢ်ကယၤ ယဲၢ်ဆံ")
-        self.assertEqual(num2words(601730, lang="ksw"), "ဃုကလီၢ် တကထိ နွံကယၤ သၢဆံ")
-        self.assertEqual(num2words(10001, lang="ksw"), "တကလး တၢ")
+        self.assertEqual(num2words(603550, lang="ksw"), "ဃုကလီၢ်သၢကထိယဲၢ်ကယၤယဲၢ်ဆံ")
+        self.assertEqual(num2words(601730, lang="ksw"), "ဃုကလီၢ်တကထိနွံကယၤသၢဆံ")
+        self.assertEqual(num2words(10001, lang="ksw"), "တကလးတၢ")
         self.assertEqual(
             num2words(999999, lang="ksw"),
-            "ခွံကလီၢ် ခွံကလး ခွံကထိ ခွံကယၤ ခွံဆံခွံ",
+            "ခွံကလီၢ်ခွံကလးခွံကထိခွံကယၤခွံဆံခွံ",
         )
 
     def test_ceiling(self):

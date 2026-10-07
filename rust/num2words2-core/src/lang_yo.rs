@@ -2,9 +2,12 @@
 //!
 //! # Best-candidate words (gladiaio/num2words2#154)
 //!
-//! UNVERIFIED (#154): "ẹsẹ" (decimal) — best candidate: the only source is the
-//!   Yoruba science maths dictionary (yoruba-scipedia.wikidot.com, "Òdo ẹsẹ òdo
-//!   ìkan" = 0.01), a proposal.
+//! UNVERIFIED (#154, #263): "ẹsẹ" (decimal) — best candidate, kept: the
+//!   Yoruba science maths wiki (yoruba-scipedia.wikidot.com, "Òdo ẹsẹ òdo
+//!   ìkan" = 0.01) and the same author's Mathematics Dictionary Yoruba-English
+//!   (K. Fakinlede, yoruba-scipedia.wdfiles.com: "Ẹsẹ — Decimal point"). The
+//!   alternative "àmì" has no decimal attestation (Fakinlede: "àmì ìdúró" is
+//!   the full stop).
 //! UNVERIFIED (#154): "òdì" (minus) — best candidate: used for "negative" in
 //!   the same dictionary's negative exponents.
 //!

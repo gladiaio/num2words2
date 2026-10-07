@@ -29,9 +29,12 @@
 //!
 //! Composition, as in Gilmore, *A Grammar of the Sgaw Karen* (1898) §88:
 //! place values high to low, each `digit + place word` (the multiplier "one"
-//! is တ: တကယၤ, တကထိ; 200 is ခံကယၤ), separated by spaces, tens and
-//! units written together (`digit + ဆံ + unit`). A unit "one" after anything
-//! else takes the form တၢ, as in 11 တဆံတၢ. Omniglot writes 50 with
+//! is တ: တကယၤ, တကထိ; 200 is ခံကယၤ), tens and units together
+//! (`digit + ဆံ + unit`). A unit "one" after anything else takes the form
+//! တၢ, as in 11 တဆံတၢ. The places are written as one word, without spaces
+//! (#263), as the S'gaw Karen Common Bible (KSWC, 1992) writes every count:
+//! Genesis 5:6 တကယၤယဲၢ် (105), 5:3 တကယၤသၢဆံ (130), 5:18 တကယၤဃုဆံခံ
+//! (162), 50:26 တကယၤတဆံ (110), and the counts below. So 101 is တကယၤတၢ. Omniglot writes 50 with
 //! ဟ although its 5 is ယဲၢ် and its transliteration of 50 is "ye hsee";
 //! this module uses the regular ယဲၢ်ဆံ, as Gilmore's 52 does.
 //!
@@ -44,8 +47,7 @@
 //! (a thousand) with တကလး (ten thousand); Numbers 1:46 counts 603,550 as
 //! ဃုကလီၢ်သၢကထိယဲၢ်ကယၤယဲၢ်ဆံ and Numbers 26:51 counts 601,730 as
 //! ဃုကလီၢ်တကထိနွံကယၤသၢဆံ. They compose like the lower places
-//! (`digit + place word`, an empty place skipped, multiplier one တ), and
-//! keep this module's space between places.
+//! (`digit + place word`, an empty place skipped, multiplier one တ).
 //!
 //! # What raises, and why
 //!
@@ -145,7 +147,7 @@ fn words(n: u32) -> String {
     } else if o != 0 {
         parts.push(unit(parts.is_empty()).to_string());
     }
-    parts.join(" ")
+    parts.concat()
 }
 
 /// The integer cardinal: 1..=999999, `OverflowError` beyond, and
@@ -380,13 +382,13 @@ mod tests {
         assert_eq!(c(100), "တကယၤ");
         assert_eq!(c(200), "ခံကယၤ");
         assert_eq!(c(1000), "တကထိ");
-        assert_eq!(c(9999), "ခွံကထိ ခွံကယၤ ခွံဆံခွံ");
+        assert_eq!(c(9999), "ခွံကထိခွံကယၤခွံဆံခွံ");
         // #262: KSWC Psalm 91:7, Numbers 1:46 and 26:51.
         assert_eq!(c(10_000), "တကလး");
         assert_eq!(c(100_000), "တကလီၢ်");
-        assert_eq!(c(603_550), "ဃုကလီၢ် သၢကထိ ယဲၢ်ကယၤ ယဲၢ်ဆံ");
-        assert_eq!(c(601_730), "ဃုကလီၢ် တကထိ နွံကယၤ သၢဆံ");
-        assert_eq!(c(999_999), "ခွံကလီၢ် ခွံကလး ခွံကထိ ခွံကယၤ ခွံဆံခွံ");
+        assert_eq!(c(603_550), "ဃုကလီၢ်သၢကထိယဲၢ်ကယၤယဲၢ်ဆံ");
+        assert_eq!(c(601_730), "ဃုကလီၢ်တကထိနွံကယၤသၢဆံ");
+        assert_eq!(c(999_999), "ခွံကလီၢ်ခွံကလးခွံကထိခွံကယၤခွံဆံခွံ");
         assert!(matches!(k.to_cardinal(&BigInt::from(1_000_000)), Err(N2WError::Overflow(_))));
         assert!(matches!(k.to_cardinal(&BigInt::from(0)), Err(N2WError::NotImplemented(_))));
         assert!(matches!(k.to_cardinal(&BigInt::from(-1)), Err(N2WError::NotImplemented(_))));

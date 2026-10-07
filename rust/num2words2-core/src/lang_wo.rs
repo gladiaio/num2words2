@@ -2,11 +2,19 @@
 //!
 //! # Best-candidate words (gladiaio/num2words2#154)
 //!
-//! UNVERIFIED (#154): "tus" (zero) — best candidate:
-//!   afronum.blogspot.com/p/wolof.html (also "neen", "dara", "sero").
-//! UNVERIFIED (#154): "virgule" (decimal) and "moins" (minus) — best
-//!   candidates: the French words of Senegalese school mathematics; no Wolof
-//!   reading found.
+//! "tus" (zero) is sourced (#263): the Senegalese education ministry's
+//!   Wolof-French terminology (SENPROF, *Terminologie bilingue de
+//!   l'enseignement-apprentissage de la lecture initiale*, 2020) has
+//!   "Zéro — Tus", with "damay bind lim benn teg ci lim tus" (10 is written
+//!   one followed by zero); also afronum.blogspot.com/p/wolof.html.
+//! UNVERIFIED (#263): "kos" (decimal) — best candidate: the same terminology
+//!   gives "Virgule — Kos" for the punctuation comma; Senegal writes the
+//!   decimal separator as a comma, so the decimal reading is inferred. It
+//!   replaces the French "virgule", which no Wolof source gives.
+//! UNVERIFIED (#154, #263): "moins" (minus) — best candidate, kept: the
+//!   French word of Senegalese school mathematics; no Wolof reading found.
+//!   The model-suggested "waññi" is the terminology's "compter" (wàññi:
+//!   "réduire"), not a sign word.
 //!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
@@ -60,9 +68,9 @@
 //!   sibling `lang_bm.rs`, which is the same shape.
 //! * **The fraction digits go through `_int_to_word`, not a bare `ones[]`
 //!   lookup** (this is where WO differs from BM). `_int_to_word(0)` is `"zero"`
-//!   (bug 3), so `0.01` → `"tus virgule tus benn"`, not `"... <empty> benn"`.
+//!   (bug 3), so `0.01` → `"tus kos tus benn"`, not `"... <empty> benn"`.
 //! * **Trailing zeros are significant** — they are characters, not a computed
-//!   remainder: `Decimal("1.10")` → `"benn virgule benn tus"`.
+//!   remainder: `Decimal("1.10")` → `"benn kos benn tus"`.
 //! * **Exponent notation raises `ValueError`**, since `int()` chokes on the
 //!   literal — the same hole [`parse_int`] documents for currency. `1e16` →
 //!   `"1e+16"` → no `"."` → `int("1e+16")` raises quoting the whole literal;
@@ -200,7 +208,7 @@ const NEGWORD: &str = "moins ";
 /// `self.pointword`. Live on the float path, where WO interpolates it raw
 /// (with a space on either side) between the integral part and the spelled-out
 /// fraction digits: `int(left) + " " + pointword + " " + digits…`.
-const POINTWORD: &str = "virgule";
+const POINTWORD: &str = "kos";
 
 /// `self.ones`. Index 0 is `""` and is only ever reached via the dead
 /// `ones[0]` arm of the zero check (bug 3).
@@ -634,7 +642,7 @@ impl Lang for LangWo {
 
     /// `to_ordinal(float/Decimal)`. WO's `to_ordinal` is
     /// `self.to_cardinal(number) + "-eel"` for *every* input, so the float
-    /// entry is the float cardinal plus the suffix — "juróom virgule tus-eel".
+    /// entry is the float cardinal plus the suffix — "juróom kos tus-eel".
     /// An exponent-form Decimal repr ("1E+2") still dies in `int()` with
     /// ValueError inside the cardinal, before the suffix is appended.
     fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
@@ -684,7 +692,7 @@ impl Lang for LangWo {
     }
 
     fn pointword(&self) -> &str {
-        "virgule"
+        POINTWORD
     }
 
     /// Python:
@@ -942,42 +950,42 @@ mod float_tests {
     /// Every `cardinal` corpus row with a dot in `arg` (float input).
     #[test]
     fn corpus_float() {
-        assert_eq!(f(0.0), "tus virgule tus");
-        assert_eq!(f(0.5), "tus virgule juróom");
-        assert_eq!(f(1.0), "benn virgule tus");
-        assert_eq!(f(1.5), "benn virgule juróom");
-        assert_eq!(f(2.25), "ñaar virgule ñaar juróom");
-        assert_eq!(f(3.14), "ñett virgule benn ñeent");
-        assert_eq!(f(0.01), "tus virgule tus benn");
-        assert_eq!(f(0.1), "tus virgule benn");
-        assert_eq!(f(0.99), "tus virgule juróom-ñeent juróom-ñeent");
-        assert_eq!(f(1.01), "benn virgule tus benn");
-        assert_eq!(f(12.34), "fukk ñaar virgule ñett ñeent");
+        assert_eq!(f(0.0), "tus kos tus");
+        assert_eq!(f(0.5), "tus kos juróom");
+        assert_eq!(f(1.0), "benn kos tus");
+        assert_eq!(f(1.5), "benn kos juróom");
+        assert_eq!(f(2.25), "ñaar kos ñaar juróom");
+        assert_eq!(f(3.14), "ñett kos benn ñeent");
+        assert_eq!(f(0.01), "tus kos tus benn");
+        assert_eq!(f(0.1), "tus kos benn");
+        assert_eq!(f(0.99), "tus kos juróom-ñeent juróom-ñeent");
+        assert_eq!(f(1.01), "benn kos tus benn");
+        assert_eq!(f(12.34), "fukk ñaar kos ñett ñeent");
         assert_eq!(
             f(99.99),
-            "juróom-ñeent-fukk juróom-ñeent virgule juróom-ñeent juróom-ñeent"
+            "juróom-ñeent-fukk juróom-ñeent kos juróom-ñeent juróom-ñeent"
         );
-        assert_eq!(f(100.5), "benn téeméer virgule juróom");
+        assert_eq!(f(100.5), "benn téeméer kos juróom");
         assert_eq!(
             f(1234.56),
-            "benn junni ñaar téeméer ñett-fukk ñeent virgule juróom juróom-benn"
+            "benn junni ñaar téeméer ñett-fukk ñeent kos juróom juróom-benn"
         );
-        assert_eq!(f(-0.5), "moins tus virgule juróom");
-        assert_eq!(f(-1.5), "moins benn virgule juróom");
-        assert_eq!(f(-12.34), "moins fukk ñaar virgule ñett ñeent");
+        assert_eq!(f(-0.5), "moins tus kos juróom");
+        assert_eq!(f(-1.5), "moins benn kos juróom");
+        assert_eq!(f(-12.34), "moins fukk ñaar kos ñett ñeent");
         // The f64-artefact cases: repr is shortest-round-trip, so WO's string
         // path gets "1.005"/"2.675" for free — no rescue heuristic needed.
-        assert_eq!(f(1.005), "benn virgule tus tus juróom");
-        assert_eq!(f(2.675), "ñaar virgule juróom-benn juróom-ñaar juróom");
+        assert_eq!(f(1.005), "benn kos tus tus juróom");
+        assert_eq!(f(2.675), "ñaar kos juróom-benn juróom-ñaar juróom");
     }
 
     /// Every `cardinal_dec` corpus row (Decimal input) — trailing zeros and the
     /// >10^9 bare-digit fallback in the integral part both exercised.
     #[test]
     fn corpus_decimal() {
-        assert_eq!(dec("0.01"), "tus virgule tus benn");
-        assert_eq!(dec("1.10"), "benn virgule benn tus");
-        assert_eq!(dec("12.345"), "fukk ñaar virgule ñett ñeent juróom");
+        assert_eq!(dec("0.01"), "tus kos tus benn");
+        assert_eq!(dec("1.10"), "benn kos benn tus");
+        assert_eq!(dec("12.345"), "fukk ñaar kos ñett ñeent juróom");
         // Past 10^9 the left part raises OverflowError (#147), not digits.
         let big = FloatValue::Decimal {
             value: BigDecimal::from_str("98746251323029.99").unwrap(),
@@ -987,14 +995,14 @@ mod float_tests {
             LangWo::new().to_cardinal_float(&big, None),
             Err(N2WError::Overflow(_))
         ));
-        assert_eq!(dec("0.001"), "tus virgule tus tus benn");
+        assert_eq!(dec("0.001"), "tus kos tus tus benn");
     }
 
     /// Not corpus rows; captured from the live interpreter.
     #[test]
     fn float_edges() {
         // -0.0 keeps its sign bit, so the negword survives.
-        assert_eq!(f(-0.0), "moins tus virgule tus");
+        assert_eq!(f(-0.0), "moins tus kos tus");
         // A tie CPython breaks to even: repr is "670352580196876.2". (The
         // integer part is past the 10^9 ceiling, so only the repr is checked.)
         assert_eq!(python_float_repr(670352580196876.25), "670352580196876.2");
@@ -1062,6 +1070,6 @@ mod float_tests {
                 Some(1),
             )
             .unwrap();
-        assert_eq!(full, "ñaar virgule juróom-benn juróom-ñaar juróom");
+        assert_eq!(full, "ñaar kos juróom-benn juróom-ñaar juróom");
     }
 }

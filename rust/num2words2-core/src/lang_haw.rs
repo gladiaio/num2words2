@@ -2,9 +2,13 @@
 //!
 //! # Best-candidate words (gladiaio/num2words2#154)
 //!
-//! UNVERIFIED (#154): "'i'o 'ole" (minus) — best candidate: "negative" in
-//!   Pukui-Elbert (wehe.hilo.hawaii.edu/?q=negative, "kaha ʻiʻo ʻole" = negative
-//!   sign); no source reads a negative number aloud.
+//! UNVERIFIED (#154, #263): "'i'o 'ole" (minus), placed after the number
+//!   ("'ekolu 'i'o 'ole" = -3) — best candidate: "negative" in Pukui-Elbert
+//!   (wehe.hilo.hawaii.edu/?q=negative: "helu ʻiʻo ʻole" = negative number,
+//!   "kaha ʻiʻo ʻole" = negative sign), where it follows its head like any
+//!   Hawaiian modifier. No source reads a negative number aloud; one model
+//!   flagged the order unprompted, and a second round whose prompt stated
+//!   the modifier-follows-head rule agreed 5/5.
 //!
 //! # Scale words above a million (gladiaio/num2words2#147)
 //!
@@ -23,11 +27,10 @@
 //! Consequently `cards`/`maxval`/`merge` stay at their trait defaults here,
 //! and there is **no overflow check** — see the 10^9 fallback below.
 //!
-//! `setup()` assigns `negword = "minus "` (trailing space is load-bearing —
-//! `to_cardinal` concatenates then `.strip()`s) and the English
-//! `pointword = "point"`; the port says "kiko" (Pukui-Elbert, "kiko
-//! kekimala" = decimal point), gladiaio/num2words2#154. The negword is the
-//! best candidate "'i'o 'ole " (see UNVERIFIED above).
+//! `setup()` assigns `negword = "minus "` (prepended, then `.strip()`ped)
+//! and the English `pointword = "point"`; the port says "kiko" (Pukui-Elbert,
+//! "kiko kekimala" = decimal point), gladiaio/num2words2#154. The negword is
+//! the best candidate "'i'o 'ole", after the number (see UNVERIFIED above).
 //!
 //! Every method in scope is overridden by HAW, so nothing is inherited from
 //! `Num2Word_Base` here except the class scaffolding:
@@ -51,7 +54,8 @@
 //!    Corpus: `{"arg": "1000000000", "out": "1000000000"}`. See [`one_billion`].
 //! 2. **Negatives leak the negword into ordinals.** `to_ordinal` prefixes a
 //!    literal `"ka "` onto whatever `to_cardinal` returns, with no sign
-//!    handling, so `to_ordinal(-1)` == `"ka 'i'o 'ole 'ekahi"`. Corpus confirms.
+//!    handling, so Python's `to_ordinal(-1)` was `"ka minus 'ekahi"` (the
+//!    port: `"ka 'ekahi 'i'o 'ole"`).
 //!    Combined with (1), `to_ordinal(10**9)` == `"ka 1000000000"`.
 //! 3. **Zero (fixed, gladiaio/num2words2#154).** The zero guard reads
 //!    `return self.ones[0] if self.ones[0] else "zero"` with `ones[0] == ""`,
@@ -121,9 +125,16 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-/// `setup`: `self.negword = "minus "`. The trailing space matters — see
-/// [`LangHaw::to_cardinal`], which concatenates it then trims.
-const NEGWORD: &str = "'i'o 'ole ";
+/// `setup`: `self.negword = "minus "`, which Python prepends. The port says
+/// "'i'o 'ole" and puts it *after* what it qualifies (#263), as Hawaiian
+/// modifiers follow their head (Pukui-Elbert "helu 'i'o 'ole" = negative
+/// number): -3 is "'ekolu 'i'o 'ole". See [`negate`].
+const NEGWORD: &str = "'i'o 'ole";
+
+/// Mark `words` as negative: the negword follows them (#263).
+fn negate(words: &str) -> String {
+    format!("{} {}", words, NEGWORD)
+}
 
 /// `self.ones`. Index 0 is `""` and is never read as a word — see quirk 3.
 const ONES: [&str; 10] = [
@@ -193,7 +204,7 @@ fn int_to_word(number: &BigInt) -> String {
     // Unreachable — to_cardinal strips the sign from the string first, and no
     // recursion below can produce a negative. Kept to mirror the source.
     if number.is_negative() {
-        return format!("{}{}", NEGWORD, int_to_word(&number.abs()));
+        return negate(&int_to_word(&number.abs()));
     }
 
     if number < &ten() {
@@ -447,19 +458,11 @@ impl Lang for LangHaw {
     /// whitespace, or a `.`. The float branch (`if "." in n`) is unreachable
     /// for integers and out of scope.
     ///
-    /// The trailing `.strip()` is reproduced as `trim()`. It is a no-op for
-    /// every reachable input: `int_to_word` never returns an empty or
-    /// space-padded string, so `negword`'s trailing space always lands
-    /// *between* "minus" and the first word rather than at an edge. Kept for
-    /// fidelity — and because it is what would swallow the sign spacing if
-    /// `int_to_word` ever did return "".
+    /// A negative value takes the negword after the number (#263, see
+    /// [`negate`]); Python prepended "minus ".
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
-        let (n, ret) = if value.is_negative() {
-            (value.abs(), NEGWORD)
-        } else {
-            (value.clone(), "")
-        };
-        Ok(format!("{}{}", ret, checked_int_to_word(&n)?).trim().to_string())
+        let words = checked_int_to_word(&value.abs())?;
+        Ok(if value.is_negative() { negate(&words) } else { words })
     }
 
     /// Port of `Num2Word_HAW.to_ordinal`.
@@ -489,7 +492,7 @@ impl Lang for LangHaw {
     /// The `longval=True` kwarg is accepted and ignored, so years get no
     /// century splitting: 1776 == "'ekahi kaukani 'ehiku haneli kanahiku
     /// 'eono" (one thousand seven hundred seventy six), and negative years get
-    /// no BC marker — `to_year(-44)` == "'i'o 'ole kanahā 'ehā".
+    /// no BC marker — `to_year(-44)` == "kanahā 'ehā 'i'o 'ole".
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -545,7 +548,7 @@ impl Lang for LangHaw {
     ///   `"'ole kiko 'ole 'ekahi"` and `1.005` -> `"'ekahi point zero zero
     ///   'elima"`.
     /// * A negative fraction keeps the negword and prints `int_to_word(0)`:
-    ///   `-0.5` -> `"'i'o 'ole 'ole kiko 'elima"` (there is no `pre == 0` sign
+    ///   `-0.5` -> `"'ole kiko 'elima 'i'o 'ole"` (there is no `pre == 0` sign
     ///   rescue like the base path — the `"-"` is stripped lexically).
     ///
     /// # Errors
@@ -606,12 +609,9 @@ impl Lang for LangHaw {
             }
         };
 
-        // Build `ret` exactly as Python concatenates, then `.strip()`.
-        let mut ret = String::new();
-        if is_negative {
-            ret.push_str(NEGWORD); // "'i'o 'ole " — trailing space is load-bearing.
-        }
-        ret.push_str(&checked_int_to_word(&int_left)?);
+        // Build `ret` as Python concatenates, then `.strip()`; the negword
+        // follows the whole number instead of preceding it (#263).
+        let mut ret = checked_int_to_word(&int_left)?;
 
         // Python emits the point + digit words only when `"." in n`, i.e. when
         // there is a fractional part (precision > 0). precision == 0 reproduces
@@ -631,7 +631,8 @@ impl Lang for LangHaw {
             }
         }
 
-        Ok(ret.trim().to_string())
+        let ret = ret.trim();
+        Ok(if is_negative { negate(ret) } else { ret.to_string() })
     }
 
     /// `to_cardinal(float/Decimal)` — the FULL routing, whole values included.
@@ -919,12 +920,10 @@ impl Lang for LangHaw {
             ));
         }
 
-        // `if is_negative: result = self.negword + result` — "minus " (with its
-        // trailing space) is prepended, then the whole thing is stripped.
-        if is_negative {
-            result = format!("{}{}", NEGWORD, result);
-        }
-        Ok(result.trim().to_string())
+        // Python: `if is_negative: result = self.negword + result`, stripped.
+        // The negword follows the amount instead (#263).
+        let result = result.trim();
+        Ok(if is_negative { negate(result) } else { result.to_string() })
     }
 }
 

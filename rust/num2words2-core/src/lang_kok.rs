@@ -190,6 +190,13 @@ const ONES: [&str; 10] = [
 /// confidence, needs a native speaker:** 26, 37, 38, 42, 46, 51..=58 and
 /// 61..=99, where the Devanagari lists disagree; 71..=99 follow the forms the
 /// romanised sources share (ekahattar, bahattar, ...). Index 0 is never read.
+///
+/// 53, 54, 56 and 66 were re-checked on best evidence (#263) and kept:
+/// dhyaskonkani.com writes त्रेप्पन, चवपन, छाप्पन verbatim, and सेसष्ट is
+/// the CBI handbook's Devanagari and Omniglot's "sesasht". The competing
+/// Wikibooks forms (त्रेपन्न, चोपन्न, छप्पन्न, सहासष्ठ) are Marathi spellings
+/// that contradict its own romanisation (sesasht), and the five-model review
+/// agreed on no replacement.
 const BELOW_HUNDRED: [&str; 100] = [
     "", "एक", "दोन", "तीन", "चार", "पांच", "सव", "सात", "आठ", "नव", // 0..9
     "धा", "इकरा", "बारा", "तेरा", "चवदा", "पंदरा", "सोळा", "सतरा", "अठरा", "एकोणीस", // 10..19

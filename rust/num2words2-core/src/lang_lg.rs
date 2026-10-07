@@ -37,6 +37,11 @@
 //!    composed exactly like the million branch (quirk 2), and raises
 //!    `OverflowError` from 10^12 (`maxval`): the same section's akase (10^12)
 //!    is single-sourced and left out. Modelled in [`int_to_word`].
+//!    Kept on best evidence (#263): the augmentless "kawumbi" is attested in
+//!    Luganda press (Bukedde: "Babasasudde kawumbi ne bafa lumu", "embaga ya
+//!    kawumbi kalamba") and matches the module's counting forms (kakadde,
+//!    lukumi, kikumi); "akawumbi" (4/5 models) is the citation form with the
+//!    augment, which would only be consistent if kakadde became akakadde too.
 //! 2. **The multiplier "emu" (one) is suppressed on every scale word**, because
 //!    each branch guards the multiplier with `if h > 1` / `if t > 1` /
 //!    `if m > 1` rather than `!= 0`. Hence 100 → "kikumi" (not "emu kikumi"),

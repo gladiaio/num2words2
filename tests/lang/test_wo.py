@@ -283,35 +283,35 @@ class Num2WordsWOTest(TestCase):
 
     def test_decimal_numbers(self):
         """Test decimal numbers."""
-        self.assertEqual(num2words(0.1, lang="wo"), "tus virgule benn")
-        self.assertEqual(num2words(0.5, lang="wo"), "tus virgule juróom")
-        self.assertEqual(num2words(0.9, lang="wo"), "tus virgule juróom-ñeent")
-        self.assertEqual(num2words(1.1, lang="wo"), "benn virgule benn")
-        self.assertEqual(num2words(1.5, lang="wo"), "benn virgule juróom")
-        self.assertEqual(num2words(2.5, lang="wo"), "ñaar virgule juróom")
-        self.assertEqual(num2words(3.14, lang="wo"), "ñett virgule benn ñeent")
-        self.assertEqual(num2words(10.5, lang="wo"), "fukk virgule juróom")
-        self.assertEqual(num2words(11.11, lang="wo"), "fukk benn virgule benn benn")
-        self.assertEqual(num2words(20.2, lang="wo"), "ñaar-fukk virgule ñaar")
+        self.assertEqual(num2words(0.1, lang="wo"), "tus kos benn")
+        self.assertEqual(num2words(0.5, lang="wo"), "tus kos juróom")
+        self.assertEqual(num2words(0.9, lang="wo"), "tus kos juróom-ñeent")
+        self.assertEqual(num2words(1.1, lang="wo"), "benn kos benn")
+        self.assertEqual(num2words(1.5, lang="wo"), "benn kos juróom")
+        self.assertEqual(num2words(2.5, lang="wo"), "ñaar kos juróom")
+        self.assertEqual(num2words(3.14, lang="wo"), "ñett kos benn ñeent")
+        self.assertEqual(num2words(10.5, lang="wo"), "fukk kos juróom")
+        self.assertEqual(num2words(11.11, lang="wo"), "fukk benn kos benn benn")
+        self.assertEqual(num2words(20.2, lang="wo"), "ñaar-fukk kos ñaar")
         self.assertEqual(
             num2words(99.99, lang="wo"),
-            "juróom-ñeent-fukk juróom-ñeent virgule juróom-ñeent juróom-ñeent",
+            "juróom-ñeent-fukk juróom-ñeent kos juróom-ñeent juróom-ñeent",
         )
-        self.assertEqual(num2words(100.01, lang="wo"), "benn téeméer virgule tus benn")
-        self.assertEqual(num2words(100.5, lang="wo"), "benn téeméer virgule juróom")
+        self.assertEqual(num2words(100.01, lang="wo"), "benn téeméer kos tus benn")
+        self.assertEqual(num2words(100.5, lang="wo"), "benn téeméer kos juróom")
         self.assertEqual(
             num2words(123.45, lang="wo"),
-            "benn téeméer ñaar-fukk ñett virgule ñeent juróom",
+            "benn téeméer ñaar-fukk ñett kos ñeent juróom",
         )
-        self.assertEqual(num2words(1000.5, lang="wo"), "benn junni virgule juróom")
+        self.assertEqual(num2words(1000.5, lang="wo"), "benn junni kos juróom")
         self.assertEqual(
             num2words(1234.56, lang="wo"),
-            "benn junni ñaar téeméer ñett-fukk ñeent virgule juróom juróom-benn",
+            "benn junni ñaar téeméer ñett-fukk ñeent kos juróom juróom-benn",
         )
-        self.assertEqual(num2words(10000.01, lang="wo"), "fukk junni virgule tus benn")
-        self.assertEqual(num2words(-0.5, lang="wo"), "moins tus virgule juróom")
-        self.assertEqual(num2words(-1.5, lang="wo"), "moins benn virgule juróom")
-        self.assertEqual(num2words(-10.5, lang="wo"), "moins fukk virgule juróom")
+        self.assertEqual(num2words(10000.01, lang="wo"), "fukk junni kos tus benn")
+        self.assertEqual(num2words(-0.5, lang="wo"), "moins tus kos juróom")
+        self.assertEqual(num2words(-1.5, lang="wo"), "moins benn kos juróom")
+        self.assertEqual(num2words(-10.5, lang="wo"), "moins fukk kos juróom")
 
     def test_ordinal(self):
         """Test ordinal numbers."""

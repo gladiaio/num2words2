@@ -26,7 +26,7 @@ CASES = {
     "lb": ("null", "eent Komma fënnef", "minus eent", "null-ten"),
     "oc": ("zèro", "un virgula cinc", "mens un", "zèro-en"),
     "br": ("mann", "unan skej pemp", "lei unan", "mann-vet"),
-    "haw": ("'ole", "'ekahi kiko 'elima", "'i'o 'ole 'ekahi", "ka 'ole"),
+    "haw": ("'ole", "'ekahi kiko 'elima", "'ekahi 'i'o 'ole", "ka 'ole"),
     "ht": ("zewo", "en vigil senk", "mwens en", "zewo-yèm"),
     "jv": ("nol", "siji koma lima", "minus siji", "nol-e"),
     "jw": ("nol", "siji koma lima", "minus siji", "nol-e"),
@@ -46,7 +46,7 @@ UNVERIFIED = {
     "tk": ("nol", "bir otur bäş", "minus bir", "nolunjy"),
     "cnh": ("pakpalawng", "pakhat deh panga", "zuh pakhat", "pakpalawng-nak"),
     "ln": ("libúngútulú", "moko virgule mítáno", "moins moko", "libúngútulú-e"),
-    "wo": ("tus", "benn virgule juróom", "moins benn", "tus-eel"),
+    "wo": ("tus", "benn kos juróom", "moins benn", "tus-eel"),
 }
 
 
