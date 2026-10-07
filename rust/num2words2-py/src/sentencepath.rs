@@ -56,6 +56,14 @@
 //! decimals with a comma, so `1.5` has no standard reading, and the ordinal
 //! pass used to turn it into "Erste5".
 //!
+//! Also deliberate (#192): outside English a clock time `H:MM` is read as
+//! the language's spoken 24-hour time instead of two numbers around a kept
+//! colon ("catorce:treinta"): es "catorce treinta", fr "quatorze heures
+//! trente", de "vierzehn Uhr dreißig" (also without "Uhr"), it "quattordici
+//! e trenta", pt "catorze e trinta", sv "fjorton och trettio", nl "veertien
+//! uur dertig". Other languages, and times with seconds, keep the time as
+//! written.
+//!
 //! Also deliberate (#234): a plain or grouped number is read from its digits
 //! as written, like `num2words("3.50")` — the integer path when whole, the
 //! `Decimal` path otherwise — instead of through a Python float, which
@@ -654,6 +662,8 @@ enum Typ {
     Time(u32, u32, Option<String>),
     /// German clock time `H.MM Uhr` / `H:MM Uhr` as (hour, minute) (#183).
     UhrTime(u32, u32),
+    /// Clock time `H:MM` in es/fr/it/pt/sv/nl as (hour, minute) (#192).
+    Clock(u32, u32),
     /// A numeric range `X-Y` (#229) as (to, joined with "to"): en reads
     /// "X to Y", other languages "X - Y".
     Range(BigInt, bool),
@@ -1150,6 +1160,98 @@ fn extract_numbers(t: &Text, lang: &str) -> Result<Vec<Ext>, N2WError> {
                 mark(&mut used, i, end);
             }
             i = end;
+        }
+    }
+
+    // 2d'. Clock times outside English (#192): "H:MM" is read as the
+    // language's spoken time (es "catorce treinta", fr "quatorze heures
+    // trente", de "vierzehn Uhr dreißig", it "quattordici e trenta", …)
+    // instead of two numbers around a kept colon ("catorce:treinta").
+    // Languages with no verified rule keep the time as written, and so does
+    // every language for a time with seconds ("14:30:45").
+    let base = lang.trim().to_lowercase().split(['-', '_']).next().unwrap_or("").to_string();
+    if base != "en" && !base.is_empty() {
+        let c = &t.chars;
+        let ruled = matches!(base.as_str(), "es" | "fr" | "de" | "it" | "pt" | "sv" | "nl");
+        // A trailing nl "uur" (with or without a space), claimed with the
+        // time so it is not read twice ("veertien uur dertig uur").
+        let uur_after = |e: usize| -> Option<usize> {
+            let mut k = e;
+            while k < n && c[k] == ' ' {
+                k += 1;
+            }
+            let w: String = c[k..n.min(k + 3)].iter().collect();
+            let after = k + 3;
+            (w == "uur" && (after >= n || !c[after].is_alphanumeric())).then_some(after)
+        };
+        let mut i = 0;
+        while i < n {
+            let d1 = (i..n.min(i + 2)).take_while(|&k| c[k].is_ascii_digit()).count();
+            let sep = i + d1;
+            if d1 == 0
+                || (i > 0 && (c[i - 1].is_alphanumeric() || matches!(c[i - 1], '.' | ':' | ',')))
+                || sep + 2 >= n
+                || !matches!(c[sep], ':' | '.')
+                || !(c[sep + 1].is_ascii_digit() && c[sep + 2].is_ascii_digit())
+            {
+                i += d1.max(1);
+                continue;
+            }
+            let mut e = sep + 3;
+            if e < n && c[e].is_ascii_digit() {
+                i = e;
+                continue;
+            }
+            let colon = c[sep] == ':';
+            let seconds = colon
+                && e + 2 < n
+                && c[e] == ':' && c[e + 1].is_ascii_digit() && c[e + 2].is_ascii_digit()
+                && (e + 3 >= n || !c[e + 3].is_alphanumeric());
+            let h: u32 = c[i..sep].iter().collect::<String>().parse().unwrap_or(99);
+            let mi: u32 = c[sep + 1..e].iter().collect::<String>().parse().unwrap_or(99);
+            if seconds {
+                // "14:30:45" is left as written in every language.
+                if !overlap(&used, i, e + 3) {
+                    mark(&mut used, i, e + 3);
+                }
+                i = e + 3;
+                continue;
+            }
+            // The time must end at a word boundary, and a dotted one must
+            // not run on into a date ("3.10.2024").
+            let uur = (base == "nl").then(|| uur_after(e)).flatten();
+            let runs_on = uur.is_none()
+                && e < n
+                && (c[e].is_alphanumeric()
+                    || (matches!(c[e], '.' | ':' | ',') && e + 1 < n && c[e + 1].is_ascii_digit()));
+            if runs_on || h > 23
+                || mi > 59
+            {
+                i = e;
+                continue;
+            }
+            if !colon {
+                i = e;
+                continue;
+            }
+            if let Some(k) = uur {
+                e = k;
+            }
+            if overlap(&used, i, e) {
+                i = e;
+                continue;
+            }
+            if ruled {
+                exts.push(Ext {
+                    start: i,
+                    end: e,
+                    text: t.slice(i, e),
+                    val: Val::I(BigInt::from(h)),
+                    typ: if base == "de" { Typ::UhrTime(h, mi) } else { Typ::Clock(h, mi) },
+                });
+            }
+            mark(&mut used, i, e);
+            i = e;
         }
     }
 
@@ -1731,6 +1833,78 @@ fn convert_inner(ctx: &Ctx, val: &Val, typ: &Typ) -> Result<String, N2WError> {
             Ok(match *minute {
                 0 => format!("{} Uhr", hour),
                 m => format!("{} Uhr {}", hour, l.to_cardinal(&BigInt::from(m))?),
+            })
+        }
+        Typ::Clock(h, minute) => {
+            let l = ctx.lang()?;
+            let card = |x: u32| l.to_cardinal(&BigInt::from(x));
+            let (h, m) = (*h, *minute);
+            let base = ctx.raw.trim().to_lowercase();
+            Ok(match base.split(['-', '_']).next().unwrap_or("") {
+                // RAE: "las trece treinta" / "las trece y veinte", hours
+                // read "cero, una, dos…", full hours "las catorce horas".
+                "es" => {
+                    let hour = match h {
+                        1 => "una".to_string(),
+                        21 => "veintiuna".to_string(),
+                        h => card(h)?,
+                    };
+                    match m {
+                        0 if h == 1 => hour,
+                        0 => format!("{} horas", hour),
+                        m if m < 10 => format!("{} y {}", hour, card(m)?),
+                        m => format!("{} {}", hour, card(m)?),
+                    }
+                }
+                // "quatorze heures trente", "une heure", "vingt-et-une
+                // heures", "zéro heure dix" (heure is feminine, singular
+                // below two).
+                "fr" => {
+                    let mut hour = card(h)?;
+                    if hour.ends_with("un") {
+                        hour.push('e');
+                    }
+                    let unit = if h < 2 { "heure" } else { "heures" };
+                    match m {
+                        0 => format!("{} {}", hour, unit),
+                        m => format!("{} {} {}", hour, unit, card(m)?),
+                    }
+                }
+                // "quattordici e trenta", "l'una e venti", "le quattordici".
+                "it" => {
+                    let hour = if h == 1 { "una".to_string() } else { card(h)? };
+                    match m {
+                        0 => hour,
+                        m => format!("{} e {}", hour, card(m)?),
+                    }
+                }
+                // "catorze e trinta", "duas e trinta", "catorze horas"
+                // (hora is feminine).
+                "pt" => {
+                    let hour = match h {
+                        1 => "uma".to_string(),
+                        2 => "duas".to_string(),
+                        21 => format!("{} e uma", card(20)?),
+                        22 => format!("{} e duas", card(20)?),
+                        h => card(h)?,
+                    };
+                    match m {
+                        0 if h == 1 => format!("{} hora", hour),
+                        0 => format!("{} horas", hour),
+                        m => format!("{} e {}", hour, card(m)?),
+                    }
+                }
+                // "fjorton och trettio", "klockan fjorton".
+                "sv" => match m {
+                    0 => card(h)?,
+                    m => format!("{} och {}", card(h)?, card(m)?),
+                },
+                // "veertien uur dertig", "veertien uur".
+                "nl" => match m {
+                    0 => format!("{} uur", card(h)?),
+                    m => format!("{} uur {}", card(h)?, card(m)?),
+                },
+                _ => return Err(N2WError::Value("no clock reading".into())),
             })
         }
         Typ::Range(y, to) => {
