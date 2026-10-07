@@ -192,10 +192,19 @@ class Num2WordsTKTest(TestCase):
             "dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
         )
         self.assertEqual(num2words(1000000000, lang="tk"), "bir milliard")
-        self.assertEqual(num2words(1234567890, lang="tk"), "bir milliard iki ýüz otuz dört million bäş ýüz altmyş ýedi müň sekiz ýüz togsan")
-        self.assertEqual(num2words(9999999999, lang="tk"), "dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz")
+        self.assertEqual(
+            num2words(1234567890, lang="tk"),
+            "bir milliard iki ýüz otuz dört million bäş ýüz altmyş ýedi müň sekiz ýüz togsan",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="tk"),
+            "dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
+        )
         self.assertEqual(num2words(10000000000, lang="tk"), "on milliard")
-        self.assertEqual(num2words(99999999999, lang="tk"), "togsan dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz")
+        self.assertEqual(
+            num2words(99999999999, lang="tk"),
+            "togsan dokuz milliard dokuz ýüz togsan dokuz million dokuz ýüz togsan dokuz müň dokuz ýüz togsan dokuz",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -355,4 +364,3 @@ class Num2WordsTKTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tk"), num2words("100", lang="tk"))
         self.assertEqual(num2words(1000, lang="tk"), num2words("1000", lang="tk"))
-

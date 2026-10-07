@@ -3459,6 +3459,7 @@ class UkrainianGenderAliasTest:
 def test_uk_gender_short_alias_feminine():
     # Regression for savoirfairelinux/num2words#560 — gender='f' was ignored.
     from num2words2 import num2words
+
     assert num2words(21, lang="uk", gender="f") == "двадцять одна"
     assert num2words(1, lang="uk", gender="f") == "одна"
     assert num2words(21, lang="uk", gender="ж") == "двадцять одна"
@@ -3467,6 +3468,7 @@ def test_uk_gender_short_alias_feminine():
 
 def test_uk_gender_default_is_masculine():
     from num2words2 import num2words
+
     assert num2words(21, lang="uk") == "двадцять один"
 
 
@@ -3474,6 +3476,7 @@ def test_uk_gender_kwarg_variants():
     # gladiaio/num2words2#145: aliases are case-insensitive; any other value
     # (masculine, unknown, non-string) is masculine, never an error.
     from num2words2 import num2words
+
     assert num2words(21, lang="uk", gender="Ж") == "двадцять одна"
     assert num2words(21, lang="uk", gender="жіночий") == "двадцять одна"
     assert num2words(21, lang="uk", gender="женский") == "двадцять одна"
@@ -3488,13 +3491,10 @@ def test_uk_case_kwarg_variants():
     # gladiaio/num2words2#179: case combines with gender and floats; an
     # unknown (or differently-capitalised) case is Python's ValueError.
     from num2words2 import num2words
-    assert num2words(21, lang="uk", case="genitive", gender="f") == (
-        "двадцяти однієї"
-    )
+
+    assert num2words(21, lang="uk", case="genitive", gender="f") == ("двадцяти однієї")
     assert num2words(2000, lang="uk", case="genitive") == "двох тисяч"
-    assert num2words(1.5, lang="uk", case="instrumental") == (
-        "одним кома п'ятьма"
-    )
+    assert num2words(1.5, lang="uk", case="instrumental") == ("одним кома п'ятьма")
     for bad in ("Genitive", "vocative", 3, None):
         with pytest.raises(ValueError, match="is not in list"):
             num2words(1, lang="uk", case=bad)
@@ -3505,6 +3505,7 @@ def test_uk_gender_kwarg_float():
     from decimal import Decimal
 
     from num2words2 import num2words
+
     assert num2words(1.1, lang="uk", gender="f") == "одна кома одна"
     assert num2words(2.02, lang="uk", gender="f") == "дві кома нуль дві"
     assert num2words(Decimal("2"), lang="uk", gender="f") == "дві"
@@ -3532,7 +3533,7 @@ class Num2WordsUKIntCurrencyAgreementTest(TestCase):
                 with self.subTest(currency=c, x=x):
                     self.assertEqual(
                         num2words(x, lang="uk", to="currency", currency=c),
-                        num2words(
-                            float(x), lang="uk", to="currency", currency=c
-                        ).split(",")[0],
+                        num2words(float(x), lang="uk", to="currency", currency=c).split(
+                            ","
+                        )[0],
                     )

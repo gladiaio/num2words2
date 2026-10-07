@@ -38,8 +38,8 @@ EXPECTED_BASICS = {
 
 # Aliases — share converter with another language.
 ALIASES = {
-    "nb": "no",   # Norwegian Bokmål → Norwegian
-    "jv": "jw",   # Modern Javanese code → existing converter
+    "nb": "no",  # Norwegian Bokmål → Norwegian
+    "jv": "jw",  # Modern Javanese code → existing converter
     "miz": "lus",  # Mizo alternate code → Mizo
 }
 
@@ -79,8 +79,10 @@ class TestNewLanguageRanges(TestCase):
                     self.assertIsInstance(result, str)
                     self.assertTrue(len(result) > 0)
                     # Should not contain raw digits (would mean fallback)
-                    self.assertFalse(any(d in result for d in "0123456789"),
-                                     f"{code}({n})={result!r} contains digits")
+                    self.assertFalse(
+                        any(d in result for d in "0123456789"),
+                        f"{code}({n})={result!r} contains digits",
+                    )
 
 
 class TestNewLanguageOrdinal(TestCase):

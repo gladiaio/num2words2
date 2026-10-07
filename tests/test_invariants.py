@@ -27,8 +27,27 @@ ENGLISH = {lang for lang in LANGS if lang.startswith("en")}
 EXPECTED_ERRORS = (TypeError, ValueError, OverflowError, NotImplementedError)
 
 CONVERTERS = ["cardinal", "ordinal", "ordinal_num", "year", "currency"]
-INPUTS = [0, 1, -1, 2, 11, 21, 100, 1100, 0.5, -0.5, 1.5, "12", "1.5",
-          Decimal("0.1"), Decimal("1.5"), -42, 1.0, 5.0, -5.0]
+INPUTS = [
+    0,
+    1,
+    -1,
+    2,
+    11,
+    21,
+    100,
+    1100,
+    0.5,
+    -0.5,
+    1.5,
+    "12",
+    "1.5",
+    Decimal("0.1"),
+    Decimal("1.5"),
+    -42,
+    1.0,
+    5.0,
+    -5.0,
+]
 
 
 def _call(x, lang, to):
@@ -70,8 +89,7 @@ def _english_word_failures(lang):
     """English base-class words leaking into another language: Latin letters
     mixed into non-Latin-script output, or the English decimal word."""
     out = []
-    for x, to in [(0, "cardinal"), (1.5, "cardinal"), (-1, "cardinal"),
-                  (0, "ordinal")]:
+    for x, to in [(0, "cardinal"), (1.5, "cardinal"), (-1, "cardinal"), (0, "ordinal")]:
         r, err = _call(x, lang, to)
         if err is not None or not isinstance(r, str):
             continue
@@ -176,9 +194,35 @@ def _ordinal_unique_failures(lang):
 # language's currency table, so this covers the codes the shared tables
 # carry; each language's own default is probed too.
 CURRENCY_PROBE = (
-    "USD", "EUR", "GBP", "JPY", "INR", "CNY", "RUB", "CHF", "AUD", "CAD",
-    "SEK", "NOK", "DKK", "PLN", "BRL", "MXN", "ZAR", "KRW", "AED", "SAR",
-    "KWD", "TRY", "HUF", "CZK", "NZD", "SGD", "HKD", "IDR", "NGN",
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "INR",
+    "CNY",
+    "RUB",
+    "CHF",
+    "AUD",
+    "CAD",
+    "SEK",
+    "NOK",
+    "DKK",
+    "PLN",
+    "BRL",
+    "MXN",
+    "ZAR",
+    "KRW",
+    "AED",
+    "SAR",
+    "KWD",
+    "TRY",
+    "HUF",
+    "CZK",
+    "NZD",
+    "SGD",
+    "HKD",
+    "IDR",
+    "NGN",
 )
 ENGLISH_CURRENCY_PLURALS = {"dollars", "cents", "euros", "pounds"}
 # Languages whose own word coincides with an English plural above.
@@ -189,11 +233,19 @@ NATIVE_CURRENCY_PLURALS = {
     "fr_CH": {"dollars", "cents", "euros"},
     "fr_DZ": {"dollars", "cents", "euros"},
     # "euros" is the Spanish, Catalan, Portuguese and Galician plural
-    "es": {"euros"}, "es_CO": {"euros"}, "es_CR": {"euros"},
-    "es_GT": {"euros"}, "es_NI": {"euros"}, "es_VE": {"euros"},
-    "ca": {"euros"}, "gl": {"euros"}, "pt": {"euros"}, "pt_BR": {"euros"},
+    "es": {"euros"},
+    "es_CO": {"euros"},
+    "es_CR": {"euros"},
+    "es_GT": {"euros"},
+    "es_NI": {"euros"},
+    "es_VE": {"euros"},
+    "ca": {"euros"},
+    "gl": {"euros"},
+    "pt": {"euros"},
+    "pt_BR": {"euros"},
     # Danish plural "dollar" or "dollars" (Den Danske Ordbog)
-    "da": {"dollars"}, "dk": {"dollars"},
+    "da": {"dollars"},
+    "dk": {"dollars"},
 }
 
 
@@ -226,9 +278,13 @@ def _digit_output_failures(lang):
     out = []
     for e in (9, 12, 15, 18, 21):
         n = 10**e
-        for x, to in [(n, "cardinal"), (-n - 7, "cardinal"),
-                      (n + 1, "ordinal"), (n + 3, "year"),
-                      (Decimal(n) + Decimal("0.5"), "cardinal")]:
+        for x, to in [
+            (n, "cardinal"),
+            (-n - 7, "cardinal"),
+            (n + 1, "ordinal"),
+            (n + 3, "year"),
+            (Decimal(n) + Decimal("0.5"), "cardinal"),
+        ]:
             r, err = _call(x, lang, to)
             if err is None and isinstance(r, str) and re.search(r"[0-9]", r):
                 out.append((to, "10**%d" % e, r[:40]))
@@ -287,9 +343,10 @@ def test_invariant(check):
     new = {lg: f[:3] for lg, f in failing.items() if lg not in allowed}
     stale = sorted(lg for lg in ALLOW[check] if lg in langs and lg not in failing)
     assert not new, "%s: languages newly failing: %r" % (check, new)
-    assert not stale, (
-        "%s: these languages pass now; remove them from ALLOW[%r]: %s"
-        % (check, check, stale)
+    assert not stale, "%s: these languages pass now; remove them from ALLOW[%r]: %s" % (
+        check,
+        check,
+        stale,
     )
 
 

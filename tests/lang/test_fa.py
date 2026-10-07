@@ -95,10 +95,12 @@ class Num2WordsFATest(TestCase):
         # gladiaio/num2words2#200: farsiBig ends at تریلیارد (10**15), so
         # 10**18 and up used to return '' (and ' تومان' for currency).
         from num2words2 import maxval
+
         self.assertEqual(maxval("fa"), 10**18)
-        self.assertTrue(num2words(10**18 - 1, lang="fa").startswith(
-            "نهصد و نود و نه تریلیارد"))
+        self.assertTrue(
+            num2words(10**18 - 1, lang="fa").startswith("نهصد و نود و نه تریلیارد")
+        )
         for to in ("cardinal", "ordinal", "year", "currency"):
-            for v in (10**18, 10**21, -10**21, 10**18 + 1):
+            for v in (10**18, 10**21, -(10**21), 10**18 + 1):
                 with self.assertRaises(OverflowError):
                     num2words(v, lang="fa", to=to)

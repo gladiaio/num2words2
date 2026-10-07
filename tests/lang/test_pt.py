@@ -24,7 +24,6 @@ from num2words2 import num2words
 
 
 class Num2WordsPTTest(TestCase):
-
     def test_cardinal_integer(self):
         self.assertEqual(num2words(1, lang="pt"), "um")
         self.assertEqual(num2words(2, lang="pt"), "dois")
@@ -213,13 +212,6 @@ class Num2WordsPTTest(TestCase):
             "centésimo quadragésimo quinto milésimo milionésimo segundo",
         )
 
-
-
-
-
-
-
-
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4
         self.assertEqual(num2words(-0.4, lang="pt"), "menos zero vírgula quatro")
@@ -232,6 +224,7 @@ class Num2WordsPTTest(TestCase):
 def test_pt_handles_10_27_and_above():
     # Regression for num2words2#71 (ports savoirfairelinux/num2words#501).
     from num2words2 import num2words
+
     assert "quintilião" in num2words(10**30, lang="pt")
     assert "nonilião" in num2words(10**54, lang="pt")
 
@@ -242,6 +235,7 @@ def test_pt_ordinal_large_scale_words():
     import pytest
 
     from num2words2 import num2words
+
     assert num2words(10**18, lang="pt", to="ordinal") == "trilionésimo"
     assert num2words(2 * 10**21 + 5, lang="pt", to="ordinal") == (
         "segundo milésimo trilionésimo quinto"

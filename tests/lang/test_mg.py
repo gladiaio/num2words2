@@ -216,10 +216,19 @@ class Num2WordsMGTest(TestCase):
             "sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
         )
         self.assertEqual(num2words(1000000000, lang="mg"), "iray lavitrisa")
-        self.assertEqual(num2words(1234567890, lang="mg"), "iray lavitrisa roa zato telopolo efatra tapitrisa dimy zato enimpolo fito arivo valo zato sivifolo")
-        self.assertEqual(num2words(9999999999, lang="mg"), "sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy")
+        self.assertEqual(
+            num2words(1234567890, lang="mg"),
+            "iray lavitrisa roa zato telopolo efatra tapitrisa dimy zato enimpolo fito arivo valo zato sivifolo",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="mg"),
+            "sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
+        )
         self.assertEqual(num2words(10000000000, lang="mg"), "folo lavitrisa")
-        self.assertEqual(num2words(99999999999, lang="mg"), "sivifolo sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy")
+        self.assertEqual(
+            num2words(99999999999, lang="mg"),
+            "sivifolo sivy lavitrisa sivy zato sivifolo sivy tapitrisa sivy zato sivifolo sivy arivo sivy zato sivifolo sivy",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -387,4 +396,3 @@ class Num2WordsMGTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mg"), num2words("100", lang="mg"))
         self.assertEqual(num2words(1000, lang="mg"), num2words("1000", lang="mg"))
-

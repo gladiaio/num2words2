@@ -6,7 +6,12 @@ from decimal import Decimal
 from typing import Any, Literal
 
 _ConverterType = Literal[
-    "cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque",
+    "cardinal",
+    "ordinal",
+    "ordinal_num",
+    "year",
+    "currency",
+    "cheque",
     "fraction",
 ]
 _ErrorsMode = Literal["raise", "ignore"]

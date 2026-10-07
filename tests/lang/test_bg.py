@@ -465,4 +465,3 @@ class Num2WordsBGTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="bg"), num2words("100", lang="bg"))
         self.assertEqual(num2words(1000, lang="bg"), num2words("1000", lang="bg"))
-

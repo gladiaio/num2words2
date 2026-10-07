@@ -140,14 +140,10 @@ class Num2WordsURTest(TestCase):
         self.assertEqual(num2words(50000, lang="ur"), "پچاس ہزار")
         self.assertEqual(num2words(99999, lang="ur"), "ننانوے ہزار نو سو ننانوے")
         self.assertEqual(num2words(100000, lang="ur"), "ایک لاکھ")
-        self.assertEqual(
-            num2words(123456, lang="ur"), "ایک لاکھ تئیس ہزار چار سو چھپن"
-        )
+        self.assertEqual(num2words(123456, lang="ur"), "ایک لاکھ تئیس ہزار چار سو چھپن")
         self.assertEqual(num2words(200000, lang="ur"), "دو لاکھ")
         self.assertEqual(num2words(500000, lang="ur"), "پانچ لاکھ")
-        self.assertEqual(
-            num2words(654321, lang="ur"), "چھ لاکھ چون ہزار تین سو اکیس"
-        )
+        self.assertEqual(num2words(654321, lang="ur"), "چھ لاکھ چون ہزار تین سو اکیس")
         self.assertEqual(
             num2words(999999, lang="ur"), "نو لاکھ ننانوے ہزار نو سو ننانوے"
         )
@@ -186,10 +182,19 @@ class Num2WordsURTest(TestCase):
             "ننانوے کروڑ ننانوے لاکھ ننانوے ہزار نو سو ننانوے",
         )
         self.assertEqual(num2words(1000000000, lang="ur"), "ایک ارب")
-        self.assertEqual(num2words(1234567890, lang="ur"), "ایک ارب تئیس کروڑ پینتالیس لاکھ سڑسٹھ ہزار آٹھ سو نوے")
-        self.assertEqual(num2words(9999999999, lang="ur"), "نو ارب ننانوے کروڑ ننانوے لاکھ ننانوے ہزار نو سو ننانوے")
+        self.assertEqual(
+            num2words(1234567890, lang="ur"),
+            "ایک ارب تئیس کروڑ پینتالیس لاکھ سڑسٹھ ہزار آٹھ سو نوے",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="ur"),
+            "نو ارب ننانوے کروڑ ننانوے لاکھ ننانوے ہزار نو سو ننانوے",
+        )
         self.assertEqual(num2words(10000000000, lang="ur"), "دس ارب")
-        self.assertEqual(num2words(99999999999, lang="ur"), "ننانوے ارب ننانوے کروڑ ننانوے لاکھ ننانوے ہزار نو سو ننانوے")
+        self.assertEqual(
+            num2words(99999999999, lang="ur"),
+            "ننانوے ارب ننانوے کروڑ ننانوے لاکھ ننانوے ہزار نو سو ننانوے",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -226,9 +231,7 @@ class Num2WordsURTest(TestCase):
         self.assertEqual(num2words(99.99, lang="ur"), "ننانوے اعشاریہ نو نو")
         self.assertEqual(num2words(100.01, lang="ur"), "ایک سو اعشاریہ صفر ایک")
         self.assertEqual(num2words(100.5, lang="ur"), "ایک سو اعشاریہ پانچ")
-        self.assertEqual(
-            num2words(123.45, lang="ur"), "ایک سو تئیس اعشاریہ چار پانچ"
-        )
+        self.assertEqual(num2words(123.45, lang="ur"), "ایک سو تئیس اعشاریہ چار پانچ")
         self.assertEqual(num2words(1000.5, lang="ur"), "ایک ہزار اعشاریہ پانچ")
         self.assertEqual(
             num2words(1234.56, lang="ur"), "ایک ہزار دو سو چونتیس اعشاریہ پانچ چھ"
@@ -339,17 +342,11 @@ class Num2WordsURTest(TestCase):
         """Test year conversion."""
         self.assertEqual(num2words(1000, lang="ur", to="year"), "ایک ہزار")
         self.assertEqual(num2words(1066, lang="ur", to="year"), "ایک ہزار چھیاسٹھ")
-        self.assertEqual(
-            num2words(1492, lang="ur", to="year"), "ایک ہزار چار سو بانوے"
-        )
-        self.assertEqual(
-            num2words(1776, lang="ur", to="year"), "ایک ہزار سات سو چھہتر"
-        )
+        self.assertEqual(num2words(1492, lang="ur", to="year"), "ایک ہزار چار سو بانوے")
+        self.assertEqual(num2words(1776, lang="ur", to="year"), "ایک ہزار سات سو چھہتر")
         self.assertEqual(num2words(1800, lang="ur", to="year"), "ایک ہزار آٹھ سو")
         self.assertEqual(num2words(1900, lang="ur", to="year"), "ایک ہزار نو سو")
-        self.assertEqual(
-            num2words(1984, lang="ur", to="year"), "ایک ہزار نو سو چوراسی"
-        )
+        self.assertEqual(num2words(1984, lang="ur", to="year"), "ایک ہزار نو سو چوراسی")
         self.assertEqual(num2words(1999, lang="ur", to="year"), "ایک ہزار نو سو ننانوے")
         self.assertEqual(num2words(2000, lang="ur", to="year"), "دو ہزار")
         self.assertEqual(num2words(2001, lang="ur", to="year"), "دو ہزار ایک")
@@ -377,4 +374,3 @@ class Num2WordsURTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ur"), num2words("100", lang="ur"))
         self.assertEqual(num2words(1000, lang="ur"), num2words("1000", lang="ur"))
-

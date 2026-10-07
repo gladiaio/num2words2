@@ -68,6 +68,4 @@ def test_sr_latn_ruble_genitive_plural():
         "pet rubalja"
     )
     assert num2words(5, lang="sr", to="currency", currency="RUB") == "пет рубаља"
-    assert num2words(5, lang="sr_Cyrl", to="currency", currency="RUB") == (
-        "пет рубаља"
-    )
+    assert num2words(5, lang="sr_Cyrl", to="currency", currency="RUB") == ("пет рубаља")

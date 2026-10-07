@@ -480,13 +480,9 @@ class Num2WordsCYTest(TestCase):
 
     def test_currency_negative_word(self):
         # gladiaio/num2words2#180: the int path said "minws".
-        self.assertEqual(
-            num2words(-5, lang="cy", to="currency"), "meinws pump punt"
-        )
+        self.assertEqual(num2words(-5, lang="cy", to="currency"), "meinws pump punt")
         self.assertEqual(num2words(-1, lang="cy", to="currency"), "meinws un bunt")
-        self.assertTrue(
-            num2words(-5.5, lang="cy", to="currency").startswith("meinws ")
-        )
+        self.assertTrue(num2words(-5.5, lang="cy", to="currency").startswith("meinws "))
 
     def test_currency_names_each_unit_once(self):
         # gladiaio/num2words2#162
@@ -501,21 +497,24 @@ class Num2WordsCYTest(TestCase):
             num2words(1.5, lang="cy", to="currency"),
             "un bunt, hanner cant ceiniog",
         )
+        self.assertEqual(num2words(1.01, lang="cy", to="currency"), "un bunt, ceiniog")
         self.assertEqual(
-            num2words(1.01, lang="cy", to="currency"), "un bunt, ceiniog"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="cy", to="currency", currency="USD",
-                      adjective=True),
+            num2words(1.5, lang="cy", to="currency", currency="USD", adjective=True),
             "un dolar US, hanner cant ceiniog",
         )
 
     def test_currency_int_and_float_agree(self):
         # #201: one rule for both paths -- the singular noun with the
         # numeral's mutation ("un" soft-mutates the feminine punt).
-        cases = [(1, "un bunt"), (2, "dwy bunt"), (3, "tair punt"),
-                 (5, "pump punt"), (6, "chwech phunt"),
-                 (21, "un bunt ar hugain"), (101, "cant ac un o bunnoedd")]
+        cases = [
+            (1, "un bunt"),
+            (2, "dwy bunt"),
+            (3, "tair punt"),
+            (5, "pump punt"),
+            (6, "chwech phunt"),
+            (21, "un bunt ar hugain"),
+            (101, "cant ac un o bunnoedd"),
+        ]
         for n, want in cases:
             self.assertEqual(num2words(n, lang="cy", to="currency"), want)
             self.assertEqual(
@@ -523,8 +522,7 @@ class Num2WordsCYTest(TestCase):
                 want + ", dim ceiniog",
             )
         # The int path honours currency= now (it printed GBP for every code).
-        self.assertIn("euro", num2words(2, lang="cy", to="currency",
-                                        currency="EUR"))
+        self.assertIn("euro", num2words(2, lang="cy", to="currency", currency="EUR"))
 
     def test_currency_zero_pence(self):
         # gladiaio/num2words2#186: zero pence was an empty numeral

@@ -26,6 +26,7 @@ def _call(x, **kw):
 
 # ---- #211 / #199 / #210: exponent notation --------------------------------
 
+
 @pytest.mark.parametrize("lang", LANGS)
 @pytest.mark.parametrize("to", ["cardinal", "ordinal", "ordinal_num", "year"])
 def test_integer_in_exponent_form_reads_as_the_integer(lang, to):
@@ -38,14 +39,18 @@ def test_integer_in_exponent_form_reads_as_the_integer(lang, to):
 @pytest.mark.parametrize("lang", LANGS)
 def test_small_float_reads_like_its_decimal(lang):
     # repr(1e-05) == '1e-05': read like Decimal('0.00001'), not its mantissa.
-    assert (_call(1e-05, lang=lang) == _call(Decimal("0.00001"), lang=lang)
-            == _call("1e-5", lang=lang))
+    assert (
+        _call(1e-05, lang=lang)
+        == _call(Decimal("0.00001"), lang=lang)
+        == _call("1e-5", lang=lang)
+    )
 
 
 @pytest.mark.parametrize("lang", ["pl", "uk", "en", "en_AERO", "fr"])
 def test_currency_in_exponent_form(lang):
-    assert (num2words(Decimal("1E+3"), lang=lang, to="currency")
-            == num2words(Decimal("1000"), lang=lang, to="currency"))
+    assert num2words(Decimal("1E+3"), lang=lang, to="currency") == num2words(
+        Decimal("1000"), lang=lang, to="currency"
+    )
 
 
 def test_issue_examples():
@@ -59,14 +64,23 @@ def test_issue_examples():
     assert num2words(1.5e20, lang="ce") == num2words(15 * 10**19, lang="ce")
 
 
-@pytest.mark.parametrize("lang", [
-    "en_AERO", "en_Aero_ICAO", "en_aero_icao", "en_x_aero_icao", "en_Aero_FAA",
-    "en_Aero_NATO", "en_Aero_USN", "en_Aero_US_Navy", "en_Aero_US_Army",
-])
+@pytest.mark.parametrize(
+    "lang",
+    [
+        "en_AERO",
+        "en_Aero_ICAO",
+        "en_aero_icao",
+        "en_x_aero_icao",
+        "en_Aero_FAA",
+        "en_Aero_NATO",
+        "en_Aero_USN",
+        "en_Aero_US_Navy",
+        "en_Aero_US_Army",
+    ],
+)
 def test_en_aero_exponent_and_non_finite(lang):
     # #210: '1e-05' was read digit by digit ("wun zero fife").
-    assert (num2words(1e-05, lang=lang)
-            == num2words(Decimal("0.00001"), lang=lang))
+    assert num2words(1e-05, lang=lang) == num2words(Decimal("0.00001"), lang=lang)
     assert num2words(1e21, lang=lang) == num2words(10**21, lang=lang)
     # Non-finite strings raise as they do in en, instead of '' / 'minus'.
     for s in ("NaN", "inf", "-inf"):
@@ -76,34 +90,46 @@ def test_en_aero_exponent_and_non_finite(lang):
 
 # ---- #213: integral values of any type in the integer modes ---------------
 
+
 @pytest.mark.parametrize("lang", LANGS)
 @pytest.mark.parametrize("to", ["ordinal", "ordinal_num", "year"])
 def test_integral_value_of_any_type_reads_as_the_integer(lang, to):
     want = _call(1999, lang=lang, to=to)
-    for x in ("1999", Decimal("1999"), 1999.0, Decimal("1999.0"), "1999.0",
-              Decimal("1.999E+3")):
+    for x in (
+        "1999",
+        Decimal("1999"),
+        1999.0,
+        Decimal("1999.0"),
+        "1999.0",
+        Decimal("1.999E+3"),
+    ):
         assert _call(x, lang=lang, to=to) == want, (x, lang, to)
 
 
 def test_issue_213_examples():
     year = num2words(1999, lang="et", to="year")
     assert num2words("1999", lang="et", to="year") == year
-    assert (num2words(1999.0, lang="ms", to="year")
-            == num2words(1999, lang="ms", to="year"))
-    assert (num2words(Decimal("1999"), lang="ta", to="year")
-            == num2words(1999, lang="ta", to="year"))
+    assert num2words(1999.0, lang="ms", to="year") == num2words(
+        1999, lang="ms", to="year"
+    )
+    assert num2words(Decimal("1999"), lang="ta", to="year") == num2words(
+        1999, lang="ta", to="year"
+    )
     # #250: the word is to='ordinal'; ordinal_num is the abbreviation.
     assert num2words("5", lang="bn", to="ordinal") == "পঞ্চম"
     assert num2words("5", lang="bn", to="ordinal_num") == "৫ম"
-    assert (num2words(1999.0, lang="uk", to="ordinal")
-            == num2words(1999, lang="uk", to="ordinal"))
-    assert (num2words(Decimal("1999.0"), lang="hi", to="ordinal_num")
-            == num2words(1999, lang="hi", to="ordinal_num"))
+    assert num2words(1999.0, lang="uk", to="ordinal") == num2words(
+        1999, lang="uk", to="ordinal"
+    )
+    assert num2words(Decimal("1999.0"), lang="hi", to="ordinal_num") == num2words(
+        1999, lang="hi", to="ordinal_num"
+    )
     # A whole Decimal no longer keeps its scale: "5th", not "5.00th".
     assert num2words(Decimal("5.00"), to="ordinal_num") == "5th"
 
 
 # ---- #214: non-integral ordinals and years ---------------------------------
+
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_fraction_is_a_type_error_in_integer_modes(lang):
@@ -132,7 +158,11 @@ def test_ordinal_and_ordinal_num_agree_on_negatives(lang):
         if numeral is NotImplementedError:  # rm*: no ordinal_num at all
             continue
         assert isinstance(ordinal, type) == isinstance(numeral, type), (
-            lang, x, ordinal, numeral)
+            lang,
+            x,
+            ordinal,
+            numeral,
+        )
 
 
 def test_negative_ordinal_num_examples():
@@ -212,23 +242,28 @@ def test_non_finite_values_raise_clear_errors():
 
 # ---- #237: input edge cases ------------------------------------------------
 
+
 @pytest.mark.parametrize("lang", LANGS)
 def test_negative_zero_reads_as_zero(lang):
     for to in ("cardinal", "ordinal", "ordinal_num", "year", "currency"):
-        for neg, pos in ((-0.0, 0.0), ("-0.0", "0.0"),
-                         (Decimal("-0.0"), Decimal("0.0")),
-                         (Decimal("-0"), Decimal("0")), ("-0", "0")):
+        for neg, pos in (
+            (-0.0, 0.0),
+            ("-0.0", "0.0"),
+            (Decimal("-0.0"), Decimal("0.0")),
+            (Decimal("-0"), Decimal("0")),
+            ("-0", "0"),
+        ):
             assert _call(neg, lang=lang, to=to) == _call(pos, lang=lang, to=to)
 
 
 def test_negative_zero_examples():
-    assert num2words(-0.0, lang="cs") == num2words("-0.0", lang="cs") \
-        == "nula čárka nula"
+    assert (
+        num2words(-0.0, lang="cs") == num2words("-0.0", lang="cs") == "nula čárka nula"
+    )
     assert num2words(Decimal("-0"), lang="pl") == "zero"
 
 
-@pytest.mark.parametrize("s", ["0x10", "0b101", "1__0", "_1", "1_000_", "-_1",
-                               "1..2"])
+@pytest.mark.parametrize("s", ["0x10", "0b101", "1__0", "_1", "1_000_", "-_1", "1..2"])
 def test_malformed_numeric_strings_raise(s):
     with pytest.raises(ValueError, match="as a number"):
         num2words(s)
@@ -244,8 +279,9 @@ def test_well_formed_and_text_strings_unchanged():
     assert num2words("H2O", errors="ignore") == "H2O"
 
 
-@pytest.mark.parametrize("lang", ["hr", "kk", "kz", "lt", "lv", "sk", "sr",
-                                  "sr_Cyrl", "sr_Latn", "uk"])
+@pytest.mark.parametrize(
+    "lang", ["hr", "kk", "kz", "lt", "lv", "sk", "sr", "sr_Cyrl", "sr_Latn", "uk"]
+)
 def test_all_zero_fraction_reads_the_digits_written(lang):
     zero = num2words(0, lang=lang)
     one_zero = num2words(1.0, lang=lang)
@@ -262,6 +298,7 @@ def test_uk_all_zero_fraction():
 
 def test_ar_ordinal_overflow_is_checked_up_front():
     from num2words2 import maxval
+
     m = maxval("ar")
     for to in ("ordinal", "ordinal_num"):
         for x in (m, 10**10000):

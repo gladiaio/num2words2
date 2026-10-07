@@ -122,11 +122,11 @@ class Num2WordsBYTest(TestCase):
         self.assertEqual(num2words(80, lang="be", to="ordinal"), "васьмідзясяты")
         self.assertEqual(num2words(90, lang="be", to="ordinal"), "дзевяносты")
         self.assertEqual(num2words(105, lang="be", to="ordinal"), "сто пяты")
-        self.assertEqual(
-            num2words(180, lang="be", to="ordinal"), "сто васьмідзясяты")
+        self.assertEqual(num2words(180, lang="be", to="ordinal"), "сто васьмідзясяты")
         self.assertEqual(num2words(900, lang="be", to="ordinal"), "дзевяцісоты")
         self.assertEqual(
-            num2words(80000, lang="be", to="ordinal"), "васьмідзесяцітысячны")
+            num2words(80000, lang="be", to="ordinal"), "васьмідзесяцітысячны"
+        )
         self.assertEqual(num2words(100, lang="be", to="ordinal"), "соты")
         self.assertEqual(num2words(136, lang="be", to="ordinal"), "сто трыццаць шосты")
         self.assertEqual(num2words(500, lang="be", to="ordinal"), "пяцісоты")

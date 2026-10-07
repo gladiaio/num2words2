@@ -13,7 +13,6 @@ from num2words2 import num2words
 
 
 class TestEnAeroDigitByDigit(unittest.TestCase):
-
     def test_zero_through_nine(self):
         # Strict ICAO Annex 10 vol II respellings (FAA / SKYbrary
         # confirm the same set). 1/2/8 use the aggressive forms
@@ -35,18 +34,12 @@ class TestEnAeroDigitByDigit(unittest.TestCase):
 
     def test_multi_digit(self):
         # The canonical example from the issue: 5739 → fife seven tree niner.
-        self.assertEqual(
-            num2words(5739, lang="en_Aero_ICAO"), "fife seven tree niner"
-        )
+        self.assertEqual(num2words(5739, lang="en_Aero_ICAO"), "fife seven tree niner")
 
     def test_round_hundred(self):
         # Aviation reads round numbers digit-by-digit too.
-        self.assertEqual(
-            num2words(100, lang="en_Aero_ICAO"), "wun zero zero"
-        )
-        self.assertEqual(
-            num2words(1000, lang="en_Aero_ICAO"), "wun zero zero zero"
-        )
+        self.assertEqual(num2words(100, lang="en_Aero_ICAO"), "wun zero zero")
+        self.assertEqual(num2words(1000, lang="en_Aero_ICAO"), "wun zero zero zero")
 
     def test_year(self):
         # Years follow the same digit-by-digit rule.
@@ -71,9 +64,7 @@ class TestEnAeroDigitByDigit(unittest.TestCase):
         )
 
     def test_negative(self):
-        self.assertEqual(
-            num2words(-42, lang="en_Aero_ICAO"), "minus fower too"
-        )
+        self.assertEqual(num2words(-42, lang="en_Aero_ICAO"), "minus fower too")
         self.assertEqual(
             num2words(-1.5, lang="en_Aero_ICAO"),
             "minus wun decimal fife",
@@ -81,7 +72,6 @@ class TestEnAeroDigitByDigit(unittest.TestCase):
 
 
 class TestEnAeroStringInput(unittest.TestCase):
-
     def test_string_int(self):
         self.assertEqual(
             num2words("5739", lang="en_Aero_ICAO"), "fife seven tree niner"
@@ -94,21 +84,16 @@ class TestEnAeroStringInput(unittest.TestCase):
         )
 
 
-
 class TestEnAeroLookup(unittest.TestCase):
     """The canonical key is ``en_Aero_ICAO``. Aliases keep older
     callers working: ``en_aero_icao``, ``en-x-aero-icao`` (BCP 47
     private-use form), and the v1.0.14 alias ``en_AERO``."""
 
     def test_canonical_key(self):
-        self.assertEqual(
-            num2words(5739, lang="en_Aero_ICAO"), "fife seven tree niner"
-        )
+        self.assertEqual(num2words(5739, lang="en_Aero_ICAO"), "fife seven tree niner")
 
     def test_lowercase_alias(self):
-        self.assertEqual(
-            num2words(5739, lang="en_aero_icao"), "fife seven tree niner"
-        )
+        self.assertEqual(num2words(5739, lang="en_aero_icao"), "fife seven tree niner")
 
     def test_bcp47_private_use(self):
         # 'en-x-aero-icao' — BCP 47 private-use subtag form.
@@ -118,15 +103,9 @@ class TestEnAeroLookup(unittest.TestCase):
 
     def test_v1014_back_compat_alias(self):
         # The v1.0.14 keys still resolve to the same converter.
-        self.assertEqual(
-            num2words(5739, lang="en_AERO"), "fife seven tree niner"
-        )
-        self.assertEqual(
-            num2words(5739, lang="en-AERO"), "fife seven tree niner"
-        )
-        self.assertEqual(
-            num2words(5739, lang="en_aero"), "fife seven tree niner"
-        )
+        self.assertEqual(num2words(5739, lang="en_AERO"), "fife seven tree niner")
+        self.assertEqual(num2words(5739, lang="en-AERO"), "fife seven tree niner")
+        self.assertEqual(num2words(5739, lang="en_aero"), "fife seven tree niner")
 
 
 class TestEnAeroFractionsRoute(unittest.TestCase):
@@ -151,29 +130,17 @@ class TestEnAeroAviationPhraseology(unittest.TestCase):
         aero.to_altitude(5500)   # "fife thousand fife hundred feet"
     """
 
-
     # ---- altitude ----
-
-
-
 
     # ---- flight level ----
 
-
     # ---- heading ----
-
 
     # ---- squawk ----
 
-
     # ---- runway ----
 
-
-
-
     # ---- frequency ----
-
-
 
 
 class TestEnAeroServiceProfiles(unittest.TestCase):
@@ -196,19 +163,12 @@ class TestEnAeroServiceProfiles(unittest.TestCase):
         "en_Aero_NATO",
     ]
 
-
     def test_all_variants_produce_icao_today(self):
         # Modern services all defer to ICAO. Output should match exactly
         # for an arbitrary input.
-        outputs = {
-            code: num2words(5739, lang=code) for code in self.REGISTERED
-        }
+        outputs = {code: num2words(5739, lang=code) for code in self.REGISTERED}
         unique = set(outputs.values())
         self.assertEqual(unique, {"fife seven tree niner"}, outputs)
-
-
-
-
 
 
 if __name__ == "__main__":

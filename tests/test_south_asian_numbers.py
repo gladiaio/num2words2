@@ -52,15 +52,18 @@ def test_compounds_reach_larger_numbers_and_ordinals():
     assert num2words(23, lang="ne", to="ordinal") == "तेइसऔं"
 
 
-@pytest.mark.parametrize("lang,expected", [
-    ("ml", "ഒരു ലക്ഷം"),
-    ("or", "ଏକ ଲକ୍ଷ"),
-    ("kok", "एक लाख"),
-    ("sa", "एकम् लक्षम्"),
-    ("sd", "هڪ لک"),
-    ("hi", "एक लाख"),
-    ("te", "ఒక లక్ష"),
-])
+@pytest.mark.parametrize(
+    "lang,expected",
+    [
+        ("ml", "ഒരു ലക്ഷം"),
+        ("or", "ଏକ ଲକ୍ଷ"),
+        ("kok", "एक लाख"),
+        ("sa", "एकम् लक्षम्"),
+        ("sd", "هڪ لک"),
+        ("hi", "एक लाख"),
+        ("te", "ఒక లక్ష"),
+    ],
+)
 def test_lakh(lang, expected):
     # or/kok/sa/sd grouped by "ten lakh" millions, so 10**5 was "one
     # hundred thousand"; ml said "ഒന്ന് ലക്ഷം", te "ఒకటి లక్ష" and hi a
@@ -88,17 +91,20 @@ def test_no_digits_up_to_maxval(lang):
         num2words(top, lang=lang)
 
 
-@pytest.mark.parametrize("lang,expected", [
-    ("ne", "एक अर्ब"),
-    ("ur", "ایک ارب"),
-    ("pa", "ਇੱਕ ਅਰਬ"),
-    ("sd", "هڪ ارب"),
-    ("ml", "ഒന്ന് നൂറ് കോടി"),
-    ("or", "ଏକ ଶହ କୋଟି"),
-    ("kok", "एक शंभर कोटी"),
-    ("si", "සියය කෝටිය"),
-    ("sa", "एकम् शतम् कोटिः"),
-    ("pli", "eka sata koṭi"),
-])
+@pytest.mark.parametrize(
+    "lang,expected",
+    [
+        ("ne", "एक अर्ब"),
+        ("ur", "ایک ارب"),
+        ("pa", "ਇੱਕ ਅਰਬ"),
+        ("sd", "هڪ ارب"),
+        ("ml", "ഒന്ന് നൂറ് കോടി"),
+        ("or", "ଏକ ଶହ କୋଟି"),
+        ("kok", "एक शंभर कोटी"),
+        ("si", "සියය කෝටිය"),
+        ("sa", "एकम् शतम् कोटिः"),
+        ("pli", "eka sata koṭi"),
+    ],
+)
 def test_billion(lang, expected):
     assert num2words(10**9, lang=lang) == expected

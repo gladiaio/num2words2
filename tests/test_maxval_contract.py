@@ -109,8 +109,14 @@ CEILINGS = {
 }
 
 UNBOUNDED = [
-    "th", "en_AERO", "en_Aero_FAA", "en_Aero_ICAO", "en_Aero_NATO",
-    "en_Aero_USN", "en_Aero_US_Army", "en_Aero_US_Navy",
+    "th",
+    "en_AERO",
+    "en_Aero_FAA",
+    "en_Aero_ICAO",
+    "en_Aero_NATO",
+    "en_Aero_USN",
+    "en_Aero_US_Army",
+    "en_Aero_US_Navy",
 ]
 
 
@@ -153,8 +159,20 @@ def test_overflow_message_style():
 
 # gladiaio/num2words2#203: these recursed over their top scale word with no
 # ceiling, and a large enough integer overflowed the native stack (SIGSEGV).
-NO_LONGER_UNBOUNDED = ["as", "ba", "bg", "bo", "et", "eu", "gu", "ha", "mr",
-                       "ms", "sn", "ta"]
+NO_LONGER_UNBOUNDED = [
+    "as",
+    "ba",
+    "bg",
+    "bo",
+    "et",
+    "eu",
+    "gu",
+    "ha",
+    "mr",
+    "ms",
+    "sn",
+    "ta",
+]
 
 
 @pytest.mark.parametrize("lang", NO_LONGER_UNBOUNDED)

@@ -141,9 +141,7 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(10000, lang="nn"), "ti tusen")
         self.assertEqual(num2words(10001, lang="nn"), "ti tusen ein")
         self.assertEqual(num2words(11111, lang="nn"), "elleve tusen ein hundre elleve")
-        self.assertEqual(
-            num2words(12345, lang="nn"), "tolv tusen tre hundre førti fem"
-        )
+        self.assertEqual(num2words(12345, lang="nn"), "tolv tusen tre hundre førti fem")
         self.assertEqual(num2words(20000, lang="nn"), "tjue tusen")
         self.assertEqual(num2words(50000, lang="nn"), "femti tusen")
         self.assertEqual(
@@ -413,15 +411,25 @@ class Num2WordsNNTest(TestCase):
         self.assertEqual(num2words(1000, lang="nn"), num2words("1000", lang="nn"))
 
 
-
 def test_teens_issue_216():
     # gladiaio/num2words2#216: Python had no teens ("ti ein" for 11).
     from num2words2 import num2words
-    want = ["elleve", "tolv", "tretten", "fjorten", "femten", "seksten",
-            "sytten", "atten", "nitten"]
+
+    want = [
+        "elleve",
+        "tolv",
+        "tretten",
+        "fjorten",
+        "femten",
+        "seksten",
+        "sytten",
+        "atten",
+        "nitten",
+    ]
     assert [num2words(i, lang="nn") for i in range(11, 20)] == want
     assert num2words(12.13, lang="nn", to="currency", currency="NOK") == (
-        "tolv kroner tretten øre")
+        "tolv kroner tretten øre"
+    )
 
 
 def test_scales_above_million_issue_147():

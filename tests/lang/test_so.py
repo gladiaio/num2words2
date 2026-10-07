@@ -211,10 +211,19 @@ class Num2WordsSOTest(TestCase):
             "sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal",
         )
         self.assertEqual(num2words(1000000000, lang="so"), "kow bilyan")
-        self.assertEqual(num2words(1234567890, lang="so"), "kow bilyan laba boqol soddon afar milyan shan boqol lixdan toddoba kun siddeed boqol sagaashan")
-        self.assertEqual(num2words(9999999999, lang="so"), "sagaal bilyan sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal")
+        self.assertEqual(
+            num2words(1234567890, lang="so"),
+            "kow bilyan laba boqol soddon afar milyan shan boqol lixdan toddoba kun siddeed boqol sagaashan",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="so"),
+            "sagaal bilyan sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal",
+        )
         self.assertEqual(num2words(10000000000, lang="so"), "toban bilyan")
-        self.assertEqual(num2words(99999999999, lang="so"), "sagaashan sagaal bilyan sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal")
+        self.assertEqual(
+            num2words(99999999999, lang="so"),
+            "sagaashan sagaal bilyan sagaal boqol sagaashan sagaal milyan sagaal boqol sagaashan sagaal kun sagaal boqol sagaashan sagaal",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -413,4 +422,3 @@ class Num2WordsSOTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="so"), num2words("100", lang="so"))
         self.assertEqual(num2words(1000, lang="so"), num2words("1000", lang="so"))
-

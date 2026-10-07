@@ -56,6 +56,7 @@ def test_errors_not_forwarded_to_converters():
 
 # --- num2words_sentence(): errors="ignore" by default ----------------------
 
+
 def test_sentence_ignores_by_default():
     assert num2words_sentence("50% or 3") == "50% or three"
 

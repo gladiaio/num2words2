@@ -11,12 +11,18 @@ from num2words2 import num2words, num2words_sentence
 @pytest.mark.parametrize(
     "text,lang,expected",
     [
-        ("3.50 dollars, Python 3.10", "en",
-         "Three point five zero dollars, Python three point one zero"),
+        (
+            "3.50 dollars, Python 3.10",
+            "en",
+            "Three point five zero dollars, Python three point one zero",
+        ),
         ("3,50 m", "fr", "Trois virgule cinq zéro m"),
         ("Es kostet 3,50 Euro", "de", "Es kostet drei Komma fünf null Euro"),
-        ("1,234.50 x", "en",
-         "One thousand, two hundred and thirty-four point five zero x"),
+        (
+            "1,234.50 x",
+            "en",
+            "One thousand, two hundred and thirty-four point five zero x",
+        ),
     ],
 )
 def test_trailing_zeros_kept(text, lang, expected):
@@ -33,6 +39,7 @@ def test_decimal_matches_num2words_string(lang):
 
 
 # --- #225: negatives and temperatures take the integer path ---------------
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
@@ -52,6 +59,7 @@ def test_negative_integers_not_read_as_decimals(text, lang, expected):
 
 # --- #226: the negative word comes from the converter ---------------------
 
+
 @pytest.mark.parametrize(
     "lang", ["pt_BR", "ca", "zh_CN", "fr_CH", "sr_Latn", "es_CO", "el", "ja"]
 )
@@ -65,12 +73,16 @@ def test_negative_temperature_uses_converter_word():
 
 # --- #231: to="ordinal" keeps decimals (and negatives) cardinal -----------
 
+
 @pytest.mark.parametrize(
     "text,lang,expected",
     [
-        ("Custa 3,50 euros, 1.234,5 unidades.", "pt",
-         "Custa três vírgula cinco zero euros, mil duzentos e trinta e quatro"
-         " vírgula cinco unidades."),
+        (
+            "Custa 3,50 euros, 1.234,5 unidades.",
+            "pt",
+            "Custa três vírgula cinco zero euros, mil duzentos e trinta e quatro"
+            " vírgula cinco unidades.",
+        ),
         ("Stojí 3,50 Kč.", "cs", "Stojí tři čárka pět Kč."),
         ("Costa 3,50 euro", "it", "Costa tre virgola cinque zero euro"),
         ("3,5 x", "ru", "Три целых пять десятых x"),
@@ -83,6 +95,7 @@ def test_ordinal_mode_decimals_stay_cardinal(text, lang, expected):
 
 
 # --- #227: a hyphen after a letter of any script is not a minus -----------
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
@@ -102,6 +115,7 @@ def test_hyphen_after_letter_is_not_minus(text, lang, expected):
 
 
 # --- #228: unreadable numeric characters no longer fail the whole call ----
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
@@ -128,14 +142,17 @@ def test_arabic_decimal_separator_both_entry_points():
 
 # --- #229: ranges, phone numbers and dotted sequences ---------------------
 
+
 @pytest.mark.parametrize(
     "text,lang,expected",
     [
-        ("years 1990-2000", "en",
-         "years one thousand, nine hundred and ninety to two thousand"),
+        (
+            "years 1990-2000",
+            "en",
+            "years one thousand, nine hundred and ninety to two thousand",
+        ),
         ("pages 10-20.", "en", "pages ten to twenty."),
-        ("Jahre 1990-2000", "de",
-         "Jahre eintausendneunhundertneunzig - zweitausend"),
+        ("Jahre 1990-2000", "de", "Jahre eintausendneunhundertneunzig - zweitausend"),
         # Left as written: phone numbers, Y <= X, ISO and dotted dates,
         # IP addresses, versions, glued letters.
         ("call 555-1234", "en", "call 555-1234"),
@@ -153,6 +170,7 @@ def test_ranges_and_sequences(text, lang, expected):
 
 
 # --- #233: thousands grouped with a plain space ---------------------------
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
@@ -173,6 +191,7 @@ def test_space_grouped_thousands(text, lang, expected):
 
 # --- #230: currency symbols ------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "text,lang,expected",
     [
@@ -186,12 +205,18 @@ def test_space_grouped_thousands(text, lang, expected):
         ("Z$10", "en", "Z$10"),
         ("x€5", "en", "x€5"),
         # Symbol after the number; '%' has no word anywhere, so it is kept.
-        ("€5 or 5€, 50% or 2.5%", "en",
-         "Five euros, zero cents or five euros, zero cents, 50% or 2.5%"),
+        (
+            "€5 or 5€, 50% or 2.5%",
+            "en",
+            "Five euros, zero cents or five euros, zero cents, 50% or 2.5%",
+        ),
         ("5€", "fr", "Cinq euros et zéro centime"),
         ("5,50 € x", "de", "Fünf Euro und fünfzig Cent x"),
-        ("1 234,50 €", "fr",
-         "Mille deux cent trente-quatre euros et cinquante centimes"),
+        (
+            "1 234,50 €",
+            "fr",
+            "Mille deux cent trente-quatre euros et cinquante centimes",
+        ),
         ("Test 5 €₹¥", "en", "Test five €₹¥"),
     ],
 )
@@ -200,6 +225,7 @@ def test_currency_symbols(text, lang, expected):
 
 
 # --- #232: native ordinal notations ---------------------------------------
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
@@ -232,6 +258,7 @@ def test_native_ordinal_notations(text, lang, expected):
 
 # --- #195: de strong ending when no article or preposition precedes -------
 
+
 @pytest.mark.parametrize(
     "text,expected",
     [
@@ -247,6 +274,7 @@ def test_de_ordinal_date_strong_ending(text, expected):
 
 
 # --- #235: no capital after an abbreviation or a leading dot --------------
+
 
 @pytest.mark.parametrize(
     "text,lang,expected",
@@ -267,6 +295,7 @@ def test_capitalisation_after_dot(text, lang, expected):
 
 
 # --- #232 follow-up: pl ordinals agree with the following noun -------------
+
 
 @pytest.mark.parametrize(
     "text,expected",

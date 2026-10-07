@@ -276,7 +276,9 @@ class Num2WordsMKTest(TestCase):
             num2words(1234.56, lang="mk"),
             "еден илјада два сто триесет четири запирка пет шест",
         )
-        self.assertEqual(num2words(10000.01, lang="mk"), "десет илјада запирка нула еден")
+        self.assertEqual(
+            num2words(10000.01, lang="mk"), "десет илјада запирка нула еден"
+        )
         self.assertEqual(num2words(-0.5, lang="mk"), "минус нула запирка пет")
         self.assertEqual(num2words(-1.5, lang="mk"), "минус еден запирка пет")
         self.assertEqual(num2words(-10.5, lang="mk"), "минус десет запирка пет")
@@ -432,4 +434,3 @@ class Num2WordsMKTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mk"), num2words("100", lang="mk"))
         self.assertEqual(num2words(1000, lang="mk"), num2words("1000", lang="mk"))
-

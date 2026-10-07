@@ -159,11 +159,20 @@ class Num2WordsDETest(TestCase):
 def test_de_dm_eine_mark_for_feminine_unit():
     # Regression for num2words2#69 (ports savoirfairelinux/num2words#462).
     from num2words2 import num2words
+
     assert num2words(1, lang="de", to="currency", currency="DEM") == "eine Mark"
-    assert num2words(101, lang="de", to="currency", currency="DEM") == "einhunderteine Mark"
-    assert num2words(1001, lang="de", to="currency", currency="DEM") == "eintausendeine Mark"
+    assert (
+        num2words(101, lang="de", to="currency", currency="DEM")
+        == "einhunderteine Mark"
+    )
+    assert (
+        num2words(1001, lang="de", to="currency", currency="DEM")
+        == "eintausendeine Mark"
+    )
     # 21 ends in '...zwanzig' so the 'ein' rule does not apply
-    assert num2words(21, lang="de", to="currency", currency="DEM") == "einundzwanzig Mark"
+    assert (
+        num2words(21, lang="de", to="currency", currency="DEM") == "einundzwanzig Mark"
+    )
     # Masculine/neuter 1 is "ein" before the noun (#253)
     assert num2words(1, lang="de", to="currency", currency="EUR") == "ein Euro"
 
@@ -171,6 +180,7 @@ def test_de_dm_eine_mark_for_feminine_unit():
 def test_de_ordinal_compound_no_spaces():
     # Regression for num2words2#59 (ports savoirfairelinux/num2words#357).
     from num2words2 import num2words
+
     assert num2words(1000001, lang="de", to="ordinal") == "einmillionerste"
     assert num2words(21000001, lang="de", to="ordinal") == "einundzwanzigmillionenerste"
     # Existing simple cases still pass

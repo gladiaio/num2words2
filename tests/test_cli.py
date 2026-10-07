@@ -148,26 +148,29 @@ class CliTestCase(unittest.TestCase):
 
     def test_cli_negative_numbers(self):
         """'-1e3' and '-0.5' are numbers, not options (#245)."""
-        self.assertEqual(self.cli.run_cmd("-1e3").out.strip(),
-                         "minus one thousand")
-        self.assertEqual(self.cli.run_cmd("-0.5").out.strip(),
-                         "minus zero point five")
+        self.assertEqual(self.cli.run_cmd("-1e3").out.strip(), "minus one thousand")
+        self.assertEqual(self.cli.run_cmd("-0.5").out.strip(), "minus zero point five")
         self.assertEqual(self.cli.run_cmd("-5", "-l", "fr").out.strip(), "moins cinq")
-        self.assertEqual(self.cli.run_cmd("-l", "fr", "-1e3").out.strip(),
-                         "moins mille")
+        self.assertEqual(
+            self.cli.run_cmd("-l", "fr", "-1e3").out.strip(), "moins mille"
+        )
         self.assertEqual(self.cli.run_cmd("-1x").return_code, 2)
 
     def test_cli_currency_options(self):
         """--currency/-c, --cents, --adjective and --style reach num2words."""
         out = self.cli.run_cmd("2.14", "-t", "currency", "-c", "USD").out
         self.assertEqual(out.strip(), "two dollars, fourteen cents")
-        out = self.cli.run_cmd("2.14", "-t", "currency", "--currency", "USD",
-                               "--adjective").out
+        out = self.cli.run_cmd(
+            "2.14", "-t", "currency", "--currency", "USD", "--adjective"
+        ).out
         self.assertEqual(out.strip(), "two US dollars, fourteen cents")
-        out = self.cli.run_cmd("2.14", "-t", "currency", "--cents", "terse",
-                               "-c", "USD").out
-        self.assertEqual(out.strip(), num2words.num2words(
-            "2.14", to="currency", currency="USD", cents="terse"))
+        out = self.cli.run_cmd(
+            "2.14", "-t", "currency", "--cents", "terse", "-c", "USD"
+        ).out
+        self.assertEqual(
+            out.strip(),
+            num2words.num2words("2.14", to="currency", currency="USD", cents="terse"),
+        )
         out = self.cli.run_cmd("101", "-t", "ordinal", "--style", "terse").out
         self.assertEqual(out.strip(), "hundred and first")
 

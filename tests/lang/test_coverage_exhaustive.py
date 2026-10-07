@@ -30,7 +30,20 @@ class TestCardinalRange(TestCase):
 
     def test_hundreds_thousands(self):
         for code in ALL_LANGS:
-            for n in [101, 200, 500, 999, 1000, 1001, 1100, 9999, 10000, 99999, 100000, 999999]:
+            for n in [
+                101,
+                200,
+                500,
+                999,
+                1000,
+                1001,
+                1100,
+                9999,
+                10000,
+                99999,
+                100000,
+                999999,
+            ]:
                 with self.subTest(code=code, n=n):
                     try:
                         result = num2words(n, lang=code)
@@ -40,7 +53,15 @@ class TestCardinalRange(TestCase):
 
     def test_millions_billions(self):
         for code in ALL_LANGS:
-            for n in [1000000, 1000001, 9999999, 10000000, 100000000, 999999999, 1000000000]:
+            for n in [
+                1000000,
+                1000001,
+                9999999,
+                10000000,
+                100000000,
+                999999999,
+                1000000000,
+            ]:
                 with self.subTest(code=code, n=n):
                     try:
                         result = num2words(n, lang=code)
@@ -171,6 +192,7 @@ class TestSentenceConverter(TestCase):
 
     def test_basic_sentences(self):
         from num2words2 import num2words_sentence
+
         cases = [
             "I have 5 apples",
             "The 1st place winner got $100",
@@ -198,10 +220,13 @@ class TestSentenceConverter(TestCase):
 
     def test_sentence_other_langs(self):
         from num2words2 import num2words_sentence
+
         for code in ["en", "fr", "es", "de", "it", "pt", "ru", "zh"]:
             with self.subTest(code=code):
                 try:
-                    result = num2words_sentence("I have 5 apples and 3 oranges", lang=code)
+                    result = num2words_sentence(
+                        "I have 5 apples and 3 oranges", lang=code
+                    )
                     self.assertIsInstance(result, str)
                 except Exception:
                     pass
@@ -211,21 +236,37 @@ class TestConverterMethods(TestCase):
     """Direct converter access for paths that num2words() doesn't reach."""
 
 
-
-
-
 class TestSentenceConverterDeep(TestCase):
     """Deeper sentence-converter probes targeting 81% → 99%."""
 
     def test_currency_patterns(self):
         from num2words2 import num2words_sentence
+
         cases = [
-            "$5", "$5.00", "$1,234.56", "$0.99", "-$10",
-            "€5", "€5.00", "£10", "£10.50", "¥1000", "¥1,234",
-            "5 USD", "5.00 EUR", "$5 USD",
+            "$5",
+            "$5.00",
+            "$1,234.56",
+            "$0.99",
+            "-$10",
+            "€5",
+            "€5.00",
+            "£10",
+            "£10.50",
+            "¥1000",
+            "¥1,234",
+            "5 USD",
+            "5.00 EUR",
+            "$5 USD",
             "It costs $99.99 and €50.00",
             "She earned $1,234,567",
-            "$0", "$1", "$2", "$10", "$100", "$1000", "$10000", "$100000",
+            "$0",
+            "$1",
+            "$2",
+            "$10",
+            "$100",
+            "$1000",
+            "$10000",
+            "$100000",
         ]
         for s in cases:
             with self.subTest(s=s):
@@ -236,9 +277,24 @@ class TestSentenceConverterDeep(TestCase):
 
     def test_ordinal_patterns(self):
         from num2words2 import num2words_sentence
+
         cases = [
-            "1st", "2nd", "3rd", "4th", "5th", "10th", "11th", "12th", "13th",
-            "21st", "22nd", "23rd", "100th", "101st", "112th", "1000th",
+            "1st",
+            "2nd",
+            "3rd",
+            "4th",
+            "5th",
+            "10th",
+            "11th",
+            "12th",
+            "13th",
+            "21st",
+            "22nd",
+            "23rd",
+            "100th",
+            "101st",
+            "112th",
+            "1000th",
             "Mary won 1st place, John 2nd, Sue 3rd",
         ]
         for s in cases:
@@ -250,11 +306,19 @@ class TestSentenceConverterDeep(TestCase):
 
     def test_date_patterns(self):
         from num2words2 import num2words_sentence
+
         cases = [
-            "January 1, 2024", "April 5, 2022", "December 31, 1999",
-            "1/1/2024", "12/31/1999", "2024-01-01",
-            "Jan 1", "Feb 14", "Dec 25",
-            "the 1st of January", "March 3rd, 2025",
+            "January 1, 2024",
+            "April 5, 2022",
+            "December 31, 1999",
+            "1/1/2024",
+            "12/31/1999",
+            "2024-01-01",
+            "Jan 1",
+            "Feb 14",
+            "Dec 25",
+            "the 1st of January",
+            "March 3rd, 2025",
         ]
         for s in cases:
             with self.subTest(s=s):
@@ -265,9 +329,13 @@ class TestSentenceConverterDeep(TestCase):
 
     def test_negative_temperature(self):
         from num2words2 import num2words_sentence
+
         cases = [
-            "-5 degrees", "-10°C", "-273.15 degrees",
-            "Temperature: -5", "It's -20 outside",
+            "-5 degrees",
+            "-10°C",
+            "-273.15 degrees",
+            "Temperature: -5",
+            "It's -20 outside",
             "The range is -5 to 25",
         ]
         for s in cases:
@@ -279,6 +347,7 @@ class TestSentenceConverterDeep(TestCase):
 
     def test_to_param(self):
         from num2words2 import num2words_sentence
+
         for to in ["cardinal", "ordinal", "ordinal_num", "year", "currency"]:
             with self.subTest(to=to):
                 try:
@@ -288,6 +357,7 @@ class TestSentenceConverterDeep(TestCase):
 
     def test_aliases(self):
         from num2words2 import convert_sentence, sentence_to_words
+
         for fn in [convert_sentence, sentence_to_words]:
             with self.subTest(fn=fn.__name__):
                 try:
@@ -297,6 +367,7 @@ class TestSentenceConverterDeep(TestCase):
 
     def test_sentence_unicode(self):
         from num2words2 import num2words_sentence
+
         cases = [
             "Sé que hay 5 manzanas",  # Spanish
             "Il y a 3 pommes",  # French
@@ -374,9 +445,26 @@ class TestSpecificLangBranches(TestCase):
 
     def test_el_thousands_feminine(self):
         # Greek: feminine thousands forms (1000, 2000, 3000, 4000, 200000, etc.)
-        for v in [1000, 2000, 3000, 4000, 5000, 11000, 21000, 100000,
-                  200000, 300000, 400000, 500000, 1000000, 2000000,
-                  10000, 99999, 999999, 1000000000]:
+        for v in [
+            1000,
+            2000,
+            3000,
+            4000,
+            5000,
+            11000,
+            21000,
+            100000,
+            200000,
+            300000,
+            400000,
+            500000,
+            1000000,
+            2000000,
+            10000,
+            99999,
+            999999,
+            1000000000,
+        ]:
             try:
                 num2words(v, lang="el")
             except Exception:
@@ -493,7 +581,16 @@ class TestSpecificLangBranches(TestCase):
 
     def test_ru_genders_cases(self):
         for n in [1, 2, 5, 21, 100]:
-            for gender in ["m", "f", "n", "p", "masculine", "feminine", "neuter", "plural"]:
+            for gender in [
+                "m",
+                "f",
+                "n",
+                "p",
+                "masculine",
+                "feminine",
+                "neuter",
+                "plural",
+            ]:
                 for case in ["n", "g", "d", "a", "i", "p"]:
                     try:
                         num2words(n, lang="ru", gender=gender, case=case)
@@ -516,6 +613,7 @@ class TestSentenceConverterTargeted(TestCase):
 
     def test_german_period_dates(self):
         from num2words2 import num2words_sentence
+
         for s in ["Am 5. Mai 2024", "1. Januar", "31. Dezember 1999", "12. Februar"]:
             try:
                 num2words_sentence(s, lang="de")
@@ -526,7 +624,13 @@ class TestSentenceConverterTargeted(TestCase):
         from num2words2 import num2words_sentence
 
         # Hit conversion_type='ordinal' paths (lines 482-498)
-        for s in ["I have 5 apples", "1 + 2 = 3", "-5 things", "0 things", "3.14 things"]:
+        for s in [
+            "I have 5 apples",
+            "1 + 2 = 3",
+            "-5 things",
+            "0 things",
+            "3.14 things",
+        ]:
             try:
                 num2words_sentence(s, lang="en", to="ordinal")
             except Exception:
@@ -545,6 +649,7 @@ class TestSentenceConverterTargeted(TestCase):
 
     def test_currency_unknown_symbol(self):
         from num2words2 import num2words_sentence
+
         for s in ["¥1000", "₹1000", "₽5000"]:
             try:
                 num2words_sentence(s, lang="en")
@@ -553,6 +658,7 @@ class TestSentenceConverterTargeted(TestCase):
 
     def test_decimal_with_ordinal_to(self):
         from num2words2 import num2words_sentence
+
         for s in ["Result was 3.14", "Score: 99.5"]:
             try:
                 num2words_sentence(s, lang="en", to="ordinal")
@@ -561,6 +667,7 @@ class TestSentenceConverterTargeted(TestCase):
 
     def test_negative_ordinal(self):
         from num2words2 import num2words_sentence
+
         for s in ["At -10 degrees", "Score is -5"]:
             try:
                 num2words_sentence(s, lang="en", to="ordinal")
@@ -580,6 +687,7 @@ class TestSentenceConverterTargeted(TestCase):
 
     def test_currency_in_various_langs(self):
         from num2words2 import num2words_sentence
+
         for s in ["$100", "$5.99", "€10", "£25"]:
             for lang in ["en", "fr", "de", "es", "it"]:
                 try:
@@ -593,9 +701,28 @@ class TestELDeep(TestCase):
 
     def test_thousands_feminine(self):
         # Thousands with cnum 200, 300, 400, etc. trigger lines 159-171
-        for v in [200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000,
-                  201000, 301000, 1234567, 11000, 21000, 41000, 51000,
-                  100001, 200002, 999999, 1000001, 1234567890]:
+        for v in [
+            200000,
+            300000,
+            400000,
+            500000,
+            600000,
+            700000,
+            800000,
+            900000,
+            201000,
+            301000,
+            1234567,
+            11000,
+            21000,
+            41000,
+            51000,
+            100001,
+            200002,
+            999999,
+            1000001,
+            1234567890,
+        ]:
             try:
                 num2words(v, lang="el")
             except Exception:
@@ -654,8 +781,29 @@ class TestSNDeep(TestCase):
     """Shona — full input sweep."""
 
     def test_full_range(self):
-        for v in [0, 1, 5, 11, 19, 21, 50, 100, 101, 200, 999, 1000, 1001,
-                  1100, 9999, 10000, 99999, 100000, 1000000, 10000000, 1000000000]:
+        for v in [
+            0,
+            1,
+            5,
+            11,
+            19,
+            21,
+            50,
+            100,
+            101,
+            200,
+            999,
+            1000,
+            1001,
+            1100,
+            9999,
+            10000,
+            99999,
+            100000,
+            1000000,
+            10000000,
+            1000000000,
+        ]:
             for to in ["cardinal", "ordinal", "ordinal_num", "year", "currency"]:
                 try:
                     num2words(v, lang="sn", to=to)

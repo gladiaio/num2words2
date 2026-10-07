@@ -119,10 +119,18 @@ class Num2WordsVITest(TestCase):
 
     def test_ordinal_250(self):
         # to='ordinal' returned the cardinal (#250).
-        for value, word in [(1, "thứ nhất"), (2, "thứ hai"), (3, "thứ ba"),
-                            (4, "thứ tư"), (5, "thứ năm"), (10, "thứ mười"),
-                            (14, "thứ mười bốn"), (21, "thứ hai mươi mốt"),
-                            (100, "thứ một trăm"), (4.0, "thứ tư")]:
+        for value, word in [
+            (1, "thứ nhất"),
+            (2, "thứ hai"),
+            (3, "thứ ba"),
+            (4, "thứ tư"),
+            (5, "thứ năm"),
+            (10, "thứ mười"),
+            (14, "thứ mười bốn"),
+            (21, "thứ hai mươi mốt"),
+            (100, "thứ một trăm"),
+            (4.0, "thứ tư"),
+        ]:
             self.assertEqual(num2words(value, lang="vi", to="ordinal"), word)
         with self.assertRaises(TypeError):
             num2words(-1, lang="vi", to="ordinal")

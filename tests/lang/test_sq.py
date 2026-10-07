@@ -333,7 +333,9 @@ class Num2WordsSQTest(TestCase):
 
     def test_currency(self):
         """Test currency conversion."""
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="ALL"), "zero lekë")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="ALL"), "zero lekë"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="ALL"), "një qindarkë"
         )
@@ -348,7 +350,9 @@ class Num2WordsSQTest(TestCase):
             num2words(1.5, lang="sq", to="currency", currency="ALL"),
             "një lek, pesëdhjetë qindarkë",
         )
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="EUR"), "zero euro")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="EUR"), "zero euro"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="EUR"), "një cent"
         )
@@ -362,7 +366,9 @@ class Num2WordsSQTest(TestCase):
             num2words(1.5, lang="sq", to="currency", currency="EUR"),
             "një euro, pesëdhjetë centë",
         )
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="USD"), "zero dollarë")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="USD"), "zero dollarë"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="USD"), "një cent"
         )
@@ -376,7 +382,9 @@ class Num2WordsSQTest(TestCase):
             num2words(1.5, lang="sq", to="currency", currency="USD"),
             "një dollar, pesëdhjetë centë",
         )
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="GBP"), "zero paund")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="GBP"), "zero paund"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="GBP"), "një peni"
         )
@@ -390,7 +398,9 @@ class Num2WordsSQTest(TestCase):
             num2words(1.5, lang="sq", to="currency", currency="GBP"),
             "një paund, pesëdhjetë pence",
         )
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="CHF"), "zero franka zvicer")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="CHF"), "zero franka zvicer"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="CHF"), "një centim"
         )
@@ -405,7 +415,9 @@ class Num2WordsSQTest(TestCase):
             num2words(1.5, lang="sq", to="currency", currency="CHF"),
             "një frank zviceran, pesëdhjetë centimë",
         )
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="JPY"), "zero jenë")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="JPY"), "zero jenë"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="JPY"), "një sen"
         )
@@ -419,7 +431,9 @@ class Num2WordsSQTest(TestCase):
             num2words(1.5, lang="sq", to="currency", currency="JPY"),
             "një jen, pesëdhjetë senë",
         )
-        self.assertEqual(num2words(0, lang="sq", to="currency", currency="RUB"), "zero rubla")
+        self.assertEqual(
+            num2words(0, lang="sq", to="currency", currency="RUB"), "zero rubla"
+        )
         self.assertEqual(
             num2words(0.01, lang="sq", to="currency", currency="RUB"), "një kopek"
         )
@@ -487,4 +501,3 @@ class Num2WordsSQTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="sq"), num2words("100", lang="sq"))
         self.assertEqual(num2words(1000, lang="sq"), num2words("1000", lang="sq"))
-

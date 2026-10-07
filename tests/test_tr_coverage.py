@@ -11,24 +11,6 @@ from num2words2 import num2words
 class TestTurkishCoverage(TestCase):
     """Tests to improve coverage for Turkish module."""
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def test_year_conversion(self):
         """Test year conversion."""
         # Common years
@@ -58,16 +40,3 @@ class TestTurkishCoverage(TestCase):
 
         # Year
         self.assertEqual(num2words(2024, lang="tr", to="year"), "ikibinyirmidört")
-
-
-
-
-
-
-
-
-
-
-
-
-

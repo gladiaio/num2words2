@@ -215,10 +215,19 @@ class Num2WordsMLTest(TestCase):
             "തൊണ്ണൂറ്റിയൊൻപത് കോടി തൊണ്ണൂറ്റിയൊൻപത് ലക്ഷം തൊണ്ണൂറ്റിയൊൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്",
         )
         self.assertEqual(num2words(1000000000, lang="ml"), "ഒന്ന് നൂറ് കോടി")
-        self.assertEqual(num2words(1234567890, lang="ml"), "ഒന്ന് നൂറ് ഇരുപത്തിമൂന്ന് കോടി നാല്പത്തിയഞ്ച് ലക്ഷം അറുപത്തിയേഴ് ആയിരം എട്ട് നൂറ് തൊണ്ണൂറ്")
-        self.assertEqual(num2words(9999999999, lang="ml"), "ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത് കോടി തൊണ്ണൂറ്റിയൊൻപത് ലക്ഷം തൊണ്ണൂറ്റിയൊൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്")
+        self.assertEqual(
+            num2words(1234567890, lang="ml"),
+            "ഒന്ന് നൂറ് ഇരുപത്തിമൂന്ന് കോടി നാല്പത്തിയഞ്ച് ലക്ഷം അറുപത്തിയേഴ് ആയിരം എട്ട് നൂറ് തൊണ്ണൂറ്",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="ml"),
+            "ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത് കോടി തൊണ്ണൂറ്റിയൊൻപത് ലക്ഷം തൊണ്ണൂറ്റിയൊൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്",
+        )
         self.assertEqual(num2words(10000000000, lang="ml"), "ഒന്ന് ആയിരം കോടി")
-        self.assertEqual(num2words(99999999999, lang="ml"), "ഒൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത് കോടി തൊണ്ണൂറ്റിയൊൻപത് ലക്ഷം തൊണ്ണൂറ്റിയൊൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്")
+        self.assertEqual(
+            num2words(99999999999, lang="ml"),
+            "ഒൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത് കോടി തൊണ്ണൂറ്റിയൊൻപത് ലക്ഷം തൊണ്ണൂറ്റിയൊൻപത് ആയിരം ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -233,7 +242,9 @@ class Num2WordsMLTest(TestCase):
         self.assertEqual(num2words(-100, lang="ml"), "മൈനസ് ഒന്ന് നൂറ്")
         self.assertEqual(num2words(-101, lang="ml"), "മൈനസ് ഒന്ന് നൂറ് ഒന്ന്")
         self.assertEqual(num2words(-200, lang="ml"), "മൈനസ് രണ്ട് നൂറ്")
-        self.assertEqual(num2words(-999, lang="ml"), "മൈനസ് ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്")
+        self.assertEqual(
+            num2words(-999, lang="ml"), "മൈനസ് ഒൻപത് നൂറ് തൊണ്ണൂറ്റിയൊൻപത്"
+        )
         self.assertEqual(num2words(-1000, lang="ml"), "മൈനസ് ഒന്ന് ആയിരം")
         self.assertEqual(num2words(-1001, lang="ml"), "മൈനസ് ഒന്ന് ആയിരം ഒന്ന്")
         self.assertEqual(num2words(-10000, lang="ml"), "മൈനസ് പത്ത് ആയിരം")
@@ -260,7 +271,8 @@ class Num2WordsMLTest(TestCase):
         )
         self.assertEqual(num2words(100.5, lang="ml"), "ഒന്ന് നൂറ് പോയിന്റ് അഞ്ച്")
         self.assertEqual(
-            num2words(123.45, lang="ml"), "ഒന്ന് നൂറ് ഇരുപത്തിമൂന്ന് പോയിന്റ് നാല് അഞ്ച്"
+            num2words(123.45, lang="ml"),
+            "ഒന്ന് നൂറ് ഇരുപത്തിമൂന്ന് പോയിന്റ് നാല് അഞ്ച്",
         )
         self.assertEqual(num2words(1000.5, lang="ml"), "ഒന്ന് ആയിരം പോയിന്റ് അഞ്ച്")
         self.assertEqual(
@@ -429,4 +441,3 @@ class Num2WordsMLTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ml"), num2words("100", lang="ml"))
         self.assertEqual(num2words(1000, lang="ml"), num2words("1000", lang="ml"))
-

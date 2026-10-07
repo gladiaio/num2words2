@@ -119,8 +119,13 @@ class Num2WordsCSTest(TestCase):
 def test_cs_string_and_float_decimal_consistency():
     # Regression for num2words2#75 (ports savoirfairelinux/num2words#458).
     from num2words2 import num2words
-    assert num2words("1.50", lang="cs") == num2words(1.50, lang="cs") == "jedna čárka pět"
-    assert num2words("1.00", lang="cs") == num2words(1.00, lang="cs") == "jedna čárka nula"
+
+    assert (
+        num2words("1.50", lang="cs") == num2words(1.50, lang="cs") == "jedna čárka pět"
+    )
+    assert (
+        num2words("1.00", lang="cs") == num2words(1.00, lang="cs") == "jedna čárka nula"
+    )
     assert num2words("1.123", lang="cs") == num2words(1.123, lang="cs")
 
 
@@ -128,6 +133,7 @@ def test_compound_ordinals_issue_216():
     # gladiaio/num2words2#216: every component of a compound ordinal is an
     # ordinal; Python glued "ý" onto the cardinal ("dvacet jednaý").
     from num2words2 import num2words
+
     cases = {
         0: "nultý",
         21: "dvacátý první",

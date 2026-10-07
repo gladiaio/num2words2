@@ -184,40 +184,49 @@ class Num2WordsBNTest(TestCase):
             "নয় হাজার নয়শত নিরানব্বই কোটি নিরানব্বই লাখ নিরানব্বই হাজার নয়শত নিরানব্বই কোটি নিরানব্বই লাখ নিরানব্বই হাজার নয়শত নিরানব্বই দশমিক নয়",
         )  # noqa: E501
 
-
-
-
-
-
-
-
-
-
-
-
     def test_ordinal_words_250(self):
         # to='ordinal' returned the cardinal (#250).
-        for value, word in [(1, "প্রথম"), (2, "দ্বিতীয়"), (3, "তৃতীয়"),
-                            (4, "চতুর্থ"), (5, "পঞ্চম"), (6, "ষষ্ঠ"),
-                            (10, "দশম"), (11, "এগারোতম"), (21, "একুশতম"),
-                            (100, "একশততম"), (5.0, "পঞ্চম")]:
+        for value, word in [
+            (1, "প্রথম"),
+            (2, "দ্বিতীয়"),
+            (3, "তৃতীয়"),
+            (4, "চতুর্থ"),
+            (5, "পঞ্চম"),
+            (6, "ষষ্ঠ"),
+            (10, "দশম"),
+            (11, "এগারোতম"),
+            (21, "একুশতম"),
+            (100, "একশততম"),
+            (5.0, "পঞ্চম"),
+        ]:
             self.assertEqual(num2words(value, lang="bn", to="ordinal"), word)
         with self.assertRaises(TypeError):
             num2words(-1, lang="bn", to="ordinal")
 
     def test_ordinal_num_abbreviations_250(self):
-        for value, abbr in [(1, "১ম"), (2, "২য়"), (3, "৩য়"), (4, "৪র্থ"),
-                            (5, "৫ম"), (6, "৬ষ্ঠ"), (7, "৭ম"), (10, "১০ম"),
-                            (11, "১১তম"), (21, "২১তম"), (100, "১০০তম")]:
-            self.assertEqual(
-                num2words(value, lang="bn", to="ordinal_num"), abbr)
+        for value, abbr in [
+            (1, "১ম"),
+            (2, "২য়"),
+            (3, "৩য়"),
+            (4, "৪র্থ"),
+            (5, "৫ম"),
+            (6, "৬ষ্ঠ"),
+            (7, "৭ম"),
+            (10, "১০ম"),
+            (11, "১১তম"),
+            (21, "২১তম"),
+            (100, "১০০তম"),
+        ]:
+            self.assertEqual(num2words(value, lang="bn", to="ordinal_num"), abbr)
 
     def test_negative_year_keeps_the_era_250(self):
         self.assertEqual(num2words(44, lang="bn", to="year"), "চৌচল্লিশ সাল")
-        self.assertEqual(num2words(-44, lang="bn", to="year"),
-                         "খ্রিস্টপূর্ব চৌচল্লিশ সাল")
-        self.assertEqual(num2words(-44.0, lang="bn", to="year"),
-                         "খ্রিস্টপূর্ব চৌচল্লিশ সাল")
+        self.assertEqual(
+            num2words(-44, lang="bn", to="year"), "খ্রিস্টপূর্ব চৌচল্লিশ সাল"
+        )
+        self.assertEqual(
+            num2words(-44.0, lang="bn", to="year"), "খ্রিস্টপূর্ব চৌচল্লিশ সাল"
+        )
 
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4

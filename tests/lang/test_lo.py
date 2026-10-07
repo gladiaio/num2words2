@@ -403,4 +403,3 @@ class Num2WordsLOTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="lo"), num2words("100", lang="lo"))
         self.assertEqual(num2words(1000, lang="lo"), num2words("1000", lang="lo"))
-

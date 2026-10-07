@@ -444,7 +444,6 @@ class Num2WordsPT_BRTest(TestCase):
         with self.assertRaises(TypeError):
             num2words(3.14, lang="pt-br", ordinal=True)
 
-
     def test_more_currency_cases(self):
         """Test additional currency cases."""
         # Test various amounts
@@ -540,7 +539,6 @@ class Num2WordsPT_BRTest(TestCase):
             num2words(-1.50, lang="pt-br", to="currency", currency="BRL"),
             "menos um real e cinquenta centavos",
         )
-
 
     def test_trillion_scale(self):
         """Test Brazilian short scale for trillions."""
@@ -647,6 +645,7 @@ def test_pt_br_ordinal_large_scale_words():
     import pytest
 
     from num2words2 import num2words
+
     assert num2words(10**18, lang="pt_BR", to="ordinal") == "quintilionésimo"
     assert num2words(2 * 10**21 + 5, lang="pt_BR", to="ordinal") == (
         "segundo sextilionésimo quinto"

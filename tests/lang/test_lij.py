@@ -72,12 +72,8 @@ class Num2WordsLIJTest(TestCase):
         self.assertEqual(
             num2words(3.1415, lang="lij"), "trei virgola un quattro un çinque"
         )
-        self.assertEqual(
-            num2words(-5.15, lang="lij"), "meno çinque virgola un çinque"
-        )
-        self.assertEqual(
-            num2words(-0.15, lang="lij"), "meno zero virgola un çinque"
-        )
+        self.assertEqual(num2words(-5.15, lang="lij"), "meno çinque virgola un çinque")
+        self.assertEqual(num2words(-0.15, lang="lij"), "meno zero virgola un çinque")
 
     def test_float_to_ordinal(self):
         # gladiaio/num2words2#214: a fractional ordinal is a TypeError in
@@ -129,27 +125,19 @@ class Num2WordsLIJTest(TestCase):
         self.assertEqual(num2words(200, lang="lij"), "duxento")
         self.assertEqual(num2words(210, lang="lij"), "duxentodexe")
         self.assertEqual(num2words(701, lang="lij"), "setteçentoun")
-        self.assertEqual(
-            num2words(701, lang="lij", gender="f"), "setteçentoun"
-        )
+        self.assertEqual(num2words(701, lang="lij", gender="f"), "setteçentoun")
         self.assertEqual(num2words(882, lang="lij"), "euttoçentottantedoî")
-        self.assertEqual(
-            num2words(882, lang="lij", gender="f"), "euttoçentottantedoe"
-        )
+        self.assertEqual(num2words(882, lang="lij", gender="f"), "euttoçentottantedoe")
 
     def test_1000_to_9999(self):
         self.assertEqual(num2words(1000, lang="lij"), "mille")
         self.assertEqual(num2words(1001, lang="lij"), "milleun")
         self.assertEqual(num2words(1001, lang="lij", gender="f"), "milleun")
         self.assertEqual(num2words(1500, lang="lij"), "milleçinqueçento")
-        self.assertEqual(
-            num2words(7378, lang="lij"), "settemiatrexentosettanteutto"
-        )
+        self.assertEqual(num2words(7378, lang="lij"), "settemiatrexentosettanteutto")
         self.assertEqual(num2words(2000, lang="lij"), "doamia")
         self.assertEqual(num2words(2100, lang="lij"), "doamiaçento")
-        self.assertEqual(
-            num2words(6870, lang="lij"), "seimiaeuttoçentosettanta"
-        )
+        self.assertEqual(num2words(6870, lang="lij"), "seimiaeuttoçentosettanta")
         self.assertEqual(num2words(10000, lang="lij"), "dexemia")
         self.assertEqual(
             num2words(98765, lang="lij"),
@@ -165,25 +153,15 @@ class Num2WordsLIJTest(TestCase):
         self.assertEqual(num2words(1000000, lang="lij"), "un mion")
         self.assertEqual(num2words(1000007, lang="lij"), "un mion e sette")
         self.assertEqual(num2words(1000001, lang="lij"), "un mion e un")
-        self.assertEqual(
-            num2words(1000001, lang="lij", gender="f"), "un mion e un"
-        )
-        self.assertEqual(
-            num2words(1200000, lang="lij"), "un mion e duxentomia"
-        )
+        self.assertEqual(num2words(1000001, lang="lij", gender="f"), "un mion e un")
+        self.assertEqual(num2words(1200000, lang="lij"), "un mion e duxentomia")
         self.assertEqual(num2words(3000000, lang="lij"), "trei mioin")
         self.assertEqual(num2words(3000005, lang="lij"), "trei mioin e çinque")
-        self.assertEqual(
-            num2words(3800000, lang="lij"), "trei mioin e euttoçentomia"
-        )
+        self.assertEqual(num2words(3800000, lang="lij"), "trei mioin e euttoçentomia")
         self.assertEqual(num2words(1000000000, lang="lij"), "un miliardo")
-        self.assertEqual(
-            num2words(1000000017, lang="lij"), "un miliardo e dïsette"
-        )
+        self.assertEqual(num2words(1000000017, lang="lij"), "un miliardo e dïsette")
         self.assertEqual(num2words(2000000000, lang="lij"), "doî miliardi")
-        self.assertEqual(
-            num2words(2000001000, lang="lij"), "doî miliardi e mille"
-        )
+        self.assertEqual(num2words(2000001000, lang="lij"), "doî miliardi e mille")
         self.assertEqual(
             num2words(1234567890, lang="lij"),
             "un miliardo, duxentotrentequattro mioin e "
@@ -206,19 +184,11 @@ class Num2WordsLIJTest(TestCase):
 
     def test_nth_1_to_99(self):
         self.assertEqual(num2words(1, lang="lij", ordinal=True), "primmo")
-        self.assertEqual(
-            num2words(1, lang="lij", ordinal=True, plural=True), "primmi"
-        )
-        self.assertEqual(
-            num2words(1, lang="lij", ordinal=True, gender="f"), "primma"
-        )
+        self.assertEqual(num2words(1, lang="lij", ordinal=True, plural=True), "primmi")
+        self.assertEqual(num2words(1, lang="lij", ordinal=True, gender="f"), "primma")
         self.assertEqual(num2words(8, lang="lij", ordinal=True), "otten")
-        self.assertEqual(
-            num2words(8, lang="lij", ordinal=True, plural=True), "otten"
-        )
-        self.assertEqual(
-            num2words(8, lang="lij", ordinal=True, gender="f"), "otteña"
-        )
+        self.assertEqual(num2words(8, lang="lij", ordinal=True, plural=True), "otten")
+        self.assertEqual(num2words(8, lang="lij", ordinal=True, gender="f"), "otteña")
         self.assertEqual(
             num2words(
                 8,
@@ -229,18 +199,10 @@ class Num2WordsLIJTest(TestCase):
             ),
             "otteñe",
         )
-        self.assertEqual(
-            num2words(21, lang="lij", ordinal=True), "vintuneximo"
-        )
-        self.assertEqual(
-            num2words(23, lang="lij", ordinal=True), "vintitreieximo"
-        )
-        self.assertEqual(
-            num2words(47, lang="lij", ordinal=True), "quarantesetteximo"
-        )
-        self.assertEqual(
-            num2words(99, lang="lij", ordinal=True), "novantenoveximo"
-        )
+        self.assertEqual(num2words(21, lang="lij", ordinal=True), "vintuneximo")
+        self.assertEqual(num2words(23, lang="lij", ordinal=True), "vintitreieximo")
+        self.assertEqual(num2words(47, lang="lij", ordinal=True), "quarantesetteximo")
+        self.assertEqual(num2words(99, lang="lij", ordinal=True), "novantenoveximo")
 
     def test_nth_100_to_999(self):
         self.assertEqual(num2words(100, lang="lij", ordinal=True), "çenteximo")
@@ -254,27 +216,13 @@ class Num2WordsLIJTest(TestCase):
             num2words(100, lang="lij", ordinal=True, gender="f", plural=True),
             "çentexime",
         )
-        self.assertEqual(
-            num2words(101, lang="lij", ordinal=True), "çentouneximo"
-        )
-        self.assertEqual(
-            num2words(188, lang="lij", ordinal=True), "çentottantotteximo"
-        )
-        self.assertEqual(
-            num2words(112, lang="lij", ordinal=True), "çentodozzeximo"
-        )
-        self.assertEqual(
-            num2words(120, lang="lij", ordinal=True), "çentovinteximo"
-        )
-        self.assertEqual(
-            num2words(121, lang="lij", ordinal=True), "çentovintuneximo"
-        )
-        self.assertEqual(
-            num2words(316, lang="lij", ordinal=True), "trexentosezzeximo"
-        )
-        self.assertEqual(
-            num2words(700, lang="lij", ordinal=True), "setteçenteximo"
-        )
+        self.assertEqual(num2words(101, lang="lij", ordinal=True), "çentouneximo")
+        self.assertEqual(num2words(188, lang="lij", ordinal=True), "çentottantotteximo")
+        self.assertEqual(num2words(112, lang="lij", ordinal=True), "çentodozzeximo")
+        self.assertEqual(num2words(120, lang="lij", ordinal=True), "çentovinteximo")
+        self.assertEqual(num2words(121, lang="lij", ordinal=True), "çentovintuneximo")
+        self.assertEqual(num2words(316, lang="lij", ordinal=True), "trexentosezzeximo")
+        self.assertEqual(num2words(700, lang="lij", ordinal=True), "setteçenteximo")
         self.assertEqual(
             num2words(803, lang="lij", ordinal=True), "euttoçentotreieximo"
         )
@@ -284,18 +232,10 @@ class Num2WordsLIJTest(TestCase):
         )
 
     def test_nth_1000_to_999999(self):
-        self.assertEqual(
-            num2words(1000, lang="lij", ordinal=True), "milleximo"
-        )
-        self.assertEqual(
-            num2words(1001, lang="lij", ordinal=True), "milleuneximo"
-        )
-        self.assertEqual(
-            num2words(1003, lang="lij", ordinal=True), "milletreieximo"
-        )
-        self.assertEqual(
-            num2words(1200, lang="lij", ordinal=True), "milleduxenteximo"
-        )
+        self.assertEqual(num2words(1000, lang="lij", ordinal=True), "milleximo")
+        self.assertEqual(num2words(1001, lang="lij", ordinal=True), "milleuneximo")
+        self.assertEqual(num2words(1003, lang="lij", ordinal=True), "milletreieximo")
+        self.assertEqual(num2words(1200, lang="lij", ordinal=True), "milleduxenteximo")
         self.assertEqual(
             num2words(1800, lang="lij", ordinal=True, gender="f", plural=True),
             "milleeuttoçentexime",
@@ -326,9 +266,7 @@ class Num2WordsLIJTest(TestCase):
             "un miliardo e unexima",
         )
         self.assertEqual(
-            num2words(
-                123456789012345678901234567890, lang="lij", ordinal=True
-            ),
+            num2words(123456789012345678901234567890, lang="lij", ordinal=True),
             "çentovintitrei quadriliardi, quattroçentoçinquantesëi "
             "quadrilioin, setteçentottanteneuve triliardi, dozze trilioin, "
             "trexentoquaranteçinque biliardi, seiçentosettanteutto bilioin, "
@@ -346,16 +284,10 @@ class Num2WordsLIJTest(TestCase):
             num2words(str(i), lang="lij", to="cardinal")
             num2words(str(i), lang="lij", to="ordinal")
         self.assertEqual(num2words("1", lang="lij", to="ordinal"), "primmo")
+        self.assertEqual(num2words("100", lang="lij", to="ordinal"), "çenteximo")
+        self.assertEqual(num2words("1000", lang="lij", to="ordinal"), "milleximo")
         self.assertEqual(
-            num2words("100", lang="lij", to="ordinal"), "çenteximo"
-        )
-        self.assertEqual(
-            num2words("1000", lang="lij", to="ordinal"), "milleximo"
-        )
-        self.assertEqual(
-            num2words(
-                "1234567890123456789012345678", lang="lij", to="ordinal"
-            ),
+            num2words("1234567890123456789012345678", lang="lij", to="ordinal"),
             "un quadriliardo, duxentotrentequattro quadrilioin, "
             "çinqueçentosciusciantesette triliardi, euttoçentonovanta "
             "trilioin, çentovintitrei biliardi, quattroçentoçinquantesëi "

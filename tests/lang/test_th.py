@@ -143,7 +143,6 @@ class TestNumWord(TestCase):
         # self.assertEqual(n2wTH.round_2_decimal(0.995), ('1.00', False))
         # Expect 1.00 get 0.99
 
-
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4
         self.assertEqual(num2words(-0.4, lang="th"), "ติดลบศูนย์จุดสี่")

@@ -127,16 +127,21 @@ def test_fr_be_corrections_from_upstream_532():
     assert num2words(894, lang="fr_BE") == "huit cent nonante-quatre"
     assert num2words(1_000_000, lang="fr_BE") == "un million"
     assert num2words(1_000_001, lang="fr_BE") == "un million un"
-    assert num2words(10 ** 18, lang="fr_BE") == "un trillion"
-    assert num2words(10 ** 21, lang="fr_BE") == "un trilliard"
+    assert num2words(10**18, lang="fr_BE") == "un trillion"
+    assert num2words(10**21, lang="fr_BE") == "un trilliard"
 
     # Ordinal: drop leading 'un' and drop trailing 's' before -ième. The
     # -ième stays singular when count > 1 (num2words2#165).
     assert num2words(1_000_000, lang="fr_BE", to="ordinal") == "millionième"
     assert num2words(2_000_000, lang="fr_BE", to="ordinal") == "deux millionième"
-    assert num2words(10 ** 15, lang="fr_BE", to="ordinal") == "billiardième"
+    assert num2words(10**15, lang="fr_BE", to="ordinal") == "billiardième"
 
     # Currency: zéro takes singular for both major and minor unit.
     assert num2words(1.00, lang="fr_BE", to="currency") == "un euro et zéro centime"
-    assert num2words(100.00, lang="fr_BE", to="currency") == "cent euros et zéro centime"
-    assert num2words(1.00, lang="fr_BE", to="currency", currency="FRF") == "un franc et zéro centime"
+    assert (
+        num2words(100.00, lang="fr_BE", to="currency") == "cent euros et zéro centime"
+    )
+    assert (
+        num2words(1.00, lang="fr_BE", to="currency", currency="FRF")
+        == "un franc et zéro centime"
+    )

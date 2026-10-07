@@ -9,25 +9,18 @@ from num2words2 import num2words
 class Num2WordsBGCoverageTest(TestCase):
     """Additional tests to achieve 100% coverage for Bulgarian."""
 
-
-
-
-
     def test_to_cardinal_string_input(self):
         """Test to_cardinal with string input."""
         self.assertEqual(num2words("42", lang="bg"), "четиридесет и два")
         self.assertEqual(num2words("0", lang="bg"), "нула")
 
-
     def test_to_ordinal_string_input(self):
         """Test to_ordinal with string input."""
         self.assertEqual(num2words("5", lang="bg", to="ordinal"), "пети")
 
-
     def test_to_ordinal_num_string_input(self):
         """Test to_ordinal_num with string input."""
         self.assertEqual(num2words("15", lang="bg", to="ordinal_num"), "15-ти")
-
 
     def test_to_ordinal_num_special_suffixes(self):
         """Test ordinal_num with special suffix cases."""

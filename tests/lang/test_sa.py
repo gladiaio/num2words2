@@ -142,16 +142,12 @@ class Num2WordsSATest(TestCase):
             num2words(7777, lang="sa"), "सप्त सहस्रम् सप्त शतम् सप्तसप्तति"
         )
         self.assertEqual(num2words(8000, lang="sa"), "अष्ट सहस्रम्")
-        self.assertEqual(
-            num2words(8888, lang="sa"), "अष्ट सहस्रम् अष्ट शतम् अष्टाशीति"
-        )
+        self.assertEqual(num2words(8888, lang="sa"), "अष्ट सहस्रम् अष्ट शतम् अष्टाशीति")
         self.assertEqual(num2words(9000, lang="sa"), "नव सहस्रम्")
         self.assertEqual(num2words(9999, lang="sa"), "नव सहस्रम् नव शतम् नवनवति")
         self.assertEqual(num2words(10000, lang="sa"), "दश सहस्रम्")
         self.assertEqual(num2words(10001, lang="sa"), "दश सहस्रम् एकम्")
-        self.assertEqual(
-            num2words(11111, lang="sa"), "एकादश सहस्रम् एकम् शतम् एकादश"
-        )
+        self.assertEqual(num2words(11111, lang="sa"), "एकादश सहस्रम् एकम् शतम् एकादश")
         self.assertEqual(
             num2words(12345, lang="sa"), "द्वादश सहस्रम् त्रीणि शतम् पञ्चचत्वारिंशत्"
         )
@@ -210,10 +206,19 @@ class Num2WordsSATest(TestCase):
             "नवनवति कोटिः नवनवति लक्षम् नवनवति सहस्रम् नव शतम् नवनवति",
         )
         self.assertEqual(num2words(1000000000, lang="sa"), "एकम् शतम् कोटिः")
-        self.assertEqual(num2words(1234567890, lang="sa"), "एकम् शतम् त्रयोविंशति कोटिः पञ्चचत्वारिंशत् लक्षम् सप्तषष्टि सहस्रम् अष्ट शतम् नवति")
-        self.assertEqual(num2words(9999999999, lang="sa"), "नव शतम् नवनवति कोटिः नवनवति लक्षम् नवनवति सहस्रम् नव शतम् नवनवति")
+        self.assertEqual(
+            num2words(1234567890, lang="sa"),
+            "एकम् शतम् त्रयोविंशति कोटिः पञ्चचत्वारिंशत् लक्षम् सप्तषष्टि सहस्रम् अष्ट शतम् नवति",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="sa"),
+            "नव शतम् नवनवति कोटिः नवनवति लक्षम् नवनवति सहस्रम् नव शतम् नवनवति",
+        )
         self.assertEqual(num2words(10000000000, lang="sa"), "एकम् सहस्रम् कोटिः")
-        self.assertEqual(num2words(99999999999, lang="sa"), "नव सहस्रम् नव शतम् नवनवति कोटिः नवनवति लक्षम् नवनवति सहस्रम् नव शतम् नवनवति")
+        self.assertEqual(
+            num2words(99999999999, lang="sa"),
+            "नव सहस्रम् नव शतम् नवनवति कोटिः नवनवति लक्षम् नवनवति सहस्रम् नव शतम् नवनवति",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -258,7 +263,9 @@ class Num2WordsSATest(TestCase):
             num2words(1234.56, lang="sa"),
             "एकम् सहस्रम् द्वे शतम् चतुस्त्रिंशत् दशमलव पञ्च षट्",
         )
-        self.assertEqual(num2words(10000.01, lang="sa"), "दश सहस्रम् दशमलव शून्यम् एकम्")
+        self.assertEqual(
+            num2words(10000.01, lang="sa"), "दश सहस्रम् दशमलव शून्यम् एकम्"
+        )
         self.assertEqual(num2words(-0.5, lang="sa"), "ऋण शून्यम् दशमलव पञ्च")
         self.assertEqual(num2words(-1.5, lang="sa"), "ऋण एकम् दशमलव पञ्च")
         self.assertEqual(num2words(-10.5, lang="sa"), "ऋण दश दशमलव पञ्च")
@@ -335,9 +342,7 @@ class Num2WordsSATest(TestCase):
     def test_year(self):
         """Test year conversion."""
         self.assertEqual(num2words(1000, lang="sa", to="year"), "एकम् सहस्रम्")
-        self.assertEqual(
-            num2words(1066, lang="sa", to="year"), "एकम् सहस्रम् षट्षष्टि"
-        )
+        self.assertEqual(num2words(1066, lang="sa", to="year"), "एकम् सहस्रम् षट्षष्टि")
         self.assertEqual(
             num2words(1492, lang="sa", to="year"), "एकम् सहस्रम् चत्वारि शतम् द्विनवति"
         )
@@ -384,4 +389,3 @@ class Num2WordsSATest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="sa"), num2words("100", lang="sa"))
         self.assertEqual(num2words(1000, lang="sa"), num2words("1000", lang="sa"))
-

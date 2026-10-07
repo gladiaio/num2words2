@@ -228,4 +228,3 @@ class TestAF(LangTest, TestCase):  # Inherit from LangTest and TestCase
     def test_ordinal_float_numbers_raise_error(self):
         self.assertRaises(TypeError, num2words, 3.14, ordinal=True, lang=self.lang)
         self.assertRaises(TypeError, num2words, 0.5, ordinal=True, lang=self.lang)
-

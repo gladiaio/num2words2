@@ -138,16 +138,14 @@ class Num2WordsASTest(TestCase):
         self.assertEqual(num2words(12345, lang="as"), "বাৰ হাজাৰ তিনি শ পঞ্চল্লিশ")
         self.assertEqual(num2words(20000, lang="as"), "বিশ হাজাৰ")
         self.assertEqual(num2words(50000, lang="as"), "পঞ্চাশ হাজাৰ")
-        self.assertEqual(num2words(99999, lang="as"), "নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ")
-        self.assertEqual(num2words(100000, lang="as"), "এক লাখ")
         self.assertEqual(
-            num2words(123456, lang="as"), "এক লাখ তেইশ হাজাৰ চাৰি শ ছাপন"
+            num2words(99999, lang="as"), "নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ"
         )
+        self.assertEqual(num2words(100000, lang="as"), "এক লাখ")
+        self.assertEqual(num2words(123456, lang="as"), "এক লাখ তেইশ হাজাৰ চাৰি শ ছাপন")
         self.assertEqual(num2words(200000, lang="as"), "দুই লাখ")
         self.assertEqual(num2words(500000, lang="as"), "পাঁচ লাখ")
-        self.assertEqual(
-            num2words(654321, lang="as"), "ছয় লাখ চৌৱন হাজাৰ তিনি শ একৈশ"
-        )
+        self.assertEqual(num2words(654321, lang="as"), "ছয় লাখ চৌৱন হাজাৰ তিনি শ একৈশ")
         self.assertEqual(
             num2words(999999, lang="as"), "নয় লাখ নিৰান্নব্বৈ হাজাৰ নয় শ নিৰান্নব্বৈ"
         )
@@ -385,4 +383,3 @@ class Num2WordsASTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="as"), num2words("100", lang="as"))
         self.assertEqual(num2words(1000, lang="as"), num2words("1000", lang="as"))
-

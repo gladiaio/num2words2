@@ -455,9 +455,7 @@ class Num2WordsTETest(TestCase):
             num2words(1776, lang="te", to="year"), "ఒక వేయి ఏడు వందల డెబ్బై ఆరు"
         )
         self.assertEqual(num2words(1800, lang="te", to="year"), "ఒక వేయి ఎనిమిది వంద")
-        self.assertEqual(
-            num2words(1900, lang="te", to="year"), "ఒక వేయి తొమ్మిది వంద"
-        )
+        self.assertEqual(num2words(1900, lang="te", to="year"), "ఒక వేయి తొమ్మిది వంద")
         self.assertEqual(
             num2words(1984, lang="te", to="year"),
             "ఒక వేయి తొమ్మిది వందల ఎనభై నాలుగు",
@@ -494,4 +492,3 @@ class Num2WordsTETest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="te"), num2words("100", lang="te"))
         self.assertEqual(num2words(1000, lang="te"), num2words("1000", lang="te"))
-

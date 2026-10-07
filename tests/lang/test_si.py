@@ -188,10 +188,19 @@ class Num2WordsSITest(TestCase):
             "අනූ නවය කෝටිය අනූ නවය ලක්ෂය අනූ නවය දහස නවය සියය අනූ නවය",
         )
         self.assertEqual(num2words(1000000000, lang="si"), "සියය කෝටිය")
-        self.assertEqual(num2words(1234567890, lang="si"), "සියය විසි තුන කෝටිය හතළිස් පහ ලක්ෂය හැට හත දහස අට සියය අනූව")
-        self.assertEqual(num2words(9999999999, lang="si"), "නවය සියය අනූ නවය කෝටිය අනූ නවය ලක්ෂය අනූ නවය දහස නවය සියය අනූ නවය")
+        self.assertEqual(
+            num2words(1234567890, lang="si"),
+            "සියය විසි තුන කෝටිය හතළිස් පහ ලක්ෂය හැට හත දහස අට සියය අනූව",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="si"),
+            "නවය සියය අනූ නවය කෝටිය අනූ නවය ලක්ෂය අනූ නවය දහස නවය සියය අනූ නවය",
+        )
         self.assertEqual(num2words(10000000000, lang="si"), "දහස කෝටිය")
-        self.assertEqual(num2words(99999999999, lang="si"), "නවය දහස නවය සියය අනූ නවය කෝටිය අනූ නවය ලක්ෂය අනූ නවය දහස නවය සියය අනූ නවය")
+        self.assertEqual(
+            num2words(99999999999, lang="si"),
+            "නවය දහස නවය සියය අනූ නවය කෝටිය අනූ නවය ලක්ෂය අනූ නවය දහස නවය සියය අනූ නවය",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -340,9 +349,7 @@ class Num2WordsSITest(TestCase):
         self.assertEqual(num2words(1000, lang="si", to="year"), "දහස")
         self.assertEqual(num2words(1066, lang="si", to="year"), "දහස හැට හය")
         self.assertEqual(num2words(1492, lang="si", to="year"), "දහස හතර සියය අනූ දෙක")
-        self.assertEqual(
-            num2words(1776, lang="si", to="year"), "දහස හත සියය හැත්තෑ හය"
-        )
+        self.assertEqual(num2words(1776, lang="si", to="year"), "දහස හත සියය හැත්තෑ හය")
         self.assertEqual(num2words(1800, lang="si", to="year"), "දහස අට සියය")
         self.assertEqual(num2words(1900, lang="si", to="year"), "දහස නවය සියය")
         self.assertEqual(num2words(1984, lang="si", to="year"), "දහස නවය සියය අසූ හතර")
@@ -373,4 +380,3 @@ class Num2WordsSITest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="si"), num2words("100", lang="si"))
         self.assertEqual(num2words(1000, lang="si"), num2words("1000", lang="si"))
-

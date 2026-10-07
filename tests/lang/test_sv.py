@@ -568,4 +568,3 @@ class Num2WordsSVTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="sv"), num2words("100", lang="sv"))
         self.assertEqual(num2words(1000, lang="sv"), num2words("1000", lang="sv"))
-

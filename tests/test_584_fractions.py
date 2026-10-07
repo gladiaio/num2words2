@@ -14,7 +14,6 @@ from num2words2 import num2words
 
 
 class TestEnglishFractions(unittest.TestCase):
-
     def test_unit_fractions(self):
         self.assertEqual(num2words("1/2", lang="en"), "one half")
         self.assertEqual(num2words("1/3", lang="en"), "one third")
@@ -54,9 +53,7 @@ class TestEnglishFractions(unittest.TestCase):
         self.assertEqual(num2words(" 1 / 3 ", lang="en"), "one third")
 
 
-
 class TestRomanceLanguageFractions(unittest.TestCase):
-
     def test_french_idiomatic(self):
         self.assertEqual(num2words("1/2", lang="fr"), "un demi")
         self.assertEqual(num2words("1/3", lang="fr"), "un tiers")
@@ -91,7 +88,6 @@ class TestRomanceLanguageFractions(unittest.TestCase):
 
 
 class TestGermanFractions(unittest.TestCase):
-
     def test_idiomatic(self):
         self.assertEqual(num2words("1/2", lang="de"), "ein halb")
         self.assertEqual(num2words("1/3", lang="de"), "ein Drittel")
@@ -119,7 +115,6 @@ class TestGermanFractions(unittest.TestCase):
 
 
 class TestFractionEdgeCases(unittest.TestCase):
-
     def test_non_fraction_input_unchanged(self):
         # Plain ints/floats still go through the cardinal/ordinal path.
         self.assertEqual(num2words(42, lang="en"), "forty-two")
@@ -136,15 +131,30 @@ class TestFractionEdgeCases(unittest.TestCase):
 class TestUnsupportedFractions(unittest.TestCase):
     """#217: no more "ordinal + s" fallback ('два третийs', '三 第四s')."""
 
-    LANGS = ["ru", "zh", "ja", "tr", "cs", "nl", "pl", "bn", "dv", "id",
-             "vi", "zh_TW", "rm", "sv"]
+    LANGS = [
+        "ru",
+        "zh",
+        "ja",
+        "tr",
+        "cs",
+        "nl",
+        "pl",
+        "bn",
+        "dv",
+        "id",
+        "vi",
+        "zh_TW",
+        "rm",
+        "sv",
+    ]
 
     def test_unsupported_languages_raise(self):
         for lang in self.LANGS:
             for frac in ("1/2", "2/3", "-1/2"):
                 with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "lang='%s' does not support to='fraction'" % lang):
+                    NotImplementedError,
+                    "lang='%s' does not support to='fraction'" % lang,
+                ):
                     num2words(frac, lang=lang)
 
     def test_zero_denominator_is_zero_division_everywhere(self):
@@ -154,6 +164,7 @@ class TestUnsupportedFractions(unittest.TestCase):
 
     def test_non_string_input_is_type_error(self):
         from decimal import Decimal
+
         for value in (5, 1.5, Decimal("1.5"), "5", "1.5"):
             with self.assertRaisesRegex(TypeError, "'numerator/denominator'"):
                 num2words(value, lang="en", to="fraction")

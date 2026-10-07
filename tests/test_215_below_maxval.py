@@ -12,27 +12,39 @@ import pytest
 from num2words2 import maxval, num2words
 
 
-@pytest.mark.parametrize("value, expected", [
-    (10**12, "մեկ տրիլիոն"),
-    (10**13, "տասը տրիլիոն"),
-    (1234567890, "մեկ միլիարդ երկու հարյուր երեսունչորս միլիոն "
-                 "հինգ հարյուր վաթսունյոթ հազար ութ հարյուր իննսուն"),
-    (5000000001, "հինգ միլիարդ մեկ"),
-    (2500000000, "երկու միլիարդ հինգ հարյուր միլիոն"),
-    (-10**13, "մինուս տասը տրիլիոն"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (10**12, "մեկ տրիլիոն"),
+        (10**13, "տասը տրիլիոն"),
+        (
+            1234567890,
+            "մեկ միլիարդ երկու հարյուր երեսունչորս միլիոն "
+            "հինգ հարյուր վաթսունյոթ հազար ութ հարյուր իննսուն",
+        ),
+        (5000000001, "հինգ միլիարդ մեկ"),
+        (2500000000, "երկու միլիարդ հինգ հարյուր միլիոն"),
+        (-(10**13), "մինուս տասը տրիլիոն"),
+    ],
+)
 def test_hy_scale_words(value, expected):
     assert num2words(value, lang="hy") == expected
 
 
-@pytest.mark.parametrize("value, expected", [
-    (10**15, "một triệu tỷ"),
-    (10**17 + 1, "một trăm triệu tỷ lẻ một"),
-    # Exact integer arithmetic: 2**53 + 1 used to read as 2**53.
-    (2**53 + 1, "chín triệu tỷ bảy nghìn tỷ một trăm chín mươi chín tỷ "
-                "hai trăm năm mươi bốn triệu bảy trăm bốn mươi nghìn "
-                "chín trăm chín mươi ba"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (10**15, "một triệu tỷ"),
+        (10**17 + 1, "một trăm triệu tỷ lẻ một"),
+        # Exact integer arithmetic: 2**53 + 1 used to read as 2**53.
+        (
+            2**53 + 1,
+            "chín triệu tỷ bảy nghìn tỷ một trăm chín mươi chín tỷ "
+            "hai trăm năm mươi bốn triệu bảy trăm bốn mươi nghìn "
+            "chín trăm chín mươi ba",
+        ),
+    ],
+)
 def test_vi_vietnamese_scale_words(value, expected):
     assert num2words(value, lang="vi") == expected
 
@@ -64,8 +76,7 @@ def test_ar_ordinal_ceiling():
         r = num2words(10**e, lang="ar", to="ordinal")
         assert r.startswith("ال") and " " not in r, (e, r)
     # Every value below maxval has one since #261; maxval itself raises.
-    assert num2words(m - 1, lang="ar", to="ordinal").endswith(
-        "والتاسع والتسعون")
+    assert num2words(m - 1, lang="ar", to="ordinal").endswith("والتاسع والتسعون")
     with pytest.raises(OverflowError):
         num2words(m, lang="ar", to="ordinal")
 
@@ -74,7 +85,8 @@ def test_ar_ordinal_ceiling():
 def test_currency_past_the_decimal_context(lang):
     # 10**26 overran Python's 28-digit decimal context in to_currency only.
     assert num2words(10**26, lang=lang) in num2words(
-        10**26, lang=lang, to="currency")
+        10**26, lang=lang, to="currency"
+    )
 
 
 def test_ar_reads_29_to_31_digit_values_exactly():

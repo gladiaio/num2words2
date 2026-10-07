@@ -223,10 +223,19 @@ class Num2WordsHAWTest(TestCase):
             "'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
         )
         self.assertEqual(num2words(1000000000, lang="haw"), "'ekahi piliona")
-        self.assertEqual(num2words(1234567890, lang="haw"), "'ekahi piliona 'elua haneli kanakolu 'ehā miliona 'elima haneli kanaono 'ehiku kaukani 'ewalu haneli kanaiwa")
-        self.assertEqual(num2words(9999999999, lang="haw"), "'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa")
+        self.assertEqual(
+            num2words(1234567890, lang="haw"),
+            "'ekahi piliona 'elua haneli kanakolu 'ehā miliona 'elima haneli kanaono 'ehiku kaukani 'ewalu haneli kanaiwa",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="haw"),
+            "'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
+        )
         self.assertEqual(num2words(10000000000, lang="haw"), "'umi piliona")
-        self.assertEqual(num2words(99999999999, lang="haw"), "kanaiwa 'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa")
+        self.assertEqual(
+            num2words(99999999999, lang="haw"),
+            "kanaiwa 'eiwa piliona 'eiwa haneli kanaiwa 'eiwa miliona 'eiwa haneli kanaiwa 'eiwa kaukani 'eiwa haneli kanaiwa 'eiwa",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -245,9 +254,13 @@ class Num2WordsHAWTest(TestCase):
             num2words(-999, lang="haw"), "'i'o 'ole 'eiwa haneli kanaiwa 'eiwa"
         )
         self.assertEqual(num2words(-1000, lang="haw"), "'i'o 'ole 'ekahi kaukani")
-        self.assertEqual(num2words(-1001, lang="haw"), "'i'o 'ole 'ekahi kaukani 'ekahi")
+        self.assertEqual(
+            num2words(-1001, lang="haw"), "'i'o 'ole 'ekahi kaukani 'ekahi"
+        )
         self.assertEqual(num2words(-10000, lang="haw"), "'i'o 'ole 'umi kaukani")
-        self.assertEqual(num2words(-100000, lang="haw"), "'i'o 'ole 'ekahi haneli kaukani")
+        self.assertEqual(
+            num2words(-100000, lang="haw"), "'i'o 'ole 'ekahi haneli kaukani"
+        )
         self.assertEqual(num2words(-1000000, lang="haw"), "'i'o 'ole 'ekahi miliona")
 
     def test_decimal_numbers(self):
@@ -260,13 +273,9 @@ class Num2WordsHAWTest(TestCase):
         self.assertEqual(num2words(2.5, lang="haw"), "'elua kiko 'elima")
         self.assertEqual(num2words(3.14, lang="haw"), "'ekolu kiko 'ekahi 'ehā")
         self.assertEqual(num2words(10.5, lang="haw"), "'umi kiko 'elima")
-        self.assertEqual(
-            num2words(11.11, lang="haw"), "'umi 'ekahi kiko 'ekahi 'ekahi"
-        )
+        self.assertEqual(num2words(11.11, lang="haw"), "'umi 'ekahi kiko 'ekahi 'ekahi")
         self.assertEqual(num2words(20.2, lang="haw"), "iwakālua kiko 'elua")
-        self.assertEqual(
-            num2words(99.99, lang="haw"), "kanaiwa 'eiwa kiko 'eiwa 'eiwa"
-        )
+        self.assertEqual(num2words(99.99, lang="haw"), "kanaiwa 'eiwa kiko 'eiwa 'eiwa")
         self.assertEqual(
             num2words(100.01, lang="haw"), "'ekahi haneli kiko 'ole 'ekahi"
         )
@@ -415,4 +424,3 @@ class Num2WordsHAWTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="haw"), num2words("100", lang="haw"))
         self.assertEqual(num2words(1000, lang="haw"), num2words("1000", lang="haw"))
-

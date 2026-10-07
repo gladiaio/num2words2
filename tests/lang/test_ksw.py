@@ -18,10 +18,23 @@ class Num2WordsKSWTest(TestCase):
     def test_units_and_tens(self):
         # Omniglot's table, 1..12 and the tens.
         expected = {
-            1: "တ", 2: "ခံ", 3: "သၢ", 4: "လွံၢ်", 5: "ယဲၢ်", 6: "ဃု",
-            7: "နွံ", 8: "ဃိး", 9: "ခွံ", 10: "တဆံ", 11: "တဆံတၢ",
-            12: "တဆံခံ", 19: "တဆံခွံ", 20: "ခံဆံ", 30: "သၢဆံ",
-            40: "လွံၢ်ဆံ", 90: "ခွံဆံ",
+            1: "တ",
+            2: "ခံ",
+            3: "သၢ",
+            4: "လွံၢ်",
+            5: "ယဲၢ်",
+            6: "ဃု",
+            7: "နွံ",
+            8: "ဃိး",
+            9: "ခွံ",
+            10: "တဆံ",
+            11: "တဆံတၢ",
+            12: "တဆံခံ",
+            19: "တဆံခွံ",
+            20: "ခံဆံ",
+            30: "သၢဆံ",
+            40: "လွံၢ်ဆံ",
+            90: "ခွံဆံ",
         }
         for n, word in expected.items():
             self.assertEqual(num2words(n, lang="ksw"), word)
@@ -35,9 +48,7 @@ class Num2WordsKSWTest(TestCase):
         self.assertEqual(num2words(101, lang="ksw"), "တကယၤ တၢ")
         self.assertEqual(num2words(1000, lang="ksw"), "တကထိ")
         self.assertEqual(num2words(2024, lang="ksw"), "ခံကထိ ခံဆံလွံၢ်")
-        self.assertEqual(
-            num2words(9999, lang="ksw"), "ခွံကထိ ခွံကယၤ ခွံဆံခွံ"
-        )
+        self.assertEqual(num2words(9999, lang="ksw"), "ခွံကထိ ခွံကယၤ ခွံဆံခွံ")
         self.assertEqual(
             num2words(1984, lang="ksw", to="year"), "တကထိ ခွံကယၤ ဃိးဆံလွံၢ်"
         )
@@ -49,12 +60,8 @@ class Num2WordsKSWTest(TestCase):
         self.assertEqual(num2words(10000, lang="ksw"), "တကလး")
         self.assertEqual(num2words(20000, lang="ksw"), "ခံကလး")
         self.assertEqual(num2words(100000, lang="ksw"), "တကလီၢ်")
-        self.assertEqual(
-            num2words(603550, lang="ksw"), "ဃုကလီၢ် သၢကထိ ယဲၢ်ကယၤ ယဲၢ်ဆံ"
-        )
-        self.assertEqual(
-            num2words(601730, lang="ksw"), "ဃုကလီၢ် တကထိ နွံကယၤ သၢဆံ"
-        )
+        self.assertEqual(num2words(603550, lang="ksw"), "ဃုကလီၢ် သၢကထိ ယဲၢ်ကယၤ ယဲၢ်ဆံ")
+        self.assertEqual(num2words(601730, lang="ksw"), "ဃုကလီၢ် တကထိ နွံကယၤ သၢဆံ")
         self.assertEqual(num2words(10001, lang="ksw"), "တကလး တၢ")
         self.assertEqual(
             num2words(999999, lang="ksw"),
@@ -70,10 +77,17 @@ class Num2WordsKSWTest(TestCase):
 
     def test_unverified_words_raise(self):
         cases = [
-            (0, "cardinal"), (-1, "cardinal"), (1.5, "cardinal"),
-            ("1.5", "cardinal"), (Decimal("1.5"), "cardinal"),
-            (5.0, "cardinal"), (3, "ordinal"), (3, "ordinal_num"),
-            (3, "currency"), (3, "cheque"), (0, "year"),
+            (0, "cardinal"),
+            (-1, "cardinal"),
+            (1.5, "cardinal"),
+            ("1.5", "cardinal"),
+            (Decimal("1.5"), "cardinal"),
+            (5.0, "cardinal"),
+            (3, "ordinal"),
+            (3, "ordinal_num"),
+            (3, "currency"),
+            (3, "cheque"),
+            (0, "year"),
         ]
         for x, to in cases:
             with self.subTest(x=x, to=to):

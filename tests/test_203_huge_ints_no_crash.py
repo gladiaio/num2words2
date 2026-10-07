@@ -30,8 +30,12 @@ for to in ("cardinal", "ordinal", "year", "currency"):
 
 
 def _run(lang):
-    proc = subprocess.run([sys.executable, "-c", SCRIPT, lang],
-                          capture_output=True, text=True, timeout=120)
+    proc = subprocess.run(
+        [sys.executable, "-c", SCRIPT, lang],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
     return lang, proc.returncode, proc.stderr[-300:]
 
 

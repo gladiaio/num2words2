@@ -192,10 +192,19 @@ class Num2WordsTTTest(TestCase):
             "тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз",
         )
         self.assertEqual(num2words(1000000000, lang="tt"), "бер миллиард")
-        self.assertEqual(num2words(1234567890, lang="tt"), "бер миллиард ике йөз утыз дүрт миллион биш йөз алтмыш җиде мең сигез йөз туксан")
-        self.assertEqual(num2words(9999999999, lang="tt"), "тугыз миллиард тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз")
+        self.assertEqual(
+            num2words(1234567890, lang="tt"),
+            "бер миллиард ике йөз утыз дүрт миллион биш йөз алтмыш җиде мең сигез йөз туксан",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="tt"),
+            "тугыз миллиард тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз",
+        )
         self.assertEqual(num2words(10000000000, lang="tt"), "ун миллиард")
-        self.assertEqual(num2words(99999999999, lang="tt"), "туксан тугыз миллиард тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз")
+        self.assertEqual(
+            num2words(99999999999, lang="tt"),
+            "туксан тугыз миллиард тугыз йөз туксан тугыз миллион тугыз йөз туксан тугыз мең тугыз йөз туксан тугыз",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -385,4 +394,3 @@ class Num2WordsTTTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tt"), num2words("100", lang="tt"))
         self.assertEqual(num2words(1000, lang="tt"), num2words("1000", lang="tt"))
-

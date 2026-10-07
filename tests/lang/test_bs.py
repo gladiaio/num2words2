@@ -426,12 +426,21 @@ class Num2WordsBSTest(TestCase):
         self.assertEqual(num2words(1000, lang="bs"), num2words("1000", lang="bs"))
 
 
-
 def test_teens_issue_216():
     # gladiaio/num2words2#216: Python built 11-19 as ones + "aest".
     from num2words2 import num2words
-    want = ["jedanaest", "dvanaest", "trinaest", "četrnaest", "petnaest",
-            "šesnaest", "sedamnaest", "osamnaest", "devetnaest"]
+
+    want = [
+        "jedanaest",
+        "dvanaest",
+        "trinaest",
+        "četrnaest",
+        "petnaest",
+        "šesnaest",
+        "sedamnaest",
+        "osamnaest",
+        "devetnaest",
+    ]
     assert [num2words(i, lang="bs") for i in range(11, 20)] == want
     assert num2words(12, lang="bs", to="year") == "dvanaest"
     assert num2words(112, lang="bs") == "sto dvanaest"

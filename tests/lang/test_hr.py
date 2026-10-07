@@ -125,7 +125,8 @@ class Num2WordsHRTest(TestCase):
         # Croatian Kuna (HRK) tests
         self.assertEqual(
             # kuna/lipa are feminine: jedna, dvije (#196).
-            num2words(1, lang="hr", to="currency", currency="HRK"), "jedna kuna"
+            num2words(1, lang="hr", to="currency", currency="HRK"),
+            "jedna kuna",
         )
         self.assertEqual(
             num2words(2, lang="hr", to="currency", currency="HRK"), "dvije kune"

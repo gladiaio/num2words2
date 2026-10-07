@@ -76,12 +76,12 @@ def test_sd_zero_and_minus():
 
 
 def test_sr_cyrillic_currency_names():
-    assert (num2words(1.5, lang="sr", to="currency")
-            == "један динар, педесет пара")
-    assert (num2words(2.01, lang="sr", to="currency", currency="EUR")
-            == "два евра, један цент")
+    assert num2words(1.5, lang="sr", to="currency") == "један динар, педесет пара"
+    assert (
+        num2words(2.01, lang="sr", to="currency", currency="EUR")
+        == "два евра, један цент"
+    )
 
 
 def test_sr_latn_currency_names_stay_latin():
-    assert (num2words(1.5, lang="sr_Latn", to="currency")
-            == "jedan dinar, pedeset para")
+    assert num2words(1.5, lang="sr_Latn", to="currency") == "jedan dinar, pedeset para"

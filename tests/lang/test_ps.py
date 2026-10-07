@@ -378,4 +378,3 @@ class Num2WordsPSTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ps"), num2words("100", lang="ps"))
         self.assertEqual(num2words(1000, lang="ps"), num2words("1000", lang="ps"))
-

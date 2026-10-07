@@ -213,10 +213,19 @@ class Num2WordsTLTest(TestCase):
             "siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam",
         )
         self.assertEqual(num2words(1000000000, lang="tl"), "isa bilyon")
-        self.assertEqual(num2words(1234567890, lang="tl"), "isa bilyon dalawa daan tatlumpu apat milyon lima daan animnapu pito libo walo daan siyamnapu")
-        self.assertEqual(num2words(9999999999, lang="tl"), "siyam bilyon siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam")
+        self.assertEqual(
+            num2words(1234567890, lang="tl"),
+            "isa bilyon dalawa daan tatlumpu apat milyon lima daan animnapu pito libo walo daan siyamnapu",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="tl"),
+            "siyam bilyon siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam",
+        )
         self.assertEqual(num2words(10000000000, lang="tl"), "sampu bilyon")
-        self.assertEqual(num2words(99999999999, lang="tl"), "siyamnapu siyam bilyon siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam")
+        self.assertEqual(
+            num2words(99999999999, lang="tl"),
+            "siyamnapu siyam bilyon siyam daan siyamnapu siyam milyon siyam daan siyamnapu siyam libo siyam daan siyamnapu siyam",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -413,4 +422,3 @@ class Num2WordsTLTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="tl"), num2words("100", lang="tl"))
         self.assertEqual(num2words(1000, lang="tl"), num2words("1000", lang="tl"))
-

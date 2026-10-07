@@ -22,22 +22,18 @@ from num2words2 import num2words
 from . import test_es
 
 TEST_HNL = (
-    (1.0, 'un lempira con cero centavos'),
-    (2.0, 'dos lempiras con cero centavos'),
-    (8.5, 'ocho lempiras con cincuenta centavos'),
+    (1.0, "un lempira con cero centavos"),
+    (2.0, "dos lempiras con cero centavos"),
+    (8.5, "ocho lempiras con cincuenta centavos"),
     # 12.256 omitted: num2words2 base preserves fractional cents instead of
     # rounding (see lang_HA, lang_BAN behavior). Upstream rounds 25.6c -> 26c.
-    (25.6, 'veinticinco lempiras con sesenta centavos'),
-    (96.55, 'noventa y seis lempiras con cincuenta y cinco centavos'),
-    (100.00, 'cien lempiras con cero centavos'),
+    (25.6, "veinticinco lempiras con sesenta centavos"),
+    (96.55, "noventa y seis lempiras con cincuenta y cinco centavos"),
+    (100.00, "cien lempiras con cero centavos"),
 )
 
 
 class Num2WordsHNHNLTest(test_es.Num2WordsESTest):
-
     def test_currency(self):
         for test in TEST_HNL:
-            self.assertEqual(
-                num2words(test[0], lang='es_HN', to='currency'),
-                test[1]
-            )
+            self.assertEqual(num2words(test[0], lang="es_HN", to="currency"), test[1])

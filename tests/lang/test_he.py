@@ -300,9 +300,6 @@ class Num2WordsHETest(TestCase):
         self.assertEqual(num2words("12.5", lang="he", gender="m"), "שנים עשר נקודה חמש")
         self.assertEqual(num2words(-1.5, lang="he", gender="m"), "מינוס אחד נקודה חמש")
 
-
-
-
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4
         self.assertEqual(num2words(-0.4, lang="he"), "מינוס אפס נקודה ארבע")

@@ -225,10 +225,19 @@ class Num2WordsSUTest(TestCase):
             "salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan",
         )
         self.assertEqual(num2words(1000000000, lang="su"), "hiji miliar")
-        self.assertEqual(num2words(1234567890, lang="su"), "hiji miliar dua ratus tilu puluh opat juta lima ratus genep puluh tujuh rebu dalapan ratus salapan puluh")
-        self.assertEqual(num2words(9999999999, lang="su"), "salapan miliar salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan")
+        self.assertEqual(
+            num2words(1234567890, lang="su"),
+            "hiji miliar dua ratus tilu puluh opat juta lima ratus genep puluh tujuh rebu dalapan ratus salapan puluh",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="su"),
+            "salapan miliar salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan",
+        )
         self.assertEqual(num2words(10000000000, lang="su"), "sapuluh miliar")
-        self.assertEqual(num2words(99999999999, lang="su"), "salapan puluh salapan miliar salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan")
+        self.assertEqual(
+            num2words(99999999999, lang="su"),
+            "salapan puluh salapan miliar salapan ratus salapan puluh salapan juta salapan ratus salapan puluh salapan rebu salapan ratus salapan puluh salapan",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -435,4 +444,3 @@ class Num2WordsSUTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="su"), num2words("100", lang="su"))
         self.assertEqual(num2words(1000, lang="su"), num2words("1000", lang="su"))
-

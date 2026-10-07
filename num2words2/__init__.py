@@ -41,9 +41,7 @@ try:
 except PackageNotFoundError:
     # Imported from a source tree that was never installed.
     __version__ = "unknown"
-__version_tuple__ = tuple(
-    int(p) if p.isdigit() else p for p in __version__.split(".")
-)
+__version_tuple__ = tuple(int(p) if p.isdigit() else p for p in __version__.split("."))
 
 # Exception types defined in the compiled core and re-exported so
 # ``from num2words2 import NumberTooLargeError`` (and ``except`` on it) keep
@@ -64,14 +62,24 @@ __all__ = [
 ]
 
 CONVERTES_TYPES = [
-    "cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque",
+    "cardinal",
+    "ordinal",
+    "ordinal_num",
+    "year",
+    "currency",
+    "cheque",
     "fraction",
 ]
 CONVERTER_TYPES = CONVERTES_TYPES  # Alias for compatibility
 
 # The values of CONVERTER_TYPES, for type checkers (#244).
 ConverterType = Literal[
-    "cardinal", "ordinal", "ordinal_num", "year", "currency", "cheque",
+    "cardinal",
+    "ordinal",
+    "ordinal_num",
+    "year",
+    "currency",
+    "cheque",
     "fraction",
 ]
 

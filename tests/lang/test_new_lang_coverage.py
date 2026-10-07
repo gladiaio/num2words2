@@ -9,9 +9,28 @@ from num2words2 import maxval, num2words
 # ksw is covered by tests/lang/test_ksw.py: since gladiaio/num2words2#143
 # it spells 1..9999 only and raises for currency.
 NEW_LANG_CODES = [
-    "ban", "bm", "ceb", "ckb", "cnh", "ff", "fil", "hmn", "ki", "kok",
-    "ku", "ky", "lg", "lus", "om", "or", "pap", "pli", "rw",
-    "ti", "xh", "zu",
+    "ban",
+    "bm",
+    "ceb",
+    "ckb",
+    "cnh",
+    "ff",
+    "fil",
+    "hmn",
+    "ki",
+    "kok",
+    "ku",
+    "ky",
+    "lg",
+    "lus",
+    "om",
+    "or",
+    "pap",
+    "pli",
+    "rw",
+    "ti",
+    "xh",
+    "zu",
 ]
 
 
@@ -26,11 +45,11 @@ class TestLargeNumberFallback(TestCase):
                 # 10^12 — beyond the explicit million scale in most templates.
                 # A language with no attested word that high raises (#147).
                 m = maxval(code)
-                if m is not None and 10 ** 12 >= m:
+                if m is not None and 10**12 >= m:
                     with self.assertRaises(OverflowError):
-                        num2words(10 ** 12, lang=code)
+                        num2words(10**12, lang=code)
                     continue
-                result = num2words(10 ** 12, lang=code)
+                result = num2words(10**12, lang=code)
                 self.assertIsInstance(result, str)
                 self.assertTrue(len(result) > 0)
 
@@ -56,4 +75,3 @@ class TestCurrencyWithCents(TestCase):
 
 class TestPluralizeEdgeCases(TestCase):
     """Hit the pluralize() edge cases."""
-

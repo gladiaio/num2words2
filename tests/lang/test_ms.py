@@ -266,15 +266,23 @@ class Num2WordsMSTest(TestCase):
         self.assertEqual(num2words(10.5, lang="ms"), "sepuluh perpuluhan lima")
         self.assertEqual(num2words(11.11, lang="ms"), "sebelas perpuluhan satu satu")
         self.assertEqual(num2words(20.2, lang="ms"), "dua puluh perpuluhan dua")
-        self.assertEqual(num2words(99.99, lang="ms"), "sembilan puluh sembilan perpuluhan sembilan sembilan")
+        self.assertEqual(
+            num2words(99.99, lang="ms"),
+            "sembilan puluh sembilan perpuluhan sembilan sembilan",
+        )
         self.assertEqual(num2words(100.01, lang="ms"), "seratus perpuluhan kosong satu")
         self.assertEqual(num2words(100.5, lang="ms"), "seratus perpuluhan lima")
-        self.assertEqual(num2words(123.45, lang="ms"), "seratus dua puluh tiga perpuluhan empat lima")
+        self.assertEqual(
+            num2words(123.45, lang="ms"), "seratus dua puluh tiga perpuluhan empat lima"
+        )
         self.assertEqual(num2words(1000.5, lang="ms"), "seribu perpuluhan lima")
         self.assertEqual(
-            num2words(1234.56, lang="ms"), "seribu dua ratus tiga puluh empat perpuluhan lima enam"
+            num2words(1234.56, lang="ms"),
+            "seribu dua ratus tiga puluh empat perpuluhan lima enam",
         )
-        self.assertEqual(num2words(10000.01, lang="ms"), "sepuluh ribu perpuluhan kosong satu")
+        self.assertEqual(
+            num2words(10000.01, lang="ms"), "sepuluh ribu perpuluhan kosong satu"
+        )
         self.assertEqual(num2words(-0.5, lang="ms"), "negatif kosong perpuluhan lima")
         self.assertEqual(num2words(-1.5, lang="ms"), "negatif satu perpuluhan lima")
         self.assertEqual(num2words(-10.5, lang="ms"), "negatif sepuluh perpuluhan lima")
@@ -518,7 +526,6 @@ class Num2WordsMSTest(TestCase):
         self.assertEqual(num2words(100, lang="ms"), num2words("100", lang="ms"))
         self.assertEqual(num2words(1000, lang="ms"), num2words("1000", lang="ms"))
 
-
     def test_negative_ordinal_raises(self):
         # gladiaio/num2words2#155: Python list indexing wrapped -1 to
         # "kesepuluh" (tenth), -11 to "" and crashed with IndexError below.
@@ -534,11 +541,13 @@ class Num2WordsMSTest(TestCase):
     def test_fraction_is_read(self):
         # gladiaio/num2words2#206: the fraction was dropped (0.5 -> "kosong").
         from decimal import Decimal
+
         self.assertEqual(num2words(0.5, lang="ms"), "kosong perpuluhan lima")
-        self.assertEqual(num2words(Decimal("1.75"), lang="ms"),
-                         "satu perpuluhan tujuh lima")
-        self.assertEqual(num2words("1.75", lang="ms"),
-                         "satu perpuluhan tujuh lima")
-        self.assertEqual(num2words(-0.25, lang="ms"),
-                         "negatif kosong perpuluhan dua lima")
+        self.assertEqual(
+            num2words(Decimal("1.75"), lang="ms"), "satu perpuluhan tujuh lima"
+        )
+        self.assertEqual(num2words("1.75", lang="ms"), "satu perpuluhan tujuh lima")
+        self.assertEqual(
+            num2words(-0.25, lang="ms"), "negatif kosong perpuluhan dua lima"
+        )
         self.assertEqual(num2words(5.0, lang="ms"), "lima")

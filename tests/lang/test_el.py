@@ -314,18 +314,19 @@ class Num2WordsELTest(TestCase):
         self.assertEqual(num2words(1000, lang="el", ordinal=True), "χιλιοστός")
         self.assertEqual(num2words(1001, lang="el", ordinal=True), "χιλιοστός πρώτος")
         # #251: every component is ordinal; 121..=129 used to collide.
-        self.assertEqual(num2words(121, lang="el", ordinal=True),
-                         "εκατοστός εικοστός πρώτος")
-        self.assertEqual(num2words(129, lang="el", ordinal=True),
-                         "εκατοστός εικοστός ένατος")
+        self.assertEqual(
+            num2words(121, lang="el", ordinal=True), "εκατοστός εικοστός πρώτος"
+        )
+        self.assertEqual(
+            num2words(129, lang="el", ordinal=True), "εκατοστός εικοστός ένατος"
+        )
         self.assertEqual(num2words(2000, lang="el", ordinal=True), "δισχιλιοστός")
         self.assertEqual(
             num2words(2345, lang="el", ordinal=True),
-            "δισχιλιοστός τριακοσιοστός τεσσαρακοστός πέμπτος")
-        self.assertEqual(num2words(10**6, lang="el", ordinal=True),
-                         "εκατομμυριοστός")
-        self.assertEqual(num2words(10000, lang="el", ordinal=True),
-                         "δεκακισχιλιοστός")
+            "δισχιλιοστός τριακοσιοστός τεσσαρακοστός πέμπτος",
+        )
+        self.assertEqual(num2words(10**6, lang="el", ordinal=True), "εκατομμυριοστός")
+        self.assertEqual(num2words(10000, lang="el", ordinal=True), "δεκακισχιλιοστός")
         # No sourced compound past 9999 (δεκακισχιλιοστός πρώτος? ...).
         with self.assertRaises(OverflowError):
             num2words(10001, lang="el", ordinal=True)
@@ -437,12 +438,6 @@ class Num2WordsELTest(TestCase):
         # Test ordinal with floats (should raise error)
         with self.assertRaises(TypeError):
             num2words(3.14, lang="el", ordinal=True)
-
-
-
-
-
-
 
     def test_more_ordinals(self):
         """Test additional ordinal numbers."""

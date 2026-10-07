@@ -183,10 +183,19 @@ class Num2WordsSDTest(TestCase):
             "نوانوي ڪروڙ نوانوي لک نوانوي هزار نو سو نوانوي",
         )
         self.assertEqual(num2words(1000000000, lang="sd"), "هڪ ارب")
-        self.assertEqual(num2words(1234567890, lang="sd"), "هڪ ارب ٽريويهه ڪروڙ پنجيتاليهه لک ستهٺ هزار اٺ سو نوي")
-        self.assertEqual(num2words(9999999999, lang="sd"), "نو ارب نوانوي ڪروڙ نوانوي لک نوانوي هزار نو سو نوانوي")
+        self.assertEqual(
+            num2words(1234567890, lang="sd"),
+            "هڪ ارب ٽريويهه ڪروڙ پنجيتاليهه لک ستهٺ هزار اٺ سو نوي",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="sd"),
+            "نو ارب نوانوي ڪروڙ نوانوي لک نوانوي هزار نو سو نوانوي",
+        )
         self.assertEqual(num2words(10000000000, lang="sd"), "ڏهه ارب")
-        self.assertEqual(num2words(99999999999, lang="sd"), "نوانوي ارب نوانوي ڪروڙ نوانوي لک نوانوي هزار نو سو نوانوي")
+        self.assertEqual(
+            num2words(99999999999, lang="sd"),
+            "نوانوي ارب نوانوي ڪروڙ نوانوي لک نوانوي هزار نو سو نوانوي",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -366,4 +375,3 @@ class Num2WordsSDTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="sd"), num2words("100", lang="sd"))
         self.assertEqual(num2words(1000, lang="sd"), num2words("1000", lang="sd"))
-

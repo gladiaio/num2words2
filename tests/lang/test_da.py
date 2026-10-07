@@ -487,7 +487,6 @@ class Num2WordsDATest(TestCase):
         self.assertEqual(num2words(100, lang="da"), num2words("100", lang="da"))
         self.assertEqual(num2words(1000, lang="da"), num2words("1000", lang="da"))
 
-
     def test_singular_scale_after_en(self):
         """gladiaio/num2words2#163: "en" takes the singular scale word."""
         for lang in ("da", "dk"):
@@ -524,7 +523,9 @@ class Num2WordsDATest(TestCase):
             self.assertEqual(
                 num2words(3 * 10**9, lang=lang, to="ordinal"), "tre milliardte"
             )
-            self.assertEqual(num2words(10**6, lang=lang, to="ordinal_num"), "1000000te")
+            self.assertEqual(
+                num2words(10**6, lang=lang, to="ordinal_num"), "1000000te"
+            )
 
     def test_ordinal_compound_above_million(self):
         """gladiaio/num2words2#184: compounds keep the cardinal's count.
@@ -545,9 +546,7 @@ class Num2WordsDATest(TestCase):
         }
         for lang in ("da", "dk"):
             for value, expected in cases.items():
-                self.assertEqual(
-                    num2words(value, lang=lang, to="ordinal"), expected
-                )
+                self.assertEqual(num2words(value, lang=lang, to="ordinal"), expected)
             # The words before the ordinalised one match the cardinal's.
             for value in cases:
                 card = num2words(value, lang=lang).split(" ")

@@ -9,8 +9,7 @@ from num2words2 import num2words_sentence
     "text, expected",
     [
         ("1st May 2024", "First May two thousand and twenty-four"),
-        ("2nd June 1999",
-         "Second June one thousand, nine hundred and ninety-nine"),
+        ("2nd June 1999", "Second June one thousand, nine hundred and ninety-nine"),
         ("On 3rd March 2020 we met", "On third March two thousand and twenty we met"),
         # Month-first order was already right and must stay so.
         ("May 1st, 2024", "May first, two thousand and twenty-four"),
@@ -72,9 +71,11 @@ def test_clock_times_am_pm_left_alone(text, expected):
 
 def test_other_languages_dates_unchanged():
     assert num2words_sentence("le 1er mai 2024", lang="fr") == (
-        "le premier mai deux mille vingt-quatre")
+        "le premier mai deux mille vingt-quatre"
+    )
     assert num2words_sentence("am 1. Mai 2024", lang="de") == (
-        "am ersten Mai zweitausendvierundzwanzig")
+        "am ersten Mai zweitausendvierundzwanzig"
+    )
 
 
 def test_failed_reading_falls_back_to_own_language_cardinal():

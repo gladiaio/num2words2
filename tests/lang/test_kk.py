@@ -192,10 +192,19 @@ class Num2WordsKKTest(TestCase):
             "тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз",
         )
         self.assertEqual(num2words(1000000000, lang="kk"), "бір миллиард")
-        self.assertEqual(num2words(1234567890, lang="kk"), "бір миллиард екі жүз отыз төрт миллион бес жүз алпыс жеті мың сегіз жүз тоқсан")
-        self.assertEqual(num2words(9999999999, lang="kk"), "тоғыз миллиард тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз")
+        self.assertEqual(
+            num2words(1234567890, lang="kk"),
+            "бір миллиард екі жүз отыз төрт миллион бес жүз алпыс жеті мың сегіз жүз тоқсан",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="kk"),
+            "тоғыз миллиард тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз",
+        )
         self.assertEqual(num2words(10000000000, lang="kk"), "он миллиард")
-        self.assertEqual(num2words(99999999999, lang="kk"), "тоқсан тоғыз миллиард тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз")
+        self.assertEqual(
+            num2words(99999999999, lang="kk"),
+            "тоқсан тоғыз миллиард тоғыз жүз тоқсан тоғыз миллион тоғыз жүз тоқсан тоғыз мың тоғыз жүз тоқсан тоғыз",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -385,7 +394,6 @@ class Num2WordsKKTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="kk"), num2words("100", lang="kk"))
         self.assertEqual(num2words(1000, lang="kk"), num2words("1000", lang="kk"))
-
 
     def test_native_zero_minus_decimal(self):
         # gladiaio/num2words2#154, #166: these used to be English

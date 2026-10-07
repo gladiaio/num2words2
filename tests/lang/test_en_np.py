@@ -36,4 +36,3 @@ class Num2WordsENINTest(TestCase):
         self.assertEqual(num2words(1e16, lang="en_NP"), "ten padam")
         self.assertEqual(num2words(1e17, lang="en_NP"), "one shankha")
         self.assertEqual(num2words(1e18, lang="en_NP"), "ten shankha")
-      

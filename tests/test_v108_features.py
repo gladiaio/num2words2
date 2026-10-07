@@ -3,7 +3,10 @@ from num2words2 import num2words
 
 
 def test_us_drops_and_in_cardinal():
-    assert num2words(1234, lang="en", style="us") == "one thousand, two hundred thirty-four"
+    assert (
+        num2words(1234, lang="en", style="us")
+        == "one thousand, two hundred thirty-four"
+    )
     assert num2words(250, lang="en", style="us") == "two hundred fifty"
 
 

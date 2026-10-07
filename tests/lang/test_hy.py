@@ -80,7 +80,6 @@ class Num2WordsHYTest(TestCase):
         self.assertEqual(num2words(3000000, lang="hy"), "երեք միլիոն")
         self.assertEqual(num2words(3000000000, lang="hy"), "երեք միլիարդ")
 
-
     def test_ordinal_numbers(self):
         """Test ordinal number conversion."""
         self.assertEqual(num2words(0, lang="hy", to="ordinal"), "զրոերորդ")
@@ -155,25 +154,12 @@ class Num2WordsHYTest(TestCase):
             "հարյուր շվեյցարական ֆրանկ",
         )
 
-
-
-
-
-
-
-
     def test_billion_prefix_case(self):
         """Test special case for two billion conversion."""
         self.assertEqual(num2words(2000000000, lang="hy"), "երկու միլիարդ")
 
         self.assertEqual(num2words(3000000000, lang="hy"), "երեք միլիարդ")
         self.assertEqual(num2words(4000000000, lang="hy"), "չորս միլիարդ")
-
-
-
-
-
-
 
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4

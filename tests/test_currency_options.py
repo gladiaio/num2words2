@@ -20,13 +20,15 @@ def test_cents_false_keeps_the_cents_as_digits(lang):
 
 
 def test_cents_false_examples():
-    assert num2words(2.5, lang="en", to="currency", cents=False) == \
-        "two euros, 50 cents"
-    assert num2words(2.5, lang="gl", to="currency", cents=False) == \
-        "dous euros 50 céntimos"
+    assert (
+        num2words(2.5, lang="en", to="currency", cents=False) == "two euros, 50 cents"
+    )
+    assert (
+        num2words(2.5, lang="gl", to="currency", cents=False)
+        == "dous euros 50 céntimos"
+    )
     assert num2words(2.5, lang="ja", to="currency", cents=False) == "二円50銭"
-    assert num2words(2.5, lang="dv", to="currency", cents=False) == \
-        "ދެ ރުފިޔާ 50 ލާރި"
+    assert num2words(2.5, lang="dv", to="currency", cents=False) == "ދެ ރުފިޔާ 50 ލާރި"
 
 
 @pytest.mark.parametrize("value", [1.99, Decimal("1.99"), "1.99"])
@@ -41,14 +43,17 @@ def test_cents_omit_truncates_toward_zero(value):
 
 @pytest.mark.parametrize("value", [101.5, "101.5", Decimal("101.5")])
 def test_style_us_on_currency(value):
-    assert num2words(value, to="currency", style="us") == \
-        "one hundred one euros, fifty cents"
+    assert (
+        num2words(value, to="currency", style="us")
+        == "one hundred one euros, fifty cents"
+    )
 
 
 def test_style_us_on_int_currency_and_cheque():
     assert num2words(101, to="currency", style="us") == "one hundred one euros"
-    assert num2words(101.5, to="cheque", style="us") == \
-        "ONE HUNDRED ONE AND 50/100 EUROS"
+    assert (
+        num2words(101.5, to="cheque", style="us") == "ONE HUNDRED ONE AND 50/100 EUROS"
+    )
 
 
 @pytest.mark.parametrize("value", [2, 2.5, "2.5"])

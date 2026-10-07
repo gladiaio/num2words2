@@ -32,10 +32,19 @@ def test_native_currency_nouns(lang, value, code, expected):
     assert num2words(value, lang=lang, to="currency", **kw) == expected
 
 
-@pytest.mark.parametrize("lang,code", [
-    ("sa", "USD"), ("yo", "EUR"), ("tk", "USD"), ("sv", "PLN"),
-    ("hu", "SAR"), ("te", "GBP"), ("kn", "AED"), ("tet", "GBP"),
-])
+@pytest.mark.parametrize(
+    "lang,code",
+    [
+        ("sa", "USD"),
+        ("yo", "EUR"),
+        ("tk", "USD"),
+        ("sv", "PLN"),
+        ("hu", "SAR"),
+        ("te", "GBP"),
+        ("kn", "AED"),
+        ("tet", "GBP"),
+    ],
+)
 def test_unsourced_currency_raises(lang, code):
     with pytest.raises(NotImplementedError):
         num2words(2, lang=lang, to="currency", currency=code)

@@ -220,10 +220,19 @@ class Num2WordsMTTest(TestCase):
             "disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa",
         )
         self.assertEqual(num2words(1000000000, lang="mt"), "wieħed biljun")
-        self.assertEqual(num2words(1234567890, lang="mt"), "wieħed biljun tnejn mija tletin erbgħa miljun ħamsa mija sittin sebgħa elf tmienja mija disgħin")
-        self.assertEqual(num2words(9999999999, lang="mt"), "disgħa biljun disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa")
+        self.assertEqual(
+            num2words(1234567890, lang="mt"),
+            "wieħed biljun tnejn mija tletin erbgħa miljun ħamsa mija sittin sebgħa elf tmienja mija disgħin",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="mt"),
+            "disgħa biljun disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa",
+        )
         self.assertEqual(num2words(10000000000, lang="mt"), "għaxra biljun")
-        self.assertEqual(num2words(99999999999, lang="mt"), "disgħin disgħa biljun disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa")
+        self.assertEqual(
+            num2words(99999999999, lang="mt"),
+            "disgħin disgħa biljun disgħa mija disgħin disgħa miljun disgħa mija disgħin disgħa elf disgħa mija disgħin disgħa",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -417,4 +426,3 @@ class Num2WordsMTTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="mt"), num2words("100", lang="mt"))
         self.assertEqual(num2words(1000, lang="mt"), num2words("1000", lang="mt"))
-

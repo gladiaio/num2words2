@@ -171,7 +171,6 @@ class Num2WordsJATest(TestCase):
         self.assertEqual(n2j(1375, to="year"), "天授元年")
         self.assertEqual(n2j(1375, to="year", prefer=["えいわ"]), "永和元年")
 
-
     def test_negative_decimals(self):
         # Comprehensive test for negative decimals including -0.4
         self.assertEqual(num2words(-0.4, lang="ja"), "マイナス零点四")

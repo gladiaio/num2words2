@@ -18,7 +18,9 @@ def _long_fraction(digit, count):
     (used by CPython builds without ``_decimal``, e.g. the 3.15 CI image)
     goes through ``int()``, which refuses more than 4300 digits by default,
     so lift that limit just while building the value."""
-    old = sys.get_int_max_str_digits() if hasattr(sys, "get_int_max_str_digits") else None
+    old = (
+        sys.get_int_max_str_digits() if hasattr(sys, "get_int_max_str_digits") else None
+    )
     if old is not None:
         sys.set_int_max_str_digits(0)
     try:
@@ -30,18 +32,22 @@ def _long_fraction(digit, count):
 
 HA_LONG = _long_fraction("7", 70000)
 
-CASES = [
-    (lang, "currency", TINY)
-    for lang in ("as", "bm", "ki", "lus", "miz", "ne", "om", "zu", "hmn")
-] + [
-    (lang, to, TINY)
-    for lang in ("ce", "cy", "en_Aero_US_Army", "rm", "sn")
-    for to in ("cardinal", "year")
-] + [
-    # Not a panic but worse: unbounded recursion overflowed the native stack
-    # and killed the interpreter. Now OverflowError.
-    ("ha", "cardinal", HA_LONG),
-]
+CASES = (
+    [
+        (lang, "currency", TINY)
+        for lang in ("as", "bm", "ki", "lus", "miz", "ne", "om", "zu", "hmn")
+    ]
+    + [
+        (lang, to, TINY)
+        for lang in ("ce", "cy", "en_Aero_US_Army", "rm", "sn")
+        for to in ("cardinal", "year")
+    ]
+    + [
+        # Not a panic but worse: unbounded recursion overflowed the native stack
+        # and killed the interpreter. Now OverflowError.
+        ("ha", "cardinal", HA_LONG),
+    ]
+)
 
 
 @pytest.mark.parametrize("lang,to,value", CASES, ids=lambda c: str(c)[:20])
@@ -56,8 +62,7 @@ def test_huge_scale_never_panics(lang, to, value):
 def test_ha_huge_value_is_overflow_error():
     # A 70000-digit fraction no longer recurses: since #205 Hausa reads the
     # fractional digits one by one, so it is words, not an overflow.
-    assert num2words(HA_LONG, lang="ha").startswith(
-        "sifiri wajen bakwai bakwai")
+    assert num2words(HA_LONG, lang="ha").startswith("sifiri wajen bakwai bakwai")
     with pytest.raises(OverflowError):
         num2words(10**12010, lang="ha")
     assert num2words(10**12, lang="ha") == "tiriliyan"

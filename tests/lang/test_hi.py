@@ -383,7 +383,6 @@ class Num2WordsHITest(TestCase):
         self.assertEqual(num2words(1000, lang="hi"), num2words("1000", lang="hi"))
 
 
-
 class TestHINegativeOrdinalNum(TestCase):
     """Ports savoirfairelinux/num2words#672 by @santhreal.
 

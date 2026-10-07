@@ -140,9 +140,7 @@ class Num2WordsPATest(TestCase):
         self.assertEqual(num2words(50000, lang="pa"), "ਪੰਜਾਹ ਹਜ਼ਾਰ")
         self.assertEqual(num2words(99999, lang="pa"), "ਨੜਿੰਨਵੇਂ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ")
         self.assertEqual(num2words(100000, lang="pa"), "ਇੱਕ ਲੱਖ")
-        self.assertEqual(
-            num2words(123456, lang="pa"), "ਇੱਕ ਲੱਖ ਤੇਈ ਹਜ਼ਾਰ ਚਾਰ ਸੌ ਛਪੰਜਾ"
-        )
+        self.assertEqual(num2words(123456, lang="pa"), "ਇੱਕ ਲੱਖ ਤੇਈ ਹਜ਼ਾਰ ਚਾਰ ਸੌ ਛਪੰਜਾ")
         self.assertEqual(num2words(200000, lang="pa"), "ਦੋ ਲੱਖ")
         self.assertEqual(num2words(500000, lang="pa"), "ਪੰਜ ਲੱਖ")
         self.assertEqual(
@@ -186,10 +184,19 @@ class Num2WordsPATest(TestCase):
             "ਨੜਿੰਨਵੇਂ ਕਰੋੜ ਨੜਿੰਨਵੇਂ ਲੱਖ ਨੜਿੰਨਵੇਂ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ",
         )
         self.assertEqual(num2words(1000000000, lang="pa"), "ਇੱਕ ਅਰਬ")
-        self.assertEqual(num2words(1234567890, lang="pa"), "ਇੱਕ ਅਰਬ ਤੇਈ ਕਰੋੜ ਪੰਤਾਲੀ ਲੱਖ ਸਤਾਹਠ ਹਜ਼ਾਰ ਅੱਠ ਸੌ ਨੱਬੇ")
-        self.assertEqual(num2words(9999999999, lang="pa"), "ਨੌ ਅਰਬ ਨੜਿੰਨਵੇਂ ਕਰੋੜ ਨੜਿੰਨਵੇਂ ਲੱਖ ਨੜਿੰਨਵੇਂ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ")
+        self.assertEqual(
+            num2words(1234567890, lang="pa"),
+            "ਇੱਕ ਅਰਬ ਤੇਈ ਕਰੋੜ ਪੰਤਾਲੀ ਲੱਖ ਸਤਾਹਠ ਹਜ਼ਾਰ ਅੱਠ ਸੌ ਨੱਬੇ",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="pa"),
+            "ਨੌ ਅਰਬ ਨੜਿੰਨਵੇਂ ਕਰੋੜ ਨੜਿੰਨਵੇਂ ਲੱਖ ਨੜਿੰਨਵੇਂ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ",
+        )
         self.assertEqual(num2words(10000000000, lang="pa"), "ਦਸ ਅਰਬ")
-        self.assertEqual(num2words(99999999999, lang="pa"), "ਨੜਿੰਨਵੇਂ ਅਰਬ ਨੜਿੰਨਵੇਂ ਕਰੋੜ ਨੜਿੰਨਵੇਂ ਲੱਖ ਨੜਿੰਨਵੇਂ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ")
+        self.assertEqual(
+            num2words(99999999999, lang="pa"),
+            "ਨੜਿੰਨਵੇਂ ਅਰਬ ਨੜਿੰਨਵੇਂ ਕਰੋੜ ਨੜਿੰਨਵੇਂ ਲੱਖ ਨੜਿੰਨਵੇਂ ਹਜ਼ਾਰ ਨੌ ਸੌ ਨੜਿੰਨਵੇਂ",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -377,4 +384,3 @@ class Num2WordsPATest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="pa"), num2words("100", lang="pa"))
         self.assertEqual(num2words(1000, lang="pa"), num2words("1000", lang="pa"))
-

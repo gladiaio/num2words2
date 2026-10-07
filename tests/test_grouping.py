@@ -40,4 +40,3 @@ class GroupDigitsTest(unittest.TestCase):
     def test_non_int_raises(self):
         with self.assertRaises(TypeError):
             group_digits(1.5)
-

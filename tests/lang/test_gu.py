@@ -140,14 +140,10 @@ class Num2WordsGUTest(TestCase):
         self.assertEqual(num2words(50000, lang="gu"), "પચાસ હજાર")
         self.assertEqual(num2words(99999, lang="gu"), "નવ્વાણું હજાર નવ સો નવ્વાણું")
         self.assertEqual(num2words(100000, lang="gu"), "એક લાખ")
-        self.assertEqual(
-            num2words(123456, lang="gu"), "એક લાખ તેવીસ હજાર ચાર સો છપ્પન"
-        )
+        self.assertEqual(num2words(123456, lang="gu"), "એક લાખ તેવીસ હજાર ચાર સો છપ્પન")
         self.assertEqual(num2words(200000, lang="gu"), "બે લાખ")
         self.assertEqual(num2words(500000, lang="gu"), "પાંચ લાખ")
-        self.assertEqual(
-            num2words(654321, lang="gu"), "છ લાખ ચોપન હજાર ત્રણ સો એકવીસ"
-        )
+        self.assertEqual(num2words(654321, lang="gu"), "છ લાખ ચોપન હજાર ત્રણ સો એકવીસ")
         self.assertEqual(
             num2words(999999, lang="gu"), "નવ લાખ નવ્વાણું હજાર નવ સો નવ્વાણું"
         )
@@ -404,4 +400,3 @@ class Num2WordsGUTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="gu"), num2words("100", lang="gu"))
         self.assertEqual(num2words(1000, lang="gu"), num2words("1000", lang="gu"))
-

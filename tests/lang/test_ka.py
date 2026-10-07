@@ -224,9 +224,7 @@ class Num2WordsKATest(TestCase):
         )
         # gladiaio/num2words2#147: words (or OverflowError), not digits.
         self.assertEqual(num2words(10**12, lang="ka"), "ერთი ტრილიონი")
-        self.assertEqual(
-            num2words(2 * 10**12 + 5, lang="ka"), "ორი ტრილიონი ხუთი"
-        )
+        self.assertEqual(num2words(2 * 10**12 + 5, lang="ka"), "ორი ტრილიონი ხუთი")
         self.assertEqual(num2words(10**15, lang="ka"), "ერთი კვადრილიონი")
         with self.assertRaises(OverflowError):
             num2words(10**18, lang="ka")
@@ -426,4 +424,3 @@ class Num2WordsKATest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="ka"), num2words("100", lang="ka"))
         self.assertEqual(num2words(1000, lang="ka"), num2words("1000", lang="ka"))
-

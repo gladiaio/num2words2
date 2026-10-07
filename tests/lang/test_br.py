@@ -211,10 +211,19 @@ class Num2WordsBRTest(TestCase):
             "nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
         )
         self.assertEqual(num2words(1000000000, lang="br"), "unan miliard")
-        self.assertEqual(num2words(1234567890, lang="br"), "unan miliard daou kant tregont pevar milion pemp kant tri-ugent seizh mil eizh kant dek ha pevar-ugent")
-        self.assertEqual(num2words(9999999999, lang="br"), "nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav")
+        self.assertEqual(
+            num2words(1234567890, lang="br"),
+            "unan miliard daou kant tregont pevar milion pemp kant tri-ugent seizh mil eizh kant dek ha pevar-ugent",
+        )
+        self.assertEqual(
+            num2words(9999999999, lang="br"),
+            "nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
+        )
         self.assertEqual(num2words(10000000000, lang="br"), "dek miliard")
-        self.assertEqual(num2words(99999999999, lang="br"), "dek ha pevar-ugent nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav")
+        self.assertEqual(
+            num2words(99999999999, lang="br"),
+            "dek ha pevar-ugent nav miliard nav kant dek ha pevar-ugent nav milion nav kant dek ha pevar-ugent nav mil nav kant dek ha pevar-ugent nav",
+        )
 
     def test_negative_numbers(self):
         """Test negative numbers."""
@@ -383,4 +392,3 @@ class Num2WordsBRTest(TestCase):
         # Test that the converter handles various input types
         self.assertEqual(num2words(100, lang="br"), num2words("100", lang="br"))
         self.assertEqual(num2words(1000, lang="br"), num2words("1000", lang="br"))
-

@@ -249,14 +249,10 @@ class Num2WordsHATest(TestCase):
         self.assertEqual(num2words(0.1, lang="ha"), "sifiri wajen ɗaya")
         self.assertEqual(num2words(0.5, lang="ha"), "sifiri wajen biyar")
         self.assertEqual(num2words(0.9, lang="ha"), "sifiri wajen tara")
-        self.assertEqual(
-            num2words(1.1, lang="ha"), "ɗaya wajen ɗaya"
-        )
+        self.assertEqual(num2words(1.1, lang="ha"), "ɗaya wajen ɗaya")
         self.assertEqual(num2words(1.5, lang="ha"), "ɗaya wajen biyar")
         self.assertEqual(num2words(2.5, lang="ha"), "biyu wajen biyar")
-        self.assertEqual(
-            num2words(3.14, lang="ha"), "uku wajen sha huɗu"
-        )
+        self.assertEqual(num2words(3.14, lang="ha"), "uku wajen sha huɗu")
         self.assertEqual(num2words(10.5, lang="ha"), "goma wajen biyar")
         self.assertEqual(
             num2words(11.11, lang="ha"),
@@ -482,10 +478,6 @@ class Num2WordsHATest(TestCase):
         with self.assertRaises(TypeError):
             num2words(3.14, lang="ha", ordinal=True)
 
-
-
-
-
     def test_more_currency_cases(self):
         """Test additional currency cases."""
         # Test various amounts
@@ -551,14 +543,15 @@ class Num2WordsHATest(TestCase):
             "tiriliyan biliyan ɗari biyu talatin da huɗu miliyan ɗari biyar sittin da bakwai dubu ɗari takwas casa'in ɗari ashirin da uku",
         )
 
-
     def test_float_digits_come_from_the_repr(self):
         # gladiaio/num2words2#207: str(value - int(value)) carried binary
         # noise (1.05 - 1 == 0.050000000000000044) into the words.
         from decimal import Decimal
+
         for v in (1.05, 1.1, 3.14, 2.675, 99.99, 0.1 + 0.2, 123.456):
-            self.assertEqual(num2words(v, lang="ha"),
-                             num2words(Decimal(repr(v)), lang="ha"))
+            self.assertEqual(
+                num2words(v, lang="ha"), num2words(Decimal(repr(v)), lang="ha")
+            )
         self.assertEqual(num2words(1.05, lang="ha"), "ɗaya wajen sifiri biyar")
         self.assertEqual(num2words(1.1, lang="ha"), "ɗaya wajen ɗaya")
         self.assertNotIn("tiriliyan", num2words(0.1 + 0.2, lang="ha"))

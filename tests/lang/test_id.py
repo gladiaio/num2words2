@@ -66,6 +66,7 @@ def test_id_str_to_number_does_not_raise():
     # Regression for savoirfairelinux/num2words#476 — Num2Word_ID was
     # missing str_to_number and crashed on string input.
     from num2words2 import num2words
+
     assert num2words("5", lang="id") == "lima"
     assert num2words("1234", lang="id") == "seribu dua ratus tiga puluh empat"
     assert num2words("5.5", lang="id") == "lima koma lima"
@@ -75,9 +76,12 @@ def test_id_currency_reads_sen():
     # gladiaio/num2words2#255: 1 rupiah = 100 sen; dropping them changed
     # the amount.
     from num2words2 import num2words
+
     assert num2words(2.5, lang="id", to="currency") == "dua rupiah lima puluh sen"
     assert num2words(3.07, lang="id", to="currency") == "tiga rupiah tujuh sen"
     assert num2words("3.05", lang="id", to="currency") == "tiga rupiah lima sen"
-    assert num2words(-0.5, lang="id", to="currency") == "minus nol rupiah lima puluh sen"
+    assert (
+        num2words(-0.5, lang="id", to="currency") == "minus nol rupiah lima puluh sen"
+    )
     assert num2words(3, lang="id", to="currency") == "tiga rupiah"
     assert num2words(3.0, lang="id", to="currency") == "tiga rupiah"

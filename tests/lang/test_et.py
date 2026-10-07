@@ -506,7 +506,6 @@ class Num2WordsETTest(TestCase):
         self.assertEqual(num2words(100, lang="et"), num2words("100", lang="et"))
         self.assertEqual(num2words(1000, lang="et"), num2words("1000", lang="et"))
 
-
     def test_negative_ordinal_raises(self):
         # gladiaio/num2words2#155: Python list indexing wrapped -1 to
         # "üheksas" (ninth), -10 to "" and crashed with IndexError below that.

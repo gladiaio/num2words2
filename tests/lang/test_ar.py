@@ -166,45 +166,50 @@ class TestAR(LangTest, TestCase):
             self.assertTrue("must be less" in str(context.exception))
 
 
-@pytest.mark.parametrize("value, expected", [
-    # #261: ordinals from 1000 up read left to right; every part but the
-    # last units/tens is a definite cardinal (article on each coordinated
-    # part), the last is the ordinal, and واحد becomes الحادي.
-    (1101, "الألف والمائة والحادي"),
-    (1234, "الألف والمئتان والرابع والثلاثون"),
-    (2000, "الألفان"),
-    (2001, "الألفان والحادي"),
-    (2024, "الألفان والرابع والعشرون"),
-    (3000, "الثلاثة آلاف"),
-    (10000, "العشرة آلاف"),
-    (11000, "الأحد عشر ألفاً"),
-    (100000, "المائة ألف"),
-    (200000, "المئتا ألف"),
-    (101000, "المائة ألف والألف"),
-    (1000000, "المليون"),
-    (1000017, "المليون والسابع عشر"),
-    (2000000, "المليونان"),
-    (1234567,
-     "المليون والمئتان والأربعة والثلاثون ألفاً والخمسمائة والسابع والستون"),
-    (10**50, "المائة كوينتينيليون"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        # #261: ordinals from 1000 up read left to right; every part but the
+        # last units/tens is a definite cardinal (article on each coordinated
+        # part), the last is the ordinal, and واحد becomes الحادي.
+        (1101, "الألف والمائة والحادي"),
+        (1234, "الألف والمئتان والرابع والثلاثون"),
+        (2000, "الألفان"),
+        (2001, "الألفان والحادي"),
+        (2024, "الألفان والرابع والعشرون"),
+        (3000, "الثلاثة آلاف"),
+        (10000, "العشرة آلاف"),
+        (11000, "الأحد عشر ألفاً"),
+        (100000, "المائة ألف"),
+        (200000, "المئتا ألف"),
+        (101000, "المائة ألف والألف"),
+        (1000000, "المليون"),
+        (1000017, "المليون والسابع عشر"),
+        (2000000, "المليونان"),
+        (
+            1234567,
+            "المليون والمئتان والأربعة والثلاثون ألفاً والخمسمائة والسابع والستون",
+        ),
+        (10**50, "المائة كوينتينيليون"),
+    ],
+)
 def test_ar_ordinal_from_1000_up(value, expected):
     assert num2words(value, lang="ar", to="ordinal") == expected
 
 
 def test_ar_ordinal_from_1000_up_feminine():
     # Only the units/tens ordinal agrees in gender (#261).
-    assert num2words(2001, lang="ar", to="ordinal", gender="f") == (
-        "الألفان والحادية")
+    assert num2words(2001, lang="ar", to="ordinal", gender="f") == ("الألفان والحادية")
     assert num2words(1017, lang="ar", to="ordinal", gender="f") == (
-        "الألف والسابعة عشرة")
-    assert num2words(21, lang="ar", to="ordinal", gender="f") == (
-        "الحادية والعشرون")
+        "الألف والسابعة عشرة"
+    )
+    assert num2words(21, lang="ar", to="ordinal", gender="f") == ("الحادية والعشرون")
 
 
 def test_ar_decimal_uses_arabic_comma_no_double_space():
     # Regression for num2words2#53 (ports savoirfairelinux/num2words#265).
     from num2words2 import num2words
+
     out = num2words(667851.14, lang="ar")
     assert "،" in out  # Arabic comma U+060C
     assert "," not in out  # no Latin comma
@@ -239,8 +244,6 @@ def test_ar_ordinals_use_definite_article_form():
     # 100+ remainder uses بعد + ال + cardinal hundreds.
     assert num2words(122, lang="ar", to="ordinal") == "الثاني والعشرون بعد المائة"
     assert num2words(999, lang="ar", to="ordinal") == "التاسع والتسعون بعد التسعمائة"
-
-
 
 
 def test_ar_dual_endings_switch_with_case_kwarg():

@@ -2762,8 +2762,10 @@ class Num2WordsESTest(TestCase):
 
 # Regression tests for savoirfairelinux/num2words#515 — "uno mil" elision.
 
+
 def test_es_uno_elides_to_un_before_mil():
     from num2words2 import num2words
+
     assert num2words(31000, lang="es") == "treinta y un mil"
     assert num2words(101300, lang="es") == "ciento un mil trescientos"
     assert num2words(891003, lang="es") == "ochocientos noventa y un mil tres"
@@ -2771,6 +2773,7 @@ def test_es_uno_elides_to_un_before_mil():
 
 def test_es_veintiuno_elides_to_veintiun_before_mil_or_millones():
     from num2words2 import num2words
+
     assert num2words(21000, lang="es") == "veintiún mil"
     assert num2words(21000000, lang="es") == "veintiún millones"
 
@@ -2788,6 +2791,7 @@ def test_es_uno_intact_when_terminal():
 def test_es_ordinal_suffix_parses_to_ordinal_form():
     # Regression for num2words2#62 (ports savoirfairelinux/num2words#413).
     from num2words2 import num2words
+
     assert num2words("1ro", lang="es") == "primero"
     assert num2words("1ra", lang="es") == "primera"
     assert num2words("2do", lang="es") == "segundo"
@@ -2802,6 +2806,7 @@ def test_es_ordinal_suffix_parses_to_ordinal_form():
 def test_es_handles_10_27_and_above():
     # Regression for num2words2#71 (ports savoirfairelinux/num2words#501).
     from num2words2 import num2words
+
     assert "quintillón" in num2words(10**30, lang="es")
     assert "nonillón" in num2words(10**54, lang="es")
 
@@ -2812,16 +2817,14 @@ def test_es_ordinal_suffix_currency_after_apocope():
     # path now apocopates a final "uno" ("veintiún euros", "treinta y un
     # euros"), and the ordinal must still replace it for 21, 31, 101, ...
     from num2words2 import num2words
+
     assert num2words("2da", lang="es", to="currency") == "segunda euros"
-    assert num2words("21va", lang="es", to="currency") == (
-        "vigesimoprimera euros")
+    assert num2words("21va", lang="es", to="currency") == ("vigesimoprimera euros")
     assert num2words("21ro", lang="es", to="currency", currency="GBP") == (
-        "vigesimoprimero libras")
-    assert num2words("31ro", lang="es", to="currency") == (
-        "trigésimo primero euros")
-    assert num2words("101ro", lang="es", to="currency") == (
-        "centésimo primero euros")
-    assert num2words("21ro", lang="es_CO", to="currency") == (
-        "vigesimoprimero pesos")
+        "vigesimoprimero libras"
+    )
+    assert num2words("31ro", lang="es", to="currency") == ("trigésimo primero euros")
+    assert num2words("101ro", lang="es", to="currency") == ("centésimo primero euros")
+    assert num2words("21ro", lang="es_CO", to="currency") == ("vigesimoprimero pesos")
     # 1 stays apocopated in es (the ordinal never fires there).
     assert num2words("1ro", lang="es", to="currency") == "un euro"

@@ -79,9 +79,7 @@ def get_language_lines():
     lines = []
     for code in get_languages():
         aliases = sorted(by_canonical.get(code, []))
-        lines.append(
-            "{} ({})".format(code, ", ".join(aliases)) if aliases else code
-        )
+        lines.append("{} ({})".format(code, ", ".join(aliases)) if aliases else code)
     return lines
 
 
@@ -103,28 +101,32 @@ def build_parser():
         help="number to convert into words",
     )
     parser.add_argument(
-        "-L", "--list-languages",
+        "-L",
+        "--list-languages",
         action="store_true",
-        help="list every supported language code (aliases in parentheses) "
-             "and exit",
+        help="list every supported language code (aliases in parentheses) " "and exit",
     )
     parser.add_argument(
-        "-C", "--list-converters",
+        "-C",
+        "--list-converters",
         action="store_true",
         help="list every supported converter and exit",
     )
     parser.add_argument(
-        "-l", "--lang",
+        "-l",
+        "--lang",
         default="en",
         help="output language (default: %(default)s)",
     )
     parser.add_argument(
-        "-t", "--to",
+        "-t",
+        "--to",
         default="cardinal",
         help="output converter (default: %(default)s)",
     )
     parser.add_argument(
-        "-c", "--currency",
+        "-c",
+        "--currency",
         help="ISO 4217 currency code for --to currency/cheque (e.g. USD)",
     )
     parser.add_argument(
@@ -141,17 +143,17 @@ def build_parser():
     parser.add_argument(
         "--style",
         choices=["terse", "us"],
-        help="presentation style: 'terse' ordinals, 'us' English without "
-             "'and'",
+        help="presentation style: 'terse' ordinals, 'us' English without " "'and'",
     )
     parser.add_argument(
         "--errors",
         choices=["raise", "ignore"],
         help="input with no reading (50%%, v2.0.1): 'raise' an error "
-             "(default) or 'ignore' and print it as written",
+        "(default) or 'ignore' and print it as written",
     )
     parser.add_argument(
-        "-v", "--version",
+        "-v",
+        "--version",
         action="version",
         version="num2words2=={}".format(__version__),
     )
@@ -167,8 +169,11 @@ def parse_args(parser, argv):
     # Python 3.14's argparse hands a dash-prefixed token such as "-1x" to the
     # positional instead of rejecting it as an unknown option; reject it here
     # so the CLI behaves the same on every Python version.
-    if (args.number is not None and args.number.startswith("-")
-            and not NEGATIVE_NUMBER.match(args.number)):
+    if (
+        args.number is not None
+        and args.number.startswith("-")
+        and not NEGATIVE_NUMBER.match(args.number)
+    ):
         extras.insert(0, args.number)
         args.number = None
     if extras:

@@ -74,15 +74,11 @@ class TestTRCoverageExtra(unittest.TestCase):
 
     def test_kwarg_spaced(self):
         # Issue #486 — `spaced=True` re-tokenizes with spaces.
-        self.assertEqual(
-            num2words(123, lang="tr", spaced=True), "yüz yirmi üç"
-        )
+        self.assertEqual(num2words(123, lang="tr", spaced=True), "yüz yirmi üç")
         self.assertEqual(
             num2words(1234, lang="tr", spaced=True), "bin iki yüz otuz dört"
         )
-        self.assertEqual(
-            num2words(1_000_000, lang="tr", spaced=True), "bir milyon"
-        )
+        self.assertEqual(num2words(1_000_000, lang="tr", spaced=True), "bir milyon")
 
     def test_kwarg_precision(self):
         # Issue #534 — precision= controls fractional digit count.
@@ -105,15 +101,14 @@ class TestTRCoverageExtra(unittest.TestCase):
         self.assertNotIn("virgül", out)
 
     def test_kwarg_combined(self):
-        out = num2words(
-            1.25, lang="tr", spaced=True, precision=2, decimal_word="nokta"
-        )
+        out = num2words(1.25, lang="tr", spaced=True, precision=2, decimal_word="nokta")
         self.assertIn(" nokta ", out)
         self.assertIn(" yirmi beş", out)
 
     def test_year_passthrough(self):
-        self.assertEqual(num2words(1971, lang="tr", to="year"),
-                         num2words(1971, lang="tr"))
+        self.assertEqual(
+            num2words(1971, lang="tr", to="year"), num2words(1971, lang="tr")
+        )
 
     def test_ordinal_digits(self):
         # Single digit, two digit, three digit ordinals.
@@ -138,8 +133,14 @@ class TestTRCoverageExtra(unittest.TestCase):
     def test_ordinal_complex_multi_triplet(self):
         # Numbers exercising the 700-870 ordinal block: digits at every
         # triplet position.
-        for v in (1_000_001, 1_001_001, 1_111_111, 100_100_100,
-                  101_101_101, 999_999_999):
+        for v in (
+            1_000_001,
+            1_001_001,
+            1_111_111,
+            100_100_100,
+            101_101_101,
+            999_999_999,
+        ):
             out = num2words(v, lang="tr", to="ordinal")
             self.assertTrue(len(out) > 5)
             # Result should not contain the separator we use elsewhere.

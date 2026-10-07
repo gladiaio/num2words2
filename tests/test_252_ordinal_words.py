@@ -18,45 +18,57 @@ def test_es_vigesimo_keeps_its_accent(lang):
     assert num2words(21, lang=lang, to="ordinal") == "vigesimoprimero"
 
 
-@pytest.mark.parametrize("value, expected", [
-    (20, "tjugonde"),
-    (120, "etthundratjugonde"),
-    (10**6, "miljonte"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (20, "tjugonde"),
+        (120, "etthundratjugonde"),
+        (10**6, "miljonte"),
+    ],
+)
 def test_sv(value, expected):
     assert num2words(value, lang="sv", to="ordinal") == expected
 
 
-@pytest.mark.parametrize("value, expected", [
-    (30, "tredivte"),
-    (40, "fyrrende"),
-    (100, "hundrede"),
-    (200, "tohundrede"),
-    (1000, "tusinde"),
-    (2000, "totusinde"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (30, "tredivte"),
+        (40, "fyrrende"),
+        (100, "hundrede"),
+        (200, "tohundrede"),
+        (1000, "tusinde"),
+        (2000, "totusinde"),
+    ],
+)
 def test_da(value, expected):
     assert num2words(value, lang="da", to="ordinal") == expected
 
 
-@pytest.mark.parametrize("value, expected", [
-    (100, "al o sutălea"),
-    (101, "al o sută unulea"),
-    (1000, "al o miilea"),
-    (1001, "al o mie unulea"),
-    (2000, "al două miilea"),
-    (10**6, "al un milionulea"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (100, "al o sutălea"),
+        (101, "al o sută unulea"),
+        (1000, "al o miilea"),
+        (1001, "al o mie unulea"),
+        (2000, "al două miilea"),
+        (10**6, "al un milionulea"),
+    ],
+)
 def test_ro(value, expected):
     assert num2words(value, lang="ro", to="ordinal") == expected
 
 
-@pytest.mark.parametrize("lang, expected", [
-    ("it", "milionesimo"),
-    ("nl", "miljoenste"),
-    ("nb", "millionte"),
-    ("sv", "miljonte"),
-    ("bg", "милионен"),
-])
+@pytest.mark.parametrize(
+    "lang, expected",
+    [
+        ("it", "milionesimo"),
+        ("nl", "miljoenste"),
+        ("nb", "millionte"),
+        ("sv", "miljonte"),
+        ("bg", "милионен"),
+    ],
+)
 def test_one_millionth_has_no_article(lang, expected):
     assert num2words(10**6, lang=lang, to="ordinal") == expected
