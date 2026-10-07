@@ -330,24 +330,9 @@ class Num2WordsBRTest(TestCase):
             num2words(1.5, lang="br", to="currency", currency="EUR"),
             "unan euro hanter-kant sentimoù",
         )
-        self.assertEqual(
-            num2words(0, lang="br", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="br", to="currency", currency="USD"),
-            "zero dollars unan cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="br", to="currency", currency="USD"),
-            "zero dollars hanter-kant cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="br", to="currency", currency="USD"), "unan dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="br", to="currency", currency="USD"),
-            "unan dollar hanter-kant cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="br", to="currency", currency="USD")
 
     def test_year(self):
         """Test year conversion."""

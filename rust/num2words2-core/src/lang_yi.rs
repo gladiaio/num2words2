@@ -187,6 +187,12 @@
 //!     fallback (bug 3).** The integer part of a large value comes back as bare
 //!     digits: `to_cardinal_float(Decimal("98746251323029.99"))` ==
 //!     "98746251323029 פּונקט נײַן נײַן", not words.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses דאָלאַר / סענט. Examples in these docs that quote
+//! English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -495,7 +501,7 @@ impl LangYi {
         // USD is ASCII English, not Yiddish — see module bug 10.
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["דאָלאַר", "דאָלאַר"], &["סענט", "סענט"]),
         );
         let fallback_forms = forms[FALLBACK_CODE].clone();
         LangYi { forms, fallback_forms }

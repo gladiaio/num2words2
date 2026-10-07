@@ -205,6 +205,13 @@
 //! * `N2WError::NotImplemented` — `to_cheque` with a code outside
 //!   {NGN, USD, EUR}, raised by the inherited `Num2Word_Base.to_cheque`.
 //!   `to_currency` never raises this (bug 6).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Yoruba cent noun was found, so USD and EUR raise
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -290,8 +297,8 @@ const FALLBACK_CURRENCY: &str = "NGN";
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert("NGN", CurrencyForms::new(&["náírà", "náírà"], &["kóbò", "kóbò"]));
-    m.insert("USD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]));
-    m.insert("EUR", CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]));
+    // USD/EUR were English ("dollars", "cents"); no reliable Yoruba subunit
+    // noun was found, so they raise NotImplementedError (#222).
     m
 }
 

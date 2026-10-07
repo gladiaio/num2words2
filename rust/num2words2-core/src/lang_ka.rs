@@ -124,6 +124,13 @@
 //! * `Value` — `to_currency` runs `int()` over `str(val).split(".")[0]`, so a
 //!   float large enough for Python to `repr` in scientific notation feeds
 //!   `int("1e+16")` and raises `ValueError`. See the note on [`LangKa::to_currency`].
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use დოლარი / ევრო with ცენტი (the noun stays singular
+//! after a numeral). Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -702,7 +709,7 @@ impl LangKa {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["დოლარი", "დოლარი"], &["ცენტი", "ცენტი"]),
         );
         // KA declares CURRENCY_FORMS on its own class, so `Num2Word_EN.__init__`
         // mutating `Num2Word_EUR`'s shared class dict never reaches it: EUR here
@@ -711,7 +718,7 @@ impl LangKa {
         // resolving). Verified against the live interpreter, not the source.
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["ევრო", "ევრო"], &["ცენტი", "ცენტი"]),
         );
         let fallback_forms = currency_forms
             .get(FALLBACK_CURRENCY)

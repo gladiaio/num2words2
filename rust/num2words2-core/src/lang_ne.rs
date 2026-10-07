@@ -179,6 +179,12 @@
 //!    halves through `_int_to_word`, not `to_cardinal`, so
 //!    `to_currency(10**9, currency="EUR") == "1000000000 euros"` — ASCII
 //!    digits with an English unit (verified).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use डलर / युरो with सेन्ट. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -490,8 +496,8 @@ impl LangNe {
             "NPR",
             CurrencyForms::new(&["रुपैयाँ", "रुपैयाँ"], &["पैसा", "पैसा"]),
         );
-        currency_forms.insert("USD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]));
-        currency_forms.insert("EUR", CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]));
+        currency_forms.insert("USD", CurrencyForms::new(&["डलर", "डलर"], &["सेन्ट", "सेन्ट"]));
+        currency_forms.insert("EUR", CurrencyForms::new(&["युरो", "युरो"], &["सेन्ट", "सेन्ट"]));
         LangNe { currency_forms }
     }
 

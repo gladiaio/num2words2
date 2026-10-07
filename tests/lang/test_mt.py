@@ -343,22 +343,22 @@ class Num2WordsMTTest(TestCase):
             "wieħed ewro ħamsin ċenteżmi",
         )
         self.assertEqual(
-            num2words(0, lang="mt", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="mt", to="currency", currency="USD"), "zero dollari"
         )
         self.assertEqual(
             num2words(0.01, lang="mt", to="currency", currency="USD"),
-            "zero dollars wieħed cent",
+            "zero dollari wieħed ċenteżmu",
         )
         self.assertEqual(
             num2words(0.5, lang="mt", to="currency", currency="USD"),
-            "zero dollars ħamsin cents",
+            "zero dollari ħamsin ċenteżmi",
         )
         self.assertEqual(
-            num2words(1, lang="mt", to="currency", currency="USD"), "wieħed dollar"
+            num2words(1, lang="mt", to="currency", currency="USD"), "wieħed dollaru"
         )
         self.assertEqual(
             num2words(1.5, lang="mt", to="currency", currency="USD"),
-            "wieħed dollar ħamsin cents",
+            "wieħed dollaru ħamsin ċenteżmi",
         )
 
     def test_year(self):

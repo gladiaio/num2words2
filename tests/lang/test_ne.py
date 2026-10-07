@@ -295,40 +295,40 @@ class Num2WordsNETest(TestCase):
             "एक रुपैयाँ पचास पैसा",
         )
         self.assertEqual(
-            num2words(0, lang="ne", to="currency", currency="USD"), "शून्य dollars"
+            num2words(0, lang="ne", to="currency", currency="USD"), "शून्य डलर"
         )
         self.assertEqual(
             num2words(0.01, lang="ne", to="currency", currency="USD"),
-            "शून्य dollars एक cent",
+            "शून्य डलर एक सेन्ट",
         )
         self.assertEqual(
             num2words(0.5, lang="ne", to="currency", currency="USD"),
-            "शून्य dollars पचास cents",
+            "शून्य डलर पचास सेन्ट",
         )
         self.assertEqual(
-            num2words(1, lang="ne", to="currency", currency="USD"), "एक dollar"
+            num2words(1, lang="ne", to="currency", currency="USD"), "एक डलर"
         )
         self.assertEqual(
             num2words(1.5, lang="ne", to="currency", currency="USD"),
-            "एक dollar पचास cents",
+            "एक डलर पचास सेन्ट",
         )
         self.assertEqual(
-            num2words(0, lang="ne", to="currency", currency="EUR"), "शून्य euros"
+            num2words(0, lang="ne", to="currency", currency="EUR"), "शून्य युरो"
         )
         self.assertEqual(
             num2words(0.01, lang="ne", to="currency", currency="EUR"),
-            "शून्य euros एक cent",
+            "शून्य युरो एक सेन्ट",
         )
         self.assertEqual(
             num2words(0.5, lang="ne", to="currency", currency="EUR"),
-            "शून्य euros पचास cents",
+            "शून्य युरो पचास सेन्ट",
         )
         self.assertEqual(
-            num2words(1, lang="ne", to="currency", currency="EUR"), "एक euro"
+            num2words(1, lang="ne", to="currency", currency="EUR"), "एक युरो"
         )
         self.assertEqual(
             num2words(1.5, lang="ne", to="currency", currency="EUR"),
-            "एक euro पचास cents",
+            "एक युरो पचास सेन्ट",
         )
 
     def test_year(self):

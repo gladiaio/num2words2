@@ -329,40 +329,40 @@ class Num2WordsSOTest(TestCase):
             "kow shilin konton sent",
         )
         self.assertEqual(
-            num2words(0, lang="so", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="so", to="currency", currency="USD"), "zero doolar"
         )
         self.assertEqual(
             num2words(0.01, lang="so", to="currency", currency="USD"),
-            "zero dollars kow cent",
+            "zero doolar kow senti",
         )
         self.assertEqual(
             num2words(0.5, lang="so", to="currency", currency="USD"),
-            "zero dollars konton cents",
+            "zero doolar konton senti",
         )
         self.assertEqual(
-            num2words(1, lang="so", to="currency", currency="USD"), "kow dollar"
+            num2words(1, lang="so", to="currency", currency="USD"), "kow doolar"
         )
         self.assertEqual(
             num2words(1.5, lang="so", to="currency", currency="USD"),
-            "kow dollar konton cents",
+            "kow doolar konton senti",
         )
         self.assertEqual(
-            num2words(0, lang="so", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="so", to="currency", currency="EUR"), "zero yuuro"
         )
         self.assertEqual(
             num2words(0.01, lang="so", to="currency", currency="EUR"),
-            "zero euros kow cent",
+            "zero yuuro kow senti",
         )
         self.assertEqual(
             num2words(0.5, lang="so", to="currency", currency="EUR"),
-            "zero euros konton cents",
+            "zero yuuro konton senti",
         )
         self.assertEqual(
-            num2words(1, lang="so", to="currency", currency="EUR"), "kow euro"
+            num2words(1, lang="so", to="currency", currency="EUR"), "kow yuuro"
         )
         self.assertEqual(
             num2words(1.5, lang="so", to="currency", currency="EUR"),
-            "kow euro konton cents",
+            "kow yuuro konton senti",
         )
 
     def test_year(self):

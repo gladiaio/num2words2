@@ -105,6 +105,13 @@
 //! The two disagree about unknown codes, and that asymmetry is real and
 //! corpus-pinned: `to_currency("GBP")` silently prints NZD's "tāra" (quirk 6)
 //! while `to_cheque("GBP")` raises `NotImplementedError`.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). The Māori US dollar is "tāra" like NZD, and the euro has no
+//! reliable Māori noun, so USD and EUR raise NotImplementedError. Examples in
+//! these docs that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -297,14 +304,10 @@ impl LangMi {
             "NZD",
             CurrencyForms::new(&["tāra", "tāra"], &["hēneti", "hēneti"]),
         );
-        forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"). The Māori US
+        // dollar is "tāra" too, which would read exactly like NZD, and the
+        // euro has no reliable Māori noun, so both raise NotImplementedError
+        // (#222).
         LangMi { forms }
     }
 }

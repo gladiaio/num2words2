@@ -314,420 +314,135 @@ class Num2WordsTETest(TestCase):
 
     def test_currency(self):
         """Test currency conversion."""
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="AUD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="BYN")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="CAD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="EEK")
         self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="AUD"), "సున్న dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="AUD"),
-            "సున్న dollars, ఒకటి cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="AUD"),
-            "సున్న dollars, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="AUD"), "ఒకటి dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="AUD"),
-            "ఒకటి dollar, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="BYN"), "సున్న roubles"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="BYN"),
-            "సున్న roubles, ఒకటి kopek",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="BYN"),
-            "సున్న roubles, యాభై kopeks",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="BYN"), "ఒకటి rouble"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="BYN"),
-            "ఒకటి rouble, యాభై kopeks",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="CAD"), "సున్న dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="CAD"),
-            "సున్న dollars, ఒకటి cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="CAD"),
-            "సున్న dollars, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="CAD"), "ఒకటి dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="CAD"),
-            "ఒకటి dollar, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="EEK"), "సున్న kroons"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="EEK"),
-            "సున్న kroons, ఒకటి sent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="EEK"),
-            "సున్న kroons, యాభై senti",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="EEK"), "ఒకటి kroon"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="EEK"),
-            "ఒకటి kroon, యాభై senti",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="EUR"), "సున్న euros"
+            num2words(0, lang="te", to="currency", currency="EUR"), "సున్న యూరోలు"
         )
         self.assertEqual(
             num2words(0.01, lang="te", to="currency", currency="EUR"),
-            "సున్న euros, ఒకటి cent",
+            "సున్న యూరోలు, ఒకటి సెంట్",
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="EUR"),
-            "సున్న euros, యాభై cents",
+            "సున్న యూరోలు, యాభై సెంట్లు",
         )
         self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="EUR"), "ఒకటి euro"
+            num2words(1, lang="te", to="currency", currency="EUR"), "ఒకటి యూరో"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="EUR"),
-            "ఒకటి euro, యాభై cents",
+            "ఒకటి యూరో, యాభై సెంట్లు",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="GBP")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="LTL")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="LVL")
         self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="GBP"), "సున్న pounds"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="GBP"),
-            "సున్న pounds, ఒకటి penny",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="GBP"),
-            "సున్న pounds, యాభై pence",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="GBP"), "ఒకటి pound"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="GBP"),
-            "ఒకటి pound, యాభై pence",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="LTL"), "సున్న litas"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="LTL"),
-            "సున్న litas, ఒకటి cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="LTL"),
-            "సున్న litas, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="LTL"), "ఒకటి litas"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="LTL"),
-            "ఒకటి litas, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="LVL"), "సున్న lats"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="LVL"),
-            "సున్న lats, ఒకటి santim",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="LVL"),
-            "సున్న lats, యాభై santims",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="LVL"), "ఒకటి lat"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="LVL"),
-            "ఒకటి lat, యాభై santims",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="USD"), "సున్న dollars"
+            num2words(0, lang="te", to="currency", currency="USD"), "సున్న డాలర్లు"
         )
         self.assertEqual(
             num2words(0.01, lang="te", to="currency", currency="USD"),
-            "సున్న dollars, ఒకటి cent",
+            "సున్న డాలర్లు, ఒకటి సెంట్",
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="USD"),
-            "సున్న dollars, యాభై cents",
+            "సున్న డాలర్లు, యాభై సెంట్లు",
         )
         self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="USD"), "ఒకటి dollar"
+            num2words(1, lang="te", to="currency", currency="USD"), "ఒకటి డాలర్"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="USD"),
-            "ఒకటి dollar, యాభై cents",
+            "ఒకటి డాలర్, యాభై సెంట్లు",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="RUB")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="SEK")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="NOK")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="PLN")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="MXN")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="RON")
         self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="RUB"), "సున్న roubles"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="RUB"),
-            "సున్న roubles, ఒకటి kopek",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="RUB"),
-            "సున్న roubles, యాభై kopeks",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="RUB"), "ఒకటి rouble"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="RUB"),
-            "ఒకటి rouble, యాభై kopeks",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="SEK"), "సున్న kronor"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="SEK"),
-            "సున్న kronor, ఒకటి öre",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="SEK"),
-            "సున్న kronor, యాభై öre",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="SEK"), "ఒకటి krona"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="SEK"),
-            "ఒకటి krona, యాభై öre",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="NOK"), "సున్న kroner"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="NOK"),
-            "సున్న kroner, ఒకటి øre",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="NOK"),
-            "సున్న kroner, యాభై øre",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="NOK"), "ఒకటి krone"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="NOK"),
-            "ఒకటి krone, యాభై øre",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="PLN"), "సున్న zlotys"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="PLN"),
-            "సున్న zlotys, ఒకటి grosz",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="PLN"),
-            "సున్న zlotys, యాభై groszy",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="PLN"), "ఒకటి zloty"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="PLN"),
-            "ఒకటి zloty, యాభై groszy",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="MXN"), "సున్న pesos"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="MXN"),
-            "సున్న pesos, ఒకటి cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="MXN"),
-            "సున్న pesos, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="MXN"), "ఒకటి peso"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="MXN"),
-            "ఒకటి peso, యాభై cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="RON"), "సున్న lei"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="RON"),
-            "సున్న lei, ఒకటి ban",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="RON"),
-            "సున్న lei, యాభై bani",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="RON"), "ఒకటి leu"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="RON"),
-            "ఒకటి leu, యాభై bani",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="INR"), "సున్న rupees"
+            num2words(0, lang="te", to="currency", currency="INR"), "సున్న రూపాయలు"
         )
         self.assertEqual(
             num2words(0.01, lang="te", to="currency", currency="INR"),
-            "సున్న rupees, ఒకటి paisa",
+            "సున్న రూపాయలు, ఒకటి పైసా",
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="INR"),
-            "సున్న rupees, యాభై paise",
+            "సున్న రూపాయలు, యాభై పైసలు",
         )
         self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="INR"), "ఒకటి rupee"
+            num2words(1, lang="te", to="currency", currency="INR"), "ఒకటి రూపాయి"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="INR"),
-            "ఒకటి rupee, యాభై paise",
+            "ఒకటి రూపాయి, యాభై పైసలు",
         )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="HUF")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="ISK")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="UZS")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="SAR")
         self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="HUF"), "సున్న forint"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="HUF"),
-            "సున్న forint, ఒకటి fillér",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="HUF"),
-            "సున్న forint, యాభై fillér",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="HUF"), "ఒకటి forint"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="HUF"),
-            "ఒకటి forint, యాభై fillér",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="ISK"), "సున్న krónur"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="ISK"),
-            "సున్న krónur, ఒకటి aur",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="ISK"),
-            "సున్న krónur, యాభై aurar",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="ISK"), "ఒకటి króna"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="ISK"),
-            "ఒకటి króna, యాభై aurar",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="UZS"), "సున్న sums"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="UZS"),
-            "సున్న sums, ఒకటి tiyin",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="UZS"),
-            "సున్న sums, యాభై tiyins",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="UZS"), "ఒకటి sum"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="UZS"),
-            "ఒకటి sum, యాభై tiyins",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="SAR"), "సున్న riyals"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="SAR"),
-            "సున్న riyals, ఒకటి halalah",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="SAR"),
-            "సున్న riyals, యాభై halalas",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="SAR"), "ఒకటి riyal"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="SAR"),
-            "ఒకటి riyal, యాభై halalas",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="JPY"), "సున్న yen"
+            num2words(0, lang="te", to="currency", currency="JPY"), "సున్న యెన్‌లు"
         )
         self.assertEqual(
             num2words(0.01, lang="te", to="currency", currency="JPY"),
-            "సున్న yen, ఒకటి sen",
+            "సున్న యెన్‌లు, ఒకటి సెన్",
         )
         self.assertEqual(
             num2words(0.5, lang="te", to="currency", currency="JPY"),
-            "సున్న yen, యాభై sen",
+            "సున్న యెన్‌లు, యాభై సెన్‌లు",
         )
         self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="JPY"), "ఒకటి yen"
+            num2words(1, lang="te", to="currency", currency="JPY"), "ఒకటి యెన్"
         )
         self.assertEqual(
             num2words(1.5, lang="te", to="currency", currency="JPY"),
-            "ఒకటి yen, యాభై sen",
+            "ఒకటి యెన్, యాభై సెన్‌లు",
         )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="KRW"), "సున్న won"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="KRW"),
-            "సున్న won, ఒకటి jeon",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="KRW"),
-            "సున్న won, యాభై jeon",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="KRW"), "ఒకటి won"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="KRW"),
-            "ఒకటి won, యాభై jeon",
-        )
-        self.assertEqual(
-            num2words(0, lang="te", to="currency", currency="NGN"), "సున్న naira"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="te", to="currency", currency="NGN"),
-            "సున్న naira, ఒకటి kobo",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="te", to="currency", currency="NGN"),
-            "సున్న naira, యాభై kobo",
-        )
-        self.assertEqual(
-            num2words(1, lang="te", to="currency", currency="NGN"), "ఒకటి naira"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="te", to="currency", currency="NGN"),
-            "ఒకటి naira, యాభై kobo",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="KRW")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="te", to="currency", currency="NGN")
 
     def test_year(self):
         """Test year conversion."""

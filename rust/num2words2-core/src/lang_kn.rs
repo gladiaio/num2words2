@@ -143,11 +143,16 @@
 //! code -- including the 3-decimal (KWD/BHD) and 0-decimal (JPY) currencies.
 //! Both halves of this asymmetry are confirmed against the frozen corpus.
 //!
-//! [`CURRENCY_FORMS`] and [`CURRENCY_ADJECTIVES`] below were therefore dumped
-//! from a live interpreter after a full `import num2words2`, not transcribed
-//! from `lang_EUR.py`. Re-deriving them from the source file would silently
-//! produce a different (and wrong) table. `CURRENCY_ADJECTIVES` happens to be
-//! unmutated, but is dumped the same way so the two cannot drift apart.
+//! **Replaced by native nouns (gladiaio/num2words2#222).** That table is
+//! English — even INR read "rupees"/"paise" — so [`CURRENCY_FORMS`] now holds
+//! Kannada nouns for the codes with a sourced unit and subunit (EUR, GBP, INR,
+//! JPY, USD; singular after a numeral, as Kannada usually writes "೧೦೦
+//! ರೂಪಾಯಿ") and every other code raises NotImplementedError. The rest of this
+//! section describes Python's table.
+//!
+//! [`CURRENCY_ADJECTIVES`] below was dumped from a live interpreter after a
+//! full `import num2words2` (it happens to be unmutated). Its demonyms are
+//! still English ("Indian"); that is open.
 //!
 //! # Errors
 //!
@@ -300,60 +305,21 @@ const CRORE: &str = "\u{0c95}\u{0cca}\u{0cd5}\u{0c9f}\u{0cbf}"; // ಕೋಟ�
 
 // --- Currency ------------------------------------------------------------
 //
-// See the "Currency" section of the module docs: this is `Num2Word_EUR`'s
-// CURRENCY_FORMS *as mutated in place by `Num2Word_EN.__init__`*, which is the
-// dict KN actually reads at call time. Dumped from the live interpreter
-// (`CONVERTER_CLASSES["kn"].CURRENCY_FORMS`) rather than transcribed from
-// lang_EUR.py, because lang_EUR.py is not what KN ends up seeing.
+// See the "Currency" section of the module docs: Python read `Num2Word_EUR`'s
+// CURRENCY_FORMS as mutated in place by `Num2Word_EN.__init__` (English); the
+// forms below are Kannada (#222).
 //
 // Non-ASCII is escaped for the same reason the card tables are (see "Unicode"
 // above): the escapes survive tools that would NFC-normalize literals.
 
-/// `(code, unit_forms, subunit_forms)` -- 39 entries.
-///
-/// Arity is load-bearing: `pluralize` indexes into these, and PLN/RON carry a
-/// third form that must not be dropped even though EUR's `pluralize` never
-/// reaches index 2.
-const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 39] = [
-    ("AED", &["dirham", "dirhams"], &["fils", "fils"]),
-    ("AUD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("BHD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("BRL", &["real", "reais"], &["cent", "cents"]),
-    ("BYN", &["rouble", "roubles"], &["kopek", "kopeks"]),
-    ("CAD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("CHF", &["franc", "francs"], &["rappen", "rappen"]),
-    ("CNY", &["yuan", "yuan"], &["fen", "fen"]),
-    ("EEK", &["kroon", "kroons"], &["sent", "senti"]),
-    ("EUR", &["euro", "euros"], &["cent", "cents"]),
-    ("GBP", &["pound", "pounds"], &["penny", "pence"]),
-    ("HKD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("HUF", &["forint", "forint"], &["fill\u{00e9}r", "fill\u{00e9}r"]), // filler
-    ("INR", &["rupee", "rupees"], &["paisa", "paise"]),
-    ("IQD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("ISK", &["kr\u{00f3}na", "kr\u{00f3}nur"], &["aur", "aurar"]), // krona/kronur
-    ("JOD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("JPY", &["yen", "yen"], &["sen", "sen"]),
-    ("KRW", &["won", "won"], &["jeon", "jeon"]),
-    ("KWD", &["dinar", "dinars"], &["fils", "fils"]),
-    ("LTL", &["litas", "litas"], &["cent", "cents"]),
-    ("LVL", &["lat", "lats"], &["santim", "santims"]),
-    ("LYD", &["dinar", "dinars"], &["dirham", "dirhams"]),
-    ("MXN", &["peso", "pesos"], &["cent", "cents"]),
-    ("NGN", &["naira", "naira"], &["kobo", "kobo"]),
-    ("NOK", &["krone", "kroner"], &["\u{00f8}re", "\u{00f8}re"]), // ore
-    ("NZD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("OMR", &["rial", "rials"], &["baisa", "baisa"]),
-    ("PLN", &["zloty", "zlotys", "zlotu"], &["grosz", "groszy"]),
-    ("QAR", &["riyal", "riyals"], &["dirham", "dirhams"]),
-    ("RON", &["leu", "lei", "de lei"], &["ban", "bani", "de bani"]),
-    ("RUB", &["rouble", "roubles"], &["kopek", "kopeks"]),
-    ("SAR", &["riyal", "riyals"], &["halalah", "halalas"]),
-    ("SEK", &["krona", "kronor"], &["\u{00f6}re", "\u{00f6}re"]), // ore
-    ("SGD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("TND", &["dinar", "dinars"], &["millime", "millimes"]),
-    ("USD", &["dollar", "dollars"], &["cent", "cents"]),
-    ("UZS", &["sum", "sums"], &["tiyin", "tiyins"]),
-    ("ZAR", &["rand", "rand"], &["cent", "cents"]),
+/// `(code, unit_forms, subunit_forms)` in Kannada (#222). The noun stays
+/// singular after a numeral, so both slots usually hold the same word.
+const CURRENCY_FORMS: [(&str, &[&str], &[&str]); 5] = [
+    ("EUR", &["\u{0caf}\u{0cc1}\u{0cb0}\u{0ccb}", "\u{0caf}\u{0cc1}\u{0cb0}\u{0ccb}"], &["\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}", "\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}"]),
+    ("GBP", &["\u{0caa}\u{0ccc}\u{0c82}\u{0ca1}\u{0ccd}", "\u{0caa}\u{0ccc}\u{0c82}\u{0ca1}\u{0ccd}"], &["\u{0caa}\u{0cc6}\u{0ca8}\u{0ccd}\u{0ca8}\u{0cbf}", "\u{0caa}\u{0cc6}\u{0ca8}\u{0ccd}\u{0cb8}\u{0ccd}"]),
+    ("INR", &["\u{0cb0}\u{0cc2}\u{0caa}\u{0cbe}\u{0caf}\u{0cbf}", "\u{0cb0}\u{0cc2}\u{0caa}\u{0cbe}\u{0caf}\u{0cbf}"], &["\u{0caa}\u{0cc8}\u{0cb8}\u{0cc6}", "\u{0caa}\u{0cc8}\u{0cb8}\u{0cc6}"]),
+    ("JPY", &["\u{0caf}\u{0cc6}\u{0ca8}\u{0ccd}", "\u{0caf}\u{0cc6}\u{0ca8}\u{0ccd}"], &["\u{0cb8}\u{0cc6}\u{0ca8}\u{0ccd}", "\u{0cb8}\u{0cc6}\u{0ca8}\u{0ccd}"]),
+    ("USD", &["\u{0ca1}\u{0cbe}\u{0cb2}\u{0cb0}\u{0ccd}", "\u{0ca1}\u{0cbe}\u{0cb2}\u{0cb0}\u{0ccd}"], &["\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}", "\u{0cb8}\u{0cc6}\u{0c82}\u{0c9f}\u{0ccd}"]),
 ];
 
 /// `Num2Word_EUR.CURRENCY_ADJECTIVES` -- 16 entries, **not** mutated by anyone

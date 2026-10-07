@@ -313,40 +313,40 @@ class Num2WordsNNTest(TestCase):
             "ein krone femti øre",
         )
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="USD"), "null dollars"
+            num2words(0, lang="nn", to="currency", currency="USD"), "null dollar"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="USD"),
-            "null dollars ein cent",
+            "null dollar ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="USD"),
-            "null dollars femti cents",
+            "null dollar femti cent",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="USD"), "ein dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="nn", to="currency", currency="USD"),
-            "ein dollar femti cents",
+            "ein dollar femti cent",
         )
         self.assertEqual(
-            num2words(0, lang="nn", to="currency", currency="EUR"), "null euros"
+            num2words(0, lang="nn", to="currency", currency="EUR"), "null euro"
         )
         self.assertEqual(
             num2words(0.01, lang="nn", to="currency", currency="EUR"),
-            "null euros ein cent",
+            "null euro ein cent",
         )
         self.assertEqual(
             num2words(0.5, lang="nn", to="currency", currency="EUR"),
-            "null euros femti cents",
+            "null euro femti cent",
         )
         self.assertEqual(
             num2words(1, lang="nn", to="currency", currency="EUR"), "ein euro"
         )
         self.assertEqual(
             num2words(1.5, lang="nn", to="currency", currency="EUR"),
-            "ein euro femti cents",
+            "ein euro femti cent",
         )
 
     def test_year(self):

@@ -159,6 +159,13 @@
 //! No cross-call mutable state: `setup()` only assigns constant tables, and no
 //! method sets a flag that another consumes. The Rust path being stateless is
 //! safe here.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Wolof cent noun was found, so USD and EUR raise
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -235,14 +242,8 @@ impl LangWo {
         let xof = CurrencyForms::new(&["dërëm", "dërëm"], &["santim", "santim"]);
         let mut currency_forms = HashMap::new();
         currency_forms.insert("XOF", xof.clone());
-        currency_forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        currency_forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"); no reliable Wolof cent noun was found, so
+        // they raise NotImplementedError (#222).
         LangWo {
             currency_forms,
             currency_forms_fallback: xof,

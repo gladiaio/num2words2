@@ -200,6 +200,12 @@
 //! shortest-round-trip implementation `currency.rs` exists to avoid and wrong
 //! for the `Decimal` row. No corpus row reaches it (the smallest float is
 //! 0.01). Flagged rather than hacked around.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dollar / yevro with sent. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -439,11 +445,11 @@ impl LangUz {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dollar", "dollar"], &["sent", "sent"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["yevro", "yevro"], &["sent", "sent"]),
         );
         let fallback_forms = currency_forms
             .get("UZS")

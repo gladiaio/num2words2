@@ -338,22 +338,22 @@ class Num2WordsYITest(TestCase):
             "איינס אייראָ פופציק צענט",
         )
         self.assertEqual(
-            num2words(0, lang="yi", to="currency", currency="USD"), "נול dollars"
+            num2words(0, lang="yi", to="currency", currency="USD"), "נול דאָלאַר"
         )
         self.assertEqual(
             num2words(0.01, lang="yi", to="currency", currency="USD"),
-            "נול dollars איינס cent",
+            "נול דאָלאַר איינס סענט",
         )
         self.assertEqual(
             num2words(0.5, lang="yi", to="currency", currency="USD"),
-            "נול dollars פופציק cents",
+            "נול דאָלאַר פופציק סענט",
         )
         self.assertEqual(
-            num2words(1, lang="yi", to="currency", currency="USD"), "איינס dollar"
+            num2words(1, lang="yi", to="currency", currency="USD"), "איינס דאָלאַר"
         )
         self.assertEqual(
             num2words(1.5, lang="yi", to="currency", currency="USD"),
-            "איינס dollar פופציק cents",
+            "איינס דאָלאַר פופציק סענט",
         )
 
     def test_year(self):

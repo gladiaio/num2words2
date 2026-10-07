@@ -76,9 +76,9 @@
 //!    negword, as the float path does: "mínusz öt forint".
 //! 9. **`adjective=True` is silently ignored for ints.** HU's int branch
 //!    never consults `CURRENCY_ADJECTIVES`, so `to_currency(5, "USD",
-//!    adjective=True)` == "öt dollars", while the float path *does* apply it:
-//!    `to_currency(-5.0, "USD", adjective=True)` == "mínusz öt US dollars,
-//!    nulla cents". Verified against the interpreter.
+//!    adjective=True)` == "öt dollár", while the float path *does* apply it:
+//!    `to_currency(-5.0, "USD", adjective=True)` == "mínusz öt US dollár,
+//!    nulla cent" (Python: "öt dollars"; the adjectives are still English).
 //! 10. ~~**Whole floats ride the integer branches, but
 //!    `big_number_to_cardinal` measures `len(str(value))`**~~ — on the float
 //!    repr, so at/above 1e16 the exponent form (`"1e+16"`) picked the wrong
@@ -143,11 +143,10 @@
 //! it (`self.CURRENCY_PRECISION = {…}`) instead of mutating, which creates an
 //! instance attribute on the EN object and leaves `Num2Word_Base`'s empty
 //! `{}` intact for everyone else. So HU keeps divisor 100 for *every* code —
-//! the 3-decimal currencies are **not** 3-decimal here (`to_currency(12.34,
-//! "KWD")` == "tizenkettő dinars, harmincnégy fils", i.e. 34 fils out of 100,
-//! and the cheque reads "56/100 DINARS" not "560/1000"), and the 0-decimal
-//! ones still take a subunit (`to_currency(0.01, "JPY")` == "nulla yen, egy
-//! sen"). `Num2Word_Base.to_currency`'s `divisor == 1` rounding branch is
+//! the 3-decimal currencies were **not** 3-decimal in Python (`to_currency(12.34,
+//! "KWD")` == "tizenkettő dinars, harmincnégy fils", i.e. 34 fils out of 100;
+//! KWD now raises, #222), and the 0-decimal ones still take a subunit
+//! (`to_currency(0.01, "JPY")` == "nulla jen, egy szen"). `Num2Word_Base.to_currency`'s `divisor == 1` rounding branch is
 //! therefore unreachable from HU. All corpus-confirmed. The trait's default
 //! `currency_precision` already returns 100 unconditionally, so it is left
 //! alone rather than overridden with an identical body.
@@ -392,70 +391,47 @@ fn build_cards() -> Cards {
     cards
 }
 
-/// The `CURRENCY_FORMS` table HU actually sees at runtime.
+/// HU's `CURRENCY_FORMS`, in Hungarian (#222).
 ///
-/// This is `Num2Word_EUR.CURRENCY_FORMS` **after** `Num2Word_EN.__init__` has
-/// rewritten it in place — see the module docs. Entries EN overwrote or added
-/// are marked; everything else is EUR's own. Built once and stored on the
-/// struct: constructing it per call is what made an earlier revision of this
-/// port 10x slower than the Python it replaces.
-///
-/// Arity is load-bearing. `PLN` and `RON` carry a third form, which HU's int
-/// branch and `Num2Word_EUR.pluralize` both ignore — they only ever index
-/// slot 0 or slot 1. Dropping it would still be wrong, since `len(cr1) > 1`
-/// and the `IndexError` surface are observable.
+/// Python saw `Num2Word_EUR.CURRENCY_FORMS` **after** `Num2Word_EN.__init__`
+/// had rewritten it in place (see the module docs), i.e. English nouns: "öt
+/// dollars", "kettő euros". The port keeps the codes with a sourced Hungarian
+/// unit and subunit noun and raises NotImplementedError for the rest. Built
+/// once and stored on the struct: constructing it per call is what made an
+/// earlier revision of this port 10x slower than the Python it replaces.
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m = HashMap::new();
     let mut add = |code: &'static str, unit: &[&str], subunit: &[&str]| {
         m.insert(code, CurrencyForms::new(unit, subunit));
     };
 
-    // --- added by Num2Word_EN.__init__ (absent from lang_EUR.py) ---
-    add("AED", &["dirham", "dirhams"], &["fils", "fils"]);
-    add("BHD", &["dinar", "dinars"], &["fils", "fils"]);
-    add("BRL", &["real", "reais"], &["cent", "cents"]);
-    add("CHF", &["franc", "francs"], &["rappen", "rappen"]);
-    add("CNY", &["yuan", "yuan"], &["fen", "fen"]);
-    add("HKD", &["dollar", "dollars"], &["cent", "cents"]);
-    add("IQD", &["dinar", "dinars"], &["fils", "fils"]);
-    add("JOD", &["dinar", "dinars"], &["fils", "fils"]);
-    add("KWD", &["dinar", "dinars"], &["fils", "fils"]);
-    add("LYD", &["dinar", "dinars"], &["dirham", "dirhams"]);
-    add("NGN", &["naira", "naira"], &["kobo", "kobo"]);
-    add("NZD", &["dollar", "dollars"], &["cent", "cents"]);
-    add("OMR", &["rial", "rials"], &["baisa", "baisa"]);
-    add("QAR", &["riyal", "riyals"], &["dirham", "dirhams"]);
-    add("SGD", &["dollar", "dollars"], &["cent", "cents"]);
-    add("TND", &["dinar", "dinars"], &["millime", "millimes"]);
-    add("ZAR", &["rand", "rand"], &["cent", "cents"]);
-
-    // --- overwritten by Num2Word_EN.__init__ (EUR's literal in the comment) ---
-    add("AUD", &["dollar", "dollars"], &["cent", "cents"]); // EUR: GENERIC_DOLLARS
-    add("CAD", &["dollar", "dollars"], &["cent", "cents"]); // EUR: GENERIC_DOLLARS
-    add("EUR", &["euro", "euros"], &["cent", "cents"]); // EUR: ("euro", "euro")
-    add("GBP", &["pound", "pounds"], &["penny", "pence"]); // EUR: ("pound sterling", …)
-    add("INR", &["rupee", "rupees"], &["paisa", "paise"]); // EUR: identical
-    add("JPY", &["yen", "yen"], &["sen", "sen"]); // EUR: identical
-    add("KRW", &["won", "won"], &["jeon", "jeon"]); // EUR: identical
-    add("MXN", &["peso", "pesos"], &["cent", "cents"]); // EUR: identical
-    add("SAR", &["riyal", "riyals"], &["halalah", "halalas"]); // EUR: ("saudi riyal", …)
-    add("USD", &["dollar", "dollars"], &["cent", "cents"]); // EUR: GENERIC_DOLLARS
-
-    // --- untouched lang_EUR.py entries ---
-    add("BYN", &["rouble", "roubles"], &["kopek", "kopeks"]);
-    add("EEK", &["kroon", "kroons"], &["sent", "senti"]);
+    // Hungarian nouns (#222), singular in both slots: a noun after a numeral
+    // never takes the plural ("két dollár"). Python's table was the English
+    // one Num2Word_EN writes into Num2Word_EUR; codes without a sourced
+    // Hungarian unit and subunit are left out and raise NotImplementedError.
+    add("AUD", &["dollár", "dollár"], &["cent", "cent"]);
+    add("BRL", &["real", "real"], &["centavo", "centavo"]);
+    add("BYN", &["rubel", "rubel"], &["kopejka", "kopejka"]);
+    add("CAD", &["dollár", "dollár"], &["cent", "cent"]);
+    add("CHF", &["frank", "frank"], &["rappen", "rappen"]);
+    add("CNY", &["jüan", "jüan"], &["fen", "fen"]);
+    add("EUR", &["euró", "euró"], &["cent", "cent"]);
+    add("GBP", &["font", "font"], &["penny", "penny"]);
     add("HUF", &["forint", "forint"], &["fillér", "fillér"]);
-    add("ISK", &["króna", "krónur"], &["aur", "aurar"]);
-    add("LTL", &["litas", "litas"], &["cent", "cents"]);
-    add("LVL", &["lat", "lats"], &["santim", "santims"]);
-    add("NOK", &["krone", "kroner"], &["øre", "øre"]);
-    add("PLN", &["zloty", "zlotys", "zlotu"], &["grosz", "groszy"]);
-    add("RON", &["leu", "lei", "de lei"], &["ban", "bani", "de bani"]);
-    add("RUB", &["rouble", "roubles"], &["kopek", "kopeks"]);
-    add("SEK", &["krona", "kronor"], &["öre", "öre"]);
-    add("UZS", &["sum", "sums"], &["tiyin", "tiyins"]);
+    add("INR", &["rúpia", "rúpia"], &["paisa", "paisa"]);
+    add("JPY", &["jen", "jen"], &["szen", "szen"]);
+    add("KRW", &["von", "von"], &["jeon", "jeon"]);
+    add("MXN", &["peso", "peso"], &["centavo", "centavo"]);
+    add("NOK", &["korona", "korona"], &["øre", "øre"]);
+    add("NZD", &["dollár", "dollár"], &["cent", "cent"]);
+    add("PLN", &["złoty", "złoty"], &["grosz", "grosz"]);
+    add("RUB", &["rubel", "rubel"], &["kopejka", "kopejka"]);
+    add("SEK", &["korona", "korona"], &["öre", "öre"]);
+    add("SGD", &["dollár", "dollár"], &["cent", "cent"]);
+    add("USD", &["dollár", "dollár"], &["cent", "cent"]);
+    add("ZAR", &["rand", "rand"], &["cent", "cent"]);
 
-    debug_assert_eq!(m.len(), 39);
+    debug_assert_eq!(m.len(), 21);
     m
 }
 
@@ -1002,7 +978,7 @@ impl Lang for LangHu {
     /// [`crate::currency::default_to_currency`] ports. The int/float split is
     /// the whole point of the override and is not cosmetic: `1` takes the
     /// bespoke branch and drops the cents segment, while `1.0` goes to the
-    /// base and still renders "egy euro, nulla cents".
+    /// base and still renders "egy euró, nulla cent".
     ///
     /// The bespoke branch differs from the base's own int branch in three
     /// observable ways, all preserved here: the doubled space on negatives

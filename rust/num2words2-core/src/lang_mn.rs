@@ -84,11 +84,9 @@
 //! 10. **`CURRENCY_ADJECTIVES["CZK"]` is `"Чехийн "` with a trailing space**,
 //!    and `prefix_currency` joins with `"%s %s"` — so CZK renders the double
 //!    space "Чехийн  крон". Reproduced verbatim; no corpus row covers CZK.
-//! 11. **`CURRENCY_FORMS["KWD"]` is `"динaр"` with a LATIN SMALL LETTER A**
-//!    (U+0061) where the Cyrillic а (U+0430) belongs. It survives `.upper()`
-//!    as a Latin "A", which is why the cheque corpus expects "ДИНAР". The
-//!    tables here were generated from the live interpreter rather than
-//!    transcribed, so the mixed script is preserved byte for byte.
+//! 11. ~~**`CURRENCY_FORMS["KWD"]` is `"динaр"` with a LATIN SMALL LETTER A**~~
+//!    (U+0061) where the Cyrillic а (U+0430) belongs, so the cheque read
+//!    "ДИНAР" with a Latin "A". Fixed (gladiaio/num2words2#222): "динар".
 //!
 //! # Error variants
 //!
@@ -717,8 +715,8 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert("JPY", CurrencyForms::new(&["иен"], &["сен"]));
     m.insert("KPW", CurrencyForms::new(&["вон"], &["чон"]));
     m.insert("KRW", CurrencyForms::new(&["вон"], &["чон"]));
-    // "динaр" carries a LATIN "a" (U+0061), not Cyrillic "а" — quirk 11.
-    m.insert("KWD", CurrencyForms::new(&["динaр"], &["филс"]));
+    // Python's "динaр" carried a Latin "a" (U+0061) — quirk 11, fixed (#222).
+    m.insert("KWD", CurrencyForms::new(&["динар"], &["филс"]));
     m.insert("KZT", CurrencyForms::new(&["тенге"], &["тийн"]));
     m.insert("MNT", CurrencyForms::new(&["төгрөг"], &["мөнгө"]));
     m.insert("MYR", CurrencyForms::new(&["ринггит"], &["сен"]));

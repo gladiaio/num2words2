@@ -334,40 +334,40 @@ class Num2WordsFOTest(TestCase):
             "ein króna fimmti oyru",
         )
         self.assertEqual(
-            num2words(0, lang="fo", to="currency", currency="USD"), "null dollars"
+            num2words(0, lang="fo", to="currency", currency="USD"), "null dollarar"
         )
         self.assertEqual(
             num2words(0.01, lang="fo", to="currency", currency="USD"),
-            "null dollars ein cent",
+            "null dollarar ein sent",
         )
         self.assertEqual(
             num2words(0.5, lang="fo", to="currency", currency="USD"),
-            "null dollars fimmti cents",
+            "null dollarar fimmti sent",
         )
         self.assertEqual(
-            num2words(1, lang="fo", to="currency", currency="USD"), "ein dollar"
+            num2words(1, lang="fo", to="currency", currency="USD"), "ein dollari"
         )
         self.assertEqual(
             num2words(1.5, lang="fo", to="currency", currency="USD"),
-            "ein dollar fimmti cents",
+            "ein dollari fimmti sent",
         )
         self.assertEqual(
-            num2words(0, lang="fo", to="currency", currency="EUR"), "null euros"
+            num2words(0, lang="fo", to="currency", currency="EUR"), "null evrur"
         )
         self.assertEqual(
             num2words(0.01, lang="fo", to="currency", currency="EUR"),
-            "null euros ein cent",
+            "null evrur ein sent",
         )
         self.assertEqual(
             num2words(0.5, lang="fo", to="currency", currency="EUR"),
-            "null euros fimmti cents",
+            "null evrur fimmti sent",
         )
         self.assertEqual(
-            num2words(1, lang="fo", to="currency", currency="EUR"), "ein euro"
+            num2words(1, lang="fo", to="currency", currency="EUR"), "ein evra"
         )
         self.assertEqual(
             num2words(1.5, lang="fo", to="currency", currency="EUR"),
-            "ein euro fimmti cents",
+            "ein evra fimmti sent",
         )
 
     def test_year(self):

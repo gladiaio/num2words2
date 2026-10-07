@@ -141,6 +141,13 @@
 //! See `SCIENTIFIC-NOTATION GAP` on [`LangSa::to_currency`] — this is a
 //! limitation of the `CurrencyValue` contract for this language, not a choice
 //! made here. No corpus row is affected.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). Sanskrit has no attested dollar, euro or cent noun, so USD and
+//! EUR raise NotImplementedError. Examples in these docs that quote English
+//! nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -249,14 +256,8 @@ impl LangSa {
             "INR",
             CurrencyForms::new(&["रूप्यकाणि", "रूप्यकाणि"], &["पैसा", "पैसा"]),
         );
-        currency_forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        currency_forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"); Sanskrit has no attested dollar, euro or cent noun, so
+        // they raise NotImplementedError (#222).
 
         let fallback_forms = currency_forms[FALLBACK_CURRENCY].clone();
 

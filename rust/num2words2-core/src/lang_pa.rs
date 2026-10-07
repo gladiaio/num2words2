@@ -137,6 +137,12 @@
 //! 8. **`adjective` is accepted and never read.** PA defines no
 //!    `CURRENCY_ADJECTIVES`, and the override's body never mentions the
 //!    parameter, so `adjective=True` is a no-op rather than a prefix.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ਡਾਲਰ / ਯੂਰੋ with ਸੈਂਟ. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -651,11 +657,11 @@ impl LangPa {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["ਡਾਲਰ", "ਡਾਲਰ"], &["ਸੈਂਟ", "ਸੈਂਟ"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["ਯੂਰੋ", "ਯੂਰੋ"], &["ਸੈਂਟ", "ਸੈਂਟ"]),
         );
         LangPa { forms }
     }

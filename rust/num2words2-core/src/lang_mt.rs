@@ -187,6 +187,12 @@
 //! and `'1e+16'.split(".")` leaves the whole token for `int()`). Mapped to
 //! [`N2WError::Value`] with CPython's exact message. See `concerns` in the
 //! port report for the one input band where this cannot be reproduced.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses dollaru/dollari with ċenteżmu/ċenteżmi, like EUR.
+//! Examples in these docs that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -405,9 +411,11 @@ impl LangMt {
         let eur = CurrencyForms::new(&["ewro", "ewro"], &["ċenteżmu", "ċenteżmi"]);
         let mut currency_forms = HashMap::new();
         currency_forms.insert("EUR", eur.clone());
+        // Python's USD entry was English ("dollars", "cents"); the Maltese
+        // nouns follow EUR's 1 / other split (#222).
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dollaru", "dollari"], &["ċenteżmu", "ċenteżmi"]),
         );
         LangMt {
             currency_forms,

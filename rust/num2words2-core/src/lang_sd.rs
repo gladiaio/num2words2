@@ -145,6 +145,12 @@
 //! trait default that raises, matching `Num2Word_Base.pluralize` — SD reaches it
 //! from neither `to_currency` (which inlines its own two-form selection) nor
 //! `to_cheque` (which takes `cr1[-1]` directly).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ڊالر / يورو with سينٽ. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -283,11 +289,11 @@ impl LangSd {
         forms.insert("PKR", pkr.clone());
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["ڊالر", "ڊالر"], &["سينٽ", "سينٽ"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["يورو", "يورو"], &["سينٽ", "سينٽ"]),
         );
         LangSd {
             forms,

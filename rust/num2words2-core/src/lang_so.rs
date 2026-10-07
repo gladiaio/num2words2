@@ -84,6 +84,12 @@
 //! for cardinal/ordinal/ordinal_num/year, so those four modes return `Ok`
 //! unconditionally. The currency surface added here raises only where Python
 //! does: `to_cheque` on a code outside SOS/USD/EUR (`NotImplementedError`).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use doolar / yuuro with senti. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -195,11 +201,11 @@ impl LangSo {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["doolar", "doolar"], &["senti", "senti"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["yuuro", "yuuro"], &["senti", "senti"]),
         );
         LangSo { forms }
     }

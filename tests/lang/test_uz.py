@@ -321,40 +321,40 @@ class Num2WordsUZTest(TestCase):
             "bir so'm ellik tiyin",
         )
         self.assertEqual(
-            num2words(0, lang="uz", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="uz", to="currency", currency="USD"), "zero dollar"
         )
         self.assertEqual(
             num2words(0.01, lang="uz", to="currency", currency="USD"),
-            "zero dollars bir cent",
+            "zero dollar bir sent",
         )
         self.assertEqual(
             num2words(0.5, lang="uz", to="currency", currency="USD"),
-            "zero dollars ellik cents",
+            "zero dollar ellik sent",
         )
         self.assertEqual(
             num2words(1, lang="uz", to="currency", currency="USD"), "bir dollar"
         )
         self.assertEqual(
             num2words(1.5, lang="uz", to="currency", currency="USD"),
-            "bir dollar ellik cents",
+            "bir dollar ellik sent",
         )
         self.assertEqual(
-            num2words(0, lang="uz", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="uz", to="currency", currency="EUR"), "zero yevro"
         )
         self.assertEqual(
             num2words(0.01, lang="uz", to="currency", currency="EUR"),
-            "zero euros bir cent",
+            "zero yevro bir sent",
         )
         self.assertEqual(
             num2words(0.5, lang="uz", to="currency", currency="EUR"),
-            "zero euros ellik cents",
+            "zero yevro ellik sent",
         )
         self.assertEqual(
-            num2words(1, lang="uz", to="currency", currency="EUR"), "bir euro"
+            num2words(1, lang="uz", to="currency", currency="EUR"), "bir yevro"
         )
         self.assertEqual(
             num2words(1.5, lang="uz", to="currency", currency="EUR"),
-            "bir euro ellik cents",
+            "bir yevro ellik sent",
         )
 
     def test_year(self):

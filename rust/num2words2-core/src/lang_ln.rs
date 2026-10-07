@@ -97,6 +97,13 @@
 //!    simply vanish.
 //! 10. **Zero takes the plural.** `cr1[1] if left != 1 else cr1[0]` keys off
 //!     `!= 1`, so `0` renders "zero euros".
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Lingala cent noun was found, so USD and EUR raise
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -487,14 +494,8 @@ impl LangLn {
             "CDF",
             CurrencyForms::new(&["faranga", "faranga"], &["santimi", "santimi"]),
         );
-        currency_forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        currency_forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"); no reliable Lingala cent noun was found, so
+        // they raise NotImplementedError (#222).
         let fallback_forms = currency_forms
             .get("CDF")
             .expect("CURRENCY_FORMS[\"CDF\"] is inserted directly above")

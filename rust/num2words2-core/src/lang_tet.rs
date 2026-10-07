@@ -109,6 +109,13 @@
 //!   cardinal. Python raised `decimal.InvalidOperation` from 10**26 already
 //!   (its `(Decimal(str(val)) * 100) % 1` overran the 28-digit default
 //!   context), below its own MAXVAL; the port does not (#215).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Tetum euro subunit or pound noun was found, so EUR
+//! and GBP raise NotImplementedError. Examples in these docs that quote
+//! English nouns record Python's output.
 
 use crate::base::{check_maxval, set_low_numwords, set_mid_numwords, splitnum, Cards, Lang, N2WError, Node, Result};
 use crate::currency::{parse_currency_parts, CurrencyForms, CurrencyValue};
@@ -159,11 +166,9 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert("AUD", CurrencyForms::new(&DOLLAR, &CENTS));
     m.insert("CAD", CurrencyForms::new(&DOLLAR, &CENTS));
-    m.insert("EUR", CurrencyForms::new(&["euro", "euros"], &CENTS));
-    m.insert(
-        "GBP",
-        CurrencyForms::new(&["pound sterling", "pound sterling"], &["pence", "pence"]),
-    );
+    // EUR ("euros") and GBP ("pound sterling", "pence") were English; no
+    // reliable Tetum subunit / pound noun was found, so they raise
+    // NotImplementedError (#222).
     m.insert("USD", CurrencyForms::new(&DOLLAR, &CENTS));
     m
 }

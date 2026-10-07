@@ -334,40 +334,40 @@ class Num2WordsKATest(TestCase):
             "ერთი ლარი ორმოცდაათი თეთრი",
         )
         self.assertEqual(
-            num2words(0, lang="ka", to="currency", currency="USD"), "ნული dollars"
+            num2words(0, lang="ka", to="currency", currency="USD"), "ნული დოლარი"
         )
         self.assertEqual(
             num2words(0.01, lang="ka", to="currency", currency="USD"),
-            "ნული dollars ერთი cent",
+            "ნული დოლარი ერთი ცენტი",
         )
         self.assertEqual(
             num2words(0.5, lang="ka", to="currency", currency="USD"),
-            "ნული dollars ორმოცდაათი cents",
+            "ნული დოლარი ორმოცდაათი ცენტი",
         )
         self.assertEqual(
-            num2words(1, lang="ka", to="currency", currency="USD"), "ერთი dollar"
+            num2words(1, lang="ka", to="currency", currency="USD"), "ერთი დოლარი"
         )
         self.assertEqual(
             num2words(1.5, lang="ka", to="currency", currency="USD"),
-            "ერთი dollar ორმოცდაათი cents",
+            "ერთი დოლარი ორმოცდაათი ცენტი",
         )
         self.assertEqual(
-            num2words(0, lang="ka", to="currency", currency="EUR"), "ნული euros"
+            num2words(0, lang="ka", to="currency", currency="EUR"), "ნული ევრო"
         )
         self.assertEqual(
             num2words(0.01, lang="ka", to="currency", currency="EUR"),
-            "ნული euros ერთი cent",
+            "ნული ევრო ერთი ცენტი",
         )
         self.assertEqual(
             num2words(0.5, lang="ka", to="currency", currency="EUR"),
-            "ნული euros ორმოცდაათი cents",
+            "ნული ევრო ორმოცდაათი ცენტი",
         )
         self.assertEqual(
-            num2words(1, lang="ka", to="currency", currency="EUR"), "ერთი euro"
+            num2words(1, lang="ka", to="currency", currency="EUR"), "ერთი ევრო"
         )
         self.assertEqual(
             num2words(1.5, lang="ka", to="currency", currency="EUR"),
-            "ერთი euro ორმოცდაათი cents",
+            "ერთი ევრო ორმოცდაათი ცენტი",
         )
 
     def test_year(self):

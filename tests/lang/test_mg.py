@@ -331,42 +331,12 @@ class Num2WordsMGTest(TestCase):
             num2words(1.5, lang="mg", to="currency", currency="MGA"),
             "iray ariary dimampolo iraimbilanja",
         )
-        self.assertEqual(
-            num2words(0, lang="mg", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mg", to="currency", currency="USD"),
-            "zero dollars iray cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mg", to="currency", currency="USD"),
-            "zero dollars dimampolo cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mg", to="currency", currency="USD"), "iray dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mg", to="currency", currency="USD"),
-            "iray dollar dimampolo cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="mg", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mg", to="currency", currency="EUR"),
-            "zero euros iray cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mg", to="currency", currency="EUR"),
-            "zero euros dimampolo cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mg", to="currency", currency="EUR"), "iray euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mg", to="currency", currency="EUR"),
-            "iray euro dimampolo cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mg", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mg", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

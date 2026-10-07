@@ -302,40 +302,40 @@ class Num2WordsHTTest(TestCase):
             "en goud senkant santim",
         )
         self.assertEqual(
-            num2words(0, lang="ht", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="ht", to="currency", currency="USD"), "zero dola"
         )
         self.assertEqual(
             num2words(0.01, lang="ht", to="currency", currency="USD"),
-            "zero dollars en cent",
+            "zero dola en santim",
         )
         self.assertEqual(
             num2words(0.5, lang="ht", to="currency", currency="USD"),
-            "zero dollars senkant cents",
+            "zero dola senkant santim",
         )
         self.assertEqual(
-            num2words(1, lang="ht", to="currency", currency="USD"), "en dollar"
+            num2words(1, lang="ht", to="currency", currency="USD"), "en dola"
         )
         self.assertEqual(
             num2words(1.5, lang="ht", to="currency", currency="USD"),
-            "en dollar senkant cents",
+            "en dola senkant santim",
         )
         self.assertEqual(
-            num2words(0, lang="ht", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="ht", to="currency", currency="EUR"), "zero ewo"
         )
         self.assertEqual(
             num2words(0.01, lang="ht", to="currency", currency="EUR"),
-            "zero euros en cent",
+            "zero ewo en santim",
         )
         self.assertEqual(
             num2words(0.5, lang="ht", to="currency", currency="EUR"),
-            "zero euros senkant cents",
+            "zero ewo senkant santim",
         )
         self.assertEqual(
-            num2words(1, lang="ht", to="currency", currency="EUR"), "en euro"
+            num2words(1, lang="ht", to="currency", currency="EUR"), "en ewo"
         )
         self.assertEqual(
             num2words(1.5, lang="ht", to="currency", currency="EUR"),
-            "en euro senkant cents",
+            "en ewo senkant santim",
         )
 
     def test_year(self):

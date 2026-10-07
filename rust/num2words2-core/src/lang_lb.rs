@@ -199,6 +199,14 @@
 //!   code outside `{EUR, USD}` — `currency.rs`'s `default_to_cheque` already
 //!   produces it from [`Lang::currency_forms`] returning `None`.
 //! * The `ValueError` of quirk 18 above, on the float/Decimal entries only.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use Dollar / Euro with Cent (capitalised, singular
+//! after a numeral). The numeral "zwou" does not yet agree with these
+//! masculine nouns ("zwee"). Examples in these docs that quote English nouns
+//! record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -483,11 +491,11 @@ impl LangLb {
         let mut currency_forms = HashMap::with_capacity(2);
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euro"], &["cent", "cents"]),
+            CurrencyForms::new(&["Euro", "Euro"], &["Cent", "Cent"]),
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["Dollar", "Dollar"], &["Cent", "Cent"]),
         );
 
         let fallback_forms = currency_forms

@@ -152,6 +152,14 @@
 //! (`1e+21`, `1.5e+20`) **is** reproduced exactly, because a negative
 //! `BigDecimal` scale is unambiguous — a plain decimal string can never produce
 //! one, and both `float` and `Decimal` stringify to exponent form there.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dollarium/dollaria and euro/eurones with
+//! centesima/centesimae. Numerals 1-3 do not yet agree in gender with the noun
+//! ("duo centesimae"). Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Kwargs, Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -793,12 +801,12 @@ impl LangLa {
         //     "EUR": (("euro", "euros"), ("centesima", "centesimae")),
         //     "USD": (("dollar", "dollars"), ("cent", "cents")),
         // }
-        let eur = CurrencyForms::new(&["euro", "euros"], &["centesima", "centesimae"]);
+        let eur = CurrencyForms::new(&["euro", "eurones"], &["centesima", "centesimae"]);
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             (FALLBACK_CURRENCY, eur.clone()),
             (
                 "USD",
-                CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+                CurrencyForms::new(&["dollarium", "dollaria"], &["centesima", "centesimae"]),
             ),
         ]
         .into_iter()

@@ -299,41 +299,26 @@ class Num2WordsPSTest(TestCase):
             "یو افغانۍ پنځوس پول",
         )
         self.assertEqual(
-            num2words(0, lang="ps", to="currency", currency="USD"), "صفر dollars"
+            num2words(0, lang="ps", to="currency", currency="USD"), "صفر ډالر"
         )
         self.assertEqual(
             num2words(0.01, lang="ps", to="currency", currency="USD"),
-            "صفر dollars یو cent",
+            "صفر ډالر یو سنټ",
         )
         self.assertEqual(
             num2words(0.5, lang="ps", to="currency", currency="USD"),
-            "صفر dollars پنځوس cents",
+            "صفر ډالر پنځوس سنټ",
         )
         self.assertEqual(
-            num2words(1, lang="ps", to="currency", currency="USD"), "یو dollar"
+            num2words(1, lang="ps", to="currency", currency="USD"), "یو ډالر"
         )
         self.assertEqual(
             num2words(1.5, lang="ps", to="currency", currency="USD"),
-            "یو dollar پنځوس cents",
+            "یو ډالر پنځوس سنټ",
         )
-        self.assertEqual(
-            num2words(0, lang="ps", to="currency", currency="EUR"), "صفر euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="ps", to="currency", currency="EUR"),
-            "صفر euros یو cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="ps", to="currency", currency="EUR"),
-            "صفر euros پنځوس cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="ps", to="currency", currency="EUR"), "یو euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="ps", to="currency", currency="EUR"),
-            "یو euro پنځوس cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="ps", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

@@ -159,6 +159,12 @@
 //!     non-numeric token. Unreachable for any value `str()` renders in plain
 //!     decimal notation; see the exponent-notation note on
 //!     [`LangJv::to_currency`].
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dolar / euro with sen. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -264,11 +270,11 @@ impl LangJv {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dolar", "dolar"], &["sen", "sen"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["euro", "euro"], &["sen", "sen"]),
         );
 
         // `list(CURRENCY_FORMS.values())[0]` resolved once — see bug 9.

@@ -138,6 +138,12 @@
 //! `ones`/`tens` are never indexed out of range, and the 10^9 fallback
 //! swallows what would otherwise overflow. `Result` is returned only to
 //! satisfy the trait.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses dólar/dólares with centavo/centavos. Examples in these
+//! docs that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -256,7 +262,7 @@ impl LangGl {
                 // "dollar"/"dollars" (English) in a Galician module. Real
                 // Galician is "dólar"/"dólares". Corpus-confirmed.
                 "USD",
-                CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+                CurrencyForms::new(&["dólar", "dólares"], &["centavo", "centavos"]),
             ),
         ]
         .into_iter()

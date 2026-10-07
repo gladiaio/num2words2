@@ -304,42 +304,12 @@ class Num2WordsTKTest(TestCase):
             num2words(1.5, lang="tk", to="currency", currency="TMT"),
             "bir manat elli teňňe",
         )
-        self.assertEqual(
-            num2words(0, lang="tk", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="tk", to="currency", currency="USD"),
-            "zero dollars bir cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="tk", to="currency", currency="USD"),
-            "zero dollars elli cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="tk", to="currency", currency="USD"), "bir dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="tk", to="currency", currency="USD"),
-            "bir dollar elli cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="tk", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="tk", to="currency", currency="EUR"),
-            "zero euros bir cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="tk", to="currency", currency="EUR"),
-            "zero euros elli cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="tk", to="currency", currency="EUR"), "bir euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="tk", to="currency", currency="EUR"),
-            "bir euro elli cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="tk", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="tk", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

@@ -119,6 +119,12 @@
 //! from `currency::default_to_cheque` via [`LangTl::currency_forms`] returning
 //! `None`, so nothing here needs to construct it. 7 of the 9 cheque corpus rows
 //! take that path.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dolyar / euro with sentimo, as fil does. Examples
+//! in these docs that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -245,8 +251,8 @@ impl LangTl {
         // captures the one place Python's ordering was observable.
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             ("PHP", &["piso", "piso"][..], &["sentimo", "sentimo"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
+            ("USD", &["dolyar", "dolyar"][..], &["sentimo", "sentimo"][..]),
+            ("EUR", &["euro", "euro"][..], &["sentimo", "sentimo"][..]),
         ]
         .into_iter()
         .map(|(k, u, s)| (k, CurrencyForms::new(u, s)))

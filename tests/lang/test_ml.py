@@ -337,40 +337,40 @@ class Num2WordsMLTest(TestCase):
             "ഒന്ന് രൂപ അമ്പത് പൈസ",
         )
         self.assertEqual(
-            num2words(0, lang="ml", to="currency", currency="USD"), "പൂജ്യം dollars"
+            num2words(0, lang="ml", to="currency", currency="USD"), "പൂജ്യം ഡോളർ"
         )
         self.assertEqual(
             num2words(0.01, lang="ml", to="currency", currency="USD"),
-            "പൂജ്യം dollars ഒന്ന് cent",
+            "പൂജ്യം ഡോളർ ഒന്ന് സെന്റ്",
         )
         self.assertEqual(
             num2words(0.5, lang="ml", to="currency", currency="USD"),
-            "പൂജ്യം dollars അമ്പത് cents",
+            "പൂജ്യം ഡോളർ അമ്പത് സെന്റ്",
         )
         self.assertEqual(
-            num2words(1, lang="ml", to="currency", currency="USD"), "ഒന്ന് dollar"
+            num2words(1, lang="ml", to="currency", currency="USD"), "ഒന്ന് ഡോളർ"
         )
         self.assertEqual(
             num2words(1.5, lang="ml", to="currency", currency="USD"),
-            "ഒന്ന് dollar അമ്പത് cents",
+            "ഒന്ന് ഡോളർ അമ്പത് സെന്റ്",
         )
         self.assertEqual(
-            num2words(0, lang="ml", to="currency", currency="EUR"), "പൂജ്യം euros"
+            num2words(0, lang="ml", to="currency", currency="EUR"), "പൂജ്യം യൂറോ"
         )
         self.assertEqual(
             num2words(0.01, lang="ml", to="currency", currency="EUR"),
-            "പൂജ്യം euros ഒന്ന് cent",
+            "പൂജ്യം യൂറോ ഒന്ന് സെന്റ്",
         )
         self.assertEqual(
             num2words(0.5, lang="ml", to="currency", currency="EUR"),
-            "പൂജ്യം euros അമ്പത് cents",
+            "പൂജ്യം യൂറോ അമ്പത് സെന്റ്",
         )
         self.assertEqual(
-            num2words(1, lang="ml", to="currency", currency="EUR"), "ഒന്ന് euro"
+            num2words(1, lang="ml", to="currency", currency="EUR"), "ഒന്ന് യൂറോ"
         )
         self.assertEqual(
             num2words(1.5, lang="ml", to="currency", currency="EUR"),
-            "ഒന്ന് euro അമ്പത് cents",
+            "ഒന്ന് യൂറോ അമ്പത് സെന്റ്",
         )
 
     def test_year(self):

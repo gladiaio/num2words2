@@ -342,42 +342,12 @@ class Num2WordsLNTest(TestCase):
             num2words(1.5, lang="ln", to="currency", currency="CDF"),
             "moko faranga ntuku mítáno santimi",
         )
-        self.assertEqual(
-            num2words(0, lang="ln", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="ln", to="currency", currency="USD"),
-            "zero dollars moko cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="ln", to="currency", currency="USD"),
-            "zero dollars ntuku mítáno cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="ln", to="currency", currency="USD"), "moko dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="ln", to="currency", currency="USD"),
-            "moko dollar ntuku mítáno cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="ln", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="ln", to="currency", currency="EUR"),
-            "zero euros moko cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="ln", to="currency", currency="EUR"),
-            "zero euros ntuku mítáno cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="ln", to="currency", currency="EUR"), "moko euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="ln", to="currency", currency="EUR"),
-            "moko euro ntuku mítáno cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="ln", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="ln", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

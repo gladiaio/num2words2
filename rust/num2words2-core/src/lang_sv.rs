@@ -45,13 +45,13 @@
 //!    #160).** Python builds `"%s %s %s" % (minus_str, money, unit)` with the
 //!    *un-stripped* `self.negword`, so `to_currency(-10, "EUR")` was
 //!    "minus  tio euros". The port strips it, as the float path does:
-//!    "minus tio euros".
+//!    "minus tio euro" (Swedish nouns since #222).
 //!
 //! 6. **SV's int path silently ignores `adjective=`.** `Num2Word_Base`'s int
 //!    path applies `prefix_currency`, but SV's override never consults
 //!    `CURRENCY_ADJECTIVES`. So `to_currency(2, "USD", adjective=True)` is
-//!    "två dollars" while `to_currency(2.0, "USD", adjective=True)` is
-//!    "två US dollars, noll cents". `cents=` and `separator=` are likewise
+//!    "två dollar" while `to_currency(2.0, "USD", adjective=True)` is
+//!    "två US dollar, noll cent" (the adjectives are still English). `cents=` and `separator=` are likewise
 //!    dead on the int path. `CURRENCY_ADJECTIVES` is still wired up below
 //!    because the float path (via the base) does honour it.
 //!
@@ -66,7 +66,13 @@
 //! rewrites `Num2Word_EUR.CURRENCY_FORMS` for all of its subclasses, SV
 //! included.
 //!
-//! That is why the table below is not what `lang_EUR.py` reads:
+//! **Replaced by native nouns (gladiaio/num2words2#222).** That mutated
+//! table is English ("två dollars", "två euros"), so the port no longer
+//! mirrors it: it keeps only codes with a sourced Swedish unit and subunit
+//! noun ("två dollar", "två euro", "två kronor", "femtio öre") and raises NotImplementedError for the rest. The notes
+//! below describe Python's table.
+//!
+//! That is why Python's table is not what `lang_EUR.py` reads:
 //!
 //! * EUR is `("euro", "euros")`, not lang_EUR's `("euro", "euro")`.
 //! * GBP is `("pound", "pounds")`, not `("pound sterling", "pounds sterling")`.
@@ -84,8 +90,9 @@
 //! `Num2Word_Base.CURRENCY_PRECISION` an empty dict. SV therefore resolves
 //! every code to the default divisor of 100 — including the ones that are
 //! 3-decimal (KWD/BHD/OMR/…) or 0-decimal (JPY/KRW) elsewhere. Hence
-//! `to_currency(12.34, "KWD")` → "tolv dinars, trettiofyra fils" (cents, not
-//! mils) and `to_currency(12.34, "JPY")` → "tolv yen, trettiofyra sen"
+//! Python's `to_currency(12.34, "KWD")` → "tolv dinars, trettiofyra fils"
+//! (cents, not mils; KWD now raises) and `to_currency(12.34, "JPY")` → "tolv
+//! yen, trettiofyra sen"
 //! rather than rounding to a whole yen. The corpus confirms both. So
 //! `currency_precision` is deliberately left at the trait default.
 
@@ -264,49 +271,26 @@ impl LangSv {
         .into_iter()
         .collect();
 
-        // Arity is load-bearing: `pluralize` indexes these, and PLN/RON carry
-        // a third form that must not be dropped even though EUR's `pluralize`
-        // never reaches index 2.
+        // Swedish nouns (#222). Python inherited Num2Word_EUR's table as
+        // rewritten by Num2Word_EN, i.e. English ("två dollars", "två
+        // euros"). Codes without a sourced Swedish unit *and* subunit are
+        // left out and raise NotImplementedError.
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
-            ("AED", CurrencyForms::new(&["dirham", "dirhams"], &["fils", "fils"])),
-            ("AUD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("BHD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
-            ("BRL", CurrencyForms::new(&["real", "reais"], &["cent", "cents"])),
-            ("BYN", CurrencyForms::new(&["rouble", "roubles"], &["kopek", "kopeks"])),
-            ("CAD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("CHF", CurrencyForms::new(&["franc", "francs"], &["rappen", "rappen"])),
-            ("CNY", CurrencyForms::new(&["yuan", "yuan"], &["fen", "fen"])),
-            ("EEK", CurrencyForms::new(&["kroon", "kroons"], &["sent", "senti"])),
-            ("EUR", CurrencyForms::new(&["euro", "euros"], &["cent", "cents"])),
-            ("GBP", CurrencyForms::new(&["pound", "pounds"], &["penny", "pence"])),
-            ("HKD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("HUF", CurrencyForms::new(&["forint", "forint"], &["fillér", "fillér"])),
-            ("INR", CurrencyForms::new(&["rupee", "rupees"], &["paisa", "paise"])),
-            ("IQD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
-            ("ISK", CurrencyForms::new(&["króna", "krónur"], &["aur", "aurar"])),
-            ("JOD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
+            ("AUD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("CAD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("CHF", CurrencyForms::new(&["franc", "francer"], &["rappen", "rappen"])),
+            ("EUR", CurrencyForms::new(&["euro", "euro"], &["cent", "cent"])),
+            ("GBP", CurrencyForms::new(&["pund", "pund"], &["penny", "pence"])),
+            ("HKD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("INR", CurrencyForms::new(&["rupie", "rupier"], &["paisa", "paise"])),
             ("JPY", CurrencyForms::new(&["yen", "yen"], &["sen", "sen"])),
-            ("KRW", CurrencyForms::new(&["won", "won"], &["jeon", "jeon"])),
-            ("KWD", CurrencyForms::new(&["dinar", "dinars"], &["fils", "fils"])),
-            ("LTL", CurrencyForms::new(&["litas", "litas"], &["cent", "cents"])),
-            ("LVL", CurrencyForms::new(&["lat", "lats"], &["santim", "santims"])),
-            ("LYD", CurrencyForms::new(&["dinar", "dinars"], &["dirham", "dirhams"])),
-            ("MXN", CurrencyForms::new(&["peso", "pesos"], &["cent", "cents"])),
-            ("NGN", CurrencyForms::new(&["naira", "naira"], &["kobo", "kobo"])),
-            ("NOK", CurrencyForms::new(&["krone", "kroner"], &["øre", "øre"])),
-            ("NZD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("OMR", CurrencyForms::new(&["rial", "rials"], &["baisa", "baisa"])),
-            ("PLN", CurrencyForms::new(&["zloty", "zlotys", "zlotu"], &["grosz", "groszy"])),
-            ("QAR", CurrencyForms::new(&["riyal", "riyals"], &["dirham", "dirhams"])),
-            ("RON", CurrencyForms::new(&["leu", "lei", "de lei"], &["ban", "bani", "de bani"])),
-            ("RUB", CurrencyForms::new(&["rouble", "roubles"], &["kopek", "kopeks"])),
-            ("SAR", CurrencyForms::new(&["riyal", "riyals"], &["halalah", "halalas"])),
+            ("MXN", CurrencyForms::new(&["peso", "peso"], &["centavo", "centavos"])),
+            ("NOK", CurrencyForms::new(&["krona", "kronor"], &["öre", "öre"])),
+            ("NZD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("RUB", CurrencyForms::new(&["rubel", "rubel"], &["kopek", "kopek"])),
             ("SEK", CurrencyForms::new(&["krona", "kronor"], &["öre", "öre"])),
-            ("SGD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("TND", CurrencyForms::new(&["dinar", "dinars"], &["millime", "millimes"])),
-            ("USD", CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"])),
-            ("UZS", CurrencyForms::new(&["sum", "sums"], &["tiyin", "tiyins"])),
-            ("ZAR", CurrencyForms::new(&["rand", "rand"], &["cent", "cents"])),
+            ("SGD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
+            ("USD", CurrencyForms::new(&["dollar", "dollar"], &["cent", "cent"])),
         ]
         .into_iter()
         .collect();
@@ -726,7 +710,7 @@ impl Lang for LangSv {
     /// `Num2Word_Base.to_currency` verbatim, which is what Python's
     /// `super().to_currency(...)` does. The int/non-int split is the whole
     /// point of the override — `1` renders "ett euro" while `1.0` renders
-    /// "ett euro, noll cents".
+    /// "ett euro, noll cent".
     fn to_currency(
         &self,
         val: &CurrencyValue,

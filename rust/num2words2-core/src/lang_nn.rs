@@ -106,6 +106,13 @@
 //! every recursive call passes a positive value. It is mirrored in
 //! [`int_to_word`] to keep the structure aligned with the source, but it can
 //! never fire. Note it would double the negword if it ever did.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dollar / euro with cent (same form in the
+//! plural). Examples in these docs that quote English nouns record Python's
+//! output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -223,8 +230,8 @@ fn scale(head: &str, word: &str, remainder: u64) -> String {
 /// is correct Nynorsk and makes the `right != 1` test invisible for that entry.
 const FORMS: [(&str, [&str; 2], [&str; 2]); 3] = [
     ("NOK", ["krone", "kroner"], ["øre", "øre"]),
-    ("USD", ["dollar", "dollars"], ["cent", "cents"]),
-    ("EUR", ["euro", "euros"], ["cent", "cents"]),
+    ("USD", ["dollar", "dollar"], ["cent", "cent"]),
+    ("EUR", ["euro", "euro"], ["cent", "cent"]),
 ];
 
 /// `list(self.CURRENCY_FORMS.values())[0]` — the `.get()` default in

@@ -305,40 +305,40 @@ class Num2WordsTTTest(TestCase):
             "бер сум илле тиен",
         )
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="USD"), "нуль dollars"
+            num2words(0, lang="tt", to="currency", currency="USD"), "нуль доллар"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="USD"),
-            "нуль dollars бер cent",
+            "нуль доллар бер цент",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="USD"),
-            "нуль dollars илле cents",
+            "нуль доллар илле цент",
         )
         self.assertEqual(
-            num2words(1, lang="tt", to="currency", currency="USD"), "бер dollar"
+            num2words(1, lang="tt", to="currency", currency="USD"), "бер доллар"
         )
         self.assertEqual(
             num2words(1.5, lang="tt", to="currency", currency="USD"),
-            "бер dollar илле cents",
+            "бер доллар илле цент",
         )
         self.assertEqual(
-            num2words(0, lang="tt", to="currency", currency="EUR"), "нуль euros"
+            num2words(0, lang="tt", to="currency", currency="EUR"), "нуль евро"
         )
         self.assertEqual(
             num2words(0.01, lang="tt", to="currency", currency="EUR"),
-            "нуль euros бер cent",
+            "нуль евро бер цент",
         )
         self.assertEqual(
             num2words(0.5, lang="tt", to="currency", currency="EUR"),
-            "нуль euros илле cents",
+            "нуль евро илле цент",
         )
         self.assertEqual(
-            num2words(1, lang="tt", to="currency", currency="EUR"), "бер euro"
+            num2words(1, lang="tt", to="currency", currency="EUR"), "бер евро"
         )
         self.assertEqual(
             num2words(1.5, lang="tt", to="currency", currency="EUR"),
-            "бер euro илле cents",
+            "бер евро илле цент",
         )
 
     def test_year(self):

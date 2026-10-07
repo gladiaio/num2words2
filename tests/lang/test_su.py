@@ -343,40 +343,40 @@ class Num2WordsSUTest(TestCase):
             "hiji rupiah lima puluh sen",
         )
         self.assertEqual(
-            num2words(0, lang="su", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="su", to="currency", currency="USD"), "zero dolar"
         )
         self.assertEqual(
             num2words(0.01, lang="su", to="currency", currency="USD"),
-            "zero dollars hiji cent",
+            "zero dolar hiji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="su", to="currency", currency="USD"),
-            "zero dollars lima puluh cents",
+            "zero dolar lima puluh sen",
         )
         self.assertEqual(
-            num2words(1, lang="su", to="currency", currency="USD"), "hiji dollar"
+            num2words(1, lang="su", to="currency", currency="USD"), "hiji dolar"
         )
         self.assertEqual(
             num2words(1.5, lang="su", to="currency", currency="USD"),
-            "hiji dollar lima puluh cents",
+            "hiji dolar lima puluh sen",
         )
         self.assertEqual(
-            num2words(0, lang="su", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="su", to="currency", currency="EUR"), "zero euro"
         )
         self.assertEqual(
             num2words(0.01, lang="su", to="currency", currency="EUR"),
-            "zero euros hiji cent",
+            "zero euro hiji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="su", to="currency", currency="EUR"),
-            "zero euros lima puluh cents",
+            "zero euro lima puluh sen",
         )
         self.assertEqual(
             num2words(1, lang="su", to="currency", currency="EUR"), "hiji euro"
         )
         self.assertEqual(
             num2words(1.5, lang="su", to="currency", currency="EUR"),
-            "hiji euro lima puluh cents",
+            "hiji euro lima puluh sen",
         )
 
     def test_year(self):

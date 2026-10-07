@@ -128,6 +128,12 @@
 //! `to_cheque` — no override needed. `to_currency` itself has no raising
 //! path for any value the shim can hand it (see the scientific-notation note
 //! on `plain_decimal_string`).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use долар/долари and евро/евра with цент/центи.
+//! Examples in these docs that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -370,8 +376,8 @@ impl LangMk {
         // `cr1[1]`/`cr1[0]` directly, mirroring Python's tuple subscript.
         let table = [
             ("MKD", &["денар", "денари"][..], &["дени", "дени"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
+            ("USD", &["долар", "долари"][..], &["цент", "центи"][..]),
+            ("EUR", &["евро", "евра"][..], &["цент", "центи"][..]),
         ];
 
         let (_, fallback_unit, fallback_subunit) = table[0];

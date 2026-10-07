@@ -375,42 +375,12 @@ class Num2WordsWOTest(TestCase):
             num2words(1.5, lang="wo", to="currency", currency="XOF"),
             "benn dërëm juróom-fukk santim",
         )
-        self.assertEqual(
-            num2words(0, lang="wo", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="wo", to="currency", currency="USD"),
-            "zero dollars benn cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="wo", to="currency", currency="USD"),
-            "zero dollars juróom-fukk cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="wo", to="currency", currency="USD"), "benn dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="wo", to="currency", currency="USD"),
-            "benn dollar juróom-fukk cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="wo", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="wo", to="currency", currency="EUR"),
-            "zero euros benn cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="wo", to="currency", currency="EUR"),
-            "zero euros juróom-fukk cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="wo", to="currency", currency="EUR"), "benn euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="wo", to="currency", currency="EUR"),
-            "benn euro juróom-fukk cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="wo", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="wo", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

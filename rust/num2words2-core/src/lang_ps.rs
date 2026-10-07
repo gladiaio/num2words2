@@ -162,6 +162,13 @@
 //! `lang_br.rs`, … all carry the identical gap). Left divergent and reported
 //! rather than half-fixed. A 9,834-case differential fuzz against the live
 //! `Num2Word_PS` found no other disagreement.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses ډالر / سنټ; EUR (no reliable Pashto cent) raises
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -290,13 +297,11 @@ impl LangPs {
 
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             (FALLBACK_CURRENCY, afn.clone()),
+            // Native nouns (#222). EUR has no reliable Pashto cent, so it
+            // raises NotImplementedError.
             (
                 "USD",
-                CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-            ),
-            (
-                "EUR",
-                CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+                CurrencyForms::new(&["ډالر", "ډالر"], &["سنټ", "سنټ"]),
             ),
         ]
         .into_iter()

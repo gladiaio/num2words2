@@ -144,6 +144,12 @@
 //! `Display`, which is *not* the same function: bigdecimal renders `2.5e+20`
 //! as "25e+19" and `0.0` as "0", and flips to exponential form on its own
 //! thresholds. See [`python_str`] for the one regime that cannot be recovered.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dolar / euro with sen. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -340,11 +346,11 @@ impl LangSu {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dolar", "dolar"], &["sen", "sen"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["euro", "euro"], &["sen", "sen"]),
         );
         let currency_fallback = currency_forms[CURRENCY_ORDER[0]].clone();
         LangSu {

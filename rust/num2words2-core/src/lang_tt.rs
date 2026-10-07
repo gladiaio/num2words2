@@ -135,6 +135,13 @@
 //!    TT's `if cents and right:` drops the whole segment.
 //! 10. **`adjective` is accepted and completely ignored** — no
 //!     `prefix_currency` call, and `CURRENCY_ADJECTIVES` is empty regardless.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use доллар / евро with цент (singular after a
+//! numeral). Examples in these docs that quote English nouns record Python's
+//! output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -439,11 +446,11 @@ impl LangTt {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["доллар", "доллар"], &["цент", "цент"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["евро", "евро"], &["цент", "цент"]),
         );
         LangTt { forms }
     }

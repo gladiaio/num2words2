@@ -329,40 +329,40 @@ class Num2WordsMKTest(TestCase):
             "еден денар педесет дени",
         )
         self.assertEqual(
-            num2words(0, lang="mk", to="currency", currency="USD"), "нула dollars"
+            num2words(0, lang="mk", to="currency", currency="USD"), "нула долари"
         )
         self.assertEqual(
             num2words(0.01, lang="mk", to="currency", currency="USD"),
-            "нула dollars еден cent",
+            "нула долари еден цент",
         )
         self.assertEqual(
             num2words(0.5, lang="mk", to="currency", currency="USD"),
-            "нула dollars педесет cents",
+            "нула долари педесет центи",
         )
         self.assertEqual(
-            num2words(1, lang="mk", to="currency", currency="USD"), "еден dollar"
+            num2words(1, lang="mk", to="currency", currency="USD"), "еден долар"
         )
         self.assertEqual(
             num2words(1.5, lang="mk", to="currency", currency="USD"),
-            "еден dollar педесет cents",
+            "еден долар педесет центи",
         )
         self.assertEqual(
-            num2words(0, lang="mk", to="currency", currency="EUR"), "нула euros"
+            num2words(0, lang="mk", to="currency", currency="EUR"), "нула евра"
         )
         self.assertEqual(
             num2words(0.01, lang="mk", to="currency", currency="EUR"),
-            "нула euros еден cent",
+            "нула евра еден цент",
         )
         self.assertEqual(
             num2words(0.5, lang="mk", to="currency", currency="EUR"),
-            "нула euros педесет cents",
+            "нула евра педесет центи",
         )
         self.assertEqual(
-            num2words(1, lang="mk", to="currency", currency="EUR"), "еден euro"
+            num2words(1, lang="mk", to="currency", currency="EUR"), "еден евро"
         )
         self.assertEqual(
             num2words(1.5, lang="mk", to="currency", currency="EUR"),
-            "еден euro педесет cents",
+            "еден евро педесет центи",
         )
 
     def test_year(self):

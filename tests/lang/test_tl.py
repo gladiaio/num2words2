@@ -329,40 +329,40 @@ class Num2WordsTLTest(TestCase):
             "isa piso limampu sentimo",
         )
         self.assertEqual(
-            num2words(0, lang="tl", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="tl", to="currency", currency="USD"), "zero dolyar"
         )
         self.assertEqual(
             num2words(0.01, lang="tl", to="currency", currency="USD"),
-            "zero dollars isa cent",
+            "zero dolyar isa sentimo",
         )
         self.assertEqual(
             num2words(0.5, lang="tl", to="currency", currency="USD"),
-            "zero dollars limampu cents",
+            "zero dolyar limampu sentimo",
         )
         self.assertEqual(
-            num2words(1, lang="tl", to="currency", currency="USD"), "isa dollar"
+            num2words(1, lang="tl", to="currency", currency="USD"), "isa dolyar"
         )
         self.assertEqual(
             num2words(1.5, lang="tl", to="currency", currency="USD"),
-            "isa dollar limampu cents",
+            "isa dolyar limampu sentimo",
         )
         self.assertEqual(
-            num2words(0, lang="tl", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="tl", to="currency", currency="EUR"), "zero euro"
         )
         self.assertEqual(
             num2words(0.01, lang="tl", to="currency", currency="EUR"),
-            "zero euros isa cent",
+            "zero euro isa sentimo",
         )
         self.assertEqual(
             num2words(0.5, lang="tl", to="currency", currency="EUR"),
-            "zero euros limampu cents",
+            "zero euro limampu sentimo",
         )
         self.assertEqual(
             num2words(1, lang="tl", to="currency", currency="EUR"), "isa euro"
         )
         self.assertEqual(
             num2words(1.5, lang="tl", to="currency", currency="EUR"),
-            "isa euro limampu cents",
+            "isa euro limampu sentimo",
         )
 
     def test_year(self):

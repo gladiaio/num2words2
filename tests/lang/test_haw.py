@@ -351,24 +351,9 @@ class Num2WordsHAWTest(TestCase):
             num2words(1.5, lang="haw", to="currency", currency="USD"),
             "'ekahi kālā kanalima keneka",
         )
-        self.assertEqual(
-            num2words(0, lang="haw", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="haw", to="currency", currency="EUR"),
-            "zero euros 'ekahi cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="haw", to="currency", currency="EUR"),
-            "zero euros kanalima cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="haw", to="currency", currency="EUR"), "'ekahi euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="haw", to="currency", currency="EUR"),
-            "'ekahi euro kanalima cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="haw", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

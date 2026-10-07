@@ -60,6 +60,12 @@
 //!
 //! No cross-call mutable state: `setup()` only assigns constant tables, and no
 //! method writes to `self`. The Rust stateless path is a faithful equivalent.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dola / ewo with santim. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -592,11 +598,11 @@ impl LangHt {
         );
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dola", "dola"], &["santim", "santim"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["ewo", "ewo"], &["santim", "santim"]),
         );
         LangHt {
             fallback_forms: currency_forms["HTG"].clone(),

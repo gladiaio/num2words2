@@ -158,6 +158,13 @@
 //! `Num2Word_Base` (raises NotImplementedError), and neither TK's `to_currency`
 //! nor the inherited `to_cheque` ever calls it — TK picks its forms with an
 //! inline `cr1[1] if left != 1 else cr1[0]`.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Turkmen cent noun was found, so USD and EUR raise
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -499,14 +506,8 @@ impl LangTk {
             "TMT",
             CurrencyForms::new(&["manat", "manat"], &["teňňe", "teňňe"]),
         );
-        forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
-        forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // USD/EUR were English ("dollars", "cents", "euros"); no reliable Turkmen cent noun was found, so
+        // they raise NotImplementedError (#222).
         LangTk { forms }
     }
 }

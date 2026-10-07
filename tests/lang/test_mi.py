@@ -319,42 +319,12 @@ class Num2WordsMITest(TestCase):
             num2words(1.5, lang="mi", to="currency", currency="NZD"),
             "tahi tāra rima tekau hēneti",
         )
-        self.assertEqual(
-            num2words(0, lang="mi", to="currency", currency="USD"), "zero dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mi", to="currency", currency="USD"),
-            "zero dollars tahi cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mi", to="currency", currency="USD"),
-            "zero dollars rima tekau cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mi", to="currency", currency="USD"), "tahi dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mi", to="currency", currency="USD"),
-            "tahi dollar rima tekau cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="mi", to="currency", currency="EUR"), "zero euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="mi", to="currency", currency="EUR"),
-            "zero euros tahi cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="mi", to="currency", currency="EUR"),
-            "zero euros rima tekau cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="mi", to="currency", currency="EUR"), "tahi euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="mi", to="currency", currency="EUR"),
-            "tahi euro rima tekau cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mi", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="mi", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

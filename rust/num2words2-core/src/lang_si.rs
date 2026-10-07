@@ -151,6 +151,14 @@
 //! sets no flag in one method for another to consume. (`Num2Word_Base` mutates
 //! `self.precision` in `float2tuple`, but that is the float path, which is out
 //! of scope and unreachable from integer input.)
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ඩොලර් / යූරෝ with ශත. Sinhala puts the noun
+//! before the number ("ඩොලර් 2"); the number-first order is unchanged and
+//! still open. Examples in these docs that quote English nouns record Python's
+//! output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -253,11 +261,11 @@ impl LangSi {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["ඩොලර්", "ඩොලර්"], &["ශත", "ශත"]),
         );
         forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["යූරෝ", "යූරෝ"], &["ශත", "ශත"]),
         );
         LangSi { forms }
     }

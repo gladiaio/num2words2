@@ -299,40 +299,40 @@ class Num2WordsURTest(TestCase):
             "ایک روپیہ پچاس پیسے",
         )
         self.assertEqual(
-            num2words(0, lang="ur", to="currency", currency="USD"), "صفر dollars"
+            num2words(0, lang="ur", to="currency", currency="USD"), "صفر ڈالر"
         )
         self.assertEqual(
             num2words(0.01, lang="ur", to="currency", currency="USD"),
-            "صفر dollars ایک cent",
+            "صفر ڈالر ایک سینٹ",
         )
         self.assertEqual(
             num2words(0.5, lang="ur", to="currency", currency="USD"),
-            "صفر dollars پچاس cents",
+            "صفر ڈالر پچاس سینٹ",
         )
         self.assertEqual(
-            num2words(1, lang="ur", to="currency", currency="USD"), "ایک dollar"
+            num2words(1, lang="ur", to="currency", currency="USD"), "ایک ڈالر"
         )
         self.assertEqual(
             num2words(1.5, lang="ur", to="currency", currency="USD"),
-            "ایک dollar پچاس cents",
+            "ایک ڈالر پچاس سینٹ",
         )
         self.assertEqual(
-            num2words(0, lang="ur", to="currency", currency="EUR"), "صفر euros"
+            num2words(0, lang="ur", to="currency", currency="EUR"), "صفر یورو"
         )
         self.assertEqual(
             num2words(0.01, lang="ur", to="currency", currency="EUR"),
-            "صفر euros ایک cent",
+            "صفر یورو ایک سینٹ",
         )
         self.assertEqual(
             num2words(0.5, lang="ur", to="currency", currency="EUR"),
-            "صفر euros پچاس cents",
+            "صفر یورو پچاس سینٹ",
         )
         self.assertEqual(
-            num2words(1, lang="ur", to="currency", currency="EUR"), "ایک euro"
+            num2words(1, lang="ur", to="currency", currency="EUR"), "ایک یورو"
         )
         self.assertEqual(
             num2words(1.5, lang="ur", to="currency", currency="EUR"),
-            "ایک euro پچاس cents",
+            "ایک یورو پچاس سینٹ",
         )
 
     def test_year(self):

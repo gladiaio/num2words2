@@ -144,6 +144,12 @@
 //! The other is the float path's `int()` on exponent-notation strings (see
 //! above): `ValueError` (`N2WError::Value`), constructed by [`py_int`] with
 //! CPython's exact message. No other error is constructed in this file.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ڈالر / یورو with سینٹ. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -263,11 +269,11 @@ impl LangUr {
             (FALLBACK_CURRENCY, pkr.clone()),
             (
                 "USD",
-                CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+                CurrencyForms::new(&["ڈالر", "ڈالر"], &["سینٹ", "سینٹ"]),
             ),
             (
                 "EUR",
-                CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+                CurrencyForms::new(&["یورو", "یورو"], &["سینٹ", "سینٹ"]),
             ),
         ]
         .into_iter()

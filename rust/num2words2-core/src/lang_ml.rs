@@ -114,6 +114,12 @@
 //! calling `int()`, so `_int_to_word` only ever receives a non-negative value.
 //! It is reproduced in [`LangMl::int_to_word`] anyway so the function matches
 //! its Python counterpart line for line.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use ഡോളർ / യൂറോ with സെന്റ്. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -438,11 +444,11 @@ impl LangMl {
         currency_forms.insert("INR", CurrencyForms::new(&["രൂപ", "രൂപ"], &["പൈസ", "പൈസ"]));
         currency_forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["ഡോളർ", "ഡോളർ"], &["സെന്റ്", "സെന്റ്"]),
         );
         currency_forms.insert(
             "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
+            CurrencyForms::new(&["യൂറോ", "യൂറോ"], &["സെന്റ്", "സെന്റ്"]),
         );
         LangMl { currency_forms }
     }

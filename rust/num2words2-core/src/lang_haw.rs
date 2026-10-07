@@ -87,6 +87,13 @@
 //! `Num2Word_Base.to_currency`, so `currency::default_to_currency` is bypassed
 //! entirely. `to_cheque` is *not* overridden, so it comes from the base and
 //! `currency::default_to_cheque` serves it unchanged.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). The euro has no reliable Hawaiian noun, so EUR raises
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -342,10 +349,8 @@ impl LangHaw {
             "USD",
             CurrencyForms::new(&["kālā", "kālā"], &["keneka", "keneka"]),
         );
-        forms.insert(
-            "EUR",
-            CurrencyForms::new(&["euro", "euros"], &["cent", "cents"]),
-        );
+        // EUR was English ("dollars", "cents", "euros"); no reliable Hawaiian euro noun was found, so
+        // it raises NotImplementedError (#222).
         LangHaw { forms }
     }
 }

@@ -325,42 +325,12 @@ class Num2WordsSATest(TestCase):
             num2words(1.5, lang="sa", to="currency", currency="INR"),
             "एकम् रूप्यकाणि पञ्चाशत् पैसा",
         )
-        self.assertEqual(
-            num2words(0, lang="sa", to="currency", currency="USD"), "शून्यम् dollars"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="sa", to="currency", currency="USD"),
-            "शून्यम् dollars एकम् cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="sa", to="currency", currency="USD"),
-            "शून्यम् dollars पञ्चाशत् cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="sa", to="currency", currency="USD"), "एकम् dollar"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="sa", to="currency", currency="USD"),
-            "एकम् dollar पञ्चाशत् cents",
-        )
-        self.assertEqual(
-            num2words(0, lang="sa", to="currency", currency="EUR"), "शून्यम् euros"
-        )
-        self.assertEqual(
-            num2words(0.01, lang="sa", to="currency", currency="EUR"),
-            "शून्यम् euros एकम् cent",
-        )
-        self.assertEqual(
-            num2words(0.5, lang="sa", to="currency", currency="EUR"),
-            "शून्यम् euros पञ्चाशत् cents",
-        )
-        self.assertEqual(
-            num2words(1, lang="sa", to="currency", currency="EUR"), "एकम् euro"
-        )
-        self.assertEqual(
-            num2words(1.5, lang="sa", to="currency", currency="EUR"),
-            "एकम् euro पञ्चाशत् cents",
-        )
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="sa", to="currency", currency="USD")
+        # No native noun for this code (gladiaio/num2words2#222).
+        with self.assertRaises(NotImplementedError):
+            num2words(0, lang="sa", to="currency", currency="EUR")
 
     def test_year(self):
         """Test year conversion."""

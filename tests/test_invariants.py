@@ -167,6 +167,53 @@ def _ordinal_unique_failures(lang):
     return out
 
 
+# Codes probed by currency_nouns_native. There is no API listing a
+# language's currency table, so this covers the codes the shared tables
+# carry; each language's own default is probed too.
+CURRENCY_PROBE = (
+    "USD", "EUR", "GBP", "JPY", "INR", "CNY", "RUB", "CHF", "AUD", "CAD",
+    "SEK", "NOK", "DKK", "PLN", "BRL", "MXN", "ZAR", "KRW", "AED", "SAR",
+    "KWD", "TRY", "HUF", "CZK", "NZD", "SGD", "HKD", "IDR", "NGN",
+)
+ENGLISH_CURRENCY_PLURALS = {"dollars", "cents", "euros", "pounds"}
+# Languages whose own word coincides with an English plural above.
+NATIVE_CURRENCY_PLURALS = {
+    # French "dollars", "cents" (dollar cents), "euros"
+    "fr": {"dollars", "cents", "euros"},
+    "fr_BE": {"dollars", "cents", "euros"},
+    "fr_CH": {"dollars", "cents", "euros"},
+    "fr_DZ": {"dollars", "cents", "euros"},
+    # "euros" is the Spanish, Catalan, Portuguese and Galician plural
+    "es": {"euros"}, "es_CO": {"euros"}, "es_CR": {"euros"},
+    "es_GT": {"euros"}, "es_NI": {"euros"}, "es_VE": {"euros"},
+    "ca": {"euros"}, "gl": {"euros"}, "pt": {"euros"}, "pt_BR": {"euros"},
+    # Danish plural "dollar" or "dollars" (Den Danske Ordbog)
+    "da": {"dollars"}, "dk": {"dollars"},
+}
+
+
+def _currency_noun_failures(lang):
+    """Currency nouns are the language's own (#222): no English plural
+    dollars/cents/euros/pounds in Latin-script output (unless that is the
+    native spelling), and no Latin letters at all in a language whose
+    numerals use another script."""
+    if lang in ENGLISH:
+        return []
+    two, _ = _call(2, lang, "cardinal")
+    non_latin = isinstance(two, str) and not re.search(r"[A-Za-z]", two)
+    allowed = NATIVE_CURRENCY_PLURALS.get(lang, set())
+    out = []
+    for code in CURRENCY_PROBE + (_rust.default_currency(lang),):
+        try:
+            r = num2words(2.5, lang=lang, to="currency", currency=code)
+        except Exception:  # noqa: BLE001 - unsupported codes raise
+            continue
+        words = {w.lower() for w in re.findall(r"[A-Za-z]+", r)}
+        if (non_latin and words) or (words & ENGLISH_CURRENCY_PLURALS) - allowed:
+            out.append((code, r))
+    return out
+
+
 CHECKS = {
     "exceptions": _exception_failures,
     "hygiene": _hygiene_failures,
@@ -176,6 +223,7 @@ CHECKS = {
     "ordinal_rejects_fraction": _ordinal_fraction_failures,
     "currency_code_respected": _currency_code_failures,
     "ordinal_unique_1_2000": _ordinal_unique_failures,
+    "currency_nouns_native": _currency_noun_failures,
 }
 
 # Languages whose own decimal word is spelled "point".
@@ -198,6 +246,7 @@ ALLOW = {
     "currency_code_respected": set(),
     # Only be and el failed this when it was added; both fixed in #251.
     "ordinal_unique_1_2000": set(),
+    "currency_nouns_native": set(),
 }
 
 

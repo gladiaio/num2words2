@@ -333,40 +333,40 @@ class Num2WordsJWTest(TestCase):
             "siji rupiah seket sen",
         )
         self.assertEqual(
-            num2words(0, lang="jw", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="jw", to="currency", currency="USD"), "zero dolar"
         )
         self.assertEqual(
             num2words(0.01, lang="jw", to="currency", currency="USD"),
-            "zero dollars siji cent",
+            "zero dolar siji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="jw", to="currency", currency="USD"),
-            "zero dollars seket cents",
+            "zero dolar seket sen",
         )
         self.assertEqual(
-            num2words(1, lang="jw", to="currency", currency="USD"), "siji dollar"
+            num2words(1, lang="jw", to="currency", currency="USD"), "siji dolar"
         )
         self.assertEqual(
             num2words(1.5, lang="jw", to="currency", currency="USD"),
-            "siji dollar seket cents",
+            "siji dolar seket sen",
         )
         self.assertEqual(
-            num2words(0, lang="jw", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="jw", to="currency", currency="EUR"), "zero euro"
         )
         self.assertEqual(
             num2words(0.01, lang="jw", to="currency", currency="EUR"),
-            "zero euros siji cent",
+            "zero euro siji sen",
         )
         self.assertEqual(
             num2words(0.5, lang="jw", to="currency", currency="EUR"),
-            "zero euros seket cents",
+            "zero euro seket sen",
         )
         self.assertEqual(
             num2words(1, lang="jw", to="currency", currency="EUR"), "siji euro"
         )
         self.assertEqual(
             num2words(1.5, lang="jw", to="currency", currency="EUR"),
-            "siji euro seket cents",
+            "siji euro seket sen",
         )
 
     def test_year(self):

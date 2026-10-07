@@ -90,6 +90,12 @@
 //! CONVERTER_CLASSES['oc'].CURRENCY_PRECISION   {}
 //! CONVERTER_CLASSES['oc'].CURRENCY_ADJECTIVES  {}
 //! ```
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD uses dolar/dolars with centim/centims. Examples in these docs
+//! that quote English nouns record Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -205,7 +211,7 @@ impl LangOc {
         );
         forms.insert(
             "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
+            CurrencyForms::new(&["dolar", "dolars"], &["centim", "centims"]),
         );
         LangOc { forms }
     }

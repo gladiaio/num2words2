@@ -27,7 +27,7 @@ def _clean(r):
     ("fi", "miinus viisi euroa"),
     ("hu", "mínusz öt forint"),
     ("nl", "min vijf euro"),
-    ("sv", "minus fem euros"),
+    ("sv", "minus fem euro"),
     ("ha", "ban naira biyar"),
     ("dv", "މައިނަސް ފަސް ރުފިޔާ"),
     ("hi", "माइनस पाँच रुपये"),

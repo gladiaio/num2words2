@@ -294,40 +294,40 @@ class Num2WordsSDTest(TestCase):
             "هڪ روپي پنجاهه پئسا",
         )
         self.assertEqual(
-            num2words(0, lang="sd", to="currency", currency="USD"), "ٻڙي dollars"
+            num2words(0, lang="sd", to="currency", currency="USD"), "ٻڙي ڊالر"
         )
         self.assertEqual(
             num2words(0.01, lang="sd", to="currency", currency="USD"),
-            "ٻڙي dollars هڪ cent",
+            "ٻڙي ڊالر هڪ سينٽ",
         )
         self.assertEqual(
             num2words(0.5, lang="sd", to="currency", currency="USD"),
-            "ٻڙي dollars پنجاهه cents",
+            "ٻڙي ڊالر پنجاهه سينٽ",
         )
         self.assertEqual(
-            num2words(1, lang="sd", to="currency", currency="USD"), "هڪ dollar"
+            num2words(1, lang="sd", to="currency", currency="USD"), "هڪ ڊالر"
         )
         self.assertEqual(
             num2words(1.5, lang="sd", to="currency", currency="USD"),
-            "هڪ dollar پنجاهه cents",
+            "هڪ ڊالر پنجاهه سينٽ",
         )
         self.assertEqual(
-            num2words(0, lang="sd", to="currency", currency="EUR"), "ٻڙي euros"
+            num2words(0, lang="sd", to="currency", currency="EUR"), "ٻڙي يورو"
         )
         self.assertEqual(
             num2words(0.01, lang="sd", to="currency", currency="EUR"),
-            "ٻڙي euros هڪ cent",
+            "ٻڙي يورو هڪ سينٽ",
         )
         self.assertEqual(
             num2words(0.5, lang="sd", to="currency", currency="EUR"),
-            "ٻڙي euros پنجاهه cents",
+            "ٻڙي يورو پنجاهه سينٽ",
         )
         self.assertEqual(
-            num2words(1, lang="sd", to="currency", currency="EUR"), "هڪ euro"
+            num2words(1, lang="sd", to="currency", currency="EUR"), "هڪ يورو"
         )
         self.assertEqual(
             num2words(1.5, lang="sd", to="currency", currency="EUR"),
-            "هڪ euro پنجاهه cents",
+            "هڪ يورو پنجاهه سينٽ",
         )
 
     def test_year(self):

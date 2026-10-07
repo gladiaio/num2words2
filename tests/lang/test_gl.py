@@ -314,22 +314,22 @@ class Num2WordsGLTest(TestCase):
             "un euro cincuenta céntimos",
         )
         self.assertEqual(
-            num2words(0, lang="gl", to="currency", currency="USD"), "cero dollars"
+            num2words(0, lang="gl", to="currency", currency="USD"), "cero dólares"
         )
         self.assertEqual(
             num2words(0.01, lang="gl", to="currency", currency="USD"),
-            "cero dollars un cent",
+            "cero dólares un centavo",
         )
         self.assertEqual(
             num2words(0.5, lang="gl", to="currency", currency="USD"),
-            "cero dollars cincuenta cents",
+            "cero dólares cincuenta centavos",
         )
         self.assertEqual(
-            num2words(1, lang="gl", to="currency", currency="USD"), "un dollar"
+            num2words(1, lang="gl", to="currency", currency="USD"), "un dólar"
         )
         self.assertEqual(
             num2words(1.5, lang="gl", to="currency", currency="USD"),
-            "un dollar cincuenta cents",
+            "un dólar cincuenta centavos",
         )
 
     def test_year(self):

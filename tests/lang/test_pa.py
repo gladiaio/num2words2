@@ -297,40 +297,40 @@ class Num2WordsPATest(TestCase):
             "ਇੱਕ ਰੁਪਈਆ ਪੰਜਾਹ ਪੈਸੇ",
         )
         self.assertEqual(
-            num2words(0, lang="pa", to="currency", currency="USD"), "ਸਿਫਰ dollars"
+            num2words(0, lang="pa", to="currency", currency="USD"), "ਸਿਫਰ ਡਾਲਰ"
         )
         self.assertEqual(
             num2words(0.01, lang="pa", to="currency", currency="USD"),
-            "ਸਿਫਰ dollars ਇੱਕ cent",
+            "ਸਿਫਰ ਡਾਲਰ ਇੱਕ ਸੈਂਟ",
         )
         self.assertEqual(
             num2words(0.5, lang="pa", to="currency", currency="USD"),
-            "ਸਿਫਰ dollars ਪੰਜਾਹ cents",
+            "ਸਿਫਰ ਡਾਲਰ ਪੰਜਾਹ ਸੈਂਟ",
         )
         self.assertEqual(
-            num2words(1, lang="pa", to="currency", currency="USD"), "ਇੱਕ dollar"
+            num2words(1, lang="pa", to="currency", currency="USD"), "ਇੱਕ ਡਾਲਰ"
         )
         self.assertEqual(
             num2words(1.5, lang="pa", to="currency", currency="USD"),
-            "ਇੱਕ dollar ਪੰਜਾਹ cents",
+            "ਇੱਕ ਡਾਲਰ ਪੰਜਾਹ ਸੈਂਟ",
         )
         self.assertEqual(
-            num2words(0, lang="pa", to="currency", currency="EUR"), "ਸਿਫਰ euros"
+            num2words(0, lang="pa", to="currency", currency="EUR"), "ਸਿਫਰ ਯੂਰੋ"
         )
         self.assertEqual(
             num2words(0.01, lang="pa", to="currency", currency="EUR"),
-            "ਸਿਫਰ euros ਇੱਕ cent",
+            "ਸਿਫਰ ਯੂਰੋ ਇੱਕ ਸੈਂਟ",
         )
         self.assertEqual(
             num2words(0.5, lang="pa", to="currency", currency="EUR"),
-            "ਸਿਫਰ euros ਪੰਜਾਹ cents",
+            "ਸਿਫਰ ਯੂਰੋ ਪੰਜਾਹ ਸੈਂਟ",
         )
         self.assertEqual(
-            num2words(1, lang="pa", to="currency", currency="EUR"), "ਇੱਕ euro"
+            num2words(1, lang="pa", to="currency", currency="EUR"), "ਇੱਕ ਯੂਰੋ"
         )
         self.assertEqual(
             num2words(1.5, lang="pa", to="currency", currency="EUR"),
-            "ਇੱਕ euro ਪੰਜਾਹ cents",
+            "ਇੱਕ ਯੂਰੋ ਪੰਜਾਹ ਸੈਂਟ",
         )
 
     def test_year(self):

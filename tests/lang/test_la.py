@@ -363,15 +363,15 @@ class Num2WordsLATest(TestCase):
     def test_currency(self):
         """Test currency conversion."""
         self.assertEqual(
-            num2words(0, lang="la", to="currency", currency="EUR"), "zero euros"
+            num2words(0, lang="la", to="currency", currency="EUR"), "zero eurones"
         )
         self.assertEqual(
             num2words(0.01, lang="la", to="currency", currency="EUR"),
-            "zero euros unus centesima",
+            "zero eurones unus centesima",
         )
         self.assertEqual(
             num2words(0.5, lang="la", to="currency", currency="EUR"),
-            "zero euros quinquaginta centesimae",
+            "zero eurones quinquaginta centesimae",
         )
         self.assertEqual(
             num2words(1, lang="la", to="currency", currency="EUR"), "unus euro"
@@ -381,22 +381,22 @@ class Num2WordsLATest(TestCase):
             "unus euro quinquaginta centesimae",
         )
         self.assertEqual(
-            num2words(0, lang="la", to="currency", currency="USD"), "zero dollars"
+            num2words(0, lang="la", to="currency", currency="USD"), "zero dollaria"
         )
         self.assertEqual(
             num2words(0.01, lang="la", to="currency", currency="USD"),
-            "zero dollars unus cent",
+            "zero dollaria unus centesima",
         )
         self.assertEqual(
             num2words(0.5, lang="la", to="currency", currency="USD"),
-            "zero dollars quinquaginta cents",
+            "zero dollaria quinquaginta centesimae",
         )
         self.assertEqual(
-            num2words(1, lang="la", to="currency", currency="USD"), "unus dollar"
+            num2words(1, lang="la", to="currency", currency="USD"), "unus dollarium"
         )
         self.assertEqual(
             num2words(1.5, lang="la", to="currency", currency="USD"),
-            "unus dollar quinquaginta cents",
+            "unus dollarium quinquaginta centesimae",
         )
 
     def test_year(self):

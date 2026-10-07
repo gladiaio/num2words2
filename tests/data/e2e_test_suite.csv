@@ -402,7 +402,7 @@ number,lang,expected,to,currency,english_translation
 1.01,ro,un leu și un ban,currency,RON,
 9000.0,ru,девять тысяч рублей,currency,RUB,
 -0.99,zh_cn,人民币负零元九角九分,currency,CNY,
-2.22,te,"రెండు dollars, ఇరవై రెండు cents",currency,USD,
+2.22,te,"రెండు డాలర్లు, ఇరవై రెండు సెంట్లు",currency,USD,
 888888.0,th,แปดแสนแปดหมื่นแปดพันแปดร้อยแปดสิบแปดบาท,currency,THB,
 -500.5,pt,menos quinhentos euros e cinquenta cêntimos,currency,EUR,
 1000000.0,ko,백만원,currency,KRW,

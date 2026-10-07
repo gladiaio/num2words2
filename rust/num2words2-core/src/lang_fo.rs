@@ -131,6 +131,14 @@
 //!    left-to-right off the string: `12.999` → `"999"[:2]` → 99 cents, and
 //!    `0.5` → `"5".ljust(2, "0")` → "50" → 50 cents. So a trailing digit is
 //!    dropped rather than rounded up (`.999` does not carry to the next unit).
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). USD and EUR use dollari/dollarar and evra/evrur with sent. The
+//! numeral does not yet agree with the feminine "evra" ("tvey evrur" for "tvær
+//! evrur"). Examples in these docs that quote English nouns record Python's
+//! output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -321,8 +329,8 @@ impl LangFo {
         // captures the one place Python's ordering was observable.
         let currency_forms: HashMap<&'static str, CurrencyForms> = [
             ("DKK", &["króna", "krónur"][..], &["oyra", "oyru"][..]),
-            ("USD", &["dollar", "dollars"][..], &["cent", "cents"][..]),
-            ("EUR", &["euro", "euros"][..], &["cent", "cents"][..]),
+            ("USD", &["dollari", "dollarar"][..], &["sent", "sent"][..]),
+            ("EUR", &["evra", "evrur"][..], &["sent", "sent"][..]),
         ]
         .into_iter()
         .map(|(k, u, s)| (k, CurrencyForms::new(u, s)))

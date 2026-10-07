@@ -298,40 +298,40 @@ class Num2WordsSITest(TestCase):
             "එක රුපියල් පනහ සත",
         )
         self.assertEqual(
-            num2words(0, lang="si", to="currency", currency="USD"), "බිංදුව dollars"
+            num2words(0, lang="si", to="currency", currency="USD"), "බිංදුව ඩොලර්"
         )
         self.assertEqual(
             num2words(0.01, lang="si", to="currency", currency="USD"),
-            "බිංදුව dollars එක cent",
+            "බිංදුව ඩොලර් එක ශත",
         )
         self.assertEqual(
             num2words(0.5, lang="si", to="currency", currency="USD"),
-            "බිංදුව dollars පනහ cents",
+            "බිංදුව ඩොලර් පනහ ශත",
         )
         self.assertEqual(
-            num2words(1, lang="si", to="currency", currency="USD"), "එක dollar"
+            num2words(1, lang="si", to="currency", currency="USD"), "එක ඩොලර්"
         )
         self.assertEqual(
             num2words(1.5, lang="si", to="currency", currency="USD"),
-            "එක dollar පනහ cents",
+            "එක ඩොලර් පනහ ශත",
         )
         self.assertEqual(
-            num2words(0, lang="si", to="currency", currency="EUR"), "බිංදුව euros"
+            num2words(0, lang="si", to="currency", currency="EUR"), "බිංදුව යූරෝ"
         )
         self.assertEqual(
             num2words(0.01, lang="si", to="currency", currency="EUR"),
-            "බිංදුව euros එක cent",
+            "බිංදුව යූරෝ එක ශත",
         )
         self.assertEqual(
             num2words(0.5, lang="si", to="currency", currency="EUR"),
-            "බිංදුව euros පනහ cents",
+            "බිංදුව යූරෝ පනහ ශත",
         )
         self.assertEqual(
-            num2words(1, lang="si", to="currency", currency="EUR"), "එක euro"
+            num2words(1, lang="si", to="currency", currency="EUR"), "එක යූරෝ"
         )
         self.assertEqual(
             num2words(1.5, lang="si", to="currency", currency="EUR"),
-            "එක euro පනහ cents",
+            "එක යූරෝ පනහ ශත",
         )
 
     def test_year(self):

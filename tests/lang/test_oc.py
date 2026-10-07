@@ -316,22 +316,22 @@ class Num2WordsOCTest(TestCase):
             "un èuro cinquanta centims",
         )
         self.assertEqual(
-            num2words(0, lang="oc", to="currency", currency="USD"), "zèro dollars"
+            num2words(0, lang="oc", to="currency", currency="USD"), "zèro dolars"
         )
         self.assertEqual(
             num2words(0.01, lang="oc", to="currency", currency="USD"),
-            "zèro dollars un cent",
+            "zèro dolars un centim",
         )
         self.assertEqual(
             num2words(0.5, lang="oc", to="currency", currency="USD"),
-            "zèro dollars cinquanta cents",
+            "zèro dolars cinquanta centims",
         )
         self.assertEqual(
-            num2words(1, lang="oc", to="currency", currency="USD"), "un dollar"
+            num2words(1, lang="oc", to="currency", currency="USD"), "un dolar"
         )
         self.assertEqual(
             num2words(1.5, lang="oc", to="currency", currency="USD"),
-            "un dollar cinquanta cents",
+            "un dolar cinquanta centims",
         )
 
     def test_year(self):

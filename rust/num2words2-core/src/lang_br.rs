@@ -210,6 +210,13 @@
 //! 13. **`_int_to_word`'s digit fallback is reachable from currency.** Unlike
 //!    the four integer modes, `to_currency(1234567890.0)` yields
 //!    `"1234567890 euroioù"` — bare digits, per quirk 1.
+//!
+//! # Currency nouns (gladiaio/num2words2#222)
+//!
+//! Python's currency table used English nouns here ("dollars", "cents",
+//! "euros"). No reliable Breton cent noun was found, so USD raises
+//! NotImplementedError. Examples in these docs that quote English nouns record
+//! Python's output.
 
 use crate::base::{Lang, N2WError, Result};
 use crate::currency::{CurrencyForms, CurrencyValue};
@@ -645,10 +652,8 @@ impl LangBr {
             "EUR",
             CurrencyForms::new(&["euro", "euroioù"], &["sentim", "sentimoù"]),
         );
-        currency_forms.insert(
-            "USD",
-            CurrencyForms::new(&["dollar", "dollars"], &["cent", "cents"]),
-        );
+        // USD was English ("dollars", "cents"); no reliable Breton cent noun was found, so
+        // it raises NotImplementedError (#222).
         let fallback_forms = currency_forms
             .get("EUR")
             .expect("CURRENCY_FORMS[\"EUR\"] is inserted directly above")
