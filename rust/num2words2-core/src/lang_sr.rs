@@ -547,7 +547,8 @@ fn feminine_kwarg(kw: &Kwargs) -> Result<bool> {
 /// otherwise Cyrillic output ("један dinar, педесет para"). This port
 /// transliterates them to Cyrillic (gladiaio/num2words2#154); Serbian
 /// Latin/Cyrillic is a one-to-one mapping, and `sr_Latn` keeps its own Latin
-/// table.
+/// table. The RUB genitive plural is the standard `рубаља` ("пет рубаља"), not
+/// Python's colloquial `рубљи` (#198).
 ///
 /// # Why the gender flag is a `"False"`/`"True"` string
 ///
@@ -572,7 +573,7 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert(
         "RUB",
         CurrencyForms::new(
-            &["рубља", "рубље", "рубљи", "True"],
+            &["рубља", "рубље", "рубаља", "True"],
             &["копејка", "копејке", "копејки", "True"],
         ),
     );

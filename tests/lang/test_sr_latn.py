@@ -58,5 +58,16 @@ def test_sr_latn_currency_feminine_unit():
     assert num2words(2, lang="sr_Latn", to="currency", currency="EUR") == "dva evra"
     assert (
         num2words(21.5, lang="sr_Latn", to="cheque", currency="RUB")
-        == "DVADESET JEDNA AND 50/100 RUBLJI"
+        == "DVADESET JEDNA AND 50/100 RUBALJA"
+    )
+
+
+def test_sr_latn_ruble_genitive_plural():
+    # gladiaio/num2words2#198: standard genitive plural "rubalja", not "rublji"
+    assert num2words(5, lang="sr_Latn", to="currency", currency="RUB") == (
+        "pet rubalja"
+    )
+    assert num2words(5, lang="sr", to="currency", currency="RUB") == "пет рубаља"
+    assert num2words(5, lang="sr_Cyrl", to="currency", currency="RUB") == (
+        "пет рубаља"
     )

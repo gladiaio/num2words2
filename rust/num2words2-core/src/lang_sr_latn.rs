@@ -587,6 +587,10 @@ fn cyrl_to_latn(s: &str) -> String {
 /// }
 /// ```
 ///
+/// One deliberate departure (#198): the RUB genitive plural is the standard
+/// `rubalja` (with the inserted vowel, "pet rubalja"), not Python's colloquial
+/// `rublji`.
+///
 /// Two things about this table are unusual and both are load-bearing.
 ///
 /// **The values are already Latin.** `lang_SR.py` keeps its *number* words in
@@ -619,7 +623,7 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert(
         "RUB",
         CurrencyForms::new(
-            &["rublja", "rublje", "rublji", "True"],
+            &["rublja", "rublje", "rubalja", "True"],
             &["kopejka", "kopejke", "kopejki", "True"],
         ),
     );
