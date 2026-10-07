@@ -308,3 +308,28 @@ class Num2WordsHETest(TestCase):
         self.assertEqual(num2words(-0.4, lang="he"), "מינוס אפס נקודה ארבע")
         self.assertEqual(num2words(-0.5, lang="he"), "מינוס אפס נקודה חמש")
         self.assertEqual(num2words(-1.4, lang="he"), "מינוס אחת נקודה ארבע")
+
+
+def test_he_currency_agreement_and_order():
+    # gladiaio/num2words2#254: masculine numeral for shekel/dollar, feminine
+    # for agora; 1 follows the noun, 2 takes the construct form, and the
+    # conjunction ו is prefixed to the agorot part, never glued to the noun.
+    from num2words2 import num2words
+
+    def cur(v, **kw):
+        return num2words(v, lang="he", to="currency", **kw)
+
+    assert cur(1) == "שקל אחד"
+    assert cur(2) == "שני שקלים"
+    assert cur(5) == "חמישה שקלים"
+    assert cur(21) == "עשרים ואחד שקלים"
+    assert cur(2.5) == "שני שקלים וחמישים אגורות"
+    assert cur(1.01) == "שקל אחד ואגורה אחת"
+    assert cur(2.02) == "שני שקלים ושתי אגורות"
+    assert cur(3.05) == "שלושה שקלים וחמש אגורות"
+    assert cur(100) == "מאה שקלים"
+    assert cur(5, currency="USD") == "חמישה דולרים"
+    assert cur(1, currency="EUR") == "אירו אחד"
+    assert cur(-3.75, currency="USD") == "מינוס שלושה דולרים ושבעים וחמישה סנטים"
+    assert cur(2.5, cents=False) == "שני שקלים ו-50 אגורות"
+    assert "ו " not in cur(100) and not cur(100).endswith("ו")

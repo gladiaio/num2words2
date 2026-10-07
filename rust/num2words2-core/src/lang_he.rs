@@ -47,9 +47,9 @@
 //!     `pluralize`'s `prefer_singular` limb is unreachable — see
 //!     [`LangHe::pluralize`]). Any value is a no-op, so `to_currency_kw`
 //!     simply delegates to the plain `to_currency`.
-//!   * `_money_verbose` / `_cents_verbose` → `self.to_cardinal(number)`, and
-//!     `_cents_terse` → zero-padded digits. All three trait defaults already
-//!     do this, and route through the `to_cardinal` override.
+//!   * `_money_verbose` / `_cents_verbose` were `self.to_cardinal(number)`
+//!     (feminine); they now agree with the noun's gender (#254).
+//!     `_cents_terse` → zero-padded digits, the trait default.
 //!   * `to_cheque` → `currency::default_to_cheque`. `.upper()` is a no-op on
 //!     Hebrew, so only the literal "AND"/"MINUS" are upper-case in the output.
 //!   * `CURRENCY_ADJECTIVES` / `CURRENCY_PRECISION` are both `{}` — HE descends
@@ -66,16 +66,16 @@
 //! `Num2Word_EUR` nor is touched by EN. The live table is exactly the three
 //! codes in [`build_currency_forms`] — anything else is a `NotImplementedError`.
 //!
-//! `Num2Word_HE.to_currency` is the interesting part. It splits on
-//! `isinstance(val, int)` and, for a true int, **casts to `float(val)` before
-//! delegating to `Num2Word_Base.to_currency`**. That inverts Base's usual
-//! int/float split: Base skips the cents segment for ints, but HE never lets
-//! Base see an int, so `to_currency(0, "EUR")` renders "אפס אירוו אפס סנטים"
-//! — with cents. Then it scrubs the now-redundant zero-cents text back out
-//! with a list of hardcoded patterns. See [`strip_zero_cents`].
+//! `Num2Word_HE.to_currency` cast ints to float, ran `Num2Word_Base.to_currency`
+//! and scrubbed the zero cents back out, which glued the separator "ו" to the
+//! unit noun and used feminine numerals before masculine nouns ("אחת שקלו",
+//! "שתיים שקליםו"). Rewritten (gladiaio/num2words2#254) with Hebrew agreement
+//! and word order: "שקל אחד", "שני שקלים וחמישים אגורות", "חמישה דולרים".
+//! See [`count_noun`] and [`LangHe::to_currency`].
 //!
 //! `CURRENCY_GENDERS` and `__init__`'s `makaf` are both dead data in Python —
-//! assigned and never read by any code path — so neither is ported. They are
+//! assigned and never read by any code path — so neither is ported (the noun
+//! genders the port needs live in [`noun_is_masculine`]). They are
 //! called out here because a reviewer diffing against `lang_HE.py` will look
 //! for them.
 //!
@@ -536,207 +536,41 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m
 }
 
-/// `Num2Word_HE.to_currency`'s `zero_patterns` list, verbatim and in order
-/// (including the duplicated "нула стотинки").
+/// Whether a currency noun is masculine, which picks the numeral's gender.
 ///
-/// Copied wholesale from some upstream multi-language sweep: only
-/// "אפס אגורות" — ILS's zero cents — can ever occur in a Hebrew result, since
-/// every other piece of `result` comes from HE's own Hebrew wordlists. The
-/// rest are dead weight, kept so the loop matches Python element for element.
-const ZERO_PATTERNS: [&str; 21] = [
-    "zero cent",
-    "nul cent",
-    "null cent",
-    "sıfır kuruş",
-    "אפס אגורות",
-    "zero sen",
-    "ศูนย์สตางค์",
-    "không xu",
-    "शून्य पैसे",
-    "শূন্য পয়সা",
-    "nula lipa",
-    "нула пара",
-    "ноль копеек",
-    "нула стотинки",
-    "零分",
-    "ዜሮ ሳንቲም",
-    "صفر",
-    "sero sent",
-    "dim ceiniog",
-    "ნულოვანი თეთრი",
-    "нула стотинки",
-];
-
-/// The alternation inside `to_currency`'s connecting-word regex, verbatim and
-/// in order (duplicates and all — "და" appears four times).
-///
-/// Note Hebrew's own conjunction "ו" (U+05D5) is *not* in the list; the Arabic
-/// "و" (U+0648) that is there only looks like it. That omission is why the
-/// default `separator="ו"` survives the scrub and leaves a dangling "ו" — see
-/// [`strip_zero_cents`].
-const CONJUNCTIONS: [&str; 24] = [
-    "and", "və", "և", "და", "ir", "და", "და", "و", "و", "与", "ja", "और", "এবং", "i", "и", "и",
-    "と", "그리고", "และ", "và", "dan", "a", "e", "და",
-];
-
-/// Python's *simple* case fold for one `char`.
-///
-/// `char::to_lowercase` can expand one char into several ("İ" → "i̇"), which
-/// Python's `re` does not do when matching a literal under `re.IGNORECASE`. An
-/// expansion is therefore treated as "no simple lowercase" and the char is
-/// compared as-is, which keeps the comparison 1:1 and — crucially — keeps
-/// haystack byte offsets valid.
-fn simple_lower(c: char) -> char {
-    let mut it = c.to_lowercase();
-    match (it.next(), it.next()) {
-        (Some(l), None) => l,
-        _ => c,
-    }
+/// Hebrew numerals agree in gender with the counted noun (#254): שקל, דולר,
+/// אירו and סנט are masculine, אגורה feminine. Keyed by the singular form so
+/// unit and subunit share one lookup.
+fn noun_is_masculine(singular: &str) -> bool {
+    singular != "אגורה"
 }
 
-/// Case-insensitive literal match of `needle` at byte offset `at`.
-/// Returns the number of *haystack* bytes consumed, or `None`.
-fn match_ci_at(hay: &str, at: usize, needle: &str) -> Option<usize> {
-    let mut h = hay[at..].chars();
-    let mut consumed = 0usize;
-    for nc in needle.chars() {
-        let hc = h.next()?;
-        if simple_lower(hc) != simple_lower(nc) {
-            return None;
-        }
-        consumed += hc.len_utf8();
-    }
-    Some(consumed)
+/// The numeral before a noun of the given gender, absolute state: "חמישה
+/// שקלים", "חמש אגורות". 1 and 2 are not handled here (see [`count_noun`]).
+fn numeral_for(n: &BigInt, masculine: bool) -> Result<String> {
+    int2word(n, masculine, false, false, false, false)
 }
 
-/// Leftmost case-insensitive occurrence of `needle` at or after `from`, as
-/// `(start, end)` byte offsets.
-fn find_ci(hay: &str, needle: &str, from: usize) -> Option<(usize, usize)> {
-    let mut i = from;
-    while i <= hay.len() {
-        if hay.is_char_boundary(i) {
-            if let Some(len) = match_ci_at(hay, i, needle) {
-                return Some((i, i + len));
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Greedy `\s+` at `at`: the offset just past the run, or `None` if there is
-/// no whitespace there at all.
-fn skip_ws1(hay: &str, at: usize) -> Option<usize> {
-    let mut i = at;
-    for c in hay[at..].chars() {
-        if !c.is_whitespace() {
-            break;
-        }
-        i += c.len_utf8();
-    }
-    if i > at {
-        Some(i)
-    } else {
-        None
-    }
-}
-
-/// `re.sub(re.escape(needle), "", hay, flags=re.IGNORECASE)`.
-fn remove_all_ci(hay: &str, needle: &str) -> String {
-    if needle.is_empty() {
-        return hay.to_string();
-    }
-    let mut out = String::with_capacity(hay.len());
-    let mut i = 0usize;
-    while let Some((s, e)) = find_ci(hay, needle, i) {
-        out.push_str(&hay[i..s]);
-        i = e;
-    }
-    out.push_str(&hay[i..]);
-    out
-}
-
-/// One match of `\s+(<conj>)\s+<pattern>` starting at `at`; returns its end.
+/// "<n> <noun>" with Hebrew agreement and word order (#254):
 ///
-/// Both `\s+` are greedy and need no backtracking: no conjunction and no zero
-/// pattern begins with whitespace, so the maximal run is always the right one.
-/// Alternatives are tried in Python's source order, and a conjunction that
-/// matches but is not followed by `\s+<pattern>` falls through to the next —
-/// which is what `re`'s backtracking does.
-fn match_conjoined(hay: &str, at: usize, pattern: &str) -> Option<usize> {
-    let a = skip_ws1(hay, at)?;
-    for conj in CONJUNCTIONS {
-        let Some(clen) = match_ci_at(hay, a, conj) else {
-            continue;
-        };
-        let Some(b) = skip_ws1(hay, a + clen) else {
-            continue;
-        };
-        if let Some(plen) = match_ci_at(hay, b, pattern) {
-            return Some(b + plen);
-        }
+/// * 1 follows the noun in the singular: "שקל אחד", "אגורה אחת".
+/// * 2 takes the construct form before the plural: "שני שקלים", "שתי
+///   אגורות".
+/// * Everything else is the gender-agreeing numeral before the plural:
+///   "חמישה שקלים", "עשרים ואחד שקלים", "אפס אגורות".
+fn count_noun(n: &BigInt, forms: &[String]) -> Result<String> {
+    let singular = forms.first().map(String::as_str).unwrap_or("");
+    let plural = forms.get(1).map(String::as_str).unwrap_or(singular);
+    let masc = noun_is_masculine(singular);
+    let m = usize::from(masc);
+    if n.is_one() {
+        return Ok(format!("{} {}", singular, ONES[1][m]));
     }
-    None
-}
-
-/// `re.sub(r"\s+(<conj>)\s+" + re.escape(pattern), "", hay, flags=re.IGNORECASE)`.
-fn remove_conjoined(hay: &str, pattern: &str) -> String {
-    let mut out = String::with_capacity(hay.len());
-    let mut i = 0usize;
-    let mut cut = 0usize;
-    while i < hay.len() {
-        if !hay.is_char_boundary(i) {
-            i += 1;
-            continue;
-        }
-        // `match_conjoined` needs >= 1 whitespace char, so `end > i` always
-        // and this cannot spin.
-        if let Some(end) = match_conjoined(hay, i, pattern) {
-            out.push_str(&hay[cut..i]);
-            cut = end;
-            i = end;
-            continue;
-        }
-        i += 1;
+    if n == &BigInt::from(2) {
+        // ONES[2][2..=3]: the construct forms שתי / שני.
+        return Ok(format!("{} {}", ONES[2][2 + m], plural));
     }
-    out.push_str(&hay[cut..]);
-    out
-}
-
-/// The zero-cents scrub `Num2Word_HE.to_currency` runs over the **int** result.
-///
-/// ```python
-/// for pattern in zero_patterns:
-///     if pattern in result.lower():
-///         result = re.sub(r"\s+(and|...)\s+" + re.escape(pattern), "", result, flags=re.IGNORECASE)
-///         result = re.sub(re.escape(pattern), "", result, flags=re.IGNORECASE)
-///         result = " ".join(result.split())
-/// return result.strip()
-/// ```
-///
-/// The whitespace normalisation sits *inside* the `if`, so it only runs for a
-/// pattern that actually hit; `.strip()` always runs. Both are reproduced.
-///
-/// **Python bug, reproduced**: for ILS the conjunction sub never fires, because
-/// HE's default separator "ו" is glued to the preceding word ("שקליםו") and is
-/// not in `CONJUNCTIONS` anyway. So only the literal sub runs and the separator
-/// is orphaned: `to_currency(100, "ILS")` == "מאה שקליםו" — "a hundred shekels
-/// and". Verified against the live interpreter.
-///
-/// The containment guard uses `find_ci` (simple per-char fold) where Python
-/// uses `str.lower()` (full fold). They can only disagree on chars whose
-/// lowercase expands, none of which occur in `ZERO_PATTERNS` or in any string
-/// HE can build.
-fn strip_zero_cents(result: &str) -> String {
-    let mut result = result.to_string();
-    for pattern in ZERO_PATTERNS {
-        if find_ci(&result, pattern, 0).is_some() {
-            result = remove_conjoined(&result, pattern);
-            result = remove_all_ci(&result, pattern);
-            result = result.split_whitespace().collect::<Vec<_>>().join(" ");
-        }
-    }
-    result.trim().to_string()
+    Ok(format!("{} {}", numeral_for(n, masc)?, plural))
 }
 
 pub struct LangHe {
@@ -1084,11 +918,10 @@ impl Lang for LangHe {
 
     // ---- currency -------------------------------------------------------
     //
-    // HE overrides only `CURRENCY_FORMS`, `pluralize` and `to_currency`.
-    // `_money_verbose`, `_cents_verbose`, `_cents_terse` and `to_cheque` come
-    // straight from `Num2Word_Base`, and `CURRENCY_ADJECTIVES` /
-    // `CURRENCY_PRECISION` are both empty — the trait defaults already mirror
-    // all of that, so they are deliberately not overridden here.
+    // HE overrides `CURRENCY_FORMS`, `pluralize` and `to_currency`, plus the
+    // gender-agreeing `_money_verbose`/`_cents_verbose` (#254). `_cents_terse`
+    // and `to_cheque` come straight from `Num2Word_Base`, and
+    // `CURRENCY_ADJECTIVES` / `CURRENCY_PRECISION` are both empty.
 
     fn lang_name(&self) -> &str {
         "Num2Word_HE"
@@ -1127,76 +960,88 @@ impl Lang for LangHe {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
-    /// `Num2Word_HE.to_currency`.
+    /// `Num2Word_HE.to_currency`, rewritten for Hebrew grammar (#254).
     ///
-    /// Two paths, and the split is load-bearing:
+    /// Python delegated to `Num2Word_Base.to_currency` (after casting ints to
+    /// float) and then scrubbed the zero cents back out. That glued the
+    /// default separator "ו" onto the unit noun ("שקליםו"), used the
+    /// feminine cardinal for masculine nouns ("שתיים שקלים") and put 1 before
+    /// the noun ("אחת שקל"). Now:
     ///
-    /// * **float/Decimal** → straight through to `Num2Word_Base.to_currency`.
-    /// * **int** → `super().to_currency(float(val), ...)`, i.e. cast to a float
-    ///   *first*. Base's `isinstance(val, int)` early-out — the one that skips
-    ///   the cents segment — therefore never fires for HE, and `has_decimal` is
-    ///   `True` via `isinstance(val, float)`. The int renders *with* cents, and
-    ///   the redundant zero-cents text is then scrubbed by
-    ///   [`strip_zero_cents`].
-    ///
-    /// The asymmetry is observable: `to_currency(1, "ILS")` == "אחת שקלו"
-    /// (scrubbed) but `to_currency(1.0, "ILS")` == "אחת שקלו אפס אגורות"
-    /// (not scrubbed — floats never reach the scrub).
+    /// * the numeral agrees with the noun and 1/2 take their place and form
+    ///   from [`count_noun`]: "שקל אחד", "שני שקלים", "חמישה דולרים";
+    /// * the default "ו" is prefixed to the subunit phrase:
+    ///   "שני שקלים וחמישים אגורות" (any other separator is placed as in
+    ///   base);
+    /// * an `int` has no subunit segment (as base), and a float/Decimal shows
+    ///   it, zero included, wherever base would.
     fn to_currency(
         &self,
         val: &CurrencyValue,
         currency: &str,
         cents: bool,
         separator: Option<&str>,
-        adjective: bool,
+        _adjective: bool,
     ) -> Result<String> {
-        // The trait hands us `None` when the caller omitted `separator=`; the
-        // resolution normally done by the default body has to happen here
-        // because we are replacing that body. `default_separator` is already
-        // generated from HE's live signature (`separator=AND`, i.e. "ו").
         let separator = separator.unwrap_or(self.default_separator());
+        let forms = self
+            .currency_forms(currency)
+            .ok_or_else(|| crate::currency::unknown_currency(self, currency))?;
+        let minus = |neg: bool| if neg { format!("{} ", NEGWORD) } else { String::new() };
 
-        let CurrencyValue::Int(v) = val else {
-            // `return super().to_currency(val, ...)` — no scrub for floats.
-            return crate::currency::default_to_currency(
-                self, val, currency, cents, separator, adjective,
-            );
+        let (value, has_decimal) = match val {
+            CurrencyValue::Int(v) => {
+                return Ok(format!("{}{}", minus(v.is_negative()), count_noun(&v.abs(), &forms.unit)?));
+            }
+            CurrencyValue::Decimal { value, has_decimal, .. } => (value, *has_decimal),
         };
+        let scaled = value * BigDecimal::from(100);
+        let fractional = &scaled - scaled.with_scale(0) != BigDecimal::zero();
+        let (left, right, negative) =
+            crate::currency::parse_currency_parts(val, false, fractional, 100);
+        let unit = count_noun(&left, &forms.unit)?;
+        let right_int = right.as_bigint_and_exponent().0;
+        if !has_decimal && !fractional && right_int.is_zero() {
+            return Ok(format!("{}{}", minus(negative), unit));
+        }
+        let sub = if fractional {
+            let plural = forms.subunit.get(1).or_else(|| forms.subunit.first());
+            format!("{} {}", self.cardinal_from_decimal(&right)?, plural.cloned().unwrap_or_default())
+        } else if cents {
+            count_noun(&right_int, &forms.subunit)?
+        } else {
+            format!(
+                "{} {}",
+                crate::currency::default_cents_terse(&right_int, 100),
+                self.pluralize(&right_int, &forms.subunit)?
+            )
+        };
+        let joined = if separator == AND {
+            // The conjunction is a prefix; before digits it takes a hyphen.
+            let hyphen = if sub.starts_with(|c: char| c.is_ascii_digit()) { "-" } else { "" };
+            format!("{} {}{}{}", unit, AND, hyphen, sub)
+        } else {
+            format!("{}{} {}", unit, separator, sub)
+        };
+        Ok(format!("{}{}", minus(negative), joined))
+    }
 
-        // Python's `float(val)`, modelled as an *exact* widening.
-        //
-        // Faithful for every int f64 represents exactly (|v| <= 2**53), which
-        // is every corpus row and every plausible money amount. Beyond that
-        // the cast is lossy in Python and this deliberately is not, so three
-        // divergences remain — all measured against the live interpreter, none
-        // fixable from this file:
-        //
-        //  * |v| > 2**53: Python rounds through the f64. `to_currency(2**53+1)`
-        //    says "...תשעים ושתיים" (…992); this says …993. Reproducing it
-        //    needs f64 rounding *plus* Python's `repr` shortest-round-trip (it
-        //    is `Decimal(str(float(v)))`, not the exact binary value), which is
-        //    the second formatter PORTING_CURRENCY.md exists to avoid.
-        //  * |v| >= 10**26: Python raises `decimal.InvalidOperation` —
-        //    `quantize` needs digits(v)+2 > the default 28-digit context. Not
-        //    an HE bug: `currency.rs`'s `round_half_up` models no context
-        //    limit, so every language already diverges here on the *float*
-        //    path (`en` raises InvalidOperation for 1e26 too). HE is only
-        //    unusual in reaching it from an *int*, because of this cast — `en`
-        //    renders 10**26 fine via Base's int early-out. No `N2WError`
-        //    variant fits a stdlib `decimal.InvalidOperation`, and the fix
-        //    belongs in `currency.rs`, not here.
-        //  * |v| >= ~1.8e308: Python's `float()` itself raises
-        //    OverflowError("int too large to convert to float"). Masked in
-        //    practice — MAXVAL is 10**66, so `to_cardinal` already raises
-        //    OverflowError (different message, same type) long before.
-        let as_float = CurrencyValue::Decimal {
-            value: BigDecimal::from(v.clone()),
-            has_decimal: true,
-            is_float: true,
-        };
-        let result = crate::currency::default_to_currency(
-            self, &as_float, currency, cents, separator, adjective,
-        )?;
-        Ok(strip_zero_cents(&result))
+    /// The whole-unit numeral, in the unit noun's gender (#254) — what the
+    /// cheque prints before "AND nn/100".
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let masc = self
+            .currency_forms(currency)
+            .and_then(|f| f.unit.first())
+            .is_none_or(|s| noun_is_masculine(s));
+        numeral_for(number, masc)
+    }
+
+    /// The subunit numeral, in the subunit noun's gender (#254).
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        let masc = self
+            .currency_forms(currency)
+            .and_then(|f| f.subunit.first())
+            .is_none_or(|s| noun_is_masculine(s));
+        numeral_for(number, masc)
     }
 }
