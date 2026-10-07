@@ -72,18 +72,18 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(90, lang="te"), "తొంభై")
         self.assertEqual(num2words(95, lang="te"), "తొంభై అయిదు")
         self.assertEqual(num2words(99, lang="te"), "తొంభై తొమ్మిది")
-        self.assertEqual(num2words(100, lang="te"), "ఒకటి వంద")
+        self.assertEqual(num2words(100, lang="te"), "ఒక వంద")
 
     def test_cardinal_hundreds(self):
         """Test cardinal numbers from 100 to 999."""
-        self.assertEqual(num2words(101, lang="te"), "ఒకటి వందల ఒకటి")
-        self.assertEqual(num2words(110, lang="te"), "ఒకటి వందల పది")
-        self.assertEqual(num2words(111, lang="te"), "ఒకటి వందల పదకొండు")
-        self.assertEqual(num2words(120, lang="te"), "ఒకటి వందల ఇరవై")
-        self.assertEqual(num2words(125, lang="te"), "ఒకటి వందల ఇరవై అయిదు")
-        self.assertEqual(num2words(150, lang="te"), "ఒకటి వందల యాభై")
-        self.assertEqual(num2words(175, lang="te"), "ఒకటి వందల డెబ్బై అయిదు")
-        self.assertEqual(num2words(199, lang="te"), "ఒకటి వందల తొంభై తొమ్మిది")
+        self.assertEqual(num2words(101, lang="te"), "ఒక వందల ఒకటి")
+        self.assertEqual(num2words(110, lang="te"), "ఒక వందల పది")
+        self.assertEqual(num2words(111, lang="te"), "ఒక వందల పదకొండు")
+        self.assertEqual(num2words(120, lang="te"), "ఒక వందల ఇరవై")
+        self.assertEqual(num2words(125, lang="te"), "ఒక వందల ఇరవై అయిదు")
+        self.assertEqual(num2words(150, lang="te"), "ఒక వందల యాభై")
+        self.assertEqual(num2words(175, lang="te"), "ఒక వందల డెబ్బై అయిదు")
+        self.assertEqual(num2words(199, lang="te"), "ఒక వందల తొంభై తొమ్మిది")
         self.assertEqual(num2words(200, lang="te"), "రెండు వంద")
         self.assertEqual(num2words(201, lang="te"), "రెండు వందల ఒకటి")
         self.assertEqual(num2words(210, lang="te"), "రెండు వందల పది")
@@ -107,17 +107,17 @@ class Num2WordsTETest(TestCase):
 
     def test_cardinal_thousands(self):
         """Test cardinal numbers from 1000 to 999999."""
-        self.assertEqual(num2words(1000, lang="te"), "ఒకటి వేయి")
-        self.assertEqual(num2words(1001, lang="te"), "ఒకటి వేయిల ఒకటి")
-        self.assertEqual(num2words(1010, lang="te"), "ఒకటి వేయిల పది")
-        self.assertEqual(num2words(1100, lang="te"), "ఒకటి వేయి ఒకటి వంద")
-        self.assertEqual(num2words(1111, lang="te"), "ఒకటి వేయి ఒకటి వందల పదకొండు")
+        self.assertEqual(num2words(1000, lang="te"), "ఒక వేయి")
+        self.assertEqual(num2words(1001, lang="te"), "ఒక వేయిల ఒకటి")
+        self.assertEqual(num2words(1010, lang="te"), "ఒక వేయిల పది")
+        self.assertEqual(num2words(1100, lang="te"), "ఒక వేయి ఒక వంద")
+        self.assertEqual(num2words(1111, lang="te"), "ఒక వేయి ఒక వందల పదకొండు")
         self.assertEqual(
-            num2words(1234, lang="te"), "ఒకటి వేయి రెండు వందల ముప్పై నాలుగు"
+            num2words(1234, lang="te"), "ఒక వేయి రెండు వందల ముప్పై నాలుగు"
         )
-        self.assertEqual(num2words(1500, lang="te"), "ఒకటి వేయి అయిదు వంద")
+        self.assertEqual(num2words(1500, lang="te"), "ఒక వేయి అయిదు వంద")
         self.assertEqual(
-            num2words(1999, lang="te"), "ఒకటి వేయి తొమ్మిది వందల తొంభై తొమ్మిది"
+            num2words(1999, lang="te"), "ఒక వేయి తొమ్మిది వందల తొంభై తొమ్మిది"
         )
         self.assertEqual(num2words(2000, lang="te"), "రెండు వేయి")
         self.assertEqual(num2words(2001, lang="te"), "రెండు వేయిల ఒకటి")
@@ -149,7 +149,7 @@ class Num2WordsTETest(TestCase):
         )
         self.assertEqual(num2words(10000, lang="te"), "పది వేయి")
         self.assertEqual(num2words(10001, lang="te"), "పది వేయిల ఒకటి")
-        self.assertEqual(num2words(11111, lang="te"), "పదకొండు వేయి ఒకటి వందల పదకొండు")
+        self.assertEqual(num2words(11111, lang="te"), "పదకొండు వేయి ఒక వందల పదకొండు")
         self.assertEqual(
             num2words(12345, lang="te"), "పన్నెండు వేయి మూడు వందల నలభై అయిదు"
         )
@@ -159,10 +159,10 @@ class Num2WordsTETest(TestCase):
             num2words(99999, lang="te"),
             "తొంభై తొమ్మిది వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
         )
-        self.assertEqual(num2words(100000, lang="te"), "ఒకటి లక్ష")
+        self.assertEqual(num2words(100000, lang="te"), "ఒక లక్ష")
         self.assertEqual(
             num2words(123456, lang="te"),
-            "ఒకటి లక్ష ఇరవై మూడు వేయి నాలుగు వందల యాభై ఆరు",
+            "ఒక లక్ష ఇరవై మూడు వేయి నాలుగు వందల యాభై ఆరు",
         )
         self.assertEqual(num2words(200000, lang="te"), "రెండు లక్ష")
         self.assertEqual(num2words(500000, lang="te"), "అయిదు లక్ష")
@@ -180,7 +180,7 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(1000000, lang="te"), "పది లక్ష")
         self.assertEqual(num2words(1000001, lang="te"), "పది లక్షల ఒకటి")
         self.assertEqual(
-            num2words(1111111, lang="te"), "పదకొండు లక్ష పదకొండు వేయి ఒకటి వందల పదకొండు"
+            num2words(1111111, lang="te"), "పదకొండు లక్ష పదకొండు వేయి ఒక వందల పదకొండు"
         )
         self.assertEqual(
             num2words(1234567, lang="te"),
@@ -192,10 +192,10 @@ class Num2WordsTETest(TestCase):
             num2words(9999999, lang="te"),
             "తొంభై తొమ్మిది లక్ష తొంభై తొమ్మిది వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
         )
-        self.assertEqual(num2words(10000000, lang="te"), "ఒకటి కోట్ల")
+        self.assertEqual(num2words(10000000, lang="te"), "ఒక కోట్ల")
         self.assertEqual(
             num2words(12345678, lang="te"),
-            "ఒకటి కోట్ల ఇరవై మూడు లక్ష నలభై అయిదు వేయి ఆరు వందల డెబ్బై ఎనిమిది",
+            "ఒక కోట్ల ఇరవై మూడు లక్ష నలభై అయిదు వేయి ఆరు వందల డెబ్బై ఎనిమిది",
         )
         self.assertEqual(
             num2words(99999999, lang="te"),
@@ -210,10 +210,10 @@ class Num2WordsTETest(TestCase):
             num2words(999999999, lang="te"),
             "తొంభై తొమ్మిది కోట్ల తొంభై తొమ్మిది లక్ష తొంభై తొమ్మిది వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
         )
-        self.assertEqual(num2words(1000000000, lang="te"), "ఒకటి వంద కోట్ల")
+        self.assertEqual(num2words(1000000000, lang="te"), "ఒక వంద కోట్ల")
         self.assertEqual(
             num2words(1234567890, lang="te"),
-            "ఒకటి వందల ఇరవై మూడు కోట్ల నలభై అయిదు లక్ష అరవై ఏడు వేయి ఎనిమిది వందల తొంభై",
+            "ఒక వందల ఇరవై మూడు కోట్ల నలభై అయిదు లక్ష అరవై ఏడు వేయి ఎనిమిది వందల తొంభై",
         )
         self.assertEqual(
             num2words(9999999999, lang="te"),
@@ -230,16 +230,16 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(-20, lang="te"), "(-) ఇరవై")
         self.assertEqual(num2words(-50, lang="te"), "(-) యాభై")
         self.assertEqual(num2words(-99, lang="te"), "(-) తొంభై తొమ్మిది")
-        self.assertEqual(num2words(-100, lang="te"), "(-) ఒకటి వంద")
-        self.assertEqual(num2words(-101, lang="te"), "(-) ఒకటి వందల ఒకటి")
+        self.assertEqual(num2words(-100, lang="te"), "(-) ఒక వంద")
+        self.assertEqual(num2words(-101, lang="te"), "(-) ఒక వందల ఒకటి")
         self.assertEqual(num2words(-200, lang="te"), "(-) రెండు వంద")
         self.assertEqual(
             num2words(-999, lang="te"), "(-) తొమ్మిది వందల తొంభై తొమ్మిది"
         )
-        self.assertEqual(num2words(-1000, lang="te"), "(-) ఒకటి వేయి")
-        self.assertEqual(num2words(-1001, lang="te"), "(-) ఒకటి వేయిల ఒకటి")
+        self.assertEqual(num2words(-1000, lang="te"), "(-) ఒక వేయి")
+        self.assertEqual(num2words(-1001, lang="te"), "(-) ఒక వేయిల ఒకటి")
         self.assertEqual(num2words(-10000, lang="te"), "(-) పది వేయి")
-        self.assertEqual(num2words(-100000, lang="te"), "(-) ఒకటి లక్ష")
+        self.assertEqual(num2words(-100000, lang="te"), "(-) ఒక లక్ష")
         self.assertEqual(num2words(-1000000, lang="te"), "(-) పది లక్ష")
 
     def test_decimal_numbers(self):
@@ -257,15 +257,15 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(
             num2words(99.99, lang="te"), "తొంభై తొమ్మిది బిందువు తొమ్మిది తొమ్మిది"
         )
-        self.assertEqual(num2words(100.01, lang="te"), "ఒకటి వంద బిందువు సున్న ఒకటి")
-        self.assertEqual(num2words(100.5, lang="te"), "ఒకటి వంద బిందువు అయిదు")
+        self.assertEqual(num2words(100.01, lang="te"), "ఒక వంద బిందువు సున్న ఒకటి")
+        self.assertEqual(num2words(100.5, lang="te"), "ఒక వంద బిందువు అయిదు")
         self.assertEqual(
-            num2words(123.45, lang="te"), "ఒకటి వందల ఇరవై మూడు బిందువు నాలుగు అయిదు"
+            num2words(123.45, lang="te"), "ఒక వందల ఇరవై మూడు బిందువు నాలుగు అయిదు"
         )
-        self.assertEqual(num2words(1000.5, lang="te"), "ఒకటి వేయి బిందువు అయిదు")
+        self.assertEqual(num2words(1000.5, lang="te"), "ఒక వేయి బిందువు అయిదు")
         self.assertEqual(
             num2words(1234.56, lang="te"),
-            "ఒకటి వేయి రెండు వందల ముప్పై నాలుగు బిందువు అయిదు ఆరు",
+            "ఒక వేయి రెండు వందల ముప్పై నాలుగు బిందువు అయిదు ఆరు",
         )
         self.assertEqual(num2words(10000.01, lang="te"), "పది వేయి బిందువు సున్న ఒకటి")
         self.assertEqual(num2words(-0.5, lang="te"), "(-) సున్న బిందువు అయిదు")
@@ -304,12 +304,12 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(num2words(70, lang="te", ordinal=True), "డెబ్బైవ")
         self.assertEqual(num2words(80, lang="te", ordinal=True), "ఎనభైవ")
         self.assertEqual(num2words(90, lang="te", ordinal=True), "తొంభైవ")
-        self.assertEqual(num2words(100, lang="te", ordinal=True), "ఒకటి వందవ")
-        self.assertEqual(num2words(101, lang="te", ordinal=True), "ఒకటి వందల ఒకటివ")
+        self.assertEqual(num2words(100, lang="te", ordinal=True), "ఒక వందవ")
+        self.assertEqual(num2words(101, lang="te", ordinal=True), "ఒక వందల ఒకటివ")
         self.assertEqual(num2words(200, lang="te", ordinal=True), "రెండు వందవ")
         self.assertEqual(num2words(500, lang="te", ordinal=True), "అయిదు వందవ")
-        self.assertEqual(num2words(1000, lang="te", ordinal=True), "ఒకటి వేయివ")
-        self.assertEqual(num2words(1001, lang="te", ordinal=True), "ఒకటి వేయిల ఒకటివ")
+        self.assertEqual(num2words(1000, lang="te", ordinal=True), "ఒక వేయివ")
+        self.assertEqual(num2words(1001, lang="te", ordinal=True), "ఒక వేయిల ఒకటివ")
         self.assertEqual(num2words(10000, lang="te", ordinal=True), "పది వేయివ")
 
     def test_currency(self):
@@ -446,25 +446,25 @@ class Num2WordsTETest(TestCase):
 
     def test_year(self):
         """Test year conversion."""
-        self.assertEqual(num2words(1000, lang="te", to="year"), "ఒకటి వేయి")
-        self.assertEqual(num2words(1066, lang="te", to="year"), "ఒకటి వేయిల అరవై ఆరు")
+        self.assertEqual(num2words(1000, lang="te", to="year"), "ఒక వేయి")
+        self.assertEqual(num2words(1066, lang="te", to="year"), "ఒక వేయిల అరవై ఆరు")
         self.assertEqual(
-            num2words(1492, lang="te", to="year"), "ఒకటి వేయి నాలుగు వందల తొంభై రెండు"
+            num2words(1492, lang="te", to="year"), "ఒక వేయి నాలుగు వందల తొంభై రెండు"
         )
         self.assertEqual(
-            num2words(1776, lang="te", to="year"), "ఒకటి వేయి ఏడు వందల డెబ్బై ఆరు"
+            num2words(1776, lang="te", to="year"), "ఒక వేయి ఏడు వందల డెబ్బై ఆరు"
         )
-        self.assertEqual(num2words(1800, lang="te", to="year"), "ఒకటి వేయి ఎనిమిది వంద")
+        self.assertEqual(num2words(1800, lang="te", to="year"), "ఒక వేయి ఎనిమిది వంద")
         self.assertEqual(
-            num2words(1900, lang="te", to="year"), "ఒకటి వేయి తొమ్మిది వంద"
+            num2words(1900, lang="te", to="year"), "ఒక వేయి తొమ్మిది వంద"
         )
         self.assertEqual(
             num2words(1984, lang="te", to="year"),
-            "ఒకటి వేయి తొమ్మిది వందల ఎనభై నాలుగు",
+            "ఒక వేయి తొమ్మిది వందల ఎనభై నాలుగు",
         )
         self.assertEqual(
             num2words(1999, lang="te", to="year"),
-            "ఒకటి వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
+            "ఒక వేయి తొమ్మిది వందల తొంభై తొమ్మిది",
         )
         self.assertEqual(num2words(2000, lang="te", to="year"), "రెండు వేయి")
         self.assertEqual(num2words(2001, lang="te", to="year"), "రెండు వేయిల ఒకటి")
@@ -473,17 +473,17 @@ class Num2WordsTETest(TestCase):
         self.assertEqual(
             num2words(2024, lang="te", to="year"), "రెండు వేయిల ఇరవై నాలుగు"
         )
-        self.assertEqual(num2words(2100, lang="te", to="year"), "రెండు వేయి ఒకటి వంద")
+        self.assertEqual(num2words(2100, lang="te", to="year"), "రెండు వేయి ఒక వంద")
 
     def test_string_input(self):
         """Test string input conversion."""
         self.assertEqual(num2words("0", lang="te"), "సున్న")
         self.assertEqual(num2words("1", lang="te"), "ఒకటి")
         self.assertEqual(num2words("10", lang="te"), "పది")
-        self.assertEqual(num2words("100", lang="te"), "ఒకటి వంద")
-        self.assertEqual(num2words("1000", lang="te"), "ఒకటి వేయి")
+        self.assertEqual(num2words("100", lang="te"), "ఒక వంద")
+        self.assertEqual(num2words("1000", lang="te"), "ఒక వేయి")
         self.assertEqual(num2words("10000", lang="te"), "పది వేయి")
-        self.assertEqual(num2words("100000", lang="te"), "ఒకటి లక్ష")
+        self.assertEqual(num2words("100000", lang="te"), "ఒక లక్ష")
         self.assertEqual(num2words("1000000", lang="te"), "పది లక్ష")
 
     def test_edge_cases(self):

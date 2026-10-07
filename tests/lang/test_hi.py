@@ -139,8 +139,8 @@ class Num2WordsHITest(TestCase):
         self.assertEqual(num2words(20000, lang="hi"), "बीस हज़ार")
         self.assertEqual(num2words(50000, lang="hi"), "पचास हज़ार")
         self.assertEqual(num2words(99999, lang="hi"), "निन्यानवे हज़ार नौ सौ निन्यानवे")
-        self.assertEqual(num2words(100000, lang="hi"), "लाख")
-        self.assertEqual(num2words(123456, lang="hi"), "लाख तेईस हज़ार चार सौ छप्पन")
+        self.assertEqual(num2words(100000, lang="hi"), "एक लाख")
+        self.assertEqual(num2words(123456, lang="hi"), "एक लाख तेईस हज़ार चार सौ छप्पन")
         self.assertEqual(num2words(200000, lang="hi"), "दो लाख")
         self.assertEqual(num2words(500000, lang="hi"), "पाँच लाख")
         self.assertEqual(
@@ -166,10 +166,10 @@ class Num2WordsHITest(TestCase):
             num2words(9999999, lang="hi"),
             "निन्यानवे लाख निन्यानवे हज़ार नौ सौ निन्यानवे",
         )
-        self.assertEqual(num2words(10000000, lang="hi"), "करोड़")
+        self.assertEqual(num2words(10000000, lang="hi"), "एक करोड़")
         self.assertEqual(
             num2words(12345678, lang="hi"),
-            "करोड़ तेईस लाख पैंतालीस हज़ार छः सौ अठहत्तर",
+            "एक करोड़ तेईस लाख पैंतालीस हज़ार छः सौ अठहत्तर",
         )
         self.assertEqual(
             num2words(99999999, lang="hi"),
@@ -216,7 +216,7 @@ class Num2WordsHITest(TestCase):
         self.assertEqual(num2words(-1000, lang="hi"), "माइनस एक हज़ार")
         self.assertEqual(num2words(-1001, lang="hi"), "माइनस एक हज़ार एक")
         self.assertEqual(num2words(-10000, lang="hi"), "माइनस दस हज़ार")
-        self.assertEqual(num2words(-100000, lang="hi"), "माइनस लाख")
+        self.assertEqual(num2words(-100000, lang="hi"), "माइनस एक लाख")
         self.assertEqual(num2words(-1000000, lang="hi"), "माइनस दस लाख")
 
     def test_decimal_numbers(self):
@@ -370,7 +370,7 @@ class Num2WordsHITest(TestCase):
         self.assertEqual(num2words("100", lang="hi"), "सौ")
         self.assertEqual(num2words("1000", lang="hi"), "एक हज़ार")
         self.assertEqual(num2words("10000", lang="hi"), "दस हज़ार")
-        self.assertEqual(num2words("100000", lang="hi"), "लाख")
+        self.assertEqual(num2words("100000", lang="hi"), "एक लाख")
         self.assertEqual(num2words("1000000", lang="hi"), "दस लाख")
 
     def test_edge_cases(self):

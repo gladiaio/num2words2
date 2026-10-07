@@ -58,10 +58,13 @@ def test_compounds_reach_larger_numbers_and_ordinals():
     ("kok", "एक लाख"),
     ("sa", "एकम् लक्षम्"),
     ("sd", "هڪ لک"),
+    ("hi", "एक लाख"),
+    ("te", "ఒక లక్ష"),
 ])
 def test_lakh(lang, expected):
     # or/kok/sa/sd grouped by "ten lakh" millions, so 10**5 was "one
-    # hundred thousand"; ml said "ഒന്ന് ലക്ഷം" (#247).
+    # hundred thousand"; ml said "ഒന്ന് ലക്ഷം", te "ఒకటి లక్ష" and hi a
+    # bare "लाख" (#247).
     assert num2words(10**5, lang=lang) == expected
 
 
