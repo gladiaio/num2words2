@@ -95,7 +95,8 @@
 //!
 //! `CURRENCY_FORMS` **is** defined on the class but is *dead code*: the body of
 //! `to_currency` never reads it, hardcoding `"rupiah"`/`"sen"` instead, so
-//! Python printed rupiah for every code. The port accepts IDR only and raises
+//! Python printed rupiah for every code (and dropped the sen for IDR, which the
+//! port reads since #255). The port accepts IDR only and raises
 //! NotImplementedError for any other code (#219); the [`Lang::currency_forms`]
 //! hook stays unimplemented.
 
@@ -754,10 +755,12 @@ impl Lang for LangId {
     ///    `currency` said (`USD 12.34` was `"dua belas rupiah tiga puluh empat
     ///    sen"`) and never raised; the port accepts only IDR and raises
     ///    NotImplementedError for every other code (#219).
-    /// 2. **`currency == "IDR"` suppresses the cents segment entirely**, on the
-    ///    stated reasoning that the rupiah has no practical subunit. So
-    ///    `IDR 12.34` is `"dua belas rupiah"`. With only IDR accepted, the
-    ///    Python "rupiah … sen" branch for other codes is gone.
+    /// 2. ~~**`currency == "IDR"` suppresses the cents segment entirely**~~, on
+    ///    the stated reasoning that the rupiah has no practical subunit. That
+    ///    silently changed the amount (`IDR 12.34` was `"dua belas rupiah"`), so
+    ///    the sen (1/100 rupiah) are read now, as Python's branch for other
+    ///    codes did: `"dua belas rupiah tiga puluh empat sen"` (#255). A zero
+    ///    subunit is still omitted (`12.0` is `"dua belas rupiah"`).
     /// 3. **The negative word is `"minus "`, not `MINUS_SIGN`** (`"min "`),
     ///    which `to_cardinal` uses. `to_currency` hardcodes its own.
     /// 4. **`separator`, `adjective` and `cents` are ignored.**
@@ -793,15 +796,24 @@ impl Lang for LangId {
 
         // is_int_with_cents=False, keep_precision=has_fractional_cents,
         // divisor defaulted to 100 on the Python side.
-        let (left, _right, is_negative) =
+        let (left, right, is_negative) =
             parse_currency_parts(val, false, has_fractional_cents, 100);
 
         let minus_str = if is_negative { "minus " } else { "" };
         let money_str = self.to_cardinal(&left)?;
 
-        // `currency == "IDR"` suppresses the cents segment: the rupiah has no
-        // practical subunit, so whole rupiah are read for every input.
-        Ok(format!("{}{} rupiah", minus_str, money_str))
+        // 1 rupiah = 100 sen. Python dropped the sen for IDR, so 3.5 read as
+        // "tiga rupiah" — a different amount (#255). A non-zero subunit is
+        // read now, as Python already did for every other code.
+        if right.is_zero() {
+            return Ok(format!("{}{} rupiah", minus_str, money_str));
+        }
+        let sen = if has_fractional_cents {
+            self.cardinal_from_decimal(&right)?
+        } else {
+            self.to_cardinal(&right.as_bigint_and_exponent().0)?
+        };
+        Ok(format!("{}{} rupiah {} sen", minus_str, money_str, sen))
     }
 
     // `Num2Word_ID` had no `to_cheque` (AttributeError).

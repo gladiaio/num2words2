@@ -94,14 +94,13 @@
 //!    `str_to_number` (`abs(...)`) and never consults `negword`, so
 //!    `to_currency(-12.34)` == `to_currency(12.34)`. Corpus-confirmed.
 //!
-//! 8. **`parse_paisa`'s trailing-zero fix corrupts leading zeros.** It does
+//! 8. ~~**`parse_paisa`'s trailing-zero fix corrupts leading zeros.**~~ It did
 //!    `str(int(paisa_str) * 100)[:2]` to re-pad a `Decimal`-stripped trailing
-//!    zero, but `int()` also eats *leading* zeros, so the digit count it
-//!    assumes is wrong: `0.01` → "01" → `int` 1 → 100 → `"100"[:2]` == "10" →
-//!    **10 paisa**, and the corpus really does say
-//!    "শূন্য টাকা দশ পয়সা" ("zero taka *ten* paisa") for `0.01`. `0.5` → "5"
-//!    → 500 → "50" → 50 paisa is right by luck. The `[:2]` truncates rather
-//!    than rounds, so `2.675` → 67 paisa, and it clamps everything to 0..=99.
+//!    zero, but `int()` also eats *leading* zeros, so `0.01` → "01" → `int` 1
+//!    → 100 → `"100"[:2]` == "10" → **10 paisa**, and 3.05 taka read as 3.50.
+//!    Fixed (gladiaio/num2words2#255): the paisa are the first two fraction
+//!    digits, right-padded ("05" → 5, "5" → 50). Still truncating rather than
+//!    rounding, so `2.675` → 67 paisa, and clamped to 0..=99.
 //!
 //! 9. **`to_cheque` does not exist.** No base class means no inherited
 //!    `to_cheque`, so Python raised `AttributeError`; the port raises
@@ -545,7 +544,8 @@ fn frac_after_dot(number: &BigDecimal) -> Option<String> {
 /// return int(number), int(paisa_str)
 /// ```
 ///
-/// The `* 100` then `[:2]` is the buggy trailing-zero fix of module bug 8.
+/// The `* 100` then `[:2]` is the buggy trailing-zero fix of module bug 8,
+/// replaced by a right-pad of the digit run (#255).
 fn parse_paisa(number: &BigDecimal) -> Result<(BigInt, u32)> {
     // int(number) — truncation, and `number` is non-negative here.
     let int_part = number.with_scale(0).as_bigint_and_exponent().0;
@@ -556,16 +556,17 @@ fn parse_paisa(number: &BigDecimal) -> Result<(BigInt, u32)> {
         None => 0u32,
         // `if paisa_str:` — any non-empty string is truthy, "0" included.
         Some(s) => {
-            let f = BigInt::from_str(&s).map_err(|_| {
+            BigInt::from_str(&s).map_err(|_| {
                 // int("5E-8") → ValueError, Python's message verbatim.
                 N2WError::Value(format!("invalid literal for int() with base 10: '{}'", s))
             })?;
-            // str(int(paisa_str) * 100)[:2] — truncating, never rounding, and
-            // clamping the result to 0..=99.
-            let scaled = f * BigInt::from(100u8);
-            let two: String = scaled.to_string().chars().take(2).collect();
+            // The first two fraction digits, right-padded: "05" -> 5, "5" -> 50,
+            // "675" -> 67 (truncating, never rounding). Python's
+            // `str(int(paisa_str) * 100)[:2]` dropped the leading zero first,
+            // so 3.05 read as 50 paisa (bug 8, #255).
+            let two: String = format!("{:0<2}", s).chars().take(2).collect();
             two.parse::<u32>()
-                .expect("digits of a non-negative BigInt, at most 2 of them")
+                .expect("two decimal digits of the fraction")
         }
     };
     Ok((int_part, paisa))
