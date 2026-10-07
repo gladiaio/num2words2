@@ -267,8 +267,5 @@ def test_ar_ordinal_overflow_is_checked_up_front():
         for x in (m, 10**10000):
             with pytest.raises(OverflowError):
                 num2words(x, lang="ar", to=to)
-        # m - 1 has no verified ordinal form either since #249; the largest
-        # round scale word below m does.
-        with pytest.raises(OverflowError):
-            num2words(m - 1, lang="ar", to=to)
-        assert num2words(m // 1000, lang="ar", to=to)
+        # Every value below m has an ordinal form since #261.
+        assert num2words(m - 1, lang="ar", to=to)

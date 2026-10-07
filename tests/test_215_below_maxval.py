@@ -40,10 +40,6 @@ def test_vi_vietnamese_scale_words(value, expected):
 @pytest.mark.parametrize("lang", ["hy", "vi", "tet", "ar"])
 @pytest.mark.parametrize("to", ["cardinal", "ordinal", "currency"])
 def test_powers_of_ten_below_maxval(lang, to):
-    if lang == "ar" and to == "ordinal":
-        # ar ordinals stop at the round scale words past 1999 and raise
-        # OverflowError for the rest (#249).
-        pytest.skip("ar ordinal ceiling: see test_ar_ordinal_ceiling")
     m = maxval(lang)
     e = 1
     while 10**e < m:
@@ -67,9 +63,11 @@ def test_ar_ordinal_ceiling():
     for e in range(3, len(str(m)) - 1, 3):
         r = num2words(10**e, lang="ar", to="ordinal")
         assert r.startswith("ال") and " " not in r, (e, r)
-    for v in (m - 1, m, 10**4):
-        with pytest.raises(OverflowError):
-            num2words(v, lang="ar", to="ordinal")
+    # Every value below maxval has one since #261; maxval itself raises.
+    assert num2words(m - 1, lang="ar", to="ordinal").endswith(
+        "والتاسع والتسعون")
+    with pytest.raises(OverflowError):
+        num2words(m, lang="ar", to="ordinal")
 
 
 @pytest.mark.parametrize("lang", ["bn", "tet"])

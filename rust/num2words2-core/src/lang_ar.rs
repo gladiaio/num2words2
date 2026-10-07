@@ -64,15 +64,16 @@
 //!    ordinal reaches the flag.
 //! 7. ~~**Ordinals ≥ 1000 silently fell back to the cardinal form**~~
 //!    (`to_ordinal(1000)` == `"ألف"`, `to_ordinal(10**6)` == `"مليون"`).
-//!    Fixed (gladiaio/num2words2#249): a round scale word takes the article
-//!    and is its own ordinal (`"الألف"`, `"المليون"`, `"المليار"`, …),
-//!    1001..=1999 read `"<ordinal> بعد الألف"` like 101..=999 read
-//!    `"… بعد المائة"`, and every other value from 2000 up raises
-//!    `OverflowError` — it would need the definite form of a compound
-//!    cardinal, which this module does not build. The units digit 1 of a
-//!    compound is `"الحادي"`/`"الحادية"` (`"الحادي والعشرون"`), as in 11.
+//!    Fixed (gladiaio/num2words2#249, #261): a round scale word takes the
+//!    article and is its own ordinal (`"الألف"`, `"المليون"`, …), and every
+//!    other value up to MAXVAL reads left to right as the definite cardinal
+//!    of each part, ending in the ordinal of the last units/tens:
+//!    `"الألفان والرابع والعشرون"` (2024), `"الألف والمائة والحادي"`
+//!    (1101). The units digit 1 of a compound is `"الحادي"`/`"الحادية"`
+//!    (`"الحادي والعشرون"`), as in 11. 101..=999 keep Python's
+//!    `"… بعد المائة"` reading.
 //! 8. ~~**`to_ordinal(2000)` == `"ألفا"`**~~, the construct form — gone with
-//!    the fallback in 7; 2000 now raises `OverflowError`.
+//!    the fallback in 7; 2000 now reads `"الألفان"`.
 //! 9. **Trailing spaces in two table entries** are shipped verbatim:
 //!    `arabicAppendedTwos[9]` is `"أوكتيليونا "` and `arabicTwos[9]`/`[10]`
 //!    are `"أوكتيليونان "` / `"نونيليونان "` — all with a trailing space.
@@ -148,7 +149,7 @@ use crate::floatpath::FloatValue;
 use crate::strnum::{python_decimal_parse, ParsedNumber};
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
+use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 
 // ---------------------------------------------------------------------------
 // Tables — transcribed verbatim from lang_AR.py.
@@ -842,34 +843,37 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
         return Ok(ZERO_WORD.to_string());
     }
 
-    // >= 1000 (#249). The scale nouns are themselves used as ordinals with
-    // the article — "الليلة الألف", "الكتاب المليون" — so a round scale reads
-    // "الألف", "المليون", "المليار", …, and 1001..=1999 follow the
-    // "<ordinal> بعد المائة" pattern this module already uses for 101..=999:
-    // "الأول بعد الألف". Every other value from 2000 up would need the
-    // definite form of a compound cardinal ("الألفان", "الثلاثة آلاف", …),
-    // whose article placement varies between grammars, so it raises
-    // OverflowError instead of returning the bare cardinal as it used to.
+    // >= 1000 (#249, #261). The scale nouns are themselves used as
+    // ordinals with the article — "الليلة الألف", "الكتاب المليون" — and a
+    // larger ordinal reads left to right as the definite cardinal of every
+    // part ("the article on each coordinated part") followed by the ordinal
+    // of the last units/tens only: "الكتاب المئة والسابع والثلاثون",
+    // "الخطأ المليون والسابع عشر". So 2024 reads "الألفان والرابع
+    // والعشرون" and 1101 "الألف والمائة والحادي" (واحد becomes الحادي in a
+    // coordinated ordinal). See `definite_group` for the multipliers.
     let thousand = BigInt::from(1000u16);
-    let body = if *number < BigInt::from(2000u16) {
-        let rest = number - &thousand;
-        if rest.is_zero() {
-            "الألف".to_string()
-        } else {
-            format!("{} بعد الألف", to_ordinal_impl(&rest, feminine, "")?)
+    let mut groups: Vec<u32> = Vec::new();
+    let mut temp = number.clone();
+    while temp > BigInt::zero() {
+        groups.push((&temp % &thousand).to_u32().expect("0..=999"));
+        temp /= &thousand;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for level in (1..groups.len()).rev() {
+        if groups[level] != 0 {
+            parts.push(definite_group(groups[level], level));
         }
-    } else {
-        match scale_index(number) {
-            Some(k) => format!("ال{}", ARABIC_GROUP[k]),
-            None => {
-                return Err(N2WError::Overflow(format!(
-                    "lang='ar' spells ordinals from 2000 up only for a round \
-                     scale word (المليون, المليار, …); {} has no ordinal form",
-                    number
-                )))
-            }
-        }
-    };
+    }
+    let (h0, r0) = ((groups[0] / 100) as usize, groups[0] % 100);
+    if h0 > 0 {
+        parts.push(AR_HUNDREDS_DEF[h0 - 1].to_string());
+    }
+    if r0 == 1 {
+        parts.push(pick(&AR_COMPOUND_ONE).to_string());
+    } else if r0 > 0 {
+        parts.push(to_ordinal_impl(&BigInt::from(r0), feminine, "")?);
+    }
+    let body = parts.join(" و");
     // `prefix=` was prepended to the old cardinal fallback; it still applies
     // to the >= 1000 forms and nowhere else.
     if !prefix.is_empty() {
@@ -878,23 +882,51 @@ fn to_ordinal_impl(number: &BigInt, feminine: bool, prefix: &str) -> Result<Stri
     Ok(body)
 }
 
-/// `k` when `number == 1000**k` for a scale word `ARABIC_GROUP[k]` (k >= 1).
-fn scale_index(number: &BigInt) -> Option<usize> {
-    let thousand = BigInt::from(1000u16);
-    let mut v = number.clone();
-    let mut k = 0usize;
-    while v > BigInt::one() {
-        if !(&v % &thousand).is_zero() {
-            return None;
+/// The definite cardinal of `g` (1..=999) times the scale word at `level`
+/// (>= 1), as one coordinated part of an ordinal (#261): the article goes on
+/// the number — on the first word of a compound and on every coordinated
+/// part ("الثلاثة عشر", "الثلاثة والعشرون") — and the scale noun takes the
+/// form the last numeral governs, as in the cardinal: "الألفان", "الثلاثة
+/// آلاف", "الأحد عشر ألفاً", "المائة ألف", "المئتا ألف". A multiplier
+/// ending in 1 or 2 past 100 repeats the noun ("مئة رجلٍ ورجل"):
+/// 101000 → "المائة ألف والألف".
+fn definite_group(g: u32, level: usize) -> String {
+    let (h, r) = ((g / 100) as usize, g % 100);
+    if h > 0 && (r == 1 || r == 2) {
+        return format!(
+            "{} و{}",
+            definite_group(g - r, level),
+            definite_group(r, level)
+        );
+    }
+    match r {
+        1 => return format!("ال{}", ARABIC_GROUP[level]),
+        2 => return format!("ال{}", ARABIC_TWOS[level].trim()),
+        _ => {}
+    }
+    let mut words: Vec<String> = Vec::new();
+    if h > 0 {
+        words.push(if h == 2 && r == 0 {
+            format!("ال{}", ARABIC_APPENDED_TWOS[0])
+        } else {
+            format!("ال{}", ARABIC_HUNDREDS[h])
+        });
+    }
+    if r > 0 && r < 20 {
+        words.push(format!("ال{}", ARABIC_ONES[r as usize]));
+    } else if r >= 20 {
+        let (ones, tens) = ((r % 10) as usize, AR_TENS_DEF[(r / 10 - 2) as usize]);
+        if ones > 0 {
+            words.push(format!("ال{}", ARABIC_ONES[ones]));
         }
-        v /= &thousand;
-        k += 1;
+        words.push(tens.to_string());
     }
-    if v == BigInt::one() && (1..ARABIC_GROUP.len()).contains(&k) {
-        Some(k)
-    } else {
-        None
-    }
+    let noun = match r {
+        0 => ARABIC_GROUP[level],
+        3..=10 => ARABIC_PLURAL_GROUPS[level],
+        _ => ARABIC_APPENDED_GROUP[level],
+    };
+    format!("{} {}", words.join(" و"), noun)
 }
 
 /// Python's `int(number)` on a float/Decimal operand — the first line of
@@ -2474,8 +2506,10 @@ mod tests {
             (42.0, "الثاني والأربعون"),
             (100.0, "المائة"),
             (101.0, "الأول بعد المائة"),
-            (1234.0, "الرابع والثلاثون بعد المئتين بعد الألف"),
+            (1234.0, "الألف والمئتان والرابع والثلاثون"),
             (1e18, "الكوينتليون"),
+            (1e16, "العشرة كوادريليونات"),
+            (1e20, "المائة كوينتليون"),
         ] {
             assert_eq!(ord_f(f(arg)), out, "ordinal {}", arg);
             assert_eq!(ordnum_f(f(arg), "x"), out, "ordinal_num {}", arg);
@@ -2485,19 +2519,13 @@ mod tests {
             ("5", "الخامس"),
             ("5.00", "الخامس"),
             ("1E+2", "المائة"),
-            ("1999.000", "التاسع والتسعون بعد التسعمائة بعد الألف"),
+            ("1999.000", "الألف والتسعمائة والتاسع والتسعون"),
+            ("12345.000", "الاثنا عشر ألفاً والثلاثمائة والخامس والأربعون"),
             ("1E+21", "السكستيليون"),
             ("-0.0", "صفر"),
         ] {
             assert_eq!(ord_f(d(arg)), out, "ordinal Decimal {}", arg);
             assert_eq!(ordnum_f(d(arg), "x"), out, "ordinal_num Decimal {}", arg);
-        }
-        // No verified ordinal past 1999 unless a round scale word (#249).
-        for v in [f(1e16), f(1e20), d("12345.000")] {
-            assert!(matches!(
-                LangAr::new().ordinal_float_entry(&v),
-                Err(N2WError::Overflow(_))
-            ));
         }
         // int(inf)/int(nan), same errors as to_str's guard.
         assert!(matches!(
@@ -2584,7 +2612,7 @@ mod tests {
         ));
         assert_eq!(
             l.to_ordinal_kw(&n(1234), &fem).unwrap(),
-            "الرابعة والثلاثون بعد المئتين بعد الألف"
+            "الألف والمئتان والرابعة والثلاثون"
         );
         // Any non-"m" gender is feminine — "M", None, ints included.
         for v in [KwVal::Str("M".into()), KwVal::None, KwVal::Int(0)] {
