@@ -20,8 +20,8 @@ EXPECTED_BASICS = {
     "hmn": ("xoom", "ib", "kaum"),
     "ki": ("wĩra", "ĩmwe", "ikũmi"),
     "kok": ("शून्य", "एक", "धा"),
-    # ksw has no zero, ordinal, currency, decimal or negative words since
-    # gladiaio/num2words2#143; see tests/lang/test_ksw.py.
+    # ksw has no USD currency noun (#262), which this table's tests need;
+    # see tests/lang/test_ksw.py.
     "ku": ("sifir", "yek", "deh"),
     "ky": ("нөл", "бир", "он"),
     "lg": ("nuli", "emu", "kkumi"),

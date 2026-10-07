@@ -5,8 +5,8 @@
 //! with. Python's `lang_KSW.py` spelled every numeral in an ad-hoc Latin
 //! transliteration ("lwisi di khi" for 42) and fell back to digits from 10^9.
 //! gladiaio/num2words2#143 replaced it with the script spellings that two
-//! independent sources agree on, and makes everything else raise rather than
-//! invent a word or mix scripts.
+//! independent sources agree on; #262 fills in the rest on best evidence
+//! (see the UNVERIFIED notes below), never mixing scripts.
 //!
 //! # Lexicon (sources)
 //!
@@ -34,8 +34,9 @@
 //! တၢ, as in 11 တဆံတၢ. The places are written as one word, without spaces
 //! (#263), as the S'gaw Karen Common Bible (KSWC, 1992) writes every count:
 //! Genesis 5:6 တကယၤယဲၢ် (105), 5:3 တကယၤသၢဆံ (130), 5:18 တကယၤဃုဆံခံ
-//! (162), 50:26 တကယၤတဆံ (110), and the counts below. So 101 is တကယၤတၢ. Omniglot writes 50 with
-//! ဟ although its 5 is ယဲၢ် and its transliteration of 50 is "ye hsee";
+//! (162), 50:26 တကယၤတဆံ (110), and the counts below. So 101 is တကယၤတၢ.
+//! Omniglot writes 50 with ဟ although its 5 is ယဲၢ် and its transliteration
+//! of 50 is "ye hsee";
 //! this module uses the regular ယဲၢ်ဆံ, as Gilmore's 52 does.
 //!
 //! # Ten thousand and a hundred thousand (#262)
@@ -49,35 +50,81 @@
 //! ဃုကလီၢ်တကထိနွံကယၤသၢဆံ. They compose like the lower places
 //! (`digit + place word`, an empty place skipped, multiplier one တ).
 //!
-//! # What raises, and why
+//! # A million and up (#262)
 //!
-//! No source found gives a S'gaw Karen word for zero, the minus sign, the
-//! decimal point, an ordinal form (Gilmore's ordinals need noun classifiers),
-//! a currency unit, or a place above 10^5 that two sources agree on (KSWC
-//! 1 Chronicles 22:14 has တကကွဲၢ် for "a thousand thousand", but 2
-//! Chronicles 14:9 renders the same phrase ကလီၢ်တကယၤ, and Wiktionary has no
-//! entry for ကကွဲၢ်). A five-model review (#262) agreed on none of these.
-//! So:
+//! ကကွဲၢ် is the KSWC's million, by majority of the verses that need one:
+//! 1 Chronicles 22:14 has တကကွဲၢ် for "a thousand thousand" talents, and
+//! Revelation 9:16 counts 200,000,000 as ကကွဲၢ်ခံကယၤ (also Daniel 7:10 and
+//! Revelation 5:11 for "thousands of thousands"). The one dissent is
+//! 2 Chronicles 14:9 (ကလီၢ်တကယၤ, "a hundred hundred-thousands"); 1
+//! Chronicles 21:5 likewise counts 1,100,000 as ဆံတကလီၢ်. 1-9 million are
+//! `digit + ကကွဲၢ်` like the lower places (တကကွဲၢ်).
 //!
-//! * `abs(n) >= 10^6` -> `OverflowError` (`maxval` is 10^6; #147, #262).
-//! * zero, negative numbers, and any float/Decimal whose `str()` has a
-//!   decimal point (including `5.0`) -> `NotImplementedError`. An integral
-//!   `Decimal("5")` reads like the integer 5.
-//! * `to='ordinal'`, `to='ordinal_num'`, `to='currency'`, `to='cheque'`
-//!   -> `NotImplementedError`. `to='year'` reads the cardinal (1..999999).
+//! UNVERIFIED (#262): a count of ten million or more — best candidate:
+//!   Revelation 9:16's noun-first ကကွဲၢ်ခံကယၤ, so 10^7 is ကကွဲၢ်တဆံ. The
+//!   count is written as one word and a space separates it from the rest
+//!   (otherwise 205,000,000 and 200,000,005 would read alike); that space
+//!   is this module's choice. `maxval` is 10^12.
+//!
+//! # Zero, minus, decimals (#262)
+//!
+//! No Karen source reads these; the best candidates are the Burmese/Pali
+//! words S'gaw Karen borrows for technical vocabulary, written as in
+//! Burmese:
+//!
+//! UNVERIFIED (#262): "သုည" (zero) — best candidate: the Burmese/Pali zero
+//!   (2 of 5 models; one other offered an English loan).
+//! UNVERIFIED (#262): "အနုတ်" (minus, before the number) — best candidate:
+//!   the Burmese minus (1 of 5 models; the rest unsure).
+//! UNVERIFIED (#262): "ဒသမ" (decimal point) — best candidate: the Burmese
+//!   decimal point (1 of 5 models; the rest unsure). The digits after it are
+//!   read one by one, space-separated: 1.05 is "တ ဒသမ သုည ယဲၢ်".
+//!
+//! # Ordinals (#262)
+//!
+//! The KSWC forms ordinals with a classifier frame, `cardinal + CL + တ + CL`
+//! ("N-CL one-CL"): Genesis 1:8 မုၢ်ခံနံၤတနံၤ (the second day), Genesis
+//! 2:13-14 ခံဘိတဘိ / သၢဘိတဘိ / လွံၢ်ဘိတဘိ (second..fourth river),
+//! Revelation 4:7 ခံဒုတဒု (second beast), Revelation 21:20 ယဲၢ်ဖျၢၣ်တဖျၢၣ်
+//! to တဆံခံဖျၢၣ်တဖျၢၣ် (fifth..twelfth stone; eleventh is
+//! တဆံတၢဖျၢၣ်တဖျၢၣ်, with the final-form unit). "First" is suppletive:
+//! အခီၣ်ထံး + တ + CL (Genesis 2:11 အခီၣ်ထံးတဘိ; Genesis 1:5
+//! အခီၣ်ထံးကတၢၢ်တနံၤ; Revelation 4:7 has အဆိကတၢၢ်တဒု).
+//!
+//! UNVERIFIED (#262): "ခါ" as the classifier of a bare ordinal — best
+//!   candidate: Wiktionary's "generic classifier; classifier for abstract
+//!   nouns". So 2nd is ခံခါတခါ, 1st အခီၣ်ထံးတခါ, 11th တဆံတၢခါတခါ, and
+//!   `to='ordinal_num'` puts the digits in the same frame (2ခါတခါ). Negative
+//!   ordinals raise `TypeError`, as in the base class.
+//!
+//! # Currency (#262)
+//!
+//! UNVERIFIED (#262): "ကၠး" (kyat) and "ပၠး" (pya) for MMK, the default —
+//!   best candidate: Burmese ကျပ်/ပြား adapted the way Wiktionary's S'gaw
+//!   Karen loans from Burmese are (ကျောင်း → ကၠိ, ပြ → ပၠး, စက် → စဲး,
+//!   ချောကလက် → ခၠီကလဲး: medial ျ/ြ → ၠ, a stop final → း); ကၠး is also
+//!   one model's answer. The unadapted ကျပ် was the other candidate.
+//!
+//! Other currencies raise `NotImplementedError`: the only candidates for
+//! dollar, euro, baht and cent are single-model answers that disagree
+//! (and one cent candidate, စဲး, is the word for "machine"). `to='cheque'`
+//! raises too: the shared cheque format writes Latin "AND" and "MINUS".
 //!
 //! A scientific `str(number)` ("1e+16") still raises `ValueError` from
 //! `int()`, as before.
 
-use crate::base::{check_maxval, pow10_big, unsupported_mode, Lang, N2WError, Result};
-use crate::currency::{CurrencyForms, CurrencyValue};
+use crate::base::{
+    check_maxval, pow10_big, unsupported_mode, verify_ordinal, verify_ordinal_float, Lang,
+    N2WError, Result,
+};
+use crate::currency::CurrencyForms;
 use crate::floatpath::FloatValue;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive};
 use std::sync::OnceLock;
 
-/// Units 1..=9 (index 0 unused: there is no verified word for zero).
+/// Units 1..=9 (index 0 unused: zero is [`ZERO`]).
 const ONES: [&str; 10] = [
     "", "တ", "ခံ", "သၢ", "လွံၢ်", "ယဲၢ်", "ဃု", "နွံ", "ဃိး", "ခွံ",
 ];
@@ -93,35 +140,36 @@ const THOUSAND: &str = "ကထိ";
 const TEN_THOUSAND: &str = "ကလး";
 /// The hundred-thousands place word: `digit + ကလီၢ်` (10^5 တကလီၢ်; #262).
 const HUNDRED_THOUSAND: &str = "ကလီၢ်";
+/// The million: `digit + ကကွဲၢ်` below ten million, noun-first above (#262).
+const MILLION: &str = "ကကွဲၢ်";
+/// Zero, minus and the decimal point: best candidates (#262, module docs).
+const ZERO: &str = "သုည";
+const NEGWORD: &str = "အနုတ် ";
+const POINTWORD: &str = "ဒသမ";
+/// Ordinal frame `cardinal + ခါ + တ + ခါ`; "first" is suppletive (#262).
+const ORDINAL_SUFFIX: &str = "ခါတခါ";
+const FIRST: &str = "အခီၣ်ထံးတခါ";
 
-/// The exclusive ceiling: no place word above 10^5 is attested by two
-/// sources (gladiaio/num2words2#143, #147, #262).
+/// The exclusive ceiling: a count of millions has words up to 999999
+/// (gladiaio/num2words2#143, #147, #262).
 fn maxval_ceiling() -> &'static BigInt {
     static M: OnceLock<BigInt> = OnceLock::new();
-    M.get_or_init(|| pow10_big(6))
-}
-
-/// `NotImplementedError` for something the sources give no word for. It
-/// names the language itself: the binder only adds the `lang='ksw' ` prefix
-/// on some paths, and leaves a message that already has it alone.
-fn no_word(what: &str) -> N2WError {
-    N2WError::NotImplemented(format!(
-        "lang='ksw' does not support {}: no verified S'gaw Karen word for it; only whole numbers 1-999999 are supported",
-        what
-    ))
+    M.get_or_init(|| pow10_big(12))
 }
 
 #[derive(Default)]
-pub struct LangKsw;
+pub struct LangKsw {
+    currency_forms: OnceLock<CurrencyForms>,
+}
 
 impl LangKsw {
     pub fn new() -> Self {
-        LangKsw
+        LangKsw::default()
     }
 }
 
 /// Words for `1 <= n <= 999999` (see the module docs for the composition).
-fn words(n: u32) -> String {
+fn below_million(n: u32) -> String {
     debug_assert!((1..=999_999).contains(&n));
     let digit = |d: u32| ONES[d as usize];
     let (ht, tt) = (n / 100_000, n / 10_000 % 10);
@@ -150,17 +198,37 @@ fn words(n: u32) -> String {
     parts.concat()
 }
 
-/// The integer cardinal: 1..=999999, `OverflowError` beyond, and
-/// `NotImplementedError` for zero and negatives.
+/// Words for `0 <= n < 10^12`: 1-9 million as `digit + ကကွဲၢ်` joined to the
+/// rest; ten million and up as `ကကွဲၢ် + count`, then a space (#262).
+fn words(n: u64) -> String {
+    if n == 0 {
+        return ZERO.to_string();
+    }
+    let (m, r) = ((n / 1_000_000) as u32, (n % 1_000_000) as u32);
+    if m == 0 {
+        return below_million(r);
+    }
+    // The remainder never starts the number, so a unit one is final-form.
+    let rest = match r {
+        0 => String::new(),
+        1 => ONE_FINAL.to_string(),
+        _ => below_million(r),
+    };
+    if m < 10 {
+        format!("{}{}{}", ONES[m as usize], MILLION, rest)
+    } else if rest.is_empty() {
+        format!("{}{}", MILLION, below_million(m))
+    } else {
+        format!("{}{} {}", MILLION, below_million(m), rest)
+    }
+}
+
+/// The integer cardinal: zero, negatives with the minus word before them,
+/// and `OverflowError` from 10^12.
 fn int_to_word(number: &BigInt) -> Result<String> {
     check_maxval(number, maxval_ceiling())?;
-    if number.is_zero() {
-        return Err(no_word("zero"));
-    }
-    if number.is_negative() {
-        return Err(no_word("negative numbers"));
-    }
-    Ok(words(number.to_u32().expect("1 <= n < 10^6 after the checks above")))
+    let w = words(number.abs().to_u64().expect("|n| < 10^12 after check_maxval"));
+    Ok(if number.is_negative() { format!("{}{}", NEGWORD, w) } else { w })
 }
 
 /// Reconstruct Python's `str(f)` (== `repr(f)`) for a finite/`inf`/`nan` f64.
@@ -256,25 +324,42 @@ fn parse_pyint(s: &str) -> Result<BigInt> {
 }
 
 impl LangKsw {
-    /// The cardinal of a float/Decimal, from Python's `str(number)`: a sign or
-    /// a decimal point raises (no verified word for either), an integral
-    /// `Decimal("5")` reads as the integer, and a scientific token raises
-    /// `ValueError` from `int()`.
+    /// The cardinal of a float/Decimal, from Python's `str(number)`: the sign
+    /// becomes the minus word, the integer part reads as a cardinal and each
+    /// digit after the point on its own; an integral `Decimal("5")` reads as
+    /// the integer, and a scientific token raises `ValueError` from `int()`.
     fn cardinal_from_str(&self, s: &str) -> Result<String> {
         let s = s.trim();
-        if s.starts_with('-') {
-            return Err(no_word("negative numbers"));
+        let (neg, s) = match s.strip_prefix('-') {
+            Some(rest) => (NEGWORD, rest),
+            None => ("", s),
+        };
+        let Some((left, right)) = s.split_once('.') else {
+            return Ok(format!("{}{}", neg, int_to_word(&parse_pyint(s)?)?));
+        };
+        let mut out = format!("{}{} {}", neg, int_to_word(&parse_pyint(left)?)?, POINTWORD);
+        for ch in right.chars() {
+            let d = ch.to_digit(10).ok_or_else(|| {
+                N2WError::Value(format!("invalid literal for int() with base 10: '{}'", ch))
+            })?;
+            out.push(' ');
+            out.push_str(if d == 0 { ZERO } else { ONES[d as usize] });
         }
-        if s.contains('.') {
-            return Err(no_word("the decimal point"));
-        }
-        int_to_word(&parse_pyint(s)?)
+        Ok(out)
     }
 }
 
 impl Lang for LangKsw {
     fn maxval(&self) -> &BigInt {
         maxval_ceiling()
+    }
+
+    fn negword(&self) -> &str {
+        NEGWORD
+    }
+
+    fn pointword(&self) -> &str {
+        POINTWORD
     }
 
     /// Every float/Decimal goes through `str(number)` (see `cardinal_from_str`).
@@ -286,12 +371,12 @@ impl Lang for LangKsw {
         self.to_cardinal_float(value, precision_override)
     }
 
-    fn ordinal_float_entry(&self, _value: &FloatValue) -> Result<String> {
-        Err(no_word("to='ordinal'"))
+    fn ordinal_float_entry(&self, value: &FloatValue) -> Result<String> {
+        self.to_ordinal(&verify_ordinal_float(value)?)
     }
 
-    fn ordinal_num_float_entry(&self, _value: &FloatValue, _repr_str: &str) -> Result<String> {
-        Err(no_word("to='ordinal_num'"))
+    fn ordinal_num_float_entry(&self, value: &FloatValue, _repr_str: &str) -> Result<String> {
+        self.to_ordinal_num(&verify_ordinal_float(value)?)
     }
 
     /// `Decimal("Infinity")` parses, then fails in `int()` as `ValueError`.
@@ -308,24 +393,32 @@ impl Lang for LangKsw {
         "MMK"
     }
 
+    /// No conjunction between kyat and pya: base's `" "` after the separator
+    /// already spaces them.
     fn default_separator(&self) -> &str {
-        " "
+        ""
     }
 
     fn to_cardinal(&self, value: &BigInt) -> Result<String> {
         int_to_word(value)
     }
 
-    /// Ordinals need noun classifiers (Gilmore §96) that no source pins down.
-    fn to_ordinal(&self, _value: &BigInt) -> Result<String> {
-        Err(no_word("to='ordinal'"))
+    /// `cardinal + ခါတခါ`, "first" အခီၣ်ထံးတခါ (see the module docs).
+    fn to_ordinal(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
+        if value == &BigInt::from(1) {
+            return Ok(FIRST.to_string());
+        }
+        Ok(format!("{}{}", int_to_word(value)?, ORDINAL_SUFFIX))
     }
 
-    fn to_ordinal_num(&self, _value: &BigInt) -> Result<String> {
-        Err(no_word("to='ordinal_num'"))
+    /// The digits in the ordinal frame: 2ခါတခါ.
+    fn to_ordinal_num(&self, value: &BigInt) -> Result<String> {
+        verify_ordinal(value)?;
+        Ok(format!("{}{}", value, ORDINAL_SUFFIX))
     }
 
-    /// The plain cardinal, 1..=999999.
+    /// The plain cardinal.
     fn to_year(&self, value: &BigInt) -> Result<String> {
         self.to_cardinal(value)
     }
@@ -346,22 +439,18 @@ impl Lang for LangKsw {
         "Num2Word_KSW"
     }
 
-    fn currency_forms(&self, _code: &str) -> Option<&CurrencyForms> {
-        None
+    /// MMK only (see the module docs); other codes raise.
+    fn currency_forms(&self, code: &str) -> Option<&CurrencyForms> {
+        (code == "MMK")
+            .then(|| self.currency_forms.get_or_init(|| CurrencyForms::new(&["ကၠး"], &["ပၠး"])))
     }
 
-    /// No verified currency unit names (#143).
-    fn to_currency(
-        &self,
-        _val: &CurrencyValue,
-        _currency: &str,
-        _cents: bool,
-        _separator: Option<&str>,
-        _adjective: bool,
-    ) -> Result<String> {
-        Err(unsupported_mode("currency"))
+    /// Karen nouns do not inflect for number.
+    fn pluralize(&self, _n: &BigInt, forms: &[String]) -> Result<String> {
+        Ok(forms[0].clone())
     }
 
+    /// The shared cheque format writes Latin "AND"/"MINUS".
     fn to_cheque(&self, _val: &BigDecimal, _currency: &str) -> Result<String> {
         Err(unsupported_mode("cheque"))
     }
@@ -389,8 +478,27 @@ mod tests {
         assert_eq!(c(603_550), "ဃုကလီၢ်သၢကထိယဲၢ်ကယၤယဲၢ်ဆံ");
         assert_eq!(c(601_730), "ဃုကလီၢ်တကထိနွံကယၤသၢဆံ");
         assert_eq!(c(999_999), "ခွံကလီၢ်ခွံကလးခွံကထိခွံကယၤခွံဆံခွံ");
-        assert!(matches!(k.to_cardinal(&BigInt::from(1_000_000)), Err(N2WError::Overflow(_))));
-        assert!(matches!(k.to_cardinal(&BigInt::from(0)), Err(N2WError::NotImplemented(_))));
-        assert!(matches!(k.to_cardinal(&BigInt::from(-1)), Err(N2WError::NotImplemented(_))));
+        // #262: KSWC 1 Chronicles 22:14 (တကကွဲၢ်), Revelation 9:16 (2 * 10^8).
+        assert_eq!(c(1_000_000), "တကကွဲၢ်");
+        assert_eq!(c(1_000_001), "တကကွဲၢ်တၢ");
+        assert_eq!(c(200_000_000), "ကကွဲၢ်ခံကယၤ");
+        assert_eq!(c(205_000_000), "ကကွဲၢ်ခံကယၤယဲၢ်");
+        assert_eq!(c(200_000_005), "ကကွဲၢ်ခံကယၤ ယဲၢ်");
+        assert!(matches!(
+            k.to_cardinal(&BigInt::from(1_000_000_000_000i64)),
+            Err(N2WError::Overflow(_))
+        ));
+        assert_eq!(c(0), "သုည");
+        assert_eq!(c(-3), "အနုတ် သၢ");
+    }
+
+    #[test]
+    fn ordinals() {
+        let k = LangKsw::new();
+        let o = |n: i64| k.to_ordinal(&BigInt::from(n)).unwrap();
+        assert_eq!(o(1), "အခီၣ်ထံးတခါ");
+        assert_eq!(o(2), "ခံခါတခါ");
+        assert_eq!(o(11), "တဆံတၢခါတခါ");
+        assert!(matches!(k.to_ordinal(&BigInt::from(-1)), Err(N2WError::Type(_))));
     }
 }
