@@ -40,10 +40,12 @@
 //! This is a port, not a rewrite. All of the following are wrong-looking but
 //! are exactly what Python emits, verified against the interpreter:
 //!
-//! 1. **Missing accent on 20–29 ordinals.** The `value <= 29` branch does
-//!    `self.ords[dec].replace("é", "e")`, so `to_ordinal(20)` is "vigesimo"
-//!    (not "vigésimo") and `to_ordinal(21)` is "vigesimoprimero". The 30+
-//!    branch keeps its accent ("trigésimo"), so the two are inconsistent.
+//! 1. ~~**Missing accent on 20.**~~ The `value <= 29` branch does
+//!    `self.ords[dec].replace("é", "e")` for the fused forms
+//!    ("vigesimoprimero"), and 20 used to land there too ("vigesimo").
+//!    Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 2. **No space before the scale word in the `1e3`–`1e18` branch.** The
 //!    format is `"%s%s%s %s" % (cardinal, ords[dec], gender_stem, ...)` — the
 //!    cardinal is glued straight onto the ordinal stem. Hence
@@ -616,12 +618,12 @@ impl LangEsVe {
         } else if value <= &BigInt::from(10) {
             let v = value.to_u64().expect("0 < value <= 10");
             format!("{}{}", self.ords_get(v)?, gender_stem)
-        } else if value <= &BigInt::from(29) {
+        } else if value <= &BigInt::from(29) && *value != BigInt::from(20) {
             // "According to RAE recommendations, simple forms are preferred up
             // to 30 / Ortography for sobreesdrújulas" — the stem's accent is
             // stripped and the stem vowel is forced to "o" regardless of
             // `gender`, but `gender` is still handed to the recursive call.
-            // Bug 1: this is what makes to_ordinal(20) == "vigesimo".
+            // 20 is not fused and skips this arm: "vigésimo" (bug 1, #252).
             let gender_stem = "o";
             let v = value.to_u64().expect("10 < value <= 29");
             let dec = (v / 10) * 10;

@@ -308,24 +308,24 @@ class Num2WordsDATest(TestCase):
         self.assertEqual(num2words(21, lang="da", ordinal=True), "enogtyvende")
         self.assertEqual(num2words(22, lang="da", ordinal=True), "toogtyvende")
         self.assertEqual(num2words(25, lang="da", ordinal=True), "femogtyvende")
-        self.assertEqual(num2words(30, lang="da", ordinal=True), "tredivete")
-        self.assertEqual(num2words(40, lang="da", ordinal=True), "fyrreende")
+        self.assertEqual(num2words(30, lang="da", ordinal=True), "tredivte")  # 252
+        self.assertEqual(num2words(40, lang="da", ordinal=True), "fyrrende")  # 252
         self.assertEqual(num2words(50, lang="da", ordinal=True), "halvtredsende")
         self.assertEqual(num2words(60, lang="da", ordinal=True), "tredsende")
         self.assertEqual(num2words(70, lang="da", ordinal=True), "halvfjerdsende")
         self.assertEqual(num2words(80, lang="da", ordinal=True), "firsende")
         self.assertEqual(num2words(90, lang="da", ordinal=True), "halvfemsende")
-        self.assertEqual(num2words(100, lang="da", ordinal=True), "ethundredete")
+        self.assertEqual(num2words(100, lang="da", ordinal=True), "hundrede")  # 252
         self.assertEqual(
             num2words(101, lang="da", ordinal=True), "ethundrede og første"
         )
-        self.assertEqual(num2words(200, lang="da", ordinal=True), "tohundredete")
-        self.assertEqual(num2words(500, lang="da", ordinal=True), "femhundredete")
-        self.assertEqual(num2words(1000, lang="da", ordinal=True), "ettusindte")
+        self.assertEqual(num2words(200, lang="da", ordinal=True), "tohundrede")
+        self.assertEqual(num2words(500, lang="da", ordinal=True), "femhundrede")
+        self.assertEqual(num2words(1000, lang="da", ordinal=True), "tusinde")  # 252
         self.assertEqual(
             num2words(1001, lang="da", ordinal=True), "ettusinde og første"
         )
-        self.assertEqual(num2words(10000, lang="da", ordinal=True), "ti tusindte")
+        self.assertEqual(num2words(10000, lang="da", ordinal=True), "ti tusinde")
 
     def test_currency(self):
         """Test currency conversion."""
@@ -539,7 +539,7 @@ class Num2WordsDATest(TestCase):
             10**9 + 1: "en milliard første",
             10**9 + 10**6: "en milliard en millionte",
             10**9 + 10**6 + 1: "en milliard en million første",
-            10**6 + 1000: "en million ettusindte",
+            10**6 + 1000: "en million ettusinde",
             10**6 + 1001: "en million ettusinde og første",
             10**12 + 1: "en billion første",
         }

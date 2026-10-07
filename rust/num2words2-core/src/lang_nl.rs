@@ -494,6 +494,13 @@ impl Lang for LangNl {
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
         let mut outword = self.to_cardinal(value)?;
+        // "een miljoen" -> "miljoenste", not "een miljoenste" (which reads
+        // as the fraction 1/10**6), likewise "miljardste" (#252).
+        if let Some(rest) = outword.strip_prefix("een ") {
+            if !rest.contains(' ') {
+                outword = rest.to_string();
+            }
+        }
         for &(key, rep) in ORDS {
             // Python slices `outword[:len(outword) - len(key)]` by character
             // count. Because the suffix matched, that split point is exactly

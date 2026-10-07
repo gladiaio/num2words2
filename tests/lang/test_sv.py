@@ -272,7 +272,7 @@ class Num2WordsSVTest(TestCase):
         self.assertEqual(num2words(17, lang="sv", ordinal=True), "sjuttonde")
         self.assertEqual(num2words(18, lang="sv", ordinal=True), "artonde")
         self.assertEqual(num2words(19, lang="sv", ordinal=True), "nittonde")
-        self.assertEqual(num2words(20, lang="sv", ordinal=True), "tjugode")
+        self.assertEqual(num2words(20, lang="sv", ordinal=True), "tjugonde")  # 252
         self.assertEqual(num2words(21, lang="sv", ordinal=True), "tjugoförsta")
         self.assertEqual(num2words(22, lang="sv", ordinal=True), "tjugoandra")
         self.assertEqual(num2words(25, lang="sv", ordinal=True), "tjugofemte")

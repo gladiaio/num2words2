@@ -564,7 +564,15 @@ impl LangIt {
         } else if is_outside_teens && tens % 10 == 6 {
             Ok(self.cardinal(number)? + "esimo")
         } else {
-            let mut string = drop_last_chars(&self.cardinal(number)?, 1);
+            let mut cardinal = self.cardinal(number)?;
+            // "un milione" -> "milionesimo", "un miliardo" -> "miliardesimo":
+            // the article is not part of the ordinal (#252).
+            if let Some(rest) = cardinal.strip_prefix("un ") {
+                if !rest.contains(' ') {
+                    cardinal = rest.to_string();
+                }
+            }
+            let mut string = drop_last_chars(&cardinal, 1);
             // "duemila" -> "duemil" -> "duemill" -> "duemillesimo".
             if last_chars(&string, 3) == "mil" {
                 string.push('l');

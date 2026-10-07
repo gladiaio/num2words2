@@ -32,11 +32,11 @@
 //! This is a port, not a rewrite. All of the following are exactly what Python
 //! emits, verified against the interpreter:
 //!
-//! 1. **`to_ordinal(20)` == "vigesimo", not "vigésimo".** The `value <= 29`
-//!    branch does `self.ords[dec].replace("é", "e")` to handle Spanish
-//!    *sobreesdrújula* orthography, and 20 lands in that branch, so the accent
-//!    is stripped even though nothing is suffixed. 30..=100 keep the accent
-//!    ("trigésimo"). Likewise `to_ordinal(120)` == "centésimo vigesimo".
+//! 1. ~~**`to_ordinal(20)` == "vigesimo", not "vigésimo".**~~ The `value <= 29`
+//!    branch strips the accent for the fused *sobreesdrújula* forms, and 20
+//!    landed in it too. Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 2. **Missing space before "milésimo"/"millonésimo"/…** The `value < 1e18`
 //!    branch formats `"%s%s%s %s" % (cardinal, ords[dec], gender_stem, ...)`
 //!    with no separator after `cardinal`, so `to_ordinal(2000)` ==
@@ -521,9 +521,9 @@ impl LangEsCr {
             String::new()
         } else if *value <= ten {
             format!("{}{}", self.ord_word(value)?, gender_stem)
-        } else if *value <= BigInt::from(29) {
-            // RAE: simple forms preferred up to 30. The unconditional
-            // `.replace("é", "e")` is what makes 20 render as "vigesimo".
+        } else if *value <= BigInt::from(29) && *value != BigInt::from(20) {
+            // RAE: simple forms preferred up to 30. 20 is not fused, so it
+            // skips the `.replace("é", "e")` and keeps "vigésimo" (#252).
             gender_stem = "o";
             let dec = (value / &ten) * &ten;
             format!(

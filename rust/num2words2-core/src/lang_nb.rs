@@ -663,6 +663,11 @@ impl Lang for LangNb {
     fn to_ordinal(&self, value: &BigInt) -> Result<String> {
         self.verify_ordinal(value)?;
         let mut outword = self.to_cardinal(value)?;
+        // 10**6 is "millionte", not "en millionte", which reads as the
+        // fraction 1/10**6 (#252).
+        if outword == "en million" {
+            outword = "million".to_string();
+        }
 
         // Python: outword[: len(outword) - len(key)] + ords_pl[key], then break.
         // `ends_with` guarantees the split point is a char boundary, so the

@@ -99,10 +99,10 @@
 //! 2. **Ordinals are formed by gluing a suffix onto the cardinal**, so
 //!    non-table values read as run-ons rather than real Bulgarian:
 //!    `to_ordinal(0)` == "нулати", `to_ordinal(200)` == "двестати",
-//!    `to_ordinal(2000)` == "две хилядити", `to_ordinal(10**6)` ==
-//!    "един милионти", `to_ordinal(10**12)` == "хиляда милиардати".
-//!    Only the 28 keys in `ordinals` (1..=20, 30..=90 by ten, 100, 1000) get
-//!    a genuine ordinal word.
+//!    `to_ordinal(2000)` == "две хилядити", `to_ordinal(10**12)` ==
+//!    "хиляда милиардати". Only the 28 keys in `ordinals` (1..=20, 30..=90
+//!    by ten, 100, 1000) get a genuine ordinal word, plus 10**6
+//!    "милионен" (was "един милионти", gladiaio/num2words2#252).
 //! 3. **`to_ordinal_num` uses Python's floor modulo on negatives**, which
 //!    flips the suffix versus a truncating `%`. `-999 % 10 == 1` in Python
 //!    (not `-9`), so `to_ordinal_num(-999)` == "-999-ви"; `-42 % 10 == 8`, so
@@ -621,6 +621,11 @@ impl LangBg {
         }
 
         let cardinal = self.int_to_cardinal(n)?;
+        // 10**6 is "милионен", not "един милионти" (#252), as 1000 is
+        // "хиляден".
+        if cardinal == "един милион" {
+            return Ok("милионен".to_string());
+        }
 
         // Python slices `cardinal[:-4]` / `[:-3]` *by character*. Since the
         // guard is `endswith(suffix)` and each suffix is exactly that many

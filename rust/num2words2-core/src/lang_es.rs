@@ -550,7 +550,7 @@ impl LangEs {
             String::new()
         } else if value <= 10 {
             format!("{}{}", self.ord_stem(value)?, gender_stem)
-        } else if value <= 29 {
+        } else if value <= 29 && value != 20 {
             // RAE: simple forms up to 30. The accent is dropped
             // (sobreesdrújula ortography) and the stem is forced masculine,
             // but the *unit* keeps the caller's gender.

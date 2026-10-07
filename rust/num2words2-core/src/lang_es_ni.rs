@@ -75,9 +75,11 @@
 //!
 //! Verified against the interpreter; all are preserved verbatim.
 //!
-//! 1. **Unaccented "vigesimo"**. `to_ordinal` for 11..=29 does
-//!    `self.ords[dec].replace("é", "e")`, so 20 → "vigesimo" and 120 →
-//!    "centésimo vigesimo" — accented elsewhere ("trigésimo"), bare here.
+//! 1. ~~**Unaccented "vigesimo"**.~~ `to_ordinal` for 11..=29 does
+//!    `self.ords[dec].replace("é", "e")`, and 20 used to land there too.
+//!    Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 2. **`ords` typos**: 400 is `"cuadrigentésim"` (standard Spanish is
 //!    *cuadringentésimo*) and 700 is `"septigentésim"` (standard:
 //!    *septingentésimo*). Corpus rows 123456 and 700 confirm both.
@@ -507,9 +509,10 @@ impl LangEsNi {
             String::new()
         } else if value <= &ten {
             format!("{}{}", self.ords_get(value)?, gender_stem)
-        } else if value <= &BigInt::from(29) {
+        } else if value <= &BigInt::from(29) && *value != BigInt::from(20) {
             // RAE: simple forms preferred up to 30; "sobreesdrújula" spelling
-            // drops the accent via replace("é", "e") -> "decimo"/"vigesimo".
+            // drops the accent via replace("é", "e") -> "decimo"/"vigesimo"
+            // in the fused 11..=29 forms; 20 skips it (#252).
             gender_stem = "o";
             let dec = (value / &ten) * &ten;
             format!(

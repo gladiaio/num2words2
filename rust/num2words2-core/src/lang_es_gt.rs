@@ -67,10 +67,11 @@
 //! 4. **`.replace("oo", "o")` is applied at every recursion level**, not just
 //!    at the top. It exists for "decimooctavo" → "decimoctavo" but is a blunt
 //!    global replace over the whole assembled string.
-//! 5. **`to_ordinal(20)` == "vigesimo"**, unaccented: the `value <= 29` branch
-//!    does `ords[dec].replace("é", "e")` ("vigésim" → "vigesim") and forces
-//!    `gender_stem` back to "o". Compare `to_ordinal(30)` == "trigésimo",
-//!    which keeps its accent.
+//! 5. ~~**`to_ordinal(20)` == "vigesimo"**~~, unaccented: the `value <= 29`
+//!    branch strips the accent and forces `gender_stem` back to "o", and 20
+//!    landed in it too. Fixed (gladiaio/num2words2#252): 20 keeps its accent and the caller's
+//!    gender ("vigésimo", "vigésima", "centésimo vigésimo"); only the fused
+//!    21..=29 forms drop it ("vigesimoprimero"), as the RAE spells them.
 //! 6. **`errmsg_toobig` reads "abs(%s) deber ser inferior a %s."** — "deber"
 //!    is a typo for "debe" in the Python source. Kept verbatim, which is why
 //!    [`LangEsGt::to_cardinal`] does its own overflow check instead of letting
@@ -547,7 +548,7 @@ impl LangEsGt {
             String::new()
         } else if value <= &ten {
             format!("{}{}", self.ords_get(value)?, gender_stem)
-        } else if value <= &twenty_nine {
+        } else if value <= &twenty_nine && *value != BigInt::from(20) {
             // "According to RAE recommendations, simple forms are preferred up
             // to 30 / Ortography for sobreesdrújulas": the accent is dropped
             // and the feminine stem is discarded.

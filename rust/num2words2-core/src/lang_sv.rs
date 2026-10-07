@@ -15,18 +15,17 @@
 //!
 //! Per the porting contract these are preserved verbatim, not fixed:
 //!
-//! 1. **`ords["tjugo"]` is unreachable.** `to_ordinal` looks the last word up
-//!    by its last *4* chars, then its last *3*. "tjugo" is 5 chars, so neither
-//!    probe can ever hit it and the entry is dead code. Every multiple of 20
-//!    falls through to the generic "de" suffix: `to_ordinal(20)` → "tjugode",
-//!    not "tjugonde"; `to_ordinal(120)` → "etthundratjugode". Confirmed
-//!    against the frozen corpus.
+//! 1. ~~**`ords["tjugo"]` was unreachable.**~~ `to_ordinal` looked the last
+//!    word up by its last 4 chars, then its last 3, so the 5-char "tjugo"
+//!    never matched and 20 read "tjugode". Fixed (gladiaio/num2words2#252):
+//!    the probe tries 5 chars first, so 20 is "tjugonde" and 120
+//!    "etthundratjugonde".
 //!
 //! 2. **Plural mega/giga words get ordinalised as-is.** The cards store the
 //!    *plural* "miljoner"/"miljarder", and `merge` only singularises them on
 //!    the `lnum == 1` path ("en miljon"). So `to_ordinal(10**7)` →
-//!    "tio miljonerde" and `to_ordinal(10**10)` → "tio miljarderde", while
-//!    `to_ordinal(10**6)` → "en miljonde". Corpus agrees.
+//!    "tio miljonerde" and `to_ordinal(10**10)` → "tio miljarderde". Only
+//!    10**6 itself is fixed (#252): "miljonte", not "en miljonde".
 //!
 //! 3. **`merge` returns `lnum + rnum` where a product is meant.** The
 //!    `rnum >= 1000000` branches precede the `rnum > lnum` multiply branch, so
@@ -246,9 +245,6 @@ impl LangSv {
         // MAXVAL = 1000 * highest card = 1000 * 10^603 = 10^606.
         let maxval = cards.highest().cloned().unwrap_or_else(BigInt::zero) * BigInt::from(1000);
 
-        // Note "tjugo": dead entry, see the module docs. Kept because the
-        // Python dict ships it and its absence would be a behaviour change if
-        // the lookup were ever widened.
         let ords: HashMap<&str, &str> = [
             ("noll", "nollte"),
             ("ett", "första"),
@@ -525,20 +521,21 @@ impl Lang for LangSv {
         // Probe ords by the last 4 chars, then the last 3. Python swallows the
         // KeyErrors; the final fallback is the generic "de" suffix with
         // ending_length left at its initial 0.
+        // 10**6 is "miljonte", without the "en" of "en miljon" (#252).
+        if cardinal == "en miljon" {
+            return Ok("miljonte".to_string());
+        }
+        // Python probed only 4 and 3 chars, so "tjugo" never matched and
+        // 20 read "tjugode"; probe 5 first (#252).
         let mut ending_length: usize = 0;
-        let lastword_ending: String = match self.ords.get(last_n_chars(&lastword, 4).as_str()) {
-            Some(e) => {
-                ending_length = 4;
-                (*e).to_string()
+        let mut lastword_ending = "de".to_string();
+        for k in [5, 4, 3] {
+            if let Some(e) = self.ords.get(last_n_chars(&lastword, k).as_str()) {
+                ending_length = k;
+                lastword_ending = (*e).to_string();
+                break;
             }
-            None => match self.ords.get(last_n_chars(&lastword, 3).as_str()) {
-                Some(e) => {
-                    ending_length = 3;
-                    (*e).to_string()
-                }
-                None => "de".to_string(),
-            },
-        };
+        }
 
         // Python compares the *value* to "de", so an ords entry that happened
         // to equal "de" would also take the no-truncation path. None does.
