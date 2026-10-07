@@ -775,7 +775,8 @@ impl Lang for LangEsHn {
 
     /// `Num2Word_ES_HN.to_currency` = `Num2Word_Base.to_currency` +
     /// `.replace("uno", "un")`. The blanket replace is faithful (it also turns
-    /// "veintiuno" into "veintiun"), matching the Python one-liner exactly.
+    /// "veintiuno" into "veintiun"), matching the Python one-liner; the accent
+    /// is then restored, "veintiún" (#253).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -792,7 +793,9 @@ impl Lang for LangEsHn {
             separator.unwrap_or(self.default_separator()),
             adjective,
         )?;
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }
 

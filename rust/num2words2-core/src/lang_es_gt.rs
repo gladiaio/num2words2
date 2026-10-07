@@ -128,7 +128,8 @@
 //! 10. **`result.replace("uno", "un")` is an unanchored global replace**, and it
 //!     runs *after* `Num2Word_ES`'s own accented fix-ups. The interaction is
 //!     visible and asymmetric:
-//!     * `to_currency(21, "EUR")` == `"veintiun euros"` — the int branch never
+//!     * (Python; the port restores the accent, #253)
+//!       `to_currency(21, "EUR")` == `"veintiun euros"` — the int branch never
 //!       reaches ES's `"veintiuno euro"` → `"veintiún euro"` rule, so GT's
 //!       blunt replace strips the "o" and leaves the word **unaccented**.
 //!     * `to_currency(21.21, "EUR")` == `"veintiún euros y veintiún céntimos"`
@@ -995,6 +996,8 @@ impl Lang for LangEsGt {
         // "Handle exception, in spanish is 'un euro' and not 'uno euro'".
         // Unanchored and global (bug 10): this also rewrites "veintiuno" ->
         // "veintiun" and the interior of "un millón uno".
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }

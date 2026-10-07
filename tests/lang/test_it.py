@@ -22,8 +22,8 @@ from unittest import TestCase
 from num2words2 import num2words
 
 TEST_CASES_TO_CURRENCY_EUR = (
-    (1, "uno euro"),
-    (2.01, "due euro e uno centesimo"),
+    (1, "un euro"),
+    (2.01, "due euro e un centesimo"),
     (8.10, "otto euro e dieci centesimi"),
     (12.26, "dodici euro e ventisei centesimi"),
     (21.29, "ventuno euro e ventinove centesimi"),
@@ -32,8 +32,8 @@ TEST_CASES_TO_CURRENCY_EUR = (
 )
 
 TEST_CASES_TO_CURRENCY_USD = (
-    (1, "uno dollaro"),
-    (2.01, "due dollari e uno centesimo"),
+    (1, "un dollaro"),
+    (2.01, "due dollari e un centesimo"),
     (8.10, "otto dollari e dieci centesimi"),
     (12.26, "dodici dollari e ventisei centesimi"),
     (21.29, "ventuno dollari e ventinove centesimi"),
@@ -42,8 +42,8 @@ TEST_CASES_TO_CURRENCY_USD = (
 )
 
 TEST_CASES_TO_CURRENCY_GBP = (
-    (1, "uno sterlina"),
-    (2.01, "due sterline e uno penny"),
+    (1, "una sterlina"),
+    (2.01, "due sterline e un penny"),
     (8.10, "otto sterline e dieci penny"),
     (12.26, "dodici sterline e ventisei penny"),
     (21.29, "ventuno sterline e ventinove penny"),

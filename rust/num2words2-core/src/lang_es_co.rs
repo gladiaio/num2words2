@@ -906,8 +906,9 @@ impl Lang for LangEsCo {
             // ES_CO's blanket rewrite, applied to ES's already-stripped return.
             // It is what turns to_cardinal(21)'s "veintiuno" into the
             // unaccented "veintiun pesos" — ES's targeted "veintiuno euro"
-            // rewrite never runs on this path, so the accent is never restored.
-            return Ok(result.replace("uno", "un"));
+            // rewrite never runs on this path; the accent is restored after
+            // it (#253).
+            return Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "));
         }
 
         // ---- float path: Num2Word_Base's, then two layers of patching ----
@@ -927,12 +928,14 @@ impl Lang for LangEsCo {
         let result = result.replace("uno dólar", "un dólar");
 
         // Num2Word_ES_CO's own rewrite, mopping up every "uno" the six above
-        // missed — including inside words. This is why 21.21 USD is "veintiun
+        // missed — including inside words. In Python 21.21 USD was "veintiun
         // dólares y veintiun centavos" (accent lost: ES's "uno dólar"/"uno
-        // centavo" rules already consumed the "uno", leaving "veintiun") while
-        // 21.21 EUR keeps both accents ("veintiún euros y veintiún céntimos").
+        // centavo" rules already consumed the "uno", leaving "veintiun"); the
+        // accent is restored after it (#253), as 21.21 EUR always had it.
         // It also rescues cases ES's word-keyed rules cannot see, e.g.
         // adjective=True USD 1.0 -> "uno US dólar ..." -> "un US dólar ...".
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 }

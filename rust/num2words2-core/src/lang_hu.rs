@@ -459,6 +459,16 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m
 }
 
+/// A cardinal used attributively, before a noun (#253): a final "kettő"
+/// becomes "két" — "két forint", "tizenkét forint", "kétezer-két forint".
+/// "kettő" is the standalone form only.
+fn hu_attributive(cardinal: String) -> String {
+    match cardinal.strip_suffix("kettő") {
+        Some(stem) => format!("{}két", stem),
+        None => cardinal,
+    }
+}
+
 pub struct LangHu {
     cards: Cards,
     /// `1000 * list(self.cards.keys())[0]` == 10**606. Constructed by
@@ -974,6 +984,16 @@ impl Lang for LangHu {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// The numeral before the unit noun (#253): see [`hu_attributive`].
+    fn money_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(hu_attributive(self.to_cardinal(number)?))
+    }
+
+    /// The numeral before the subunit noun (#253): "ötven fillér", "két fillér".
+    fn cents_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(hu_attributive(self.to_cardinal(number)?))
+    }
+
     /// `Num2Word_HU.to_currency(val, currency="HUF", cents=True,
     /// separator=",", adjective=False)`.
     ///
@@ -1030,7 +1050,8 @@ impl Lang for LangHu {
         // Python uses the raw negword here; stripped to avoid bug 8.
         let minus_str = if v.is_negative() { NEGWORD.trim() } else { "" };
         let abs_val = v.abs();
-        let money_str = self.to_cardinal(&abs_val)?;
+        // "két forint", not the standalone "kettő" (#253).
+        let money_str = self.money_verbose(&abs_val, currency)?;
 
         // if abs_val == 1: cr1[0]
         // else:            cr1[1] if len(cr1) > 1 else cr1[0]

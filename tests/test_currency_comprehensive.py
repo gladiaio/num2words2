@@ -117,14 +117,14 @@ class ComprehensiveCurrencyTests(unittest.TestCase):
     def test_italian_negative_currency(self):
         """Test Italian negative currency bug fix"""
         test_cases = [
-            (-1, "EUR", "meno uno euro"),
+            (-1, "EUR", "meno un euro"),
             (-10, "EUR", "meno dieci euro"),
             (-5.50, "EUR", "meno cinque euro e cinquanta centesimi"),
             (-100, "EUR", "meno cento euro"),
-            (-1, "USD", "meno uno dollaro"),
+            (-1, "USD", "meno un dollaro"),
             (-5, "USD", "meno cinque dollari"),
             (-10.25, "USD", "meno dieci dollari e venticinque centesimi"),
-            (-1, "GBP", "meno uno sterlina"),
+            (-1, "GBP", "meno una sterlina"),
             (-2, "GBP", "meno due sterline"),
             (-50.75, "GBP", "meno cinquanta sterline e settantacinque penny"),
         ]
@@ -234,7 +234,7 @@ class ComprehensiveCurrencyTests(unittest.TestCase):
             ("ru", 2, "RUB", "два рубля"),
             ("ru", 5, "RUB", "пять рублей"),
             # Italian
-            ("it", 1, "EUR", "uno euro"),
+            ("it", 1, "EUR", "un euro"),
             ("it", 2, "EUR", "due euro"),
             ("it", 100, "EUR", "cento euro"),
         ]

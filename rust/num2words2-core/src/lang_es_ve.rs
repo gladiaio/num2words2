@@ -1312,11 +1312,14 @@ impl Lang for LangEsVe {
         // centavo/dólar, so "uno libra" survives it; this catches the rest.
         //
         // It is indiscriminate, and that is load-bearing: it also rewrites
-        // "veintiuno" -> "veintiun", so to_currency(21, "EUR") == "veintiun
+        // "veintiuno" -> "veintiun" (accent restored below, #253), so in
+        // Python to_currency(21, "EUR") == "veintiun
         // euros" (no accent) while the float 21.0 == "veintiún euros y cero
         // céntimos" (ES's accented fixup got there first). Both verified
         // against CPython.
-        Ok(result.replace("uno", "un"))
+        // The blanket rewrite leaves "veintiun", which is never written
+        // without its accent: "veintiún dólares" (#253).
+        Ok(result.replace("uno", "un").replace("veintiun ", "veintiún "))
     }
 
     /// `Num2Word_ES_VE.to_currency(..., old=False)` — the one extra kwarg in

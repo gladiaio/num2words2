@@ -349,6 +349,42 @@ fn pluralize<'a>(n: &BigInt, forms: (&'a str, &'a str, &'a str)) -> &'a str {
     }
 }
 
+/// Grammatical gender of a currency noun, which 1 and 2 agree with.
+#[derive(Clone, Copy, PartialEq)]
+enum Gender {
+    Masculine,
+    Feminine,
+    Neuter,
+}
+
+/// Gender of the unit / subunit noun of each code (#253): koruna is
+/// feminine, euro neuter; dolar, cent and haléř masculine.
+fn currency_gender(currency: &str, subunit: bool) -> Gender {
+    match (currency, subunit) {
+        ("CZK", false) => Gender::Feminine,
+        ("EUR", false) => Gender::Neuter,
+        _ => Gender::Masculine,
+    }
+}
+
+/// The numeral before a noun of gender `g` (#253): 1 is jeden/jedna/jedno and
+/// 2 is dva/dvě/dvě, where the standalone cardinal says "jedna" and "dva".
+/// Compounds keep the cardinal's form.
+fn cs_attributive(n: &BigInt, cardinal: String, g: Gender) -> String {
+    if n.is_one() {
+        return match g {
+            Gender::Masculine => "jeden",
+            Gender::Feminine => "jedna",
+            Gender::Neuter => "jedno",
+        }
+        .to_string();
+    }
+    if n == &BigInt::from(2) && g != Gender::Masculine {
+        return "dvě".to_string();
+    }
+    cardinal
+}
+
 /// `Num2Word_CS.CURRENCY_FORMS`, transcribed from the class body.
 ///
 /// CS descends from `Num2Word_Base`, not `Num2Word_EUR`, so nothing here is
@@ -359,12 +395,11 @@ fn pluralize<'a>(n: &BigInt, forms: (&'a str, &'a str, &'a str)) -> &'a str {
 /// All six tuples carry three forms, and the arity is load-bearing:
 /// `pluralize` indexes 0/1/2, and `to_cheque` takes `cr1[-1]`.
 ///
-/// Two entries are deliberately degenerate, per the Python comments:
-///   * EUR's unit is `("euro", "euro", "euro")` — euro does not decline in
-///     Czech, so all three forms collide.
-///   * EUR's subunit is `("centů", "centů", "centů")` — always the genitive
-///     plural. That is why `0.01 EUR` reads "nula euro, jedna centů": the
-///     singular slot holds a plural word.
+/// Python's EUR entry was degenerate — `("euro", "euro", "euro")` on the
+/// claim that euro does not decline, and `("centů", "centů", "centů")` — so
+/// `0.01 EUR` read "nula euro, jedna centů". Euro is a declinable neuter
+/// (jedno euro, dvě eura, pět eur) and cent a regular masculine (jeden cent,
+/// dva centy, pět centů); the entry now carries their real forms (#253).
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     let mut m: HashMap<&'static str, CurrencyForms> = HashMap::new();
     m.insert(
@@ -377,10 +412,9 @@ fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     m.insert(
         "EUR",
         CurrencyForms::new(
-            // Euro doesn't decline in Czech.
-            &["euro", "euro", "euro"],
-            // Cents always in genitive plural.
-            &["centů", "centů", "centů"],
+            // Neuter: jedno euro, dvě eura, pět eur (#253).
+            &["euro", "eura", "eur"],
+            &["cent", "centy", "centů"],
         ),
     );
     m.insert(
@@ -979,8 +1013,7 @@ impl Lang for LangCs {
     /// that is unreachable — but it is mapped to `Index` rather than panicking
     /// so the exception type survives if the table ever changes.
     ///
-    /// Reached only from `Num2Word_Base.to_currency`'s float path; CS's own
-    /// int path pointedly does *not* call this (see `to_currency`).
+    /// Both currency paths select the unit form with this (#253).
     fn pluralize(&self, n: &BigInt, forms: &[String]) -> Result<String> {
         forms
             .get(plural_form_index(n))
@@ -988,36 +1021,34 @@ impl Lang for LangCs {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// The whole-unit numeral, agreeing with the unit noun (#253).
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(cs_attributive(number, self.to_cardinal(number)?, currency_gender(currency, false)))
+    }
+
+    /// The subunit numeral, agreeing with the subunit noun (#253).
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(cs_attributive(number, self.to_cardinal(number)?, currency_gender(currency, true)))
+    }
+
     /// Port of `Num2Word_CS.to_currency`.
     ///
     /// CS intercepts **`isinstance(val, int)`** — a true Python `int`, never a
     /// whole float — and hands everything else to `Num2Word_Base.to_currency`.
-    /// The split is why `currency:USD` of `1` is "jedna dolar" (no cents) while
-    /// `1.0` is "jedna dolar, nula centů".
+    /// The split is why `currency:USD` of `1` is "jeden dolar" (no cents) while
+    /// `1.0` is "jeden dolar, nula centů".
     ///
-    /// # The int path's plural bug, reproduced
+    /// # The int path's plural bug, fixed
     ///
-    /// Python picks the currency word by hand here instead of calling
-    /// `self.pluralize`:
-    ///
-    /// ```python
-    /// if abs_val == 1:
-    ///     currency_str = cr1[0]
-    /// else:
-    ///     currency_str = cr1[1] if len(cr1) > 1 else cr1[0]
-    /// ```
-    ///
-    /// So *every* count other than 1 takes `cr1[1]`, the paucal (2-4) form,
-    /// including 0, 5+ and the teens — where `pluralize` would correctly pick
-    /// `cr1[2]`. The corpus locks the wrong answers in: `currency:USD` of `0`
-    /// is "nula dolary", of `100` is "sto dolary", of `1000000` is
-    /// "milion dolary" — all should be "dolarů", and the float path one line
-    /// below *does* say "dolarů" for the same magnitudes ("nula dolarů,
-    /// padesát centů" at 0.5). EUR hides the bug entirely because its three
-    /// forms are identical. Do not "fix" this into a `pluralize` call.
+    /// Python picked the currency word by hand here, `cr1[0]` for 1 and
+    /// `cr1[1]` (the 2-4 form) for every other count, so `0`/`5`/`100` USD
+    /// were "nula dolary"/"pět dolary"/"sto dolary", and the numeral was the
+    /// standalone cardinal ("jedna dolar", "jedna euro"). Both paths now use
+    /// `pluralize` and the gender-agreeing `money_verbose`: "jeden dolar",
+    /// "jedno euro", "dvě eura", "pět eur", "sto dolarů" (#253).
     ///
     /// `abs(val)` is taken before the comparison, so `-1` is singular too:
-    /// "mínus jedna dolar".
+    /// "mínus jeden dolar".
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -1039,14 +1070,10 @@ impl Lang for LangCs {
                 // whitespace, so the two agree, but the shapes differ.
                 let minus_str = if v.is_negative() { NEGWORD } else { "" };
                 let abs_val = v.abs();
-                let money_str = self.to_cardinal(&abs_val)?;
-
-                let currency_str = if abs_val.is_one() {
-                    forms.unit.first().cloned()
-                } else {
-                    forms.unit.get(1).or_else(|| forms.unit.first()).cloned()
-                }
-                .ok_or_else(|| N2WError::Index("tuple index out of range".into()))?;
+                let money_str = self.money_verbose(&abs_val, currency)?;
+                // 1 / 2-4 / 5+ like the float path ("pět eur", "sto dolarů");
+                // Python took the 2-4 form for every count but 1 (#253).
+                let currency_str = self.pluralize(&abs_val, &forms.unit)?;
 
                 // Python: ("%s %s %s" % (minus_str, money_str, currency_str))
                 //             .strip()

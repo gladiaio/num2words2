@@ -22,8 +22,8 @@ from unittest import TestCase
 from num2words2 import num2words
 
 TEST_CASES_TO_CURRENCY_EUR = (
-    (1.00, "eins Euro und null Cent"),
-    (2.01, "zwei Euro und eins Cent"),
+    (1.00, "ein Euro und null Cent"),
+    (2.01, "zwei Euro und ein Cent"),
     (8.10, "acht Euro und zehn Cent"),
     (12.26, "zwölf Euro und sechsundzwanzig Cent"),
     (21.29, "einundzwanzig Euro und neunundzwanzig Cent"),
@@ -32,8 +32,8 @@ TEST_CASES_TO_CURRENCY_EUR = (
 )
 
 TEST_CASES_TO_CURRENCY_USD = (
-    (1.00, "eins Dollar und null Cent"),
-    (2.01, "zwei Dollar und eins Cent"),
+    (1.00, "ein Dollar und null Cent"),
+    (2.01, "zwei Dollar und ein Cent"),
     (8.10, "acht Dollar und zehn Cent"),
     (12.26, "zwölf Dollar und sechsundzwanzig Cent"),
     (21.29, "einundzwanzig Dollar und neunundzwanzig Cent"),
@@ -42,8 +42,8 @@ TEST_CASES_TO_CURRENCY_USD = (
 )
 
 TEST_CASES_TO_CURRENCY_GBP = (
-    (1.00, "eins Pfund und null Pence"),
-    (2.01, "zwei Pfund und eins Penny"),
+    (1.00, "ein Pfund und null Pence"),
+    (2.01, "zwei Pfund und ein Penny"),
     (8.10, "acht Pfund und zehn Pence"),
     (12.26, "zwölf Pfund und sechsundzwanzig Pence"),
     (21.29, "einundzwanzig Pfund und neunundzwanzig Pence"),
@@ -52,8 +52,8 @@ TEST_CASES_TO_CURRENCY_GBP = (
 )
 
 TEST_CASES_TO_CURRENCY_DEM = (
-    (1.00, "eins Mark und null Pfennig"),
-    (2.01, "zwei Mark und eins Pfennig"),
+    (1.00, "eine Mark und null Pfennig"),
+    (2.01, "zwei Mark und ein Pfennig"),
     (8.10, "acht Mark und zehn Pfennig"),
     (12.26, "zwölf Mark und sechsundzwanzig Pfennig"),
     (21.29, "einundzwanzig Mark und neunundzwanzig Pfennig"),
@@ -164,8 +164,8 @@ def test_de_dm_eine_mark_for_feminine_unit():
     assert num2words(1001, lang="de", to="currency", currency="DEM") == "eintausendeine Mark"
     # 21 ends in '...zwanzig' so the 'ein' rule does not apply
     assert num2words(21, lang="de", to="currency", currency="DEM") == "einundzwanzig Mark"
-    # Plain 1 EUR (masculine/neuter) unchanged
-    assert num2words(1, lang="de", to="currency", currency="EUR") == "eins Euro"
+    # Masculine/neuter 1 is "ein" before the noun (#253)
+    assert num2words(1, lang="de", to="currency", currency="EUR") == "ein Euro"
 
 
 def test_de_ordinal_compound_no_spaces():

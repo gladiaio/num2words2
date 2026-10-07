@@ -193,6 +193,19 @@ fn sub_eine_prefix(res: &str) -> String {
 /// numeral "eine" rather than "ein"/"eins" — "eine Rupie", not "eins Rupie".
 const FEMININE_CURRENCIES: [&str; 2] = ["DEM", "INR"];
 
+/// Currencies whose German *subunit* noun is feminine: "eine Kopeke".
+const FEMININE_SUBUNITS: [&str; 1] = ["RUB"];
+
+/// The numeral as it stands before a noun (#253): a cardinal ending in "eins"
+/// drops the "s" — "ein Euro", "einhundertein Dollar" — and takes "eine"
+/// before a feminine noun ("eine Mark"). "eins" is the standalone form only.
+fn attributive(cardinal: String, feminine: bool) -> String {
+    match cardinal.strip_suffix("eins") {
+        Some(stem) => format!("{}{}", stem, if feminine { "eine" } else { "ein" }),
+        None => cardinal,
+    }
+}
+
 /// `Num2Word_DE.CURRENCY_FORMS`.
 ///
 /// DE declares its **own** class-level dict, so it shadows `Num2Word_EUR`'s
@@ -208,7 +221,7 @@ const FEMININE_CURRENCIES: [&str; 2] = ["DEM", "INR"];
 /// Two entries look like data bugs and are ports, not typos:
 /// * CNY's subunits are ("Jiao", "Fen") — two *different* coins (1/10 and
 ///   1/100 yuan) filling the singular/plural slots, so 0.01 CNY renders
-///   "eins Jiao" and 1.0 CNY "null Fen". Corpus-confirmed.
+///   "ein Jiao" and 1.0 CNY "null Fen". Corpus-confirmed.
 /// * INR's subunit is ("Paisa", "Paisa"); the real plural is "Paise".
 fn build_currency_forms() -> HashMap<&'static str, CurrencyForms> {
     const DOLLAR: [&str; 2] = ["Dollar", "Dollar"];
@@ -801,6 +814,16 @@ impl Lang for LangDe {
             .ok_or_else(|| N2WError::Index("tuple index out of range".into()))
     }
 
+    /// The whole-unit numeral in its attributive form (#253).
+    fn money_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(attributive(self.to_cardinal(number)?, FEMININE_CURRENCIES.contains(&currency)))
+    }
+
+    /// The subunit numeral in its attributive form (#253): "ein Cent".
+    fn cents_verbose(&self, number: &BigInt, currency: &str) -> Result<String> {
+        Ok(attributive(self.to_cardinal(number)?, FEMININE_SUBUNITS.contains(&currency)))
+    }
+
     /// Port of `Num2Word_DE.to_currency`.
     ///
     /// Only the `isinstance(val, int)` branch is DE's own; floats defer to
@@ -811,11 +834,11 @@ impl Lang for LangDe {
     /// * the int path never consults `adjective`, so
     ///   `to_currency(2, "USD", adjective=True)` is "zwei Dollar" while
     ///   `12.34` gives "zwölf US Dollar und vierunddreißig Cent";
-    /// * the feminine-numeral fix-up is likewise int-only, so `1` INR is
-    ///   "eine Rupie" but `1.0` INR is "eins Rupie und null Paisa" (both
-    ///   corpus rows);
-    /// * the int path bypasses `_money_verbose` and calls `to_cardinal`
-    ///   directly. Identical for DE, which overrides neither.
+    /// * Python's feminine-numeral fix-up was int-only (`1.0` INR was "eins
+    ///   Rupie und null Paisa") and left "eins" before masculine nouns ("eins
+    ///   Euro"). Both paths now take the attributive numeral from
+    ///   `money_verbose`/`cents_verbose`: "ein Euro und ein Cent", "eine
+    ///   Rupie", "einhundertein Dollar" (#253).
     fn to_currency(
         &self,
         val: &CurrencyValue,
@@ -844,22 +867,8 @@ impl Lang for LangDe {
             // `negword.strip() + " "`. Same bytes for "minus ", kept literal.
             let minus_str = if v.is_negative() { self.negword() } else { "" };
             let abs_val = v.abs();
-            let mut money_str = self.to_cardinal(&abs_val)?;
-
-            // Issue #69. `abs_val` is already non-negative, so `%` needs no
-            // floor correction.
-            if FEMININE_CURRENCIES.contains(&currency)
-                && (&abs_val % BigInt::from(100)).is_one()
-            {
-                if money_str.ends_with("eins") {
-                    // "eins" is ASCII, so dropping 4 bytes == Python's [:-4].
-                    let cut = money_str.len() - 4;
-                    money_str.truncate(cut);
-                    money_str.push_str("eine");
-                } else if money_str.ends_with("ein") {
-                    money_str.push('e');
-                }
-            }
+            // The attributive numeral, "ein Euro" / "eine Rupie" (#69, #253).
+            let money_str = self.money_verbose(&abs_val, currency)?;
 
             // `cr1[0]` when abs_val == 1, else `cr1[1] if len(cr1) > 1 else cr1[0]`.
             let unit = &forms.unit;

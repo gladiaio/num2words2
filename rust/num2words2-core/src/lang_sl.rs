@@ -187,6 +187,22 @@ fn build_currency_forms() -> HashMap<&'static str, (CurrencyForms, &'static str)
     m
 }
 
+/// A cardinal before a masculine noun (#253). Every SL currency noun (evro,
+/// dolar, cent) is masculine, but the standalone cardinal ends in the
+/// feminine/neuter "ena"/"dve": "en evro", "dva evra", "sto en evro". 3 and 4
+/// already agree with the table's accusative plural ("tri evre").
+fn sl_masculine(cardinal: String) -> String {
+    let (stem, last) = match cardinal.rsplit_once(' ') {
+        Some((stem, last)) => (format!("{} ", stem), last),
+        None => (String::new(), cardinal.as_str()),
+    };
+    match last {
+        "ena" => format!("{}en", stem),
+        "dve" => format!("{}dva", stem),
+        _ => cardinal,
+    }
+}
+
 /// `Num2Word_SL.pluralize`'s index selection, over the `n % 100` residue.
 ///
 /// ```python
@@ -862,6 +878,17 @@ impl Lang for LangSl {
         pick_form(&BigDecimal::from(rem), forms)
     }
 
+    /// The numeral before the (masculine) unit noun (#253): see
+    /// [`sl_masculine`].
+    fn money_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(sl_masculine(self.to_cardinal(number)?))
+    }
+
+    /// The numeral before the (masculine) "cent" (#253).
+    fn cents_verbose(&self, number: &BigInt, _currency: &str) -> Result<String> {
+        Ok(sl_masculine(self.to_cardinal(number)?))
+    }
+
     /// Port of `Num2Word_SL.to_currency`.
     ///
     /// Three of the five parameters are dead upstream and so are ignored here:
@@ -878,7 +905,7 @@ impl Lang for LangSl {
     ///
     /// `is_integer_input = isinstance(val, int)` gates the cents segment: a
     /// true `int` never prints cents, a float always does — including `1.0`,
-    /// which is why `currency:EUR` of `1` is "ena evro" but of `1.0` is "ena
+    /// which is why `currency:EUR` of `1` is "en evro" but of `1.0` is "en
     /// evro nič centov". `has_decimal` is therefore unused here: SL does not
     /// consult it, and the `Int`/`Decimal` variants already carry the only
     /// distinction SL makes.
@@ -895,9 +922,9 @@ impl Lang for LangSl {
     /// it:
     ///
     /// ```text
-    /// to_currency(1.005,  "EUR")  "ena evro nič vejica pet centov"          both
-    /// to_currency(1.0025, "EUR")  "ena evro nič vejica petindvajset centov" Python
-    ///                             "ena evro nič vejica dve pet centov"      here
+    /// to_currency(1.005,  "EUR")  "en evro nič vejica pet centov"          both
+    /// to_currency(1.0025, "EUR")  "en evro nič vejica petindvajset centov" Python
+    ///                             "en evro nič vejica dve pet centov"      here
     /// ```
     ///
     /// Measured, not assumed: diffed against the live interpreter over 1751
@@ -954,7 +981,7 @@ impl Lang for LangSl {
         } else {
             String::new()
         };
-        let money_str = self.to_cardinal(&left)?;
+        let money_str = self.money_verbose(&left, currency)?;
         let left_form = self.pluralize(&left, &forms.unit)?;
 
         // Integer: no cents.
@@ -974,7 +1001,7 @@ impl Lang for LangSl {
             } else {
                 // parse_currency_parts already applied `with_scale(0)` on this
                 // path, so the unscaled value is the whole subunit count.
-                self.to_cardinal(&right.as_bigint_and_exponent().0)?
+                self.cents_verbose(&right.as_bigint_and_exponent().0, currency)?
             }
         } else {
             "nič".to_string()
@@ -1043,12 +1070,12 @@ mod tests {
     fn corpus_currency_implemented() {
         let eur = [
             "nič evrov",
-            "ena evro",
-            "dve evra",
+            "en evro",
+            "dva evra",
             "sto evrov",
             "dvanajst evrov štiriintrideset centov",
-            "nič evrov ena cent",
-            "ena evro nič centov",
+            "nič evrov en cent",
+            "en evro nič centov",
             "devetindevetdeset evrov devetindevetdeset centov",
             "tisoč dvesto štiriintrideset evrov šestinpetdeset centov",
             "minus dvanajst evrov štiriintrideset centov",
@@ -1057,12 +1084,12 @@ mod tests {
         ];
         let usd = [
             "nič dolarjev",
-            "ena dolar",
-            "dve dolarja",
+            "en dolar",
+            "dva dolarja",
             "sto dolarjev",
             "dvanajst dolarjev štiriintrideset centov",
-            "nič dolarjev ena cent",
-            "ena dolar nič centov",
+            "nič dolarjev en cent",
+            "en dolar nič centov",
             "devetindevetdeset dolarjev devetindevetdeset centov",
             "tisoč dvesto štiriintrideset dolarjev šestinpetdeset centov",
             "minus dvanajst dolarjev štiriintrideset centov",
@@ -1117,8 +1144,8 @@ mod tests {
             (4, "štiri evre"),
             (5, "pet evrov"),
             (21, "enaindvajset evrov"),
-            (101, "sto ena evro"),
-            (102, "sto dve evra"),
+            (101, "sto en evro"),
+            (102, "sto dva evra"),
             (103, "sto tri evre"),
             (104, "sto štiri evre"),
         ] {
@@ -1139,7 +1166,7 @@ mod tests {
     #[test]
     fn negative_int_has_no_cents() {
         assert_eq!(currency("-5", "EUR").unwrap(), "minus pet evrov");
-        assert_eq!(currency("-1", "EUR").unwrap(), "minus ena evro");
+        assert_eq!(currency("-1", "EUR").unwrap(), "minus en evro");
     }
 
     /// `cents`, `separator` and `adjective` are all dead upstream.
